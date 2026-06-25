@@ -7,12 +7,17 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port $PORT",
-    "start": "npm run preview"
+    "start": "serve dist -s -l $PORT"
   },
   "dependencies": {
+    "@tailwindcss/vite": "^4.3.1",
+    "@vitejs/plugin-react": "^6.0.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-router-dom": "^7.18.0"
+    "react-router-dom": "^7.18.0",
+    "serve": "^14.2.6",
+    "tailwindcss": "^4.3.1",
+    "vite": "^8.1.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.1",

@@ -1,8 +1,5 @@
-[phases.install]
-cmds = ["npm install"]
-
 [phases.build]
-cmds = ["npm run build"]
+cmds = ["npm install", "npm run build"]
 
 [start]
-cmd = "npm run preview"
+cmd = "serve dist -s -l $PORT"
