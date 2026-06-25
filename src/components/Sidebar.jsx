@@ -1,68 +1,58 @@
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import { agents } from "../agents/agentsConfig";
 
 export default function Sidebar() {
-  const location = useLocation();
-
   return (
-    <aside className="fixed left-0 top-0 h-screen w-64 bg-[#4C1D95] flex flex-col z-50 shadow-2xl">
-      {/* Logo */}
-      <div className="px-6 py-6 border-b border-purple-700">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center text-[#4C1D95] font-black text-lg shadow">
-            A
-          </div>
-          <div>
-            <h1 className="text-white font-bold text-base leading-tight">Aura Flow</h1>
-            <p className="text-purple-300 text-xs">AI Dashboard</p>
-          </div>
+    <aside style={{
+      position: "fixed", left: 0, top: 0, width: "260px", height: "100vh",
+      background: "#1E1B4B", display: "flex", flexDirection: "column",
+      zIndex: 50, boxShadow: "4px 0 24px rgba(0,0,0,0.18)",
+    }}>
+      <div style={{
+        padding: "24px 20px 20px", borderBottom: "1px solid rgba(255,255,255,0.08)",
+        display: "flex", alignItems: "center", gap: "12px",
+      }}>
+        <div style={{
+          width: "38px", height: "38px", background: "#7C3AED", borderRadius: "10px",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "white", fontWeight: 800, fontSize: "17px", flexShrink: 0,
+          boxShadow: "0 4px 12px rgba(124,58,237,0.4)",
+        }}>A</div>
+        <div>
+          <div style={{ color: "white", fontWeight: 700, fontSize: "16px", lineHeight: 1.2 }}>Aura Flow AI</div>
+          <div style={{ color: "#A5B4FC", fontSize: "11px", marginTop: "2px" }}>Dashboard IA</div>
         </div>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3">
-        {/* Dashboard link */}
-        <NavLink
-          to="/"
-          end
-          className={({ isActive }) =>
-            `flex items-center gap-3 px-3 py-2.5 rounded-xl mb-1 text-sm font-medium transition-all ${
-              isActive
-                ? "bg-white/20 text-white"
-                : "text-purple-200 hover:bg-white/10 hover:text-white"
-            }`
-          }
-        >
-          <span className="text-base">🏠</span>
-          <span>Tableau de bord</span>
-        </NavLink>
-
-        <p className="text-purple-400 text-xs font-semibold uppercase tracking-wider px-3 mt-4 mb-2">
-          Mes Agents
-        </p>
-
-        {agents.map((agent) => (
-          <NavLink
-            key={agent.id}
-            to={`/agent/${agent.id}`}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-xl mb-1 text-sm font-medium transition-all ${
-                isActive
-                  ? "bg-white/20 text-white"
-                  : "text-purple-200 hover:bg-white/10 hover:text-white"
-              }`
-            }
-          >
-            <span className="text-base">{agent.icon}</span>
-            <span className="truncate">{agent.name}</span>
-          </NavLink>
+      <nav style={{ flex: 1, overflowY: "auto", padding: "12px" }}>
+        <SidebarLink to="/" icon="🏠" label="Tableau de bord" end />
+        <div style={{
+          color: "#6366F1", fontSize: "10px", fontWeight: 700,
+          letterSpacing: "0.1em", textTransform: "uppercase", padding: "16px 8px 8px",
+        }}>Mes Agents</div>
+        {agents.map(agent => (
+          <SidebarLink key={agent.id} to={`/agent/${agent.id}`} icon={agent.icon} label={agent.name} />
         ))}
       </nav>
 
-      {/* Footer */}
-      <div className="px-6 py-4 border-t border-purple-700">
-        <p className="text-purple-400 text-xs">Aura Flow AI © 2025</p>
+      <div style={{ padding: "16px 20px", borderTop: "1px solid rgba(255,255,255,0.08)", color: "#6366F1", fontSize: "11px" }}>
+        © 2025 Aura Flow AI
       </div>
     </aside>
+  );
+}
+
+function SidebarLink({ to, icon, label, end }) {
+  return (
+    <NavLink to={to} end={end} style={({ isActive }) => ({
+      display: "flex", alignItems: "center", gap: "10px",
+      padding: "10px 12px", borderRadius: "10px", marginBottom: "2px",
+      textDecoration: "none", fontSize: "14px", fontWeight: 500,
+      background: isActive ? "#7C3AED" : "transparent",
+      color: isActive ? "white" : "#C4B5FD",
+    })}>
+      <span style={{ fontSize: "16px", width: "20px", textAlign: "center", flexShrink: 0 }}>{icon}</span>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+    </NavLink>
   );
 }

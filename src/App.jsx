@@ -7,13 +7,15 @@ import "./index.css";
 function App() {
   return (
     <BrowserRouter>
-      <div className="flex min-h-screen bg-gray-50">
+      <div style={{ display: "flex", minHeight: "100vh", background: "#F8F7FF" }}>
         <Sidebar />
-        <main className="flex-1 ml-64 min-h-screen overflow-y-auto">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/agent/:id" element={<AgentPage />} />
-          </Routes>
+        <main style={{ flex: 1, marginLeft: "260px", minHeight: "100vh", overflowY: "auto" }}>
+          <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "32px" }}>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/agent/:id" element={<AgentPage />} />
+            </Routes>
+          </div>
         </main>
       </div>
     </BrowserRouter>

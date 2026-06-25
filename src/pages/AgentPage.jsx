@@ -7,41 +7,33 @@ const CONVERSATIONS_KEY = (id) => `aura_conversations_${id}`;
 
 function ConversationHistory({ agentId }) {
   const stored = JSON.parse(localStorage.getItem(CONVERSATIONS_KEY(agentId)) || "[]");
-
-  if (stored.length === 0) {
-    return (
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-        <h2 className="font-semibold text-gray-800 text-base mb-4">Historique</h2>
-        <p className="text-gray-400 text-sm text-center py-6">
-          Aucune conversation sauvegardée
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-      <h2 className="font-semibold text-gray-800 text-base mb-4">
-        Historique{" "}
-        <span className="text-gray-400 text-sm font-normal">
-          ({stored.length} conversation{stored.length > 1 ? "s" : ""})
-        </span>
-      </h2>
-      <div className="space-y-3">
-        {stored.map((conv) => (
-          <div
-            key={conv.id}
-            className="border border-gray-100 rounded-xl p-4 hover:border-[#7C3AED]/30 hover:bg-purple-50/30 transition-all cursor-default"
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-400">{conv.date}</span>
-              <span className="text-xs text-gray-400">
-                {conv.messages.length} msg
-              </span>
-            </div>
-            <p className="text-sm text-gray-600 truncate">{conv.preview}</p>
+    <div style={{ background: "white", borderRadius: "16px", border: "1px solid #E8E8F0", boxShadow: "0 2px 8px rgba(30,27,75,0.06)", overflow: "hidden" }}>
+      <div style={{ padding: "16px 20px", borderBottom: "1px solid #F3F4F6", display: "flex", alignItems: "center", gap: "10px" }}>
+        <span style={{ fontSize: "16px" }}>🕒</span>
+        <div style={{ fontWeight: 700, fontSize: "15px", color: "#1E1B4B" }}>Historique</div>
+        {stored.length > 0 && <span style={{ background: "#EDE9FE", color: "#7C3AED", fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "99px", marginLeft: "auto" }}>{stored.length}</span>}
+      </div>
+      <div style={{ padding: "12px 16px" }}>
+        {stored.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "24px 0", color: "#9CA3AF" }}>
+            <div style={{ fontSize: "28px", marginBottom: "8px" }}>💬</div>
+            <div style={{ fontSize: "13px" }}>Aucune conversation sauvegardée</div>
           </div>
-        ))}
+        ) : (
+          stored.map(conv => (
+            <div key={conv.id} style={{ padding: "12px", borderRadius: "10px", border: "1px solid #F3F4F6", marginBottom: "8px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}
+              onMouseEnter={e => e.currentTarget.style.background = "#F8F7FF"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: "11px", color: "#9CA3AF", marginBottom: "3px" }}>{conv.date}</div>
+                <div style={{ fontSize: "13px", color: "#374151", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{conv.preview}</div>
+              </div>
+              <span style={{ fontSize: "11px", color: "#7C3AED", fontWeight: 600, background: "#EDE9FE", padding: "4px 10px", borderRadius: "6px", flexShrink: 0, cursor: "pointer" }}>Voir</span>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
@@ -52,68 +44,42 @@ export default function AgentPage() {
   const navigate = useNavigate();
   const agent = getAgent(id);
 
-  if (!agent) {
-    return (
-      <div className="p-8 text-center">
-        <p className="text-gray-500">Agent introuvable.</p>
-        <button
-          onClick={() => navigate("/")}
-          className="mt-4 text-[#7C3AED] underline text-sm"
-        >
-          Retour au tableau de bord
-        </button>
-      </div>
-    );
-  }
-
-  const colorMap = {
-    violet: "bg-violet-100 text-violet-700",
-    blue: "bg-blue-100 text-blue-700",
-    green: "bg-emerald-100 text-emerald-700",
-    pink: "bg-pink-100 text-pink-700",
-    orange: "bg-orange-100 text-orange-700",
-    cyan: "bg-cyan-100 text-cyan-700",
-    amber: "bg-amber-100 text-amber-700",
-  };
+  if (!agent) return (
+    <div style={{ textAlign: "center", padding: "60px" }}>
+      <div style={{ fontSize: "48px", marginBottom: "16px" }}>🤷</div>
+      <p style={{ color: "#6B7280" }}>Agent introuvable.</p>
+      <button onClick={() => navigate("/")} style={{ marginTop: "16px", color: "#7C3AED", background: "none", border: "none", cursor: "pointer", fontSize: "14px", fontWeight: 600 }}>← Retour</button>
+    </div>
+  );
 
   return (
-    <div className="p-8">
+    <div>
       {/* Header */}
-      <div className="flex items-start gap-5 mb-8">
-        <div
-          className={`w-16 h-16 rounded-2xl flex items-center justify-center text-3xl flex-shrink-0 ${
-            colorMap[agent.color]
-          }`}
-        >
-          {agent.icon}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 mb-1">
-            <button
-              onClick={() => navigate("/")}
-              className="text-gray-400 hover:text-gray-600 text-sm transition-colors"
-            >
-              ← Retour
-            </button>
-            <span className="text-gray-300">|</span>
-            <span className="text-xs text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full font-medium border border-emerald-100">
-              ● Actif
+      <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "28px" }}>
+        <button onClick={() => navigate("/")} style={{ background: "white", border: "1px solid #E8E8F0", borderRadius: "10px", padding: "8px 14px", fontSize: "13px", color: "#6B7280", cursor: "pointer", fontWeight: 500, display: "flex", alignItems: "center", gap: "6px" }}
+          onMouseEnter={e => e.currentTarget.style.color = "#7C3AED"}
+          onMouseLeave={e => e.currentTarget.style.color = "#6B7280"}
+        >← Retour</button>
+
+        <div style={{ width: "52px", height: "52px", borderRadius: "14px", background: `linear-gradient(135deg, ${agent.colorHex}ee, ${agent.colorHex}88)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "26px", flexShrink: 0 }}>{agent.icon}</div>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <h1 style={{ margin: 0, fontSize: "24px", fontWeight: 800, color: "#1E1B4B" }}>{agent.name}</h1>
+            <span style={{ background: "#ECFDF5", color: "#059669", fontSize: "11px", fontWeight: 600, padding: "3px 10px", borderRadius: "99px", border: "1px solid #A7F3D0", display: "flex", alignItems: "center", gap: "4px" }}>
+              <span style={{ width: "5px", height: "5px", background: "#10B981", borderRadius: "50%" }} />
+              Actif
             </span>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">{agent.name}</h1>
-          <p className="text-gray-500 text-sm">{agent.description}</p>
+          <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#6B7280" }}>{agent.role}</p>
         </div>
       </div>
 
       {/* 2-col layout */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {/* Left col */}
-        <div className="flex flex-col gap-6">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", alignItems: "start" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
           <PromptEditor agent={agent} />
           <ConversationHistory agentId={agent.id} />
         </div>
-
-        {/* Right col — Chat */}
         <div>
           <ChatInterface agent={agent} />
         </div>

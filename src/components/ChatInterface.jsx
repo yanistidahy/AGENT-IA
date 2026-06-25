@@ -5,42 +5,41 @@ import { getStoredPrompt } from "./PromptEditor";
 const HISTORY_KEY = (id) => `aura_history_${id}`;
 const CONVERSATIONS_KEY = (id) => `aura_conversations_${id}`;
 
-function TypingIndicator() {
+function formatTime(date) {
+  return new Date(date).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function TypingIndicator({ agentIcon }) {
   return (
-    <div className="flex items-end gap-2 mb-4">
-      <div className="w-8 h-8 rounded-full bg-[#7C3AED] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-        AI
-      </div>
-      <div className="bg-gray-100 rounded-2xl rounded-bl-none px-4 py-3">
-        <div className="flex gap-1 items-center h-4">
-          <span className="typing-dot w-2 h-2 bg-gray-400 rounded-full inline-block"></span>
-          <span className="typing-dot w-2 h-2 bg-gray-400 rounded-full inline-block"></span>
-          <span className="typing-dot w-2 h-2 bg-gray-400 rounded-full inline-block"></span>
+    <div style={{ display: "flex", alignItems: "flex-end", gap: "8px", marginBottom: "16px" }}>
+      <div style={{ width: "30px", height: "30px", borderRadius: "50%", background: "#EDE9FE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", flexShrink: 0 }}>{agentIcon}</div>
+      <div style={{ background: "#F3F4F6", borderRadius: "16px 16px 16px 4px", padding: "12px 16px" }}>
+        <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+          <span className="typing-dot" />
+          <span className="typing-dot" />
+          <span className="typing-dot" />
         </div>
       </div>
     </div>
   );
 }
 
-function Message({ msg }) {
+function Message({ msg, agentIcon }) {
   const isUser = msg.role === "user";
   return (
-    <div className={`flex items-end gap-2 mb-4 ${isUser ? "flex-row-reverse" : ""}`}>
-      <div
-        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-          isUser ? "bg-gray-200 text-gray-600" : "bg-[#7C3AED] text-white"
-        }`}
-      >
-        {isUser ? "Toi" : "AI"}
-      </div>
-      <div
-        className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-          isUser
-            ? "bg-[#7C3AED] text-white rounded-br-none"
-            : "bg-gray-100 text-gray-800 rounded-bl-none"
-        }`}
-      >
-        {msg.content}
+    <div style={{ display: "flex", flexDirection: isUser ? "row-reverse" : "row", alignItems: "flex-end", gap: "8px", marginBottom: "16px" }}>
+      {!isUser && (
+        <div style={{ width: "30px", height: "30px", borderRadius: "50%", background: "#EDE9FE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", flexShrink: 0 }}>{agentIcon}</div>
+      )}
+      <div style={{ maxWidth: "72%", display: "flex", flexDirection: "column", alignItems: isUser ? "flex-end" : "flex-start", gap: "4px" }}>
+        <div style={{
+          background: isUser ? "#7C3AED" : "#F3F4F6",
+          color: isUser ? "white" : "#1E1B4B",
+          borderRadius: isUser ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+          padding: "11px 16px", fontSize: "14px", lineHeight: "1.55",
+          whiteSpace: "pre-wrap", wordBreak: "break-word",
+        }}>{msg.content}</div>
+        <span style={{ fontSize: "11px", color: "#9CA3AF" }}>{formatTime(msg.timestamp || Date.now())}</span>
       </div>
     </div>
   );
@@ -64,41 +63,27 @@ export default function ChatInterface({ agent }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  const saveHistory = (msgs) => {
-    localStorage.setItem(HISTORY_KEY(agent.id), JSON.stringify(msgs));
-  };
+  const saveHistory = (msgs) => localStorage.setItem(HISTORY_KEY(agent.id), JSON.stringify(msgs));
 
   const saveConversation = (msgs) => {
-    if (msgs.length === 0) return;
+    if (!msgs.length) return;
     const stored = JSON.parse(localStorage.getItem(CONVERSATIONS_KEY(agent.id)) || "[]");
-    const newEntry = {
-      id: Date.now(),
-      date: new Date().toLocaleString("fr-FR"),
-      preview: msgs[0]?.content?.slice(0, 80) + "...",
-      messages: msgs,
-    };
-    const updated = [newEntry, ...stored].slice(0, 5);
+    const updated = [{ id: Date.now(), date: new Date().toLocaleString("fr-FR"), preview: msgs[0]?.content?.slice(0, 80) + "...", messages: msgs }, ...stored].slice(0, 5);
     localStorage.setItem(CONVERSATIONS_KEY(agent.id), JSON.stringify(updated));
   };
 
   const handleSend = async () => {
     const text = input.trim();
     if (!text || loading) return;
-
-    const newMessages = [...messages, { role: "user", content: text }];
+    const newMessages = [...messages, { role: "user", content: text, timestamp: Date.now() }];
     setMessages(newMessages);
     setInput("");
     setLoading(true);
     setError("");
-
     try {
       const systemPrompt = getStoredPrompt(agent.id, agent.defaultPrompt);
-      const apiMessages = newMessages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-      const reply = await sendMessage(systemPrompt, apiMessages);
-      const finalMessages = [...newMessages, { role: "assistant", content: reply }];
+      const reply = await sendMessage(systemPrompt, newMessages.map(m => ({ role: m.role, content: m.content })));
+      const finalMessages = [...newMessages, { role: "assistant", content: reply, timestamp: Date.now() }];
       setMessages(finalMessages);
       saveHistory(finalMessages);
     } catch (err) {
@@ -117,46 +102,42 @@ export default function ChatInterface({ agent }) {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col" style={{ height: "560px" }}>
+    <div style={{ background: "white", borderRadius: "16px", border: "1px solid #E8E8F0", boxShadow: "0 2px 8px rgba(30,27,75,0.06)", display: "flex", flexDirection: "column", height: "580px" }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">{agent.icon}</span>
-          <h2 className="font-semibold text-gray-800 text-base">Chat</h2>
-          {messages.length > 0 && (
-            <span className="text-xs text-gray-400">({messages.length} messages)</span>
-          )}
+      <div style={{ padding: "16px 20px", borderBottom: "1px solid #F3F4F6", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: `${agent.colorHex}22`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" }}>{agent.icon}</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: "15px", color: "#1E1B4B" }}>{agent.name}</div>
+            <div style={{ fontSize: "12px", color: "#10B981", display: "flex", alignItems: "center", gap: "4px" }}>
+              <span style={{ width: "6px", height: "6px", background: "#10B981", borderRadius: "50%", display: "inline-block" }} />
+              En ligne
+            </div>
+          </div>
         </div>
-        <button
-          onClick={handleNewConversation}
-          className="text-xs text-gray-500 hover:text-[#7C3AED] transition-colors bg-gray-50 hover:bg-purple-50 px-3 py-1.5 rounded-lg"
-        >
-          + Nouvelle conversation
-        </button>
+        <button onClick={handleNewConversation} style={{ background: "#F8F7FF", border: "1px solid #E8E8F0", borderRadius: "8px", padding: "7px 14px", fontSize: "12px", fontWeight: 500, color: "#6B7280", cursor: "pointer" }}
+          onMouseEnter={e => { e.currentTarget.style.background = "#EDE9FE"; e.currentTarget.style.color = "#7C3AED"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "#F8F7FF"; e.currentTarget.style.color = "#6B7280"; }}
+        >+ Nouvelle</button>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
         {messages.length === 0 && !loading && (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="text-4xl mb-3">{agent.icon}</div>
-            <p className="text-gray-500 text-sm font-medium">{agent.name} est prêt</p>
-            <p className="text-gray-400 text-xs mt-1">Posez votre première question...</p>
+          <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", color: "#9CA3AF" }}>
+            <div style={{ fontSize: "40px" }}>{agent.icon}</div>
+            <div style={{ fontWeight: 600, color: "#6B7280", fontSize: "14px" }}>{agent.name} est prêt</div>
+            <div style={{ fontSize: "13px" }}>Posez votre première question...</div>
           </div>
         )}
-        {messages.map((msg, i) => (
-          <Message key={i} msg={msg} />
-        ))}
-        {loading && <TypingIndicator />}
+        {messages.map((msg, i) => <Message key={i} msg={msg} agentIcon={agent.icon} />)}
+        {loading && <TypingIndicator agentIcon={agent.icon} />}
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3 mb-3">
+          <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", borderRadius: "10px", padding: "12px 16px", fontSize: "13px", marginBottom: "12px" }}>
             ⚠️ {error}
           </div>
         )}
@@ -164,27 +145,38 @@ export default function ChatInterface({ agent }) {
       </div>
 
       {/* Input */}
-      <div className="px-6 py-4 border-t border-gray-100">
-        <div className="flex gap-3 items-end">
+      <div style={{ padding: "14px 16px", borderTop: "1px solid #F3F4F6" }}>
+        <div style={{ display: "flex", gap: "10px", alignItems: "flex-end" }}>
           <textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            rows={1}
             placeholder={`Message à ${agent.name}...`}
-            className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/30 focus:border-[#7C3AED] resize-none transition max-h-32 overflow-y-auto"
-            style={{ minHeight: "44px" }}
+            rows={1}
+            style={{
+              flex: 1, background: "#F8F7FF", border: "1px solid #E8E8F0", borderRadius: "10px",
+              padding: "11px 14px", fontSize: "14px", color: "#1E1B4B", fontFamily: "inherit",
+              outline: "none", maxHeight: "80px", overflowY: "auto", lineHeight: "1.5",
+            }}
+            onFocus={e => e.currentTarget.style.borderColor = "#7C3AED"}
+            onBlur={e => e.currentTarget.style.borderColor = "#E8E8F0"}
           />
           <button
             onClick={handleSend}
             disabled={!input.trim() || loading}
-            className="bg-[#7C3AED] hover:bg-[#6D28D9] disabled:bg-gray-200 disabled:cursor-not-allowed text-white px-5 py-3 rounded-xl text-sm font-medium transition-colors flex-shrink-0"
+            style={{
+              background: input.trim() && !loading ? "#7C3AED" : "#E8E8F0",
+              color: input.trim() && !loading ? "white" : "#9CA3AF",
+              border: "none", borderRadius: "10px", padding: "11px 18px",
+              fontSize: "13px", fontWeight: 600, cursor: input.trim() && !loading ? "pointer" : "not-allowed",
+              flexShrink: 0,
+            }}
           >
-            {loading ? "..." : "Envoyer"}
+            {loading ? "..." : "↑ Envoyer"}
           </button>
         </div>
-        <p className="text-xs text-gray-400 mt-2">Entrée pour envoyer · Maj+Entrée pour nouvelle ligne</p>
+        <div style={{ fontSize: "11px", color: "#9CA3AF", marginTop: "6px", paddingLeft: "2px" }}>Entrée pour envoyer · Maj+Entrée pour saut de ligne</div>
       </div>
     </div>
   );
