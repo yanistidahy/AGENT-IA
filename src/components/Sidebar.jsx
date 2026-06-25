@@ -1,58 +1,92 @@
 import { NavLink } from "react-router-dom";
 import { agents } from "../agents/agentsConfig";
+import {
+  LayoutDashboard, Brain, Target, TrendingUp, Pencil, Scale, Search, Calculator, Plug,
+} from "lucide-react";
+
+const ICON_MAP = {
+  brain: Brain,
+  target: Target,
+  "trending-up": TrendingUp,
+  pencil: Pencil,
+  scale: Scale,
+  search: Search,
+  calculator: Calculator,
+};
 
 export default function Sidebar() {
   return (
     <aside style={{
-      position: "fixed", left: 0, top: 0, width: "260px", height: "100vh",
+      position: "fixed", left: 0, top: 0, width: "220px", height: "100vh",
       background: "#1E1B4B", display: "flex", flexDirection: "column",
       zIndex: 50, boxShadow: "4px 0 24px rgba(0,0,0,0.18)",
     }}>
+      {/* Logo */}
       <div style={{
-        padding: "24px 20px 20px", borderBottom: "1px solid rgba(255,255,255,0.08)",
-        display: "flex", alignItems: "center", gap: "12px",
+        padding: "20px 16px 16px", borderBottom: "1px solid rgba(255,255,255,0.07)",
+        display: "flex", alignItems: "center", gap: "10px",
       }}>
         <div style={{
-          width: "38px", height: "38px", background: "#7C3AED", borderRadius: "10px",
+          width: "34px", height: "34px", background: "#7C3AED", borderRadius: "9px",
           display: "flex", alignItems: "center", justifyContent: "center",
-          color: "white", fontWeight: 800, fontSize: "17px", flexShrink: 0,
+          color: "white", fontWeight: 800, fontSize: "15px", flexShrink: 0,
           boxShadow: "0 4px 12px rgba(124,58,237,0.4)",
         }}>A</div>
         <div>
-          <div style={{ color: "white", fontWeight: 700, fontSize: "16px", lineHeight: 1.2 }}>Aura Flow AI</div>
-          <div style={{ color: "#A5B4FC", fontSize: "11px", marginTop: "2px" }}>Dashboard IA</div>
+          <div style={{ color: "white", fontWeight: 700, fontSize: "14px", lineHeight: 1.2 }}>Aura Flow AI</div>
+          <div style={{ color: "#A5B4FC", fontSize: "10px", marginTop: "1px" }}>Dashboard IA</div>
         </div>
       </div>
 
-      <nav style={{ flex: 1, overflowY: "auto", padding: "12px" }}>
-        <SidebarLink to="/" icon="🏠" label="Tableau de bord" end />
+      {/* Nav */}
+      <nav style={{ flex: 1, overflowY: "auto", padding: "10px 10px" }}>
+        <SidebarLink to="/" Icon={LayoutDashboard} label="Tableau de bord" end />
+        <SidebarLink to="/connections" Icon={Plug} label="Connexions" />
+
         <div style={{
-          color: "#6366F1", fontSize: "10px", fontWeight: 700,
-          letterSpacing: "0.1em", textTransform: "uppercase", padding: "16px 8px 8px",
-        }}>Mes Agents</div>
-        {agents.map(agent => (
-          <SidebarLink key={agent.id} to={`/agent/${agent.id}`} icon={agent.icon} label={agent.name} />
-        ))}
+          color: "#6366F1", fontSize: "9px", fontWeight: 700,
+          letterSpacing: "0.12em", textTransform: "uppercase", padding: "14px 8px 6px",
+        }}>Agents IA</div>
+
+        {agents.map(agent => {
+          const Icon = ICON_MAP[agent.icon] || Brain;
+          return (
+            <SidebarLink key={agent.id} to={`/agent/${agent.id}`} Icon={Icon} label={agent.name} color={agent.colorHex} />
+          );
+        })}
       </nav>
 
-      <div style={{ padding: "16px 20px", borderTop: "1px solid rgba(255,255,255,0.08)", color: "#6366F1", fontSize: "11px" }}>
-        © 2025 Aura Flow AI
+      {/* Footer */}
+      <div style={{
+        padding: "12px 14px", borderTop: "1px solid rgba(255,255,255,0.07)",
+        display: "flex", alignItems: "center", gap: "10px",
+      }}>
+        <div style={{
+          width: "30px", height: "30px", borderRadius: "50%", background: "#7C3AED",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "white", fontWeight: 700, fontSize: "12px", flexShrink: 0,
+        }}>H</div>
+        <div>
+          <div style={{ color: "white", fontSize: "12px", fontWeight: 600 }}>Housni</div>
+          <div style={{ color: "#6366F1", fontSize: "10px" }}>Admin</div>
+        </div>
       </div>
     </aside>
   );
 }
 
-function SidebarLink({ to, icon, label, end }) {
+function SidebarLink({ to, Icon, label, end, color }) {
   return (
     <NavLink to={to} end={end} style={({ isActive }) => ({
-      display: "flex", alignItems: "center", gap: "10px",
-      padding: "10px 12px", borderRadius: "10px", marginBottom: "2px",
-      textDecoration: "none", fontSize: "14px", fontWeight: 500,
-      background: isActive ? "#7C3AED" : "transparent",
+      display: "flex", alignItems: "center", gap: "9px",
+      padding: "9px 10px", borderRadius: "9px", marginBottom: "2px",
+      textDecoration: "none", fontSize: "13px", fontWeight: 500,
+      background: isActive ? "rgba(124,58,237,0.25)" : "transparent",
       color: isActive ? "white" : "#C4B5FD",
+      borderLeft: isActive ? `3px solid ${color || "#7C3AED"}` : "3px solid transparent",
     })}>
-      <span style={{ fontSize: "16px", width: "20px", textAlign: "center", flexShrink: 0 }}>{icon}</span>
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+      {Icon && <Icon size={15} style={{ flexShrink: 0 }} />}
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "13px" }}>{label}</span>
     </NavLink>
   );
 }
