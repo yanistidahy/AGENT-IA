@@ -1,1 +1,1 @@
-web: serve dist -s -l $PORT
+web: node server.js
