@@ -1,23 +1,32 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import TopNav from "./components/TopNav";
-import Dashboard from "./pages/Dashboard";
-import AgentPage from "./pages/AgentPage";
-import ConnectionsPage from "./pages/ConnectionsPage";
+import Sidebar from "./components/Sidebar";
+import Home from "./pages/Home";
+import AssistantsPage from "./pages/AssistantsPage";
+import ConversationPage from "./pages/ConversationPage";
+import SuperPouvoirs from "./pages/SuperPouvoirs";
+import Integrations from "./pages/Integrations";
+import Documents from "./pages/Documents";
+import Parametres from "./pages/Parametres";
 import "./index.css";
 
-function App() {
+export default function App() {
   return (
     <BrowserRouter>
-      <div style={{ minHeight: "100vh", background: "#F5F2EE" }}>
-        <TopNav />
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/agent/:id" element={<AgentPage />} />
-          <Route path="/connections" element={<ConnectionsPage />} />
-        </Routes>
+      <div style={{ display: "flex", minHeight: "100vh", background: "#FFFFFF" }}>
+        <Sidebar />
+        <main style={{ flex: 1, marginLeft: "280px", minHeight: "100vh", overflowY: "auto" }}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/assistants" element={<AssistantsPage tab="assistants" />} />
+            <Route path="/assistants/historique" element={<AssistantsPage tab="historique" />} />
+            <Route path="/conversation/:agentId" element={<ConversationPage />} />
+            <Route path="/super-pouvoirs" element={<SuperPouvoirs />} />
+            <Route path="/integrations" element={<Integrations />} />
+            <Route path="/documents" element={<Documents />} />
+            <Route path="/parametres" element={<Parametres />} />
+          </Routes>
+        </main>
       </div>
     </BrowserRouter>
   );
 }
-
-export default App;
