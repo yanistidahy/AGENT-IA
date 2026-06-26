@@ -1,108 +1,167 @@
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { agents } from "../agents/agentsConfig";
-import { Bot, CheckCircle, Clock, Wifi, WifiOff, AlertCircle } from "lucide-react";
 
-function StatusBadge({ status }) {
-  if (status === "connected") return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: "3px", background: "#ECFDF5", color: "#059669", fontSize: "10px", fontWeight: 600, padding: "2px 7px", borderRadius: "99px", border: "1px solid #A7F3D0" }}>
-      <Wifi size={9} /> Connecté
-    </span>
-  );
-  if (status === "pending") return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: "3px", background: "#FFF7ED", color: "#D97706", fontSize: "10px", fontWeight: 600, padding: "2px 7px", borderRadius: "99px", border: "1px solid #FED7AA" }}>
-      <AlertCircle size={9} /> En attente
-    </span>
-  );
+function AgentAvatar({ agent, size = 56, onClick, showName = false }) {
+  const [hovered, setHovered] = useState(false);
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: "3px", background: "#F3F4F6", color: "#6B7280", fontSize: "10px", fontWeight: 600, padding: "2px 7px", borderRadius: "99px" }}>
-      <WifiOff size={9} /> Déconnecté
-    </span>
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", cursor: onClick ? "pointer" : "default", position: "relative" }}
+    >
+      <div style={{
+        width: size, height: size, borderRadius: "50%",
+        background: hovered ? agent.colorHex : agent.bgHex,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: size * 0.42, transition: "all 180ms ease",
+        transform: hovered ? "scale(1.08)" : "scale(1)",
+        border: `2px solid ${hovered ? agent.colorHex : "transparent"}`,
+      }}>
+        {agent.emoji}
+      </div>
+      {(showName || hovered) && (
+        <span style={{
+          fontSize: "11px", fontWeight: 500, color: "#1A1A1A",
+          whiteSpace: "nowrap", opacity: hovered || showName ? 1 : 0,
+          transition: "opacity 150ms",
+        }}>{agent.name}</span>
+      )}
+    </div>
   );
 }
 
 function AgentCard({ agent }) {
   const navigate = useNavigate();
+  const [hovered, setHovered] = useState(false);
+
   return (
     <div
       onClick={() => navigate(`/agent/${agent.id}`)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
-        background: "white", borderRadius: "16px", border: "1px solid #E8E8F0",
-        overflow: "hidden", cursor: "pointer", transition: "transform 150ms, box-shadow 150ms",
-        boxShadow: "0 2px 8px rgba(30,27,75,0.05)",
+        background: hovered ? "#fff" : "rgba(255,255,255,0.7)",
+        borderRadius: "16px",
+        border: `1px solid ${hovered ? agent.colorHex + "40" : "rgba(26,26,26,0.08)"}`,
+        padding: "24px 20px 20px",
+        cursor: "pointer",
+        transition: "all 200ms ease",
+        transform: hovered ? "translateY(-2px)" : "translateY(0)",
+        position: "relative", overflow: "hidden",
       }}
-      onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 8px 28px rgba(30,27,75,0.12)"; }}
-      onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 2px 8px rgba(30,27,75,0.05)"; }}
     >
-      <div style={{ height: "6px", background: `linear-gradient(90deg, ${agent.colorHex}, ${agent.colorHex}88)` }} />
-      <div style={{ padding: "16px" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
-          <div style={{
-            width: "40px", height: "40px", borderRadius: "12px", flexShrink: 0,
-            background: `${agent.colorHex}18`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: "20px",
-          }}>{agent.emoji}</div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: "14px", color: "#1E1B4B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{agent.name}</div>
-            <div style={{ fontSize: "11px", color: "#6B7280", marginTop: "2px", lineHeight: 1.4 }}>{agent.role}</div>
-          </div>
-        </div>
+      {/* Number */}
+      <div style={{
+        position: "absolute", top: "16px", left: "18px",
+        fontSize: "11px", fontWeight: 600, color: "#999", letterSpacing: "0.05em",
+        fontFamily: "'Playfair Display', Georgia, serif",
+      }}>{agent.number}</div>
 
-        {agent.connections.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-            {agent.connections.map(c => (
-              <span key={c.name} style={{ display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "10px", fontWeight: 500, padding: "2px 6px", borderRadius: "6px", background: c.status === "connected" ? "#ECFDF5" : "#FFF7ED", color: c.status === "connected" ? "#059669" : "#D97706" }}>
-                {c.status === "connected" ? <Wifi size={8} /> : <AlertCircle size={8} />} {c.name}
-              </span>
-            ))}
-          </div>
-        )}
+      {/* Status badge */}
+      <div style={{ position: "absolute", top: "14px", right: "14px", display: "flex", alignItems: "center", gap: "4px" }}>
+        <span style={{ width: "5px", height: "5px", background: "#22C55E", borderRadius: "50%" }} />
+        <span style={{ fontSize: "10px", color: "#666", fontWeight: 500 }}>En ligne</span>
+      </div>
 
-        <div style={{ marginTop: "12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", background: "#ECFDF5", color: "#059669", fontSize: "10px", fontWeight: 600, padding: "3px 8px", borderRadius: "99px", border: "1px solid #A7F3D0" }}>
-            <span style={{ width: "5px", height: "5px", background: "#10B981", borderRadius: "50%" }} /> Actif
-          </span>
-          <span style={{ fontSize: "11px", color: "#7C3AED", fontWeight: 600 }}>Ouvrir →</span>
-        </div>
+      {/* Avatar */}
+      <div style={{ display: "flex", justifyContent: "center", marginTop: "8px", marginBottom: "16px" }}>
+        <div style={{
+          width: "72px", height: "72px", borderRadius: "50%",
+          background: hovered ? agent.colorHex : agent.bgHex,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: "34px", transition: "all 200ms ease",
+        }}>{agent.emoji}</div>
+      </div>
+
+      {/* Name */}
+      <div style={{
+        fontFamily: "'Playfair Display', Georgia, serif",
+        fontSize: "20px", fontWeight: 700, color: "#1A1A1A",
+        textAlign: "center", marginBottom: "4px",
+      }}>{agent.name}</div>
+
+      {/* Role label */}
+      <div style={{
+        fontSize: "9px", fontWeight: 700, color: "#999",
+        letterSpacing: "0.12em", textTransform: "uppercase",
+        textAlign: "center", marginBottom: "10px",
+      }}>{agent.roleLabel}</div>
+
+      {/* Description */}
+      <p style={{
+        fontSize: "12px", color: "#666", lineHeight: "1.55",
+        textAlign: "center", margin: "0 0 16px", minHeight: "36px",
+      }}>{agent.tagline}</p>
+
+      {/* Stats */}
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        padding: "10px 0 0", borderTop: "1px solid rgba(26,26,26,0.06)",
+        gap: "4px",
+      }}>
+        {[
+          { label: "livrables", value: agent.stats.livrables },
+          { label: "tokens", value: agent.stats.tokens },
+          { label: "succès", value: agent.stats.succes },
+        ].map((s, i) => (
+          <div key={i} style={{ textAlign: "center", flex: 1 }}>
+            <div style={{ fontSize: "13px", fontWeight: 700, color: agent.colorHex }}>{s.value}</div>
+            <div style={{ fontSize: "9px", color: "#999", textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.label}</div>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
 export default function Dashboard() {
-  const today = new Date().toLocaleDateString("fr-FR", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-
-  const stats = [
-    { Icon: Bot, value: "7", label: "Agents déployés", color: "#7C3AED", bg: "#EDE9FE" },
-    { Icon: CheckCircle, value: "7", label: "Agents actifs", color: "#059669", bg: "#ECFDF5" },
-    { Icon: Clock, value: "24/7", label: "Disponibilité", color: "#0891B2", bg: "#E0F2FE" },
-  ];
+  const navigate = useNavigate();
 
   return (
-    <div style={{ padding: "32px" }}>
-      <div style={{ marginBottom: "24px" }}>
-        <div style={{ fontSize: "12px", color: "#7C3AED", fontWeight: 600, textTransform: "capitalize", marginBottom: "4px" }}>{today}</div>
-        <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 800, color: "#1E1B4B", letterSpacing: "-0.5px" }}>Tableau de bord</h1>
-        <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#6B7280" }}>Gérez et interagissez avec vos agents intelligents</p>
+    <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "60px 40px 80px" }}>
+
+      {/* Editorial header */}
+      <div style={{ textAlign: "center", marginBottom: "56px" }}>
+        <p style={{
+          fontFamily: "'Playfair Display', Georgia, serif",
+          fontSize: "13px", fontStyle: "italic", color: "#999",
+          margin: "0 0 16px", letterSpacing: "0.03em",
+        }}>Un studio. Sept agents. Une équipe qui ne dort jamais.</p>
+        <h1 style={{
+          fontFamily: "'Playfair Display', Georgia, serif",
+          fontSize: "clamp(28px, 5vw, 42px)", fontWeight: 800, color: "#1A1A1A",
+          margin: 0, lineHeight: 1.2, letterSpacing: "-1px",
+        }}>Votre équipe IA<br /><span style={{ fontStyle: "italic", fontWeight: 400 }}>est prête à travailler.</span></h1>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "14px", marginBottom: "24px" }}>
-        {stats.map((s, i) => (
-          <div key={i} style={{ background: "white", borderRadius: "14px", border: "1px solid #E8E8F0", padding: "18px 20px", display: "flex", alignItems: "center", gap: "14px", boxShadow: "0 2px 8px rgba(30,27,75,0.05)" }}>
-            <div style={{ width: "40px", height: "40px", borderRadius: "11px", background: s.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <s.Icon size={20} color={s.color} />
-            </div>
-            <div>
-              <div style={{ fontSize: "24px", fontWeight: 800, color: s.color, lineHeight: 1 }}>{s.value}</div>
-              <div style={{ fontSize: "12px", color: "#6B7280", marginTop: "2px" }}>{s.label}</div>
-            </div>
-          </div>
+      {/* Avatar row */}
+      <div style={{
+        display: "flex", justifyContent: "center", alignItems: "flex-end",
+        gap: "20px", marginBottom: "56px", flexWrap: "wrap",
+      }}>
+        {agents.map(agent => (
+          <AgentAvatar
+            key={agent.id}
+            agent={agent}
+            size={52}
+            onClick={() => navigate(`/agent/${agent.id}`)}
+          />
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "16px" }}>
-        {agents.map(agent => <AgentCard key={agent.id} agent={agent} />)}
+      {/* Agents grid */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+        gap: "16px",
+      }}>
+        {agents.map(agent => (
+          <AgentCard key={agent.id} agent={agent} />
+        ))}
       </div>
+
     </div>
   );
 }

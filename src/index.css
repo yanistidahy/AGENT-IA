@@ -7,35 +7,53 @@
 
 body {
   margin: 0;
-  background: #F8F7FF;
-  color: #1E1B4B;
+  background: #F5F2EE;
+  color: #1A1A1A;
   -webkit-font-smoothing: antialiased;
 }
 
+.font-serif {
+  font-family: 'Playfair Display', Georgia, serif !important;
+}
+
 /* Scrollbar */
-::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #C4B5FD; border-radius: 99px; }
+::-webkit-scrollbar-thumb { background: #D4CFC9; border-radius: 99px; }
 
 /* Typing indicator */
 @keyframes typingBounce {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-  30% { transform: translateY(-5px); opacity: 1; }
+  30% { transform: translateY(-4px); opacity: 1; }
 }
 .typing-dot {
   animation: typingBounce 1.2s infinite;
   display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: #9CA3AF;
+  background: #999;
 }
 .typing-dot:nth-child(2) { animation-delay: 0.15s; }
 .typing-dot:nth-child(3) { animation-delay: 0.3s; }
 
-/* Textarea auto-resize helper */
+/* Progress bar animation */
+@keyframes progressFill {
+  from { width: 0%; }
+  to { width: var(--tw-progress, 80%); }
+}
+
+/* Fade in */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fadeInUp 0.3s ease forwards; }
+
 textarea { resize: none; }
 
-/* Smooth transitions */
-* { transition-property: color, background-color, border-color, box-shadow, opacity, transform;
-    transition-duration: 150ms; transition-timing-function: ease; }
+* {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
