@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom"
 import { getAgent, agents } from "../agents/agentsConfig";
 import { sendMessage } from "../api/claude";
 import AgentAvatar from "../components/AgentAvatar";
+import NovaComptesClient from "../components/NovaComptesClient";
 import { ArrowLeft, ChevronDown, Lock, Paperclip, Mic, ArrowUp } from "lucide-react";
 
 const STORAGE_KEY = (id) => `aura_prompt_${id}`;
@@ -117,8 +118,12 @@ export default function ConversationPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState("chat");
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+
+  const isNova = agentId === "nova";
+  const novaTabs = ["chat", "comptes", "suivi", "historique"];
 
   useEffect(() => {
     if (!agent) return;
@@ -204,13 +209,33 @@ export default function ConversationPage() {
     inputRef.current?.focus();
   };
 
+  const handleNovaGenerate = (prompt) => {
+    setActiveTab("chat");
+    setInput(prompt);
+    setTimeout(() => {
+      const newMsgs = [...messages, { role: "user", content: prompt, timestamp: Date.now() }];
+      setMessages(newMsgs);
+      setInput("");
+      setLoading(true);
+      setError("");
+      sendMessage(getStoredPrompt(agent.id, agent.defaultPrompt), newMsgs.map(m => ({ role: m.role, content: m.content })))
+        .then(reply => {
+          const final = [...newMsgs, { role: "assistant", content: reply, timestamp: Date.now() }];
+          setMessages(final);
+          saveHistory(final);
+        })
+        .catch(err => setError(err.message))
+        .finally(() => setLoading(false));
+    }, 50);
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#FFFFFF" }}>
 
       {/* ── HEADER ── */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "0 24px", height: "56px", borderBottom: "1px solid #F0F0F0",
+        padding: "0 24px", height: "56px", borderBottom: isNova ? "none" : "1px solid #F0F0F0",
         flexShrink: 0,
       }}>
         {/* Left */}
@@ -248,7 +273,50 @@ export default function ConversationPage() {
         </div>
       </div>
 
+      {/* ── NOVA TABS ── */}
+      {isNova && (
+        <div style={{ display: "flex", borderBottom: "1px solid #F0F0F0", padding: "0 24px", flexShrink: 0 }}>
+          {[
+            { key: "chat", label: "Chat" },
+            { key: "comptes", label: "Comptes cibles" },
+            { key: "suivi", label: "Suivi" },
+            { key: "historique", label: "Historique" },
+          ].map(t => (
+            <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+              background: "none", border: "none", cursor: "pointer",
+              padding: "12px 16px 10px", fontSize: "13px",
+              fontWeight: activeTab === t.key ? 600 : 400,
+              color: activeTab === t.key ? "#059669" : "#888",
+              borderBottom: activeTab === t.key ? "2px solid #059669" : "2px solid transparent",
+              marginBottom: "-1px",
+            }}>{t.label}</button>
+          ))}
+        </div>
+      )}
+
+      {/* ── NOVA COMPTES TAB ── */}
+      {isNova && activeTab === "comptes" && (
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          <NovaComptesClient onGenerate={handleNovaGenerate} />
+        </div>
+      )}
+
+      {/* ── NOVA SUIVI TAB ── */}
+      {isNova && activeTab === "suivi" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "32px" }}>
+          <NovaSuiviInline />
+        </div>
+      )}
+
+      {/* ── NOVA HISTORIQUE TAB ── */}
+      {isNova && activeTab === "historique" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "32px" }}>
+          <NovaHistoriqueInline agentId="nova" />
+        </div>
+      )}
+
       {/* ── MESSAGES ZONE ── */}
+      {(!isNova || activeTab === "chat") && (
       <div style={{ flex: 1, overflowY: "auto", padding: "32px 0" }}>
         <div style={{ maxWidth: "760px", margin: "0 auto", padding: "0 24px" }}>
 
@@ -313,8 +381,10 @@ export default function ConversationPage() {
           <div ref={bottomRef} />
         </div>
       </div>
+      )}
 
-      {/* ── INPUT BAR ── */}
+      {/* ── INPUT BAR (chat tab only) ── */}
+      {(!isNova || activeTab === "chat") && (
       <div style={{ borderTop: "1px solid #F0F0F0", padding: "16px 24px 20px", flexShrink: 0 }}>
         <div style={{ maxWidth: "760px", margin: "0 auto" }}>
           <div style={{ background: "#F5F5F5", borderRadius: "14px", padding: "4px 8px 8px" }}>
@@ -354,6 +424,149 @@ export default function ConversationPage() {
             </div>
           </div>
         </div>
+      </div>
+      )}
+    </div>
+  );
+}
+
+/* ── NOVA SUIVI INLINE ──────────────────────────────────────────────────── */
+function NovaSuiviInline() {
+  const [stats, setStats] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("nova_suivi_stats") || "{}"); } catch { return {}; }
+  });
+  const [abonnesGagnes, setAbonnesGagnes] = useState(stats.abonnesGagnes || 0);
+
+  const rapports = (() => {
+    try {
+      const convos = JSON.parse(localStorage.getItem("aura_conversations_nova") || "[]");
+      return convos.slice(0, 30);
+    } catch { return []; }
+  })();
+
+  const totalProspects = rapports.length * 100;
+  const objectif = 400;
+  const pct = Math.min(Math.round((abonnesGagnes / objectif) * 100), 100);
+
+  const save = () => {
+    localStorage.setItem("nova_suivi_stats", JSON.stringify({ abonnesGagnes }));
+  };
+
+  return (
+    <div style={{ maxWidth: "800px" }}>
+      <h2 style={{ margin: "0 0 24px", fontSize: "16px", fontWeight: 700, color: "#1A1A1A" }}>Tableau de bord — Croissance Instagram</h2>
+
+      {/* Stats grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px", marginBottom: "28px" }}>
+        {[
+          { label: "Rapports générés", value: rapports.length, unit: "ce mois" },
+          { label: "Prospects générés", value: totalProspects.toLocaleString(), unit: "estimés" },
+          { label: "Abonnés gagnés", value: abonnesGagnes, unit: `/ ${objectif} objectif`, editable: true },
+          { label: "Taux d'avancement", value: `${pct}%`, unit: "de l'objectif mensuel" },
+        ].map((s, i) => (
+          <div key={i} style={{ background: "#F9F9F9", borderRadius: "12px", padding: "18px 16px" }}>
+            <div style={{ fontSize: "11px", color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>{s.label}</div>
+            {s.editable ? (
+              <input
+                type="number"
+                value={abonnesGagnes}
+                onChange={e => setAbonnesGagnes(Number(e.target.value))}
+                onBlur={save}
+                style={{ fontSize: "22px", fontWeight: 800, color: "#059669", border: "none", background: "transparent", width: "100%", outline: "none", fontFamily: "inherit" }}
+              />
+            ) : (
+              <div style={{ fontSize: "22px", fontWeight: 800, color: "#059669" }}>{s.value}</div>
+            )}
+            <div style={{ fontSize: "11px", color: "#AAA", marginTop: "2px" }}>{s.unit}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ marginBottom: "28px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "#888", marginBottom: "6px" }}>
+          <span>Progression vers l'objectif mensuel ({objectif} abonnés)</span>
+          <span style={{ fontWeight: 600, color: "#059669" }}>{pct}%</span>
+        </div>
+        <div style={{ height: "8px", background: "#F0F0F0", borderRadius: "4px", overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${pct}%`, background: "#059669", borderRadius: "4px", transition: "width 400ms" }} />
+        </div>
+      </div>
+
+      {/* Plan Crescendo recap */}
+      <div style={{ background: "#F0FDF4", border: "1px solid #A7F3D0", borderRadius: "12px", padding: "16px 18px", marginBottom: "28px" }}>
+        <div style={{ fontSize: "12px", fontWeight: 700, color: "#059669", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "10px" }}>Plan Crescendo — Référentiel d'actions</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "8px" }}>
+          {[
+            { sem: "S1", f: 20, l: 40, s: 20 },
+            { sem: "S2", f: 25, l: 50, s: 25 },
+            { sem: "S3", f: 30, l: 60, s: 30 },
+            { sem: "S4", f: 35, l: 70, s: 35 },
+            { sem: "S5+", f: 40, l: 80, s: 40 },
+          ].map((q, i) => (
+            <div key={i} style={{ background: "rgba(5,150,105,0.08)", borderRadius: "8px", padding: "8px", textAlign: "center" }}>
+              <div style={{ fontSize: "10px", fontWeight: 700, color: "#059669", marginBottom: "4px" }}>{q.sem}</div>
+              <div style={{ fontSize: "10px", color: "#666", lineHeight: "1.6" }}>
+                {q.f}F / {q.l}L<br />{q.s} stories
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Recent reports */}
+      <div>
+        <div style={{ fontSize: "13px", fontWeight: 700, color: "#1A1A1A", marginBottom: "12px" }}>Derniers rapports générés</div>
+        {rapports.length === 0 ? (
+          <div style={{ background: "#F9F9F9", borderRadius: "12px", padding: "32px", textAlign: "center", color: "#888", fontSize: "13px" }}>
+            Aucun rapport généré — utilisez l'onglet <strong>Comptes cibles</strong> pour démarrer
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {rapports.map((r, i) => (
+              <div key={i} style={{ background: "#F9F9F9", borderRadius: "10px", padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontSize: "13px", fontWeight: 600, color: "#1A1A1A" }}>Rapport #{rapports.length - i}</div>
+                  <div style={{ fontSize: "11px", color: "#888", marginTop: "2px" }}>{r.date}</div>
+                </div>
+                <span style={{ fontSize: "11px", background: "#D1FAE5", color: "#059669", padding: "3px 10px", borderRadius: "99px", fontWeight: 600 }}>100 prospects</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── NOVA HISTORIQUE INLINE ─────────────────────────────────────────────── */
+function NovaHistoriqueInline({ agentId }) {
+  const convos = (() => {
+    try { return JSON.parse(localStorage.getItem(`aura_conversations_${agentId}`) || "[]"); } catch { return []; }
+  })();
+
+  if (convos.length === 0) return (
+    <div style={{ maxWidth: "800px" }}>
+      <h2 style={{ margin: "0 0 24px", fontSize: "16px", fontWeight: 700, color: "#1A1A1A" }}>Historique des conversations</h2>
+      <div style={{ background: "#F9F9F9", borderRadius: "12px", padding: "48px", textAlign: "center", color: "#888", fontSize: "13px" }}>
+        Aucune conversation sauvegardée
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: "800px" }}>
+      <h2 style={{ margin: "0 0 24px", fontSize: "16px", fontWeight: 700, color: "#1A1A1A" }}>Historique des conversations</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        {convos.map((c, i) => (
+          <div key={i} style={{ background: "#F9F9F9", borderRadius: "10px", padding: "14px 16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#1A1A1A" }}>Conversation #{convos.length - i}</span>
+              <span style={{ fontSize: "11px", color: "#AAA" }}>{c.date}</span>
+            </div>
+            <div style={{ fontSize: "12px", color: "#666", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.preview}...</div>
+          </div>
+        ))}
       </div>
     </div>
   );
