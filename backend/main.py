@@ -5,7 +5,6 @@ from typing import List, Optional
 import os
 import smtplib
 import ssl
-import uvicorn
 
 from instagram import scrape_followers, validate_instagram_account
 
@@ -121,6 +120,3 @@ async def scrape(data: ScrapeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
