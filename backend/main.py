@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import os
+import smtplib
+import ssl
 
 from instagram import scrape_followers, validate_instagram_account
 
@@ -46,9 +48,36 @@ class ValidateRequest(BaseModel):
     password: str
 
 
+class SmtpTestRequest(BaseModel):
+    host: str
+    port: int = 587
+    email: str
+    password: str
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "Nova Instagram Scraper"}
+
+
+@app.post("/api/test-smtp")
+async def test_smtp(data: SmtpTestRequest):
+    try:
+        context = ssl.create_default_context()
+        with smtplib.SMTP(data.host, data.port, timeout=10) as server:
+            server.ehlo()
+            server.starttls(context=context)
+            server.ehlo()
+            server.login(data.email, data.password)
+        return {"success": True, "email": data.email}
+    except smtplib.SMTPAuthenticationError:
+        return {"success": False, "error": "Identifiants incorrects — vérifiez l'email et le mot de passe."}
+    except smtplib.SMTPConnectError:
+        return {"success": False, "error": f"Impossible de se connecter à {data.host}:{data.port}"}
+    except TimeoutError:
+        return {"success": False, "error": "Connexion expirée — vérifiez le serveur et le port."}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @app.post("/api/validate-account")
