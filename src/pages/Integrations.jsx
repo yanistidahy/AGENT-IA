@@ -6,7 +6,7 @@ import {
   removeConnection,
   getConnections,
 } from "../api/oauth";
-import { connectGoogleSheets, connectGmail } from "../api/integrations";
+import { connectGoogleSheets, connectGmail } from "../api/pipedream";
 
 /* ── CATALOGUE ────────────────────────────────────────────────────────────── */
 const CATALOGUE = [
