@@ -149,7 +149,7 @@ function getBadge(integ, connections) {
   if (connections[integ.id]?.connected) return { label: "Connecté", color: "#16A34A", bg: "#ECFDF5", dot: true };
   if (integ.type === "manual") return { label: "Mode guidé", color: "#2563EB", bg: "#EFF6FF" };
   if (integ.type === "soon") return { label: "Bientôt", color: "#AAA", bg: "#F5F5F5" };
-  if (integ.type === "google") return { label: "OAuth Google", color: "#7C3AED", bg: "#EDE9FE" };
+  if (integ.type === "google") return { label: "Pipedream", color: "#7C3AED", bg: "#EDE9FE" };
   if (integ.type === "smtp") return { label: "IMAP/SMTP", color: "#F97316", bg: "#FFF7ED" };
   return { label: "Disponible", color: "#888", bg: "#F5F5F5" };
 }
