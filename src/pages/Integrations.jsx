@@ -1,12 +1,12 @@
 import { useState, useCallback } from "react";
 import { Search, X, CheckCircle, Loader, Eye, EyeOff } from "lucide-react";
 import {
-  connectGoogle,
   testSmtp,
   saveConnection,
   removeConnection,
   getConnections,
 } from "../api/oauth";
+import { connectGoogleSheets, connectGmail } from "../api/integrations";
 
 /* ── CATALOGUE ────────────────────────────────────────────────────────────── */
 const CATALOGUE = [
@@ -270,11 +270,10 @@ function SuccessView({ email, name, onClose }) {
   );
 }
 
-/* ── GOOGLE OAUTH MODAL ───────────────────────────────────────────────────── */
+/* ── PIPEDREAM CONNECT MODAL ──────────────────────────────────────────────── */
 function GoogleModal({ integ, conn, onClose, onSave, onDisconnect }) {
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
-  const [result, setResult] = useState(null);
 
   const PERMS = {
     gmail: ["Lire vos emails", "Envoyer des emails en votre nom"],
@@ -286,23 +285,19 @@ function GoogleModal({ integ, conn, onClose, onSave, onDisconnect }) {
     setStatus("connecting");
     setError("");
     try {
-      const data = await connectGoogle(integ.id);
-      const saved = { email: data.email || "compte Google", name: data.name, picture: data.picture, accessToken: data.accessToken };
+      const connect = integ.id === "gmail" ? connectGmail : connectGoogleSheets;
+      await connect();
+      const saved = { email: `compte ${integ.name}` };
       onSave(integ.id, saved);
-      setResult(saved);
       setStatus("ok");
     } catch (e) {
-      if (e.message === "cancelled") {
-        setStatus("idle");
-      } else {
-        setError(e.message);
-        setStatus("error");
-      }
+      setError(e.message);
+      setStatus("error");
     }
   };
 
   if (conn?.connected) return <ModalShell integ={integ} onClose={onClose}><ConnectedView conn={conn} onDisconnect={() => { onDisconnect(integ.id); onClose(); }} /></ModalShell>;
-  if (status === "ok") return <ModalShell integ={integ} onClose={onClose}><SuccessView email={result?.email} name={result?.name} onClose={onClose} /></ModalShell>;
+  if (status === "ok") return <ModalShell integ={integ} onClose={onClose}><SuccessView email={conn?.email || `compte ${integ.name}`} onClose={onClose} /></ModalShell>;
 
   return (
     <ModalShell integ={integ} onClose={onClose}>
@@ -318,10 +313,10 @@ function GoogleModal({ integ, conn, onClose, onSave, onDisconnect }) {
       {error && (
         <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: "#DC2626", marginBottom: "14px" }}>
           ⚠️ {error}
-          {error.includes("VITE_GOOGLE_CLIENT_ID") && (
+          {error.includes("VITE_PIPEDREAM_URL") && (
             <div style={{ marginTop: "8px", background: "#FFF1F1", padding: "8px 10px", borderRadius: "6px", fontFamily: "monospace", fontSize: "11px" }}>
               Ajoutez dans <strong>.env</strong> :<br />
-              VITE_GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com
+              VITE_PIPEDREAM_URL=https://votre-projet.pipedream.net
             </div>
           )}
         </div>
@@ -346,7 +341,7 @@ function GoogleModal({ integ, conn, onClose, onSave, onDisconnect }) {
         }
       </button>
       <p style={{ fontSize: "11px", color: "#AAA", textAlign: "center", margin: "12px 0 0" }}>
-        Une fenêtre Google s'ouvrira pour vous authentifier en toute sécurité.
+        Une fenêtre Pipedream s'ouvrira pour vous authentifier en toute sécurité.
       </p>
     </ModalShell>
   );
