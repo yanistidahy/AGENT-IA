@@ -6,7 +6,7 @@ import {
   removeConnection,
   getConnections,
 } from "../api/oauth";
-import { connectGoogleSheets, connectGmail } from "../api/pipedream";
+import { connectGoogleSheets, connectGmail, connectGoogleCalendar, isConnected } from "../api/pipedream";
 
 /* ── CATALOGUE ────────────────────────────────────────────────────────────── */
 const CATALOGUE = [
@@ -271,8 +271,20 @@ function SuccessView({ email, name, onClose }) {
 }
 
 /* ── PIPEDREAM CONNECT MODAL ──────────────────────────────────────────────── */
+const PIPEDREAM_CONNECT = {
+  gmail: connectGmail,
+  sheets: connectGoogleSheets,
+  calendar: connectGoogleCalendar,
+};
+
+const PIPEDREAM_SERVICE_KEY = {
+  gmail: "gmail",
+  sheets: "sheets",
+  calendar: "calendar",
+};
+
 function GoogleModal({ integ, conn, onClose, onSave, onDisconnect }) {
-  const [status, setStatus] = useState("idle");
+  const [status, setStatus] = useState(() => isConnected(PIPEDREAM_SERVICE_KEY[integ.id]) ? "ok" : "idle");
   const [error, setError] = useState("");
 
   const PERMS = {
@@ -285,19 +297,42 @@ function GoogleModal({ integ, conn, onClose, onSave, onDisconnect }) {
     setStatus("connecting");
     setError("");
     try {
-      const connect = integ.id === "gmail" ? connectGmail : connectGoogleSheets;
-      await connect();
-      const saved = { email: `compte ${integ.name}` };
-      onSave(integ.id, saved);
-      setStatus("ok");
+      const connectFn = PIPEDREAM_CONNECT[integ.id];
+      await connectFn((account) => {
+        const saved = { email: account.name || `compte ${integ.name}`, accountId: account.id };
+        onSave(integ.id, saved);
+        setStatus("ok");
+      });
     } catch (e) {
-      setError(e.message);
+      setError(e.message || "Connexion annulée");
       setStatus("error");
     }
   };
 
-  if (conn?.connected) return <ModalShell integ={integ} onClose={onClose}><ConnectedView conn={conn} onDisconnect={() => { onDisconnect(integ.id); onClose(); }} /></ModalShell>;
-  if (status === "ok") return <ModalShell integ={integ} onClose={onClose}><SuccessView email={conn?.email || `compte ${integ.name}`} onClose={onClose} /></ModalShell>;
+  const alreadyConnected = isConnected(PIPEDREAM_SERVICE_KEY[integ.id]) || conn?.connected;
+
+  if (alreadyConnected && status !== "connecting") {
+    return (
+      <ModalShell integ={integ} onClose={onClose}>
+        <ConnectedView
+          conn={conn || { email: `compte ${integ.name}` }}
+          onDisconnect={() => {
+            localStorage.removeItem(`pipedream_${PIPEDREAM_SERVICE_KEY[integ.id]}_token`);
+            onDisconnect(integ.id);
+            onClose();
+          }}
+        />
+      </ModalShell>
+    );
+  }
+
+  if (status === "ok") {
+    return (
+      <ModalShell integ={integ} onClose={onClose}>
+        <SuccessView email={conn?.email || `compte ${integ.name}`} onClose={onClose} />
+      </ModalShell>
+    );
+  }
 
   return (
     <ModalShell integ={integ} onClose={onClose}>
@@ -313,12 +348,6 @@ function GoogleModal({ integ, conn, onClose, onSave, onDisconnect }) {
       {error && (
         <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: "#DC2626", marginBottom: "14px" }}>
           ⚠️ {error}
-          {error.includes("VITE_PIPEDREAM_URL") && (
-            <div style={{ marginTop: "8px", background: "#FFF1F1", padding: "8px 10px", borderRadius: "6px", fontFamily: "monospace", fontSize: "11px" }}>
-              Ajoutez dans <strong>.env</strong> :<br />
-              VITE_PIPEDREAM_URL=https://votre-projet.pipedream.net
-            </div>
-          )}
         </div>
       )}
 
