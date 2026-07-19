@@ -277,14 +277,14 @@ const PIPEDREAM_CONNECT = {
   calendar: connectGoogleCalendar,
 };
 
-const PIPEDREAM_SERVICE_KEY = {
+const PIPEDREAM_APP_SLUG = {
   gmail: "gmail",
-  sheets: "sheets",
-  calendar: "calendar",
+  sheets: "google_sheets",
+  calendar: "google_calendar",
 };
 
 function GoogleModal({ integ, conn, onClose, onSave, onDisconnect }) {
-  const [status, setStatus] = useState(() => isConnected(PIPEDREAM_SERVICE_KEY[integ.id]) ? "ok" : "idle");
+  const [status, setStatus] = useState(() => isConnected(PIPEDREAM_APP_SLUG[integ.id]) ? "ok" : "idle");
   const [error, setError] = useState("");
 
   const PERMS = {
@@ -299,17 +299,18 @@ function GoogleModal({ integ, conn, onClose, onSave, onDisconnect }) {
     try {
       const connectFn = PIPEDREAM_CONNECT[integ.id];
       await connectFn((account) => {
-        const saved = { email: account.name || `compte ${integ.name}`, accountId: account.id };
+        const saved = { email: account.name || account.id || `compte ${integ.name}`, accountId: account.id };
         onSave(integ.id, saved);
         setStatus("ok");
       });
+      // connectApp is fire-and-forget (onSuccess callback handles state)
     } catch (e) {
       setError(e.message || "Connexion annulée");
       setStatus("error");
     }
   };
 
-  const alreadyConnected = isConnected(PIPEDREAM_SERVICE_KEY[integ.id]) || conn?.connected;
+  const alreadyConnected = isConnected(PIPEDREAM_APP_SLUG[integ.id]) || conn?.connected;
 
   if (alreadyConnected && status !== "connecting") {
     return (
@@ -317,7 +318,7 @@ function GoogleModal({ integ, conn, onClose, onSave, onDisconnect }) {
         <ConnectedView
           conn={conn || { email: `compte ${integ.name}` }}
           onDisconnect={() => {
-            localStorage.removeItem(`pipedream_${PIPEDREAM_SERVICE_KEY[integ.id]}_token`);
+            localStorage.removeItem(`pd_${PIPEDREAM_APP_SLUG[integ.id]}`);
             onDisconnect(integ.id);
             onClose();
           }}

@@ -1,43 +1,39 @@
 import { createFrontendClient } from "@pipedream/sdk/browser";
 
-const pd = createFrontendClient({
-  projectId: import.meta.env.VITE_PIPEDREAM_PROJECT_ID || "proj_jBsEq4e",
-  environment: "production",
-});
+const BACKEND = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
-export const connectGoogleSheets = async (onSuccess) => {
-  const result = await pd.connectAccount({
-    app: "google_sheets",
+const getToken = async () => {
+  const res = await fetch(`${BACKEND}/api/pipedream/connect-token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: "housni-aura-flow" }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Erreur serveur : ${res.status}`);
+  }
+  const data = await res.json();
+  return data.token;
+};
+
+export const connectApp = async (appSlug, onSuccess) => {
+  const token = await getToken();
+  const pd = createFrontendClient();
+  pd.connectAccount({
+    app: appSlug,
+    token,
     onSuccess: (account) => {
-      localStorage.setItem("pipedream_sheets_token", account.id);
-      if (onSuccess) onSuccess(account);
+      localStorage.setItem(`pd_${appSlug}`, account.id);
+      onSuccess?.(account);
+    },
+    onError: (err) => {
+      console.error("Pipedream Connect error:", err);
     },
   });
-  return result;
 };
 
-export const connectGmail = async (onSuccess) => {
-  const result = await pd.connectAccount({
-    app: "gmail",
-    onSuccess: (account) => {
-      localStorage.setItem("pipedream_gmail_token", account.id);
-      if (onSuccess) onSuccess(account);
-    },
-  });
-  return result;
-};
+export const connectGoogleSheets = (cb) => connectApp("google_sheets", cb);
+export const connectGmail = (cb) => connectApp("gmail", cb);
+export const connectGoogleCalendar = (cb) => connectApp("google_calendar", cb);
 
-export const connectGoogleCalendar = async (onSuccess) => {
-  const result = await pd.connectAccount({
-    app: "google_calendar",
-    onSuccess: (account) => {
-      localStorage.setItem("pipedream_calendar_token", account.id);
-      if (onSuccess) onSuccess(account);
-    },
-  });
-  return result;
-};
-
-export const isConnected = (service) => {
-  return !!localStorage.getItem(`pipedream_${service}_token`);
-};
+export const isConnected = (slug) => !!localStorage.getItem(`pd_${slug}`);

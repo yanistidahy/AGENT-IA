@@ -5,8 +5,27 @@ from typing import List, Optional
 import os
 import smtplib
 import ssl
+import httpx
 
 from instagram import scrape_followers, validate_instagram_account
+
+PIPEDREAM_CLIENT_ID = os.environ.get("PIPEDREAM_CLIENT_ID")
+PIPEDREAM_CLIENT_SECRET = os.environ.get("PIPEDREAM_CLIENT_SECRET")
+PIPEDREAM_PROJECT_ID = "proj_jBsEq4e"
+
+
+async def get_pd_access_token() -> str:
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            "https://api.pipedream.com/v1/oauth/token",
+            json={
+                "grant_type": "client_credentials",
+                "client_id": PIPEDREAM_CLIENT_ID,
+                "client_secret": PIPEDREAM_CLIENT_SECRET,
+            },
+        )
+        r.raise_for_status()
+        return r.json()["access_token"]
 
 app = FastAPI(title="Nova Instagram Scraper", version="1.0.0")
 
@@ -53,6 +72,26 @@ class SmtpTestRequest(BaseModel):
     port: int = 587
     email: str
     password: str
+
+
+@app.post("/api/pipedream/connect-token")
+async def create_connect_token(data: dict):
+    if not PIPEDREAM_CLIENT_ID or not PIPEDREAM_CLIENT_SECRET:
+        raise HTTPException(status_code=500, detail="PIPEDREAM_CLIENT_ID/SECRET non configurés sur le serveur")
+    try:
+        access_token = await get_pd_access_token()
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                f"https://api.pipedream.com/v1/connect/{PIPEDREAM_PROJECT_ID}/tokens",
+                headers={"Authorization": f"Bearer {access_token}"},
+                json={"external_user_id": data.get("user_id", "aura-flow-user")},
+            )
+            r.raise_for_status()
+            return r.json()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Pipedream API error: {e.response.text}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/health")
