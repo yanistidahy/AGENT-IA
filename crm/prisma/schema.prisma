@@ -105,14 +105,53 @@ model Deal {
   contactId String?
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
 
-  activities Activity[]
-  tasks      Task[]
+  activities    Activity[]
+  tasks         Task[]
+  conversations Conversation[]
 
   @@index([stageId])
   @@index([companyId])
   @@index([contactId])
   @@index([status])
   @@map("deals")
+}
+
+/// Conversation avec un agent du conseil.
+/// `agentId` référence lib/agents/registry.ts, pas une table — les agents sont
+/// du code versionné, pas de la donnée éditable.
+model Conversation {
+  id        String   @id @default(cuid())
+  agentId   String
+  title     String
+  /// « Mode approfondi » : relève l'effort de raisonnement, pas le plafond de sortie.
+  deep      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dealId String?
+  deal   Deal?   @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  messages Message[]
+
+  @@index([updatedAt])
+  @@index([dealId])
+  @@map("conversations")
+}
+
+/// `role` : user | assistant | tool
+/// `content` porte les blocs Anthropic sérialisés en JSON (texte, tool_use,
+/// tool_result). Stocké en `String` plutôt qu'en `Json` pour la même raison de
+/// portabilité que le reste du schéma ; relu via Zod dans lib/agents/messages.ts.
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String
+  content        String
+  createdAt      DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
 }
 
 /// `type` : call | email | meeting | demo | note

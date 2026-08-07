@@ -28,7 +28,12 @@ export function isOpen(deal: DealLike): boolean {
   return deal.status === "open";
 }
 
-export function openDeals(deals: readonly DealLike[]): DealLike[] {
+/**
+ * Générique sur le type d'affaire : un appelant qui passe des `DealRecord`
+ * (avec société, contact et étape jointes) récupère des `DealRecord`, pas des
+ * `DealLike` appauvris.
+ */
+export function openDeals<T extends DealLike>(deals: readonly T[]): T[] {
   return deals.filter(isOpen);
 }
 
@@ -71,11 +76,11 @@ export function dealHeat(
 }
 
 /** Affaires en cours qui ne sont plus actives, triées par montant décroissant. */
-export function stuckDeals(
-  deals: readonly DealLike[],
+export function stuckDeals<T extends DealLike>(
+  deals: readonly T[],
   settings: PilotageSettings,
   now: Date,
-): DealLike[] {
+): T[] {
   return openDeals(deals)
     .filter((deal) => dealHeat(deal, settings, now) !== "hot")
     .sort((a, b) => b.amount - a.amount);

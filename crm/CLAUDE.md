@@ -237,8 +237,8 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | Jalon | Contenu | État |
 |---|---|---|
 | 0 | Fondations — Next 15, Tailwind, Prisma, seed, `lib/domain/` + tests, chaîne de déploiement | **validé en production** |
-| 1 | Affaires de bout en bout — API, liste, fiche, Kanban, gain/perte | **livré, à valider** |
-| 2 | Conseil d'agents — 8 personnalités, registre d'outils, streaming, confirmation des écritures | à faire |
+| 1 | Affaires de bout en bout — API, liste, fiche, Kanban, gain/perte | **validé en production** |
+| 2 | Conseil d'agents — 8 personnalités, registre d'outils, streaming, confirmation des écritures | **livré, à valider** |
 | 3 | Contacts & Sociétés — même motif, import/export CSV, « Demander à Sacha » | à faire |
 | 4 | Tâches, interactions, séquences, moteur d'alertes | à faire |
 | 5 | Tableau de bord & rapports — SVG écrits à la main | à faire |
@@ -298,6 +298,78 @@ Le chemin Prisma → PostgreSQL n'a pas pu être exercé ici : aucun serveur
 PostgreSQL n'est disponible dans l'environnement de développement. La validation
 du seed a été faite sur SQLite avec le même schéma. La preuve définitive est la
 page d'accueil du service Railway affichant les compteurs.
+
+---
+
+## Jalon 2 — le conseil d'agents
+
+```
+lib/agents/
+├── registry.ts             les 8 agents, leur liste blanche d'outils, isUnlocked()
+├── prompts/                une persona par fichier + shared.ts (règles communes)
+├── tools/
+│   ├── types.ts            defineTool() — validation Zod avant tout accès base
+│   ├── reads.ts            7 outils de lecture, exécutés directement
+│   ├── writes.ts           5 outils d'écriture, jamais appelés par la boucle
+│   └── registry.ts         assemblage + schémas JSON pour Anthropic
+├── runtime/
+│   ├── client.ts           `import "server-only"` — modèle, effort, erreurs FR
+│   └── loop.ts             boucle de tours, interruption sur première écriture
+└── messages.ts             (dé)sérialisation des blocs Anthropic
+```
+
+**Modèle et raisonnement.** `claude-opus-5`, `thinking: {type:"adaptive"}`.
+`budget_tokens` est refusé par ce modèle. « Mode approfondi » relève
+`output_config.effort` (`medium` → `xhigh`) et affiche le résumé de raisonnement ;
+il ne touche pas à `max_tokens`, plafonné à 4096 — le garde-fou de coût porte sur
+la sortie, pas sur la réflexion.
+
+**Aucune écriture sans clic.** La boucle exécute les lectures immédiatement. À la
+première écriture proposée, elle s'arrête, émet `action_proposed` et rend la main.
+`app/api/actions/confirm/route.ts` est **le seul endroit du code où un outil
+d'écriture s'exécute**. Un refus écrit un `tool_result` explicite : l'agent
+poursuit sa réponse au lieu de rester suspendu.
+
+**La clé ne quitte pas le serveur.** `server-only` en tête de `runtime/client.ts`
+fait échouer le build si un composant client importe cette chaîne. Le test
+`lib/agents/__tests__/no-key-in-bundle.test.ts` parcourt ensuite `.next/static`
+et y cherche `sk-ant-`, `ANTHROPIC_API_KEY` et la valeur réelle si elle est
+définie — la vérification porte sur le résultat, pas sur l'intention.
+
+**Base vide.** `SHARED_RULES` impose à chaque persona de dire platement qu'il n'y
+a rien plutôt que d'illustrer. Les outils de lecture renvoient
+`{vide: true, message}` quand la requête ne ramène rien : l'agent n'a pas à
+déduire le vide d'un tableau vide.
+
+**Une complétion à la fois par conversation.** Un `Set` au niveau du module dans
+`app/api/chat/route.ts` rejette un second envoi pendant le streaming.
+
+**Étienne est verrouillé** derrière `AGENT_ETIENNE_ENABLED`, comparé à la chaîne
+`"true"` exactement. Le sélectionner ouvre une modale, pas une erreur.
+
+### Jalon 2 — ce qui est vérifié
+
+Rejoué contre une base réelle (SQLite jetable, mêmes deux retouches locales
+non committées) :
+
+- `POST /api/conversations` → 201, conversation lisible ensuite
+- `POST` avec un agent verrouillé ou inconnu → 400, message français
+- `GET /api/conversations/{id}` inexistant → 404
+- `POST /api/actions/confirm` avec un `toolUseId` inconnu → 404, aucune écriture
+- `POST /api/chat` sans clé → carte d'erreur SSE en français, pas de trace
+  d'exécution, pas de suspension
+- `POST /api/chat` message vide → 400 avec l'erreur par champ
+- le message utilisateur et le titre déduit sont persistés malgré l'échec :
+  l'historique survit au rechargement
+- `/`, `/affaires`, `/pipeline`, `/conseil`, `/conseil?agent=etienne` → 200
+
+### Jalon 2 — ce qui ne l'est pas
+
+**Aucun appel Anthropic réel n'a été passé ici** : `ANTHROPIC_API_KEY` n'existe
+pas dans cet environnement de développement. Le streaming, l'enchaînement des
+outils et la carte de confirmation ont été vérifiés par les tests unitaires et
+par la boucle exercée hors réseau, pas contre l'API. La preuve définitive est une
+conversation réelle sur l'URL de production.
 
 ### Journal des incidents
 
