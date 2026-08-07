@@ -1,0 +1,223 @@
+// AuraFLOW CRM — schéma de données
+//
+// Portabilité : aucun `enum` Prisma, aucun tableau scalaire, aucun `Json`.
+// Ces trois constructions ne sont pas supportées de façon identique par les
+// connecteurs SQLite et PostgreSQL. Les valeurs contraintes sont stockées en
+// `String` et validées à la frontière par les `z.enum()` de lib/domain/schemas.ts.
+// Basculer SQLite <-> PostgreSQL ne demande donc que de changer `provider`
+// et `DATABASE_URL`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Étape du pipeline. `prob` est la probabilité par défaut des affaires de
+/// l'étape ; `prob >= 100` marque l'étape terminale « Gagné ».
+model Stage {
+  id       String @id @default(cuid())
+  name     String
+  color    String
+  prob     Int
+  position Int    @unique
+
+  deals Deal[]
+
+  @@map("stages")
+}
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  domain    String   @default("")
+  size      String   @default("")
+  industry  String   @default("")
+  loc       String   @default("")
+  desc      String   @default("")
+  createdAt DateTime @default(now())
+
+  contacts   Contact[]
+  deals      Deal[]
+  activities Activity[]
+  tasks      Task[]
+
+  @@index([name])
+  @@map("companies")
+}
+
+/// `lifecycle` : Lead | Prospect | Client | Ancien Client
+model Contact {
+  id           String    @id @default(cuid())
+  firstName    String
+  lastName     String
+  title        String    @default("")
+  dep          String    @default("")
+  email        String    @default("")
+  phone        String    @default("")
+  linkedin     String    @default("")
+  lifecycle    String
+  source       String    @default("")
+  owner        String    @default("")
+  lastContact  DateTime?
+  nextReminder DateTime?
+  notes        String    @default("")
+  createdAt    DateTime  @default(now())
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  deals      Deal[]
+  activities Activity[]
+  tasks      Task[]
+
+  @@index([companyId])
+  @@index([lifecycle])
+  @@map("contacts")
+}
+
+/// `status` : open | won | lost
+/// `prob` surcharge la probabilité de l'étape quand elle est renseignée.
+/// `lastActivityAt` pilote la chaleur de l'affaire (active / tiède / froide).
+model Deal {
+  id             String    @id @default(cuid())
+  name           String
+  amount         Int       @default(0)
+  owner          String
+  offer          String    @default("")
+  status         String    @default("open")
+  prob           Int?
+  notes          String    @default("")
+  expectedClose  DateTime?
+  lastActivityAt DateTime?
+  closedAt       DateTime?
+  createdAt      DateTime  @default(now())
+
+  stageId String
+  stage   Stage  @relation(fields: [stageId], references: [id])
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  activities Activity[]
+  tasks      Task[]
+
+  @@index([stageId])
+  @@index([companyId])
+  @@index([contactId])
+  @@index([status])
+  @@map("deals")
+}
+
+/// `type` : call | email | meeting | demo | note
+model Activity {
+  id        String   @id @default(cuid())
+  type      String
+  date      DateTime
+  owner     String
+  notes     String   @default("")
+  duration  Int?
+  createdAt DateTime @default(now())
+
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  dealId String?
+  deal   Deal?   @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([contactId])
+  @@index([dealId])
+  @@index([companyId])
+  @@index([date])
+  @@map("activities")
+}
+
+/// `priority` : haute | normale | basse
+/// Le couple polymorphe `relType`/`relId` du prototype est remplacé par trois
+/// clés étrangères nullables : l'intégrité référentielle est ainsi garantie par
+/// la base, et les jointures Prisma deviennent possibles. Au plus une des trois
+/// est renseignée ; `taskTarget()` dans lib/domain/tasks.ts fait la lecture.
+model Task {
+  id        String    @id @default(cuid())
+  title     String
+  due       DateTime
+  priority  String    @default("normale")
+  owner     String
+  done      Boolean   @default(false)
+  doneAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  dealId String?
+  deal   Deal?   @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([done, due])
+  @@index([owner])
+  @@map("tasks")
+}
+
+/// Réglages scalaires. Ligne unique, `id = "singleton"`.
+model Settings {
+  id               String   @id @default("singleton")
+  staleDays        Int      @default(7)
+  coldDays         Int      @default(14)
+  objectifMensuel  Int      @default(15000)
+  notifs           Boolean  @default(true)
+  updatedAt        DateTime @updatedAt
+
+  @@map("settings")
+}
+
+/// Listes éditables des réglages, en table plutôt qu'en tableau scalaire.
+/// `kind` : owners | offers | sources | lifecycles
+model SettingsList {
+  id       String @id @default(cuid())
+  kind     String
+  value    String
+  position Int
+
+  @@unique([kind, value])
+  @@index([kind, position])
+  @@map("settings_lists")
+}
+
+model Sequence {
+  id      String  @id @default(cuid())
+  name    String
+  trigger String
+  active  Boolean @default(true)
+
+  steps SequenceStep[]
+
+  @@map("sequences")
+}
+
+/// `channel` : email | call | linkedin
+/// `day` est le décalage en jours depuis le déclenchement de la séquence.
+model SequenceStep {
+  id       String @id @default(cuid())
+  day      Int
+  channel  String
+  label    String
+  position Int
+
+  sequenceId String
+  sequence   Sequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  @@index([sequenceId, position])
+  @@map("sequence_steps")
+}

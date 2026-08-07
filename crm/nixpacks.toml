@@ -1,0 +1,16 @@
+# Configuration de build du service CRM.
+# Ce fichier ne concerne QUE le service Railway dont le Root Directory vaut `crm`.
+# Le service existant à la racine du dépôt (app Vite) et le service backend Python
+# gardent leur propre configuration, intacte.
+
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm run start"
