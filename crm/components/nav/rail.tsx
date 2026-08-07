@@ -37,8 +37,8 @@ const GROUPS: readonly NavGroup[] = [
     title: "Données",
     entries: [
       { label: "Affaires", href: "/affaires", icon: "deal" },
-      { label: "Contacts", href: null, icon: "people" },
-      { label: "Sociétés", href: null, icon: "build" },
+      { label: "Contacts", href: "/contacts", icon: "people" },
+      { label: "Sociétés", href: "/societes", icon: "build" },
     ],
   },
   {
@@ -50,7 +50,7 @@ const GROUPS: readonly NavGroup[] = [
   },
   {
     title: "Conseil",
-    entries: [{ label: "Alfred & Associés", href: null, icon: "bot" }],
+    entries: [{ label: "Alfred & Associés", href: "/conseil", icon: "bot" }],
   },
 ];
 

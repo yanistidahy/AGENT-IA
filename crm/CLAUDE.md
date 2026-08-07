@@ -55,10 +55,17 @@ crm/
 ├── app/                      App Router
 │   ├── layout.tsx            polices next/font, variables CSS
 │   ├── globals.css           jetons Tailwind v4 (@theme)
-│   └── page.tsx              page de santé (phase 1)
+│   ├── (crm)/                coquille claire : accueil, pipeline, affaires,
+│   │                         contacts, sociétés
+│   ├── conseil/              coquille sombre du conseil d'agents
+│   └── api/                  routes REST : deals, contacts, companies,
+│                             conversations, chat, actions/confirm
 ├── lib/
 │   ├── db.ts                 client Prisma unique
 │   ├── format.ts             money, moneyShort, dates fr-FR
+│   ├── api/                  couches de service + schémas Zod par entité
+│   ├── agents/               conseil d'agents (voir § Jalon 2)
+│   ├── client/               appels JSON depuis le navigateur
 │   └── domain/               ← règles métier pures, sans Prisma ni React
 │       ├── types.ts          unions + formes du domaine
 │       ├── schemas.ts        z.enum() — frontière string → union
@@ -68,7 +75,8 @@ crm/
 │       ├── kpis.ts           winRate, cycle, funnel, forecast, retention
 │       ├── tasks.ts          taskTarget, taskBucket
 │       ├── sequences.ts      generateSequenceTasks
-│       └── __tests__/        Vitest — 62 tests
+│       ├── csv.ts            lecture/écriture de tableurs — pur
+│       └── __tests__/        Vitest
 ├── prisma/
 │   ├── schema.prisma
 │   ├── migrations/0_init/    générée hors ligne (migrate diff)
@@ -119,7 +127,7 @@ sont donc dans `app/globals.css`. Le brief mentionnait `tailwind.config.ts`,
 **Composants** — 250 lignes maximum. Au-delà, découper.
 
 **Graphiques** — SVG écrit à la main, aucune librairie. Les cinq primitives du
-prototype (`fluxbar`, `bar`, `donut`, `line`, `funnel`) arrivent en phase 2.
+prototype (`fluxbar`, `bar`, `donut`, `line`, `funnel`) arrivent au jalon 5.
 
 ---
 
@@ -154,8 +162,11 @@ le type `Prisma.StringFilter` généré pour SQLite ne comporte même pas. Compi
 contre un schéma SQLite échoue donc au typecheck.
 
 C'est assumé : la cible est PostgreSQL. SQLite reste utilisable pour une
-vérification jetable, au prix de deux retouches locales (le `provider` et ce
-filtre), à ne jamais committer.
+vérification jetable, au prix de retouches locales à ne jamais committer : le
+`provider` du schéma, et les `mode: "insensitive"` de `lib/api/deals.ts`,
+`contacts.ts`, `companies.ts`, `contact-import.ts` et `lib/agents/tools/reads.ts`.
+Sauvegarder les originaux avant, les restaurer après, et relancer
+`npm run build && npx tsc --noEmit && npx vitest run` sur le code restauré.
 
 La migration `0_init` a été générée hors ligne avec
 `prisma migrate diff --from-empty --to-schema-datamodel`, sans base joignable.
@@ -238,11 +249,16 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 |---|---|---|
 | 0 | Fondations — Next 15, Tailwind, Prisma, seed, `lib/domain/` + tests, chaîne de déploiement | **validé en production** |
 | 1 | Affaires de bout en bout — API, liste, fiche, Kanban, gain/perte | **validé en production** |
-| 2 | Conseil d'agents — 8 personnalités, registre d'outils, streaming, confirmation des écritures | **livré, à valider** |
-| 3 | Contacts & Sociétés — même motif, import/export CSV, « Demander à Sacha » | à faire |
+| 2 | Conseil d'agents — 8 personnalités, registre d'outils, streaming, confirmation des écritures | **livré, validation reportée** |
+| 3 | Contacts & Sociétés — même motif, import/export CSV | **livré, à valider** |
 | 4 | Tâches, interactions, séquences, moteur d'alertes | à faire |
-| 5 | Tableau de bord & rapports — SVG écrits à la main | à faire |
-| 6 | Finitions — palette Ctrl+K, réglages, `/api/health`, responsive, README | à faire |
+| 5 | Centre de pilotage & rapports — SVG écrits à la main, palette Ctrl+K, réglages, `/api/health` | à faire |
+| 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
+
+**Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
+reste tel qu'il a été livré — il n'est ni étendu ni retouché — et sa validation en
+production est reportée à la fin. Les jalons 3, 4 et 5 s'enchaînent dans cet ordre,
+chacun validé sur l'URL de production avant d'ouvrir le suivant.
 
 ### Jalon 1 — décisions prises
 
@@ -370,6 +386,91 @@ pas dans cet environnement de développement. Le streaming, l'enchaînement des
 outils et la carte de confirmation ont été vérifiés par les tests unitaires et
 par la boucle exercée hors réseau, pas contre l'API. La preuve définitive est une
 conversation réelle sur l'URL de production.
+
+---
+
+## Jalon 3 — Contacts & Sociétés
+
+```
+lib/domain/csv.ts            découpage, reconnaissance d'en-tête, dates, écriture CSV — pur
+lib/api/contacts.ts          couche de service contacts (liste, fiche, écriture, suppression)
+lib/api/companies.ts         idem sociétés, avec les totaux ouvert / signé
+lib/api/contact-import.ts    import : sociétés retrouvées ou créées, doublons écartés
+lib/api/csv-export.ts        exports, en-têtes réimportables, BOM UTF-8
+lib/client/http.ts           requête JSON générique + garde de forme
+components/contacts/         vue, tableau, tiroir, formulaire, import, liaison d'affaire
+components/companies/        vue en cartes, tiroir, formulaire
+```
+
+**Cartes pour les sociétés, tableau pour les contacts.** Une société se juge sur
+trois nombres — contacts, pipeline ouvert, CA signé — qu'une carte donne d'un coup
+d'œil ; un contact se compare ligne à ligne, sur des colonnes triables.
+
+**Le CSV est lu en une seule passe, pas ligne par ligne.** Une cellule entre
+guillemets peut contenir un saut de ligne : c'est ce que produit l'export d'une
+note multiligne du CRM. Découper d'abord sur `\n` casserait le retour d'un export
+dans l'import — le test `csv.test.ts` fixe cet aller-retour.
+
+**Les en-têtes d'export sont exactement les alias de l'import.** Un test vérifie
+que chaque colonne exportée est reconnue au retour (`csv-export.test.ts`). Sans
+cette contrainte, l'export ne sert qu'à archiver.
+
+**Deux formats de date acceptés à l'import** : ISO (`2026-03-01`) et français
+(`11/02/2026`). Le second est traité explicitement parce que `new Date("11/02/2026")`
+lit un mois américain et renvoie le 2 novembre — silencieusement, avec neuf mois
+d'écart. Une date illisible arrête sa ligne et la signale ; elle n'est pas devinée.
+
+**Doublons : l'adresse électronique fait foi, à défaut le couple nom + société.**
+Sans ce repli, réimporter le même tableau recrée en double toutes les lignes sans
+adresse — et c'est exactement ce que fait quelqu'un qui doute que son premier
+import ait fonctionné.
+
+**Supprimer un contact détache, supprimer une société est refusé.** Les affaires
+et interactions d'un contact supprimé survivent (`SetNull`) : effacer une fiche ne
+doit pas effacer du chiffre d'affaires. Une société qui porte encore des contacts
+ou des affaires renvoie un 409 nommant les compteurs, plutôt que de les détacher
+en silence.
+
+**La promotion en « Client » est proposée, jamais automatique.** Gagner une
+affaire fait apparaître une carte dans le tiroir de l'affaire. C'est une écriture
+sur une *autre* fiche, et rien ne dit qu'un signataire soit le client — l'acheteur
+peut être un intermédiaire.
+
+**Le rattachement contact ↔ affaire s'écrit sur l'affaire.** `Deal.contactId` est
+la seule clé ; un champ « affaire » sur le contact laisserait croire qu'un contact
+n'en porte qu'une.
+
+### Jalon 3 — ce qui est vérifié
+
+Test d'acceptation rejoué contre une base réelle (SQLite jetable, retouches locales
+non committées) :
+
+- collage de 5 contacts depuis un tableur, colonnes tabulées, en-tête en français
+  avec accents → 5 créés, 3 sociétés inconnues créées (dont une réutilisée pour
+  deux lignes), colonne « Score interne » signalée comme ignorée
+- `11/02/2026` → 11 février ; `01.03.2026` → 1er mars ; `2026-01-20` → 20 janvier
+- `lead`, `PROSPECT` normalisés en `Lead`, `Prospect`
+- **second import du même collage → 0 créé, 5 doublons, 0 société créée**
+- modification du téléphone → persistée ; liaison à une affaire → persistée ;
+  relecture complète après nouvelle requête → tout est là
+- filtres `lifecycle`, `owner`, `source`, recherche, tri par fraîcheur avec les
+  contacts jamais touchés en tête
+- charges invalides → 400 avec l'erreur par champ (prénom vide, cycle de vie hors
+  liste, adresse électronique fausse) ; collage sans en-tête → 400 explicite
+- suppression d'une société avec fiches → 409 nommant les compteurs ; société vide
+  → 200 ; suppression d'un contact → son affaire survit, `contact: null`
+- gain d'une affaire → `won` + `closedAt`, puis promotion du contact en « Client »
+- exports contacts et sociétés → BOM UTF-8, séparateur point-virgule, en-tête
+  intégralement relue par l'import
+- `/`, `/affaires`, `/pipeline`, `/contacts`, `/societes`, `/conseil` → 200, les
+  données importées apparaissent au rendu serveur
+
+### Jalon 3 — ce qui ne l'est pas
+
+**La recherche est insensible à la casse, pas aux accents.** Chercher « zenith »
+ne remonte pas « Zénith Labs ». `mode: "insensitive"` de PostgreSQL couvre la
+casse seule ; l'insensibilité aux accents demanderait l'extension `unaccent` et
+une migration. À arbitrer si le besoin se confirme à l'usage.
 
 ### Journal des incidents
 

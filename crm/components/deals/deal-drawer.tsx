@@ -10,6 +10,7 @@ import { dealHeat, dealProb, weightedValue } from "@/lib/domain/pipeline";
 import type { PilotageSettings } from "@/lib/domain/types";
 import { formatDate, money, moneyShort } from "@/lib/format";
 import { DealForm, type DealFormOptions } from "./deal-form";
+import { PromoteContact } from "./promote-contact";
 
 interface DealDrawerProps extends DealFormOptions {
   readonly deal: DealRecord | null;
@@ -143,6 +144,8 @@ export function DealDrawer({
               {error}
             </p>
           )}
+
+          <PromoteContact deal={deal} onChanged={onChanged} />
 
           <h3 className="mt-6 mb-2.5 font-display text-sm font-semibold">
             Historique des interactions

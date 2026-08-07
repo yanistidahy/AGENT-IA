@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { DealHeat, DealStatus, StageLike } from "@/lib/domain/types";
+import type { DealHeat, DealStatus, Lifecycle, StageLike } from "@/lib/domain/types";
 
 /** Petites briques d'affichage partagées par les vues CRM. */
 
@@ -74,6 +74,17 @@ const STATUS_LABELS: Record<DealStatus, string> = {
 
 export function StatusTag({ status }: { status: DealStatus }) {
   return <Tag tone={STATUS_TONES[status]}>{STATUS_LABELS[status]}</Tag>;
+}
+
+const LIFECYCLE_TONES: Record<Lifecycle, Tone> = {
+  Lead: "sky",
+  Prospect: "violet",
+  Client: "flux",
+  "Ancien Client": "mute",
+};
+
+export function LifecycleTag({ lifecycle }: { lifecycle: Lifecycle }) {
+  return <Tag tone={LIFECYCLE_TONES[lifecycle]}>{lifecycle}</Tag>;
 }
 
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {

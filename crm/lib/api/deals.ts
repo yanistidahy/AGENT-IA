@@ -1,8 +1,8 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { planStageMove } from "../domain/deal-transitions";
-import { toDealStatus } from "../domain/guards";
-import type { DealLike, DealStatus, StageLike } from "../domain/types";
+import { toDealStatus, toLifecycle } from "../domain/guards";
+import type { DealLike, DealStatus, Lifecycle, StageLike } from "../domain/types";
 import type { CreateDealInput, ListDealsQuery, UpdateDealInput } from "./deal-schemas";
 import { listStages } from "./reference";
 
@@ -37,13 +37,14 @@ export interface DealRecord extends DealLike {
     readonly id: string;
     readonly firstName: string;
     readonly lastName: string;
+    readonly lifecycle: Lifecycle;
   } | null;
   readonly stage: StageLike;
 }
 
 const dealInclude = {
   company: { select: { id: true, name: true } },
-  contact: { select: { id: true, firstName: true, lastName: true } },
+  contact: { select: { id: true, firstName: true, lastName: true, lifecycle: true } },
   stage: true,
 } satisfies Prisma.DealInclude;
 
@@ -67,7 +68,10 @@ function toRecord(row: DealRow): DealRecord {
     companyId: row.companyId,
     contactId: row.contactId,
     company: row.company,
-    contact: row.contact,
+    contact:
+      row.contact === null
+        ? null
+        : { ...row.contact, lifecycle: toLifecycle(row.contact.lifecycle) },
     stage: {
       id: row.stage.id,
       name: row.stage.name,
