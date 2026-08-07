@@ -2,6 +2,18 @@
 # Démarrage du service CRM en production (Railway).
 set -u
 
+# --- Bannière d'identification ----------------------------------------------
+# Les Deploy Logs sont le seul endroit où l'on peut constater QUEL code démarre.
+# Si ces lignes n'apparaissent pas, ce n'est pas ce service qui tourne — voir
+# le § « Journal des incidents » de CLAUDE.md.
+echo "=============================================="
+echo " AuraFLOW CRM — Next.js standalone"
+echo " commit  : ${RAILWAY_GIT_COMMIT_SHA:-inconnu}"
+echo " branche : ${RAILWAY_GIT_BRANCH:-inconnue}"
+echo " service : ${RAILWAY_SERVICE_NAME:-inconnu}"
+echo " dossier : $(pwd)"
+echo "=============================================="
+
 # --- Interface d'écoute -----------------------------------------------------
 # Le serveur standalone de Next fait `const hostname = process.env.HOSTNAME || '0.0.0.0'`.
 # Or tout runtime de conteneur définit HOSTNAME à l'identifiant du conteneur.

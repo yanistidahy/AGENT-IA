@@ -1,4 +1,5 @@
 import { readDbStatus } from "@/lib/db-status";
+import { readDeployInfo } from "@/lib/deploy-info";
 
 /**
  * Page de vérification de la chaîne de déploiement (phase 1).
@@ -14,6 +15,7 @@ const PHASE = "Phase 1 — Fondations";
 
 export default async function Page() {
   const status = await readDbStatus();
+  const deploy = readDeployInfo();
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-5 p-6">
@@ -72,9 +74,15 @@ export default async function Page() {
         )}
       </section>
 
-      <p className="text-center text-[12px] text-muted">
-        Les vues du CRM arrivent en phase 2.
-      </p>
+      <footer className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-[12px] text-muted">
+        <span>Les vues du CRM arrivent en phase 2.</span>
+        {deploy.commit !== null && (
+          <span className="font-mono text-[11px]">
+            commit {deploy.commit}
+            {deploy.branch !== null && ` · ${deploy.branch}`}
+          </span>
+        )}
+      </footer>
     </main>
   );
 }
