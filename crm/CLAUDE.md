@@ -147,9 +147,15 @@ npm run build && npx tsc --noEmit && npx vitest run
 
 ## Base de données
 
-PostgreSQL en production (Railway), SQLite possible en local. Le schéma est écrit
-pour que la bascule ne demande que deux changements : `provider` dans
-`datasource db`, et `DATABASE_URL`.
+PostgreSQL en production (Railway). Le **schéma** reste portable — aucun `enum`,
+aucun tableau scalaire, aucun `Json` — mais **le code applicatif ne l'est plus** :
+`lib/api/deals.ts` utilise `mode: "insensitive"` pour la recherche, un champ que
+le type `Prisma.StringFilter` généré pour SQLite ne comporte même pas. Compiler
+contre un schéma SQLite échoue donc au typecheck.
+
+C'est assumé : la cible est PostgreSQL. SQLite reste utilisable pour une
+vérification jetable, au prix de deux retouches locales (le `provider` et ce
+filtre), à ne jamais committer.
 
 La migration `0_init` a été générée hors ligne avec
 `prisma migrate diff --from-empty --to-schema-datamodel`, sans base joignable.
@@ -225,15 +231,54 @@ incomplet n'est pas un comportement de production.
 
 ## État d'avancement
 
-| Phase | Contenu | État |
+Le découpage en sept phases a laissé place à des **jalons verticaux** : chacun est
+déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suivant.
+
+| Jalon | Contenu | État |
 |---|---|---|
-| 1 | Fondations — Next 15, Tailwind, Prisma, seed, `lib/domain/` + tests, page de santé | **terminée, déploiement à valider** |
-| 2 | CRM — 8 vues, Le Flux, Kanban, drawers, palette Ctrl+K, CSV | à faire |
-| 3 | Socle agents — client Anthropic, registre d'outils, boucle, streaming | à faire |
-| 4 | Les 8 personnalités — prompts, attribution des outils, verrou Étienne | à faire |
-| 5 | Interface de conversation — panneau sombre, mode approfondi, confirmations | à faire |
-| 6 | Jonction CRM ↔ agents — 4 points de contact | à faire |
-| 7 | Finitions — responsive, focus, reduced-motion, états vides, erreurs API | à faire |
+| 0 | Fondations — Next 15, Tailwind, Prisma, seed, `lib/domain/` + tests, chaîne de déploiement | **validé en production** |
+| 1 | Affaires de bout en bout — API, liste, fiche, Kanban, gain/perte | **livré, à valider** |
+| 2 | Conseil d'agents — 8 personnalités, registre d'outils, streaming, confirmation des écritures | à faire |
+| 3 | Contacts & Sociétés — même motif, import/export CSV, « Demander à Sacha » | à faire |
+| 4 | Tâches, interactions, séquences, moteur d'alertes | à faire |
+| 5 | Tableau de bord & rapports — SVG écrits à la main | à faire |
+| 6 | Finitions — palette Ctrl+K, réglages, `/api/health`, responsive, README | à faire |
+
+### Jalon 1 — décisions prises
+
+**Une seule couche de service.** `lib/api/deals.ts` est appelée par les routes
+d'API *et* directement par les composants serveur. Une page ne fait pas de
+requête HTTP vers sa propre API : une source de vérité, un aller-retour en moins.
+
+**Les filtres passent par l'URL.** `/affaires?status=won&owner=Yanis` est
+partageable et rechargeable, et le bouton « précédent » fonctionne.
+
+**Kanban optimiste avec restauration.** La carte change de colonne avant la
+réponse réseau ; en cas d'échec, l'état revient en arrière et le message
+s'affiche. Un déplacement qui semble réussir sans être persisté serait pire que
+pas de glisser-déposer.
+
+**Rouvrir une affaire efface `closedAt`.** Écart assumé avec le prototype, qui
+laissait une affaire « en cours » porter une date de clôture — incohérence qui
+fausse le calcul du cycle de vente.
+
+**Entrées de navigation à venir affichées, mais inertes.** La structure du
+produit est lisible dès maintenant, sans lien mort vers une 404.
+
+### Jalon 1 — ce qui est vérifié
+
+Le test d'acceptation a été rejoué de bout en bout contre une base réelle
+(SQLite jetable, deux retouches locales décrites plus haut) :
+
+- création d'une affaire par l'API → 201
+- deux déplacements d'étape successifs → persistés, deux notes système écrites
+- modification du montant → persistée
+- relecture après nouvelle requête → tout est là
+- passage sur l'étape à 100 % → `status: won` + `closedAt` daté
+- réouverture → `status: open`, `closedAt` effacé
+- recherche `?q=` → l'affaire remonte
+- `/`, `/affaires`, `/pipeline` → 200, l'affaire créée apparaît au rendu serveur
+- charge invalide → 400 avec les erreurs par champ, aucune trace d'exécution
 
 ### Phase 1 — ce qui est vérifié
 
