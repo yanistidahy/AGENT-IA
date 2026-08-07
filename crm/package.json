@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "prisma generate && next build && npm run bundle:standalone",
     "bundle:standalone": "node scripts/bundle-standalone.mjs",
-    "start": "prisma migrate deploy && node .next/standalone/server.js",
+    "start": "sh scripts/start.sh",
     "postinstall": "prisma generate",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

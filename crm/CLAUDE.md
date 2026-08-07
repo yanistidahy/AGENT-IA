@@ -187,6 +187,40 @@ Next ne copie ni `.next/static` ni `public/` dans la sortie standalone :
 de démarrage exécute `prisma migrate deploy`, et un élagage des dépendances de
 développement en production rendrait le binaire introuvable.
 
+### `HOSTNAME` doit être forcé à `0.0.0.0`
+
+Le serveur standalone contient `const hostname = process.env.HOSTNAME || '0.0.0.0'`.
+Le repli n'est utilisé que si la variable est absente — or **tout runtime de
+conteneur définit `HOSTNAME` à l'identifiant du conteneur**. Sans intervention,
+Next se lie donc à cet hôte et non à toutes les interfaces : le proxy de Railway
+n'atteint jamais le port et le healthcheck échoue en « service unavailable »
+pendant toute sa fenêtre, alors que le process tourne et que les logs semblent
+normaux.
+
+`scripts/start.sh` exporte `HOSTNAME=0.0.0.0` avant de lancer le serveur. C'est
+la raison d'être de ce script — ne pas le contourner en remettant la commande
+directement dans `package.json`.
+
+Piège de méthode : une vérification locale qui passe `HOSTNAME=0.0.0.0`
+explicitement ne teste pas ce chemin. Pour rejouer les conditions de Railway :
+
+```bash
+env HOSTNAME="$(hostname)" PORT=3312 npm run start
+curl http://0.0.0.0:3312/     # doit répondre 200, pas se connecter à vide
+```
+
+### Les migrations ne bloquent pas le démarrage
+
+`prisma migrate deploy` s'exécute avant le serveur, mais un échec n'interrompt
+pas le lancement. Un `&&` ferait mourir le conteneur sans rien servir, et le
+seul signal disponible serait « service unavailable » — aucun diagnostic. En
+démarrant quand même, la page `/` nomme la cause exacte (base injoignable,
+authentification refusée, tables absentes) via `lib/db-diagnosis.ts`.
+
+Ce compromis est adapté à une phase de mise en place. À revoir quand
+l'application portera de vraies données : servir une application au schéma
+incomplet n'est pas un comportement de production.
+
 ---
 
 ## État d'avancement
@@ -205,9 +239,10 @@ développement en production rendrait le binaire introuvable.
 
 - `npm run build` : succès, `/` en rendu dynamique (`ƒ`)
 - `npx tsc --noEmit` : aucune erreur
-- `npx vitest run` : 62 tests, 4 fichiers
-- serveur standalone démarré sur un `PORT` injecté, écoute `0.0.0.0`, répond 200
-- page dégradée sans base : affiche l'état d'erreur sans fuiter la chaîne de connexion
+- `npx vitest run` : 72 tests, 5 fichiers
+- serveur démarré avec `HOSTNAME` valant l'identifiant du conteneur, comme sur
+  Railway : écoute bien `0.0.0.0`, joignable depuis `0.0.0.0`, répond 200
+- base injoignable : la page nomme la cause et ne fuite ni mot de passe ni hôte
 - seed validé contre une base réelle (SQLite jetable) : 6 étapes, 12 sociétés,
   18 contacts, 24 affaires, 32 interactions, 16 tâches, 3 séquences, 0 orpheline,
   174 jours d'historique
@@ -218,3 +253,12 @@ Le chemin Prisma → PostgreSQL n'a pas pu être exercé ici : aucun serveur
 PostgreSQL n'est disponible dans l'environnement de développement. La validation
 du seed a été faite sur SQLite avec le même schéma. La preuve définitive est la
 page d'accueil du service Railway affichant les compteurs.
+
+### Journal des incidents
+
+**Healthcheck en échec au premier déploiement** — build vert, conteneur démarré,
+`service unavailable` sur les six tentatives. Cause : `HOSTNAME` défini par le
+runtime de conteneur, Next se liant à l'identifiant du conteneur au lieu de
+`0.0.0.0` (voir § Déploiement). Le défaut avait échappé à la vérification locale
+parce que celle-ci forçait `HOSTNAME=0.0.0.0` — elle testait le correctif avant
+qu'il existe. Corrigé par `scripts/start.sh`.
