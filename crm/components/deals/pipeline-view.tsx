@@ -5,7 +5,8 @@ import { useState } from "react";
 import { Drawer } from "@/components/ui/drawer";
 import { Icon } from "@/components/ui/icon";
 import type { DealRecord } from "@/lib/api/deals";
-import type { PilotageSettings } from "@/lib/domain/types";
+import type { SequenceOption } from "@/components/activities/run-sequence";
+import type { Alert, PilotageSettings } from "@/lib/domain/types";
 import { DealDrawer } from "./deal-drawer";
 import { DealForm, type DealFormOptions } from "./deal-form";
 import { Fluxbar } from "./fluxbar";
@@ -16,12 +17,16 @@ interface PipelineViewProps extends DealFormOptions {
   readonly deals: readonly DealRecord[];
   readonly openDeals: readonly DealRecord[];
   readonly settings: PilotageSettings;
+  readonly sequences: readonly SequenceOption[];
+  readonly alerts: readonly Alert[];
 }
 
 export function PipelineView({
   deals,
   openDeals,
   settings,
+  sequences,
+  alerts,
   ...options
 }: PipelineViewProps) {
   const router = useRouter();
@@ -68,6 +73,14 @@ export function PipelineView({
         {...options}
         deal={selected}
         settings={settings}
+        sequences={sequences}
+        alerts={
+          selected === null
+            ? []
+            : alerts.filter(
+                (alert) => alert.targetType === "deal" && alert.targetId === selected.id,
+              )
+        }
         onClose={() => setSelected(null)}
         onChanged={refresh}
       />

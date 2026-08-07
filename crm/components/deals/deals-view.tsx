@@ -7,6 +7,8 @@ import { Icon } from "@/components/ui/icon";
 import { DEAL_STATUS_FILTERS, type DealRecord } from "@/lib/api/deals";
 import type { PilotageSettings } from "@/lib/domain/types";
 import { money } from "@/lib/format";
+import type { SequenceOption } from "@/components/activities/run-sequence";
+import type { Alert } from "@/lib/domain/types";
 import { DealDrawer } from "./deal-drawer";
 import { DealForm, type DealFormOptions } from "./deal-form";
 import { DealsTable, type SortKey } from "./deals-table";
@@ -14,12 +16,20 @@ import { DealsTable, type SortKey } from "./deals-table";
 interface DealsViewProps extends DealFormOptions {
   readonly deals: readonly DealRecord[];
   readonly settings: PilotageSettings;
+  readonly sequences: readonly SequenceOption[];
+  readonly alerts: readonly Alert[];
 }
 
 const CONTROL =
   "rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-flux";
 
-export function DealsView({ deals, settings, ...options }: DealsViewProps) {
+export function DealsView({
+  deals,
+  settings,
+  sequences,
+  alerts,
+  ...options
+}: DealsViewProps) {
   const router = useRouter();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
@@ -132,6 +142,14 @@ export function DealsView({ deals, settings, ...options }: DealsViewProps) {
         {...options}
         deal={selected}
         settings={settings}
+        sequences={sequences}
+        alerts={
+          selected === null
+            ? []
+            : alerts.filter(
+                (alert) => alert.targetType === "deal" && alert.targetId === selected.id,
+              )
+        }
         onClose={() => setSelected(null)}
         onChanged={refresh}
       />

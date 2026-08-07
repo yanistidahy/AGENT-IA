@@ -10,11 +10,17 @@ import { dealHeat, dealProb, weightedValue } from "@/lib/domain/pipeline";
 import type { PilotageSettings } from "@/lib/domain/types";
 import { formatDate, money, moneyShort } from "@/lib/format";
 import { DealForm, type DealFormOptions } from "./deal-form";
+import { PostWinSequence } from "./post-win-sequence";
 import { PromoteContact } from "./promote-contact";
+import { RecordPanel } from "@/components/activities/record-panel";
+import type { SequenceOption } from "@/components/activities/run-sequence";
+import type { Alert } from "@/lib/domain/types";
 
 interface DealDrawerProps extends DealFormOptions {
   readonly deal: DealRecord | null;
   readonly settings: PilotageSettings;
+  readonly sequences: readonly SequenceOption[];
+  readonly alerts: readonly Alert[];
   readonly onClose: () => void;
   readonly onChanged: () => void;
 }
@@ -22,6 +28,8 @@ interface DealDrawerProps extends DealFormOptions {
 export function DealDrawer({
   deal,
   settings,
+  sequences,
+  alerts,
   onClose,
   onChanged,
   ...options
@@ -146,14 +154,16 @@ export function DealDrawer({
           )}
 
           <PromoteContact deal={deal} onChanged={onChanged} />
+          <PostWinSequence deal={deal} sequences={sequences} onChanged={onChanged} />
 
-          <h3 className="mt-6 mb-2.5 font-display text-sm font-semibold">
-            Historique des interactions
-          </h3>
-          <p className="rounded-card border border-dashed border-line px-3.5 py-4 text-[12.5px] text-muted">
-            Les interactions arrivent au jalon 4. Les changements d'étape y sont déjà
-            consignés côté base : chaque déplacement écrit une note système.
-          </p>
+          <RecordPanel
+            link={{ dealId: deal.id }}
+            owners={options.owners}
+            defaultOwner={deal.owner}
+            sequences={sequences}
+            alerts={alerts}
+            onChanged={onChanged}
+          />
         </>
       )}
     </Drawer>

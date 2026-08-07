@@ -7,11 +7,15 @@ import { Eyebrow, LifecycleTag, StatusTag } from "@/components/ui/primitives";
 import type { CompanyRecord } from "@/lib/api/companies";
 import { deleteCompany } from "@/lib/client/crm-api";
 import { formatDate, money } from "@/lib/format";
+import { RecordPanel } from "@/components/activities/record-panel";
+import type { SequenceOption } from "@/components/activities/run-sequence";
 import { CompanyForm } from "./company-form";
 
 interface CompanyDrawerProps {
   readonly company: CompanyRecord | null;
   readonly industries: readonly string[];
+  readonly owners: readonly string[];
+  readonly sequences: readonly SequenceOption[];
   readonly onClose: () => void;
   readonly onChanged: () => void;
 }
@@ -19,6 +23,8 @@ interface CompanyDrawerProps {
 export function CompanyDrawer({
   company,
   industries,
+  owners,
+  sequences,
   onClose,
   onChanged,
 }: CompanyDrawerProps) {
@@ -195,6 +201,15 @@ export function CompanyDrawer({
               {error}
             </p>
           )}
+
+          <RecordPanel
+            link={{ companyId: company.id }}
+            owners={owners}
+            defaultOwner={owners[0] ?? ""}
+            sequences={sequences}
+            alerts={[]}
+            onChanged={onChanged}
+          />
         </>
       )}
     </Drawer>

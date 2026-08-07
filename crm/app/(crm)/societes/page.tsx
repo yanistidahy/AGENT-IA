@@ -1,6 +1,8 @@
 import { CompaniesView } from "@/components/companies/companies-view";
 import { listCompanies, listIndustries } from "@/lib/api/companies";
 import { parseCompaniesQuery } from "@/lib/api/company-schemas";
+import { listOwners } from "@/lib/api/reference";
+import { listSequences } from "@/lib/api/sequences";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +20,19 @@ export default async function SocietesPage({
   const parsed = parseCompaniesQuery(flat);
   const query = parsed.success ? parsed.data : {};
 
-  const [companies, industries] = await Promise.all([listCompanies(query), listIndustries()]);
+  const [companies, industries, owners, sequences] = await Promise.all([
+    listCompanies(query),
+    listIndustries(),
+    listOwners(),
+    listSequences(),
+  ]);
 
-  return <CompaniesView companies={companies} industries={industries} />;
+  return (
+    <CompaniesView
+      companies={companies}
+      industries={industries}
+      owners={owners}
+      sequences={sequences}
+    />
+  );
 }

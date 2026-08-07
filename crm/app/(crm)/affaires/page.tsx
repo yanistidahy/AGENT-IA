@@ -1,7 +1,9 @@
 import { DealsView } from "@/components/deals/deals-view";
 import { parseDealsQuery } from "@/lib/api/deal-schemas";
 import { listDeals } from "@/lib/api/deals";
+import { readAlerts } from "@/lib/api/alerts";
 import { listOffers, listOwners, listStages, getPilotage } from "@/lib/api/reference";
+import { listSequences } from "@/lib/api/sequences";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +29,8 @@ export default async function AffairesPage({
   const parsed = parseDealsQuery(flat);
   const query = parsed.success ? parsed.data : {};
 
-  const [deals, stages, owners, offers, settings, companies, contacts] = await Promise.all([
+  const [deals, stages, owners, offers, settings, companies, contacts, sequences, alerts] =
+    await Promise.all([
     listDeals({ status: "open", ...query }),
     listStages(),
     listOwners(),
@@ -38,7 +41,9 @@ export default async function AffairesPage({
       select: { id: true, firstName: true, lastName: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
-  ]);
+      listSequences(),
+      readAlerts(),
+    ]);
 
   return (
     <DealsView
@@ -49,6 +54,8 @@ export default async function AffairesPage({
       companies={companies}
       contacts={contacts}
       settings={settings}
+      sequences={sequences}
+      alerts={alerts}
     />
   );
 }

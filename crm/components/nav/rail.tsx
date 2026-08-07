@@ -2,64 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Icon, type IconName } from "@/components/ui/icon";
+import { Icon } from "@/components/ui/icon";
 import { moneyShort } from "@/lib/format";
+import { NAV_GROUPS, type NavEntry } from "@/lib/navigation";
 
 /**
  * Rail de navigation, repris du prototype.
  *
- * Les entrées non encore livrées restent visibles mais inertes, avec la mention
- * « à venir » : la structure du produit est lisible dès maintenant, sans lien
- * mort qui mène à une 404.
+ * La liste des entrées vit dans `lib/navigation.ts`, partagée avec les cartes de
+ * la page d'accueil : livrer un écran ne demande qu'une seule modification.
  */
-
-interface NavEntry {
-  readonly label: string;
-  readonly href: string | null;
-  readonly icon: IconName;
-}
-
-interface NavGroup {
-  readonly title: string;
-  readonly entries: readonly NavEntry[];
-}
-
-const GROUPS: readonly NavGroup[] = [
-  {
-    title: "Pilotage",
-    entries: [
-      { label: "Accueil", href: "/", icon: "dash" },
-      { label: "Pipeline", href: "/pipeline", icon: "pipe" },
-      { label: "Tâches", href: null, icon: "task" },
-    ],
-  },
-  {
-    title: "Données",
-    entries: [
-      { label: "Affaires", href: "/affaires", icon: "deal" },
-      { label: "Contacts", href: "/contacts", icon: "people" },
-      { label: "Sociétés", href: "/societes", icon: "build" },
-    ],
-  },
-  {
-    title: "Analyse",
-    entries: [
-      { label: "Rapports", href: null, icon: "chart" },
-      { label: "Réglages", href: null, icon: "gear" },
-    ],
-  },
-  {
-    title: "Conseil",
-    entries: [{ label: "Alfred & Associés", href: "/conseil", icon: "bot" }],
-  },
-];
-
 interface RailProps {
   readonly pipelineValue: number;
   readonly wonCount: number;
+  /** Tâches en retard — pastille sur l'entrée Tâches. */
+  readonly overdueCount: number;
 }
 
-export function Rail({ pipelineValue, wonCount }: RailProps) {
+export function Rail({ pipelineValue, wonCount, overdueCount }: RailProps) {
   const pathname = usePathname();
 
   return (
@@ -75,13 +35,18 @@ export function Rail({ pipelineValue, wonCount }: RailProps) {
       </div>
 
       <nav>
-        {GROUPS.map((group) => (
+        {NAV_GROUPS.map((group) => (
           <div key={group.title}>
             <div className="px-3 pt-4 pb-1.5 font-mono text-[9.5px] tracking-[0.14em] text-[#4E6A64] uppercase">
               {group.title}
             </div>
             {group.entries.map((entry) => (
-              <NavItem key={entry.label} entry={entry} pathname={pathname} />
+              <NavItem
+                key={entry.label}
+                entry={entry}
+                pathname={pathname}
+                badge={entry.href === "/taches" ? overdueCount : 0}
+              />
             ))}
           </div>
         ))}
@@ -97,7 +62,15 @@ export function Rail({ pipelineValue, wonCount }: RailProps) {
   );
 }
 
-function NavItem({ entry, pathname }: { entry: NavEntry; pathname: string }) {
+function NavItem({
+  entry,
+  pathname,
+  badge,
+}: {
+  entry: NavEntry;
+  pathname: string;
+  badge: number;
+}) {
   const base =
     "flex w-full items-center gap-2.5 rounded-control px-[11px] py-2 text-left text-[13.5px] font-medium transition-colors";
 
@@ -130,6 +103,14 @@ function NavItem({ entry, pathname }: { entry: NavEntry; pathname: string }) {
         className={`shrink-0 ${active ? "text-flux" : "text-[#7E9994]"}`}
       />
       <span>{entry.label}</span>
+      {badge > 0 && (
+        <span
+          title={`${badge} tâche(s) en retard`}
+          className="ml-auto rounded-full bg-pulse px-1.5 py-[1px] font-mono text-[10px] font-semibold text-white tabular-nums"
+        >
+          {badge}
+        </span>
+      )}
     </Link>
   );
 }

@@ -1,7 +1,9 @@
 import { ContactsView } from "@/components/contacts/contacts-view";
 import { parseContactsQuery } from "@/lib/api/contact-schemas";
 import { listContacts } from "@/lib/api/contacts";
+import { readAlerts } from "@/lib/api/alerts";
 import { getPilotage, listOwners, listSources } from "@/lib/api/reference";
+import { listSequences } from "@/lib/api/sequences";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +26,8 @@ export default async function ContactsPage({
   const parsed = parseContactsQuery(flat);
   const query = parsed.success ? parsed.data : {};
 
-  const [contacts, owners, sources, settings, companies, linkableDeals] = await Promise.all([
+  const [contacts, owners, sources, settings, companies, linkableDeals, sequences, alerts] =
+    await Promise.all([
     listContacts(query),
     listOwners(),
     listSources(),
@@ -35,7 +38,9 @@ export default async function ContactsPage({
       select: { id: true, name: true, contactId: true },
       orderBy: { name: "asc" },
     }),
-  ]);
+      listSequences(),
+      readAlerts(),
+    ]);
 
   return (
     <ContactsView
@@ -45,6 +50,8 @@ export default async function ContactsPage({
       companies={companies}
       settings={settings}
       linkableDeals={linkableDeals}
+      sequences={sequences}
+      alerts={alerts}
     />
   );
 }

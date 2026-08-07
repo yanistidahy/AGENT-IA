@@ -7,6 +7,7 @@ import { Icon } from "@/components/ui/icon";
 import { EmptyState, Eyebrow } from "@/components/ui/primitives";
 import type { CompanyRecord } from "@/lib/api/companies";
 import { moneyShort } from "@/lib/format";
+import type { SequenceOption } from "@/components/activities/run-sequence";
 import { CompanyDrawer } from "./company-drawer";
 import { CompanyForm } from "./company-form";
 
@@ -18,12 +19,19 @@ import { CompanyForm } from "./company-form";
 interface CompaniesViewProps {
   readonly companies: readonly CompanyRecord[];
   readonly industries: readonly string[];
+  readonly owners: readonly string[];
+  readonly sequences: readonly SequenceOption[];
 }
 
 const CONTROL =
   "rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-flux";
 
-export function CompaniesView({ companies, industries }: CompaniesViewProps) {
+export function CompaniesView({
+  companies,
+  industries,
+  owners,
+  sequences,
+}: CompaniesViewProps) {
   const router = useRouter();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
@@ -134,6 +142,8 @@ export function CompaniesView({ companies, industries }: CompaniesViewProps) {
       <CompanyDrawer
         company={selected}
         industries={industries}
+        owners={owners}
+        sequences={sequences}
         onClose={() => setSelected(null)}
         onChanged={refresh}
       />

@@ -7,12 +7,17 @@ import type { ContactRecord } from "@/lib/api/contacts";
 import { deleteContact } from "@/lib/client/crm-api";
 import { daysSince } from "@/lib/domain/dates";
 import { formatDate, money } from "@/lib/format";
+import { RecordPanel } from "@/components/activities/record-panel";
+import type { SequenceOption } from "@/components/activities/run-sequence";
+import type { Alert } from "@/lib/domain/types";
 import { ContactForm, type ContactFormOptions } from "./contact-form";
 import { LinkDeal, type LinkableDeal } from "./link-deal";
 
 interface ContactDrawerProps extends ContactFormOptions {
   readonly contact: ContactRecord | null;
   readonly linkableDeals: readonly LinkableDeal[];
+  readonly sequences: readonly SequenceOption[];
+  readonly alerts: readonly Alert[];
   readonly onClose: () => void;
   readonly onChanged: () => void;
 }
@@ -20,6 +25,8 @@ interface ContactDrawerProps extends ContactFormOptions {
 export function ContactDrawer({
   contact,
   linkableDeals,
+  sequences,
+  alerts,
   onClose,
   onChanged,
   ...options
@@ -207,9 +214,14 @@ export function ContactDrawer({
             </p>
           )}
 
-          <p className="mt-6 rounded-card border border-dashed border-line px-3.5 py-4 text-[12.5px] text-muted">
-            L'historique des interactions et les tâches arrivent au jalon 4.
-          </p>
+          <RecordPanel
+            link={{ contactId: contact.id }}
+            owners={options.owners}
+            defaultOwner={contact.owner === "" ? (options.owners[0] ?? "") : contact.owner}
+            sequences={sequences}
+            alerts={alerts}
+            onChanged={onChanged}
+          />
         </>
       )}
     </Drawer>

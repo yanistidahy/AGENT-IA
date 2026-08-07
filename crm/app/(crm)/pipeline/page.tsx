@@ -1,6 +1,8 @@
 import { PipelineView } from "@/components/deals/pipeline-view";
 import { listDeals } from "@/lib/api/deals";
+import { readAlerts } from "@/lib/api/alerts";
 import { getPilotage, listOffers, listOwners, listStages } from "@/lib/api/reference";
+import { listSequences } from "@/lib/api/sequences";
 import { prisma } from "@/lib/db";
 import { monthKey } from "@/lib/domain/dates";
 
@@ -14,7 +16,7 @@ export const dynamic = "force-dynamic";
  * l'historique et écraserait la lecture des colonnes actives.
  */
 export default async function PipelinePage() {
-  const [open, won, stages, owners, offers, settings, companies, contacts] =
+  const [open, won, stages, owners, offers, settings, companies, contacts, sequences, alerts] =
     await Promise.all([
       listDeals({ status: "open" }),
       listDeals({ status: "won" }),
@@ -27,6 +29,8 @@ export default async function PipelinePage() {
         select: { id: true, firstName: true, lastName: true },
         orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
       }),
+      listSequences(),
+      readAlerts(),
     ]);
 
   const thisMonth = monthKey(new Date());
@@ -44,6 +48,8 @@ export default async function PipelinePage() {
       companies={companies}
       contacts={contacts}
       settings={settings}
+      sequences={sequences}
+      alerts={alerts}
     />
   );
 }

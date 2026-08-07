@@ -10,12 +10,16 @@ import { ContactDrawer } from "./contact-drawer";
 import { ContactForm, type ContactFormOptions } from "./contact-form";
 import { ContactsTable, type ContactSortKey } from "./contacts-table";
 import { ImportDialog } from "./import-dialog";
+import type { SequenceOption } from "@/components/activities/run-sequence";
+import type { Alert } from "@/lib/domain/types";
 import type { LinkableDeal } from "./link-deal";
 
 interface ContactsViewProps extends ContactFormOptions {
   readonly contacts: readonly ContactRecord[];
   readonly settings: PilotageSettings;
   readonly linkableDeals: readonly LinkableDeal[];
+  readonly sequences: readonly SequenceOption[];
+  readonly alerts: readonly Alert[];
 }
 
 const CONTROL =
@@ -28,6 +32,8 @@ export function ContactsView({
   contacts,
   settings,
   linkableDeals,
+  sequences,
+  alerts,
   ...options
 }: ContactsViewProps) {
   const router = useRouter();
@@ -156,6 +162,14 @@ export function ContactsView({
         {...options}
         contact={selected}
         linkableDeals={linkableDeals}
+        sequences={sequences}
+        alerts={
+          selected === null
+            ? []
+            : alerts.filter(
+                (alert) => alert.targetType === "contact" && alert.targetId === selected.id,
+              )
+        }
         onClose={() => setSelected(null)}
         onChanged={refresh}
       />

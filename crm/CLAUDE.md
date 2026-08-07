@@ -58,14 +58,15 @@ crm/
 │   ├── (crm)/                coquille claire : accueil, pipeline, affaires,
 │   │                         contacts, sociétés
 │   ├── conseil/              coquille sombre du conseil d'agents
-│   └── api/                  routes REST : deals, contacts, companies,
-│                             conversations, chat, actions/confirm
+│   └── api/                  routes REST : deals, contacts, companies, tasks,
+│                             activities, sequences, conversations, chat
 ├── lib/
 │   ├── db.ts                 client Prisma unique
 │   ├── format.ts             money, moneyShort, dates fr-FR
 │   ├── api/                  couches de service + schémas Zod par entité
 │   ├── agents/               conseil d'agents (voir § Jalon 2)
 │   ├── client/               appels JSON depuis le navigateur
+│   ├── navigation.ts         structure de navigation — rail + cartes d'accueil
 │   └── domain/               ← règles métier pures, sans Prisma ni React
 │       ├── types.ts          unions + formes du domaine
 │       ├── schemas.ts        z.enum() — frontière string → union
@@ -92,7 +93,7 @@ Les fonctions y sont pures et prennent des formes structurelles
 
 1. les tests tournent sans base ni `prisma generate` ;
 2. l'horloge est injectée (`now: Date`), donc les tests sont déterministes ;
-3. les agents IA (phase 3) réutiliseront ces mêmes fonctions, sans duplication.
+3. les agents du conseil réutilisent ces mêmes fonctions, sans duplication.
 
 ---
 
@@ -164,7 +165,8 @@ contre un schéma SQLite échoue donc au typecheck.
 C'est assumé : la cible est PostgreSQL. SQLite reste utilisable pour une
 vérification jetable, au prix de retouches locales à ne jamais committer : le
 `provider` du schéma, et les `mode: "insensitive"` de `lib/api/deals.ts`,
-`contacts.ts`, `companies.ts`, `contact-import.ts` et `lib/agents/tools/reads.ts`.
+`contacts.ts`, `companies.ts`, `contact-import.ts`, `tasks.ts` et
+`lib/agents/tools/reads.ts`.
 Sauvegarder les originaux avant, les restaurer après, et relancer
 `npm run build && npx tsc --noEmit && npx vitest run` sur le code restauré.
 
@@ -250,8 +252,8 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 0 | Fondations — Next 15, Tailwind, Prisma, seed, `lib/domain/` + tests, chaîne de déploiement | **validé en production** |
 | 1 | Affaires de bout en bout — API, liste, fiche, Kanban, gain/perte | **validé en production** |
 | 2 | Conseil d'agents — 8 personnalités, registre d'outils, streaming, confirmation des écritures | **livré, validation reportée** |
-| 3 | Contacts & Sociétés — même motif, import/export CSV | **livré, à valider** |
-| 4 | Tâches, interactions, séquences, moteur d'alertes | à faire |
+| 3 | Contacts & Sociétés — même motif, import/export CSV | **validé en production** |
+| 4 | Tâches, interactions, séquences, moteur d'alertes | **livré, à valider** |
 | 5 | Centre de pilotage & rapports — SVG écrits à la main, palette Ctrl+K, réglages, `/api/health` | à faire |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
@@ -471,6 +473,129 @@ non committées) :
 ne remonte pas « Zénith Labs ». `mode: "insensitive"` de PostgreSQL couvre la
 casse seule ; l'insensibilité aux accents demanderait l'extension `unaccent` et
 une migration. À arbitrer si le besoin se confirme à l'usage.
+
+---
+
+## Jalon 4 — Tâches, interactions, séquences, alertes
+
+```
+lib/api/tasks.ts             couche de service tâches + compteur de retards
+lib/api/activities.ts        journal des interactions, transaction « prochaine action »
+lib/api/sequences.ts         édition et lancement des séquences
+lib/api/alerts.ts            assemblage : lit la base, appelle le moteur du domaine
+lib/navigation.ts            structure de navigation — source unique rail + accueil
+components/activities/       chronologie, formulaires, lancement de séquence, alertes
+components/tasks/            vue /taches groupée par urgence
+components/settings/         éditeur de séquences (/reglages)
+```
+
+**Consigner une interaction est une transaction, pas trois écritures.**
+`logActivity()` écrit l'interaction, avance `Contact.lastContact` et
+`Deal.lastActivityAt`, et crée la tâche de « prochaine action » — le tout dans un
+`$transaction`. Un appel noté dont la relance s'est perdue est exactement l'oubli
+que ce CRM doit empêcher ; une échéance illisible fait donc échouer l'ensemble et
+n'écrit rien.
+
+**Les dates de dernière touche ne reculent jamais.** Consigner un appel oublié la
+semaine dernière ne doit pas rendre une affaire artificiellement froide : la mise
+à jour n'a lieu que si la nouvelle date est postérieure.
+
+**Le regroupement par urgence se calcule côté client.** `taskBucket()` est pur et
+testé, mais il prend une horloge : « aujourd'hui » doit l'être dans le fuseau de
+l'utilisateur, pas dans celui du serveur.
+
+**Une tâche porte au plus un rattachement, et le refus est explicite.**
+`taskTarget()` saurait trancher par ordre de priorité, mais une charge utile qui
+nomme deux cibles traduit un bug d'appelant, pas une intention : l'API répond 400.
+
+**Les séquences préfixent leurs tâches de leur nom.** « Relance J+3 » seul, dans
+une liste de trente tâches, ne dit ni d'où il vient ni quoi arrêter si le prospect
+répond. Éditer une séquence ne touche pas aux tâches déjà créées : une relance
+planifiée hier reste planifiée.
+
+**La séquence post-vente est reconnue à son nom, pas à un identifiant.** Les
+séquences sont éditables dans Réglages : `q3` du seed peut être renommé,
+désactivé ou supprimé. Elle est **proposée** après un gain, jamais appliquée
+d'office — même règle que la promotion en « Client » du jalon 3.
+
+**La chronologie d'une société agrège.** Elle montre aussi ce qui s'est passé sur
+ses affaires et ses contacts ; sans cela, une fiche société active paraîtrait
+muette.
+
+**Le moteur d'alertes n'a pas été réécrit.** `lib/domain/alerts.ts` existait
+depuis le jalon 0 avec ses six générateurs et ses tests. `lib/api/alerts.ts` ne
+fait que lire les quatre jeux de données et lui passer une horloge. Les trois
+surfaces — pastille du rail, liste « À traiter » de l'accueil, encart dans les
+tiroirs — affichent le même calcul, sans règle parallèle qui finirait par diverger.
+
+### Jalon 4 — ce qui est vérifié
+
+Rejoué contre une base réelle (SQLite jetable, retouches locales non committées) :
+
+- appel consigné sur un contact avec « prochaine action » → interaction écrite,
+  tâche créée à la bonne date avec la bonne priorité et le bon rattachement,
+  `lastContact` avancé du 22/07 au jour même
+- la tâche apparaît dans `/taches` sous le bon groupe d'urgence, rattachement
+  cliquable ; répartition observée : 4 en retard, 1 aujourd'hui, 10 cette semaine
+- séquence lancée sur une affaire → 3 tâches datées J+0/J+4/J+9, préfixées du nom
+  de la séquence, rattachées à l'affaire
+- tâche en retard → pastille du rail à 7 ; cocher la fait tomber à 6 et horodate
+  `doneAt` ; décocher efface `doneAt`
+- chronologies des trois tiroirs : antéchronologiques, la société agrégeant bien
+  ses affaires et ses contacts
+- « prochaine action » à date illisible → 400, **et aucune écriture partielle**
+  (compteur d'interactions inchangé)
+- interaction antidatée de 2020 → `lastContact` inchangé
+- séquence en pause → 409 nommant la cause ; deux rattachements sur une tâche →
+  400 ; interaction sans rattachement → 400 ; tâche inexistante → 404
+- séquence éditée dans `/reglages` (nom + étapes remplacées) → relue correctement,
+  les 3 tâches déjà créées par le lancement précédent intactes
+- `/`, `/affaires`, `/pipeline`, `/contacts`, `/societes`, `/taches`, `/reglages`,
+  `/conseil` → 200
+
+### Jalon 4 — ce qui ne l'est pas
+
+Les alertes de la liste « À traiter » mènent à la vue filtrée, pas au tiroir de la
+fiche : ouvrir directement la fiche demande un état d'ouverture porté par l'URL,
+qui arrive avec le centre de pilotage du jalon 5.
+
+---
+
+## Correctif — la page d'accueil figée
+
+**Signalé** : `/` affichait « Jalon 1 — Affaires de bout en bout » trois jalons
+plus tard, sept compteurs à zéro, et aucune mention de Contacts ni Sociétés.
+
+**Ce qui était réellement en cause.** Deux défauts distincts, dont un seul était
+celui qu'on croyait :
+
+1. *Le libellé « Jalon 1 » était bien écrit en dur*, figé au premier déploiement.
+   Retiré, pas corrigé : un numéro de jalon n'apprend rien à l'utilisateur et
+   redevient faux au jalon suivant. Restent le commit et la branche, qui sont des
+   faits.
+2. *Les compteurs, eux, interrogeaient déjà Prisma à chaque requête.*
+   `readDbStatus()` fait sept `count()`, la page est en `force-dynamic`, et le
+   projet ne contient ni `revalidate`, ni `unstable_cache`, ni `force-static`.
+   Vérifié contre une base réelle : le même processus, **sans redémarrage**, est
+   passé de sept zéros aux vrais comptes à la seconde où le seed s'est exécuté.
+
+Sept zéros avec le voyant « connectée » ne signifient donc pas un affichage figé,
+mais une base joignable et vide — tables créées par `migrate deploy`, jamais
+peuplées. La page le dit désormais explicitement, avec la commande à lancer.
+
+**Ce qui a été ajouté pour que la question ne se repose pas :**
+
+- l'horodatage du rendu, à côté du commit : un rendu réellement frais se voit ;
+- un avertissement nommant l'état « base vide » au lieu de le laisser deviner ;
+- `lib/navigation.ts`, source unique du rail *et* des cartes de l'accueil : livrer
+  un écran ne demande qu'une modification, là où il en fallait deux. Rien ne peut
+  deviner qu'un écran est livré — c'est un jugement, pas un fait mesurable — mais
+  il n'y a plus qu'un seul endroit où le déclarer ;
+- `app/(crm)/__tests__/home-page.test.ts` : les comptes du client Prisma sont
+  imposés, la page est rendue, et le test vérifie que *ces* nombres apparaissent,
+  qu'aucun numéro de jalon n'est écrit, et que les cartes correspondent exactement
+  à `shippedEntries()`. Le garde-fou a été éprouvé en figeant volontairement la
+  page : trois tests tombent.
 
 ### Journal des incidents
 
