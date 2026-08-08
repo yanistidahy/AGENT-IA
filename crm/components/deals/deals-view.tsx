@@ -18,6 +18,8 @@ interface DealsViewProps extends DealFormOptions {
   readonly settings: PilotageSettings;
   readonly sequences: readonly SequenceOption[];
   readonly alerts: readonly Alert[];
+  /** Affaire désignée par `?fiche=` mais absente de la liste filtrée. */
+  readonly focused: DealRecord | null;
 }
 
 const CONTROL =
@@ -28,12 +30,12 @@ export function DealsView({
   settings,
   sequences,
   alerts,
+  focused,
   ...options
 }: DealsViewProps) {
   const router = useRouter();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
-  const [selected, setSelected] = useState<DealRecord | null>(null);
   const [creating, setCreating] = useState(false);
 
   const status = params.get("status") ?? "open";
@@ -52,8 +54,11 @@ export function DealsView({
     [params, router],
   );
 
+  // Tiroir piloté par l'URL — voir le commentaire équivalent dans contacts-view.
+  const fiche = params.get("fiche");
+  const selected = fiche === null ? null : (deals.find((d) => d.id === fiche) ?? focused);
+
   const refresh = () => {
-    setSelected(null);
     setCreating(false);
     router.refresh();
   };
@@ -135,22 +140,22 @@ export function DealsView({
         onSort={(key) =>
           setParam({ sort: key, dir: sortParam === key && dir === "asc" ? "desc" : "asc" })
         }
-        onSelect={setSelected}
+        onSelect={(deal) => setParam({ fiche: deal.id })}
       />
 
       <DealDrawer
         {...options}
-        deal={selected}
+        deal={selected ?? null}
         settings={settings}
         sequences={sequences}
         alerts={
-          selected === null
+          selected === null || selected === undefined
             ? []
             : alerts.filter(
                 (alert) => alert.targetType === "deal" && alert.targetId === selected.id,
               )
         }
-        onClose={() => setSelected(null)}
+        onClose={() => setParam({ fiche: null })}
         onChanged={refresh}
       />
 

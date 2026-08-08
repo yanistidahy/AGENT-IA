@@ -20,6 +20,8 @@ interface ContactsViewProps extends ContactFormOptions {
   readonly linkableDeals: readonly LinkableDeal[];
   readonly sequences: readonly SequenceOption[];
   readonly alerts: readonly Alert[];
+  /** Fiche désignée par `?fiche=` mais absente de la liste filtrée. */
+  readonly focused: ContactRecord | null;
 }
 
 const CONTROL =
@@ -34,12 +36,12 @@ export function ContactsView({
   linkableDeals,
   sequences,
   alerts,
+  focused,
   ...options
 }: ContactsViewProps) {
   const router = useRouter();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
-  const [selected, setSelected] = useState<ContactRecord | null>(null);
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
 
@@ -59,8 +61,16 @@ export function ContactsView({
     [params, router],
   );
 
+  // Le tiroir ouvert est un état d'URL, pas un état de composant : une alerte
+  // du centre de pilotage peut donc ouvrir directement la bonne fiche, le lien
+  // est partageable, et le bouton « précédent » referme le tiroir.
+  const fiche = params.get("fiche");
+  const selected =
+    fiche === null ? null : (contacts.find((c) => c.id === fiche) ?? focused);
+
+  const closeDrawer = () => setParam({ fiche: null });
+
   const refresh = () => {
-    setSelected(null);
     setCreating(false);
     router.refresh();
   };
@@ -155,22 +165,22 @@ export function ContactsView({
         onSort={(key) =>
           setParam({ sort: key, dir: sortParam === key && dir === "asc" ? "desc" : "asc" })
         }
-        onSelect={setSelected}
+        onSelect={(contact) => setParam({ fiche: contact.id })}
       />
 
       <ContactDrawer
         {...options}
-        contact={selected}
+        contact={selected ?? null}
         linkableDeals={linkableDeals}
         sequences={sequences}
         alerts={
-          selected === null
+          selected === null || selected === undefined
             ? []
             : alerts.filter(
                 (alert) => alert.targetType === "contact" && alert.targetId === selected.id,
               )
         }
-        onClose={() => setSelected(null)}
+        onClose={closeDrawer}
         onChanged={refresh}
       />
 

@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * La page d'accueil doit lire la base, pas réciter un texte.
+ * Le centre de pilotage doit lire la base, pas réciter un texte.
  *
  * Ce test existe à cause d'une régression réelle : la page avait été écrite au
  * jalon 1 avec la mention « Jalon 1 — Affaires de bout en bout » en dur, et elle
@@ -10,8 +10,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * interrogeaient bien Prisma — mais rien ne le prouvait automatiquement.
  *
  * Le principe : on impose des comptes arbitraires au client Prisma, on rend la
- * page, et on vérifie que *ces* nombres apparaissent. Un jour où quelqu'un
- * figerait un chiffre ou un libellé, le test tombe.
+ * page, et on vérifie que *ces* nombres apparaissent. Le jour où quelqu'un
+ * figerait un chiffre ou un libellé, le test tombe. Éprouvé en figeant
+ * volontairement la page.
  */
 
 const counts = {
@@ -25,9 +26,9 @@ const counts = {
 };
 
 /**
- * Le moteur d'alertes lit lui aussi la base. Il n'est pas l'objet du test :
- * les listes sont vides, ce qui produit « rien à traiter » et laisse les
- * compteurs seuls sous observation.
+ * Les blocs du tableau de bord lisent eux aussi la base. Ils ne sont pas l'objet
+ * de ce test : les collections sont vides, ce qui laisse les compteurs seuls
+ * sous observation et exerce au passage tous les états « rien à afficher ».
  */
 const empty = () => Promise.resolve([]);
 
@@ -40,16 +41,17 @@ vi.mock("@/lib/db", () => ({
     activity: { count: () => Promise.resolve(counts.activity), findMany: empty },
     task: { count: () => Promise.resolve(counts.task), findMany: empty },
     sequence: { count: () => Promise.resolve(counts.sequence), findMany: empty },
+    settingsList: { findMany: empty },
     settings: { findUnique: () => Promise.resolve(null) },
   },
 }));
 
 async function renderHome(): Promise<string> {
   const { default: HomePage } = await import("../page");
-  return renderToStaticMarkup(await HomePage());
+  return renderToStaticMarkup(await HomePage({ searchParams: Promise.resolve({}) }));
 }
 
-describe("page d'accueil", () => {
+describe("centre de pilotage", () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -97,32 +99,34 @@ describe("page d'accueil", () => {
     expect(html).not.toMatch(/phase\s*\d/i);
   });
 
-  /**
-   * Les cartes sont comparées à `lib/navigation.ts`, pas à une liste écrite ici :
-   * livrer un écran ne doit demander qu'une seule modification, et ce test le
-   * vérifie au lieu d'être la seconde.
-   */
-  it("propose exactement les écrans déclarés comme livrés", async () => {
-    const { shippedEntries } = await import("@/lib/navigation");
+  it("rend les cinq blocs du centre de pilotage", async () => {
     const html = await renderHome();
 
-    const rendered = [...html.matchAll(/href="(\/[a-z-]*)"/g)].map((match) => match[1]);
-    const expected = shippedEntries().map((entry) => entry.href);
-
-    expect(new Set(rendered)).toEqual(new Set(expected));
-    expect(expected.length).toBeGreaterThan(0);
+    for (const block of [
+      "À traiter maintenant",
+      "dernière touche",
+      "Relances à venir",
+      "Affaires en sommeil",
+      "Activité récente",
+    ]) {
+      expect(html, `bloc « ${block} »`).toContain(block);
+    }
   });
 
-  it("n'affiche pas de carte pour un écran non livré", async () => {
-    const { NAV_GROUPS } = await import("@/lib/navigation");
+  /**
+   * Le seuil affiché vient des réglages, pas d'une constante recopiée : c'est ce
+   * qui garantit que changer `coldDays` change ce que l'écran signale.
+   */
+  it("annonce le seuil de fraîcheur issu des réglages", async () => {
+    const { DEFAULT_PILOTAGE } = await import("@/lib/domain/types");
     const html = await renderHome();
 
-    const pending = NAV_GROUPS.flatMap((group) => group.entries).filter(
-      (entry) => entry.href === null,
-    );
-    for (const entry of pending) {
-      expect(html, `écran non livré : ${entry.label}`).not.toContain(entry.desc);
-    }
+    expect(html).toContain(`${DEFAULT_PILOTAGE.coldDays} jours sans contact`);
+  });
+
+  it("expose le lien de diagnostic", async () => {
+    const html = await renderHome();
+    expect(html).toContain('href="/api/health"');
   });
 
   it("dit franchement qu'une base vide est vide, sans le déguiser en panne", async () => {

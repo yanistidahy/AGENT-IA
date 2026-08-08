@@ -1,5 +1,5 @@
 import { CompaniesView } from "@/components/companies/companies-view";
-import { listCompanies, listIndustries } from "@/lib/api/companies";
+import { getCompany, listCompanies, listIndustries } from "@/lib/api/companies";
 import { parseCompaniesQuery } from "@/lib/api/company-schemas";
 import { listOwners } from "@/lib/api/reference";
 import { listSequences } from "@/lib/api/sequences";
@@ -27,12 +27,19 @@ export default async function SocietesPage({
     listSequences(),
   ]);
 
+  const ficheId = flat.fiche;
+  const focused =
+    ficheId === undefined || companies.some((company) => company.id === ficheId)
+      ? null
+      : await getCompany(ficheId);
+
   return (
     <CompaniesView
       companies={companies}
       industries={industries}
       owners={owners}
       sequences={sequences}
+      focused={focused}
     />
   );
 }

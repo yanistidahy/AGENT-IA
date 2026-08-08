@@ -78,7 +78,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     entries: [
       {
         label: "Rapports",
-        href: null,
+        href: "/rapports",
         icon: "chart",
         desc: "Entonnoir, prévisions, performance par propriétaire.",
       },

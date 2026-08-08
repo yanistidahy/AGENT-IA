@@ -1,43 +1,109 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import type { PilotageSettings, SettingsListKind, StageLike } from "@/lib/domain/types";
+import { BackupPanel } from "./backup-panel";
+import { ListEditor } from "./list-editor";
+import { PilotageForm } from "./pilotage-form";
 import { SequenceEditor, type SequenceEditable } from "./sequence-editor";
+import { StagesEditor } from "./stages-editor";
 
-/**
- * Réglages — jalon 4 : les séquences.
- *
- * Les étapes du pipeline, les listes éditables, les seuils d'alerte et la
- * sauvegarde JSON arrivent au jalon 5. L'écran le dit plutôt que d'afficher des
- * sections vides.
- */
-export function SettingsView({ sequences }: { sequences: readonly SequenceEditable[] }) {
+interface SettingsViewProps {
+  readonly sequences: readonly SequenceEditable[];
+  readonly stages: readonly StageLike[];
+  readonly dealCounts: Record<string, number>;
+  readonly settings: PilotageSettings;
+  readonly lists: Record<SettingsListKind, readonly string[]>;
+}
+
+const LIST_LABELS: Array<{ kind: SettingsListKind; label: string }> = [
+  { kind: "owners", label: "Propriétaires" },
+  { kind: "offers", label: "Offres" },
+  { kind: "sources", label: "Sources" },
+  { kind: "lifecycles", label: "Cycles de vie" },
+];
+
+export function SettingsView({
+  sequences,
+  stages,
+  dealCounts,
+  settings,
+  lists,
+}: SettingsViewProps) {
   const router = useRouter();
+  const refresh = () => router.refresh();
 
   return (
     <div className="px-6 py-6">
       <header className="mb-5">
         <h1 className="font-display text-2xl font-semibold tracking-tight">Réglages</h1>
         <p className="mt-0.5 text-[13px] text-muted">
-          {sequences.length} séquences · lancez-les depuis la fiche d'un contact, d'une
-          société ou d'une affaire
+          Ces valeurs pilotent le reste de l'application : seuils d'alerte, colonnes du
+          Kanban, menus déroulants.
         </p>
       </header>
 
-      <h2 className="mb-2.5 font-display text-sm font-semibold">Séquences</h2>
-      <div className="grid gap-3">
-        {sequences.map((sequence) => (
-          <SequenceEditor
-            key={sequence.id}
-            sequence={sequence}
-            onSaved={() => router.refresh()}
-          />
-        ))}
-      </div>
+      <Section
+        title="Seuils et objectif"
+        hint="pilotent la chaleur des affaires, les alertes et la colonne « dernière touche »"
+      >
+        <PilotageForm settings={settings} onSaved={refresh} />
+      </Section>
 
-      <p className="mt-6 rounded-card border border-dashed border-line px-3.5 py-4 text-[12.5px] text-muted">
-        Étapes du pipeline, listes éditables (propriétaires, offres, sources), seuils
-        d'alerte et sauvegarde JSON arrivent au jalon 5.
-      </p>
+      <Section title="Étapes du pipeline" hint="l'ordre ici est l'ordre des colonnes du Kanban">
+        <StagesEditor stages={stages} dealCounts={dealCounts} onSaved={refresh} />
+      </Section>
+
+      <Section title="Listes éditables" hint="une valeur par ligne">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {LIST_LABELS.map(({ kind, label }) => (
+            <ListEditor
+              key={kind}
+              kind={kind}
+              label={label}
+              values={lists[kind]}
+              onSaved={refresh}
+            />
+          ))}
+        </div>
+      </Section>
+
+      <Section
+        title="Séquences"
+        hint="lancez-les depuis la fiche d'un contact, d'une société ou d'une affaire"
+      >
+        <div className="grid gap-3">
+          {sequences.map((sequence) => (
+            <SequenceEditor key={sequence.id} sequence={sequence} onSaved={refresh} />
+          ))}
+        </div>
+      </Section>
+
+      <Section title="Sauvegarde" hint="exportez avant toute manipulation risquée">
+        <BackupPanel onRestored={refresh} />
+      </Section>
     </div>
+  );
+}
+
+function Section({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="mb-6">
+      <h2 className="mb-2.5 flex flex-wrap items-baseline gap-2 font-display text-sm font-semibold">
+        {title}
+        {hint !== undefined && (
+          <span className="text-[12px] font-normal text-muted">{hint}</span>
+        )}
+      </h2>
+      {children}
+    </section>
   );
 }

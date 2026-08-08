@@ -12,14 +12,18 @@ import { NAV_GROUPS, type NavEntry } from "@/lib/navigation";
  * La liste des entrées vit dans `lib/navigation.ts`, partagée avec les cartes de
  * la page d'accueil : livrer un écran ne demande qu'une seule modification.
  */
-interface RailProps {
+/**
+ * Compteurs du pied de rail. `null` signifie « la requête a échoué », ce qui
+ * n'est pas la même chose que zéro : le rail le dit au lieu d'afficher 0 €.
+ */
+export type RailTotals = {
   readonly pipelineValue: number;
   readonly wonCount: number;
   /** Tâches en retard — pastille sur l'entrée Tâches. */
   readonly overdueCount: number;
-}
+} | null;
 
-export function Rail({ pipelineValue, wonCount, overdueCount }: RailProps) {
+export function Rail({ totals }: { totals: RailTotals }) {
   const pathname = usePathname();
 
   return (
@@ -45,7 +49,7 @@ export function Rail({ pipelineValue, wonCount, overdueCount }: RailProps) {
                 key={entry.label}
                 entry={entry}
                 pathname={pathname}
-                badge={entry.href === "/taches" ? overdueCount : 0}
+                badge={entry.href === "/taches" ? (totals?.overdueCount ?? 0) : 0}
               />
             ))}
           </div>
@@ -53,10 +57,22 @@ export function Rail({ pipelineValue, wonCount, overdueCount }: RailProps) {
       </nav>
 
       <div className="mt-auto border-t border-[#1B2C29] px-3 pt-3.5 text-[11.5px] leading-relaxed text-[#5E7A74]">
-        <b className="font-mono text-[11px] text-[#B7CCC7]">{moneyShort(pipelineValue)}</b> en
-        pipeline
-        <br />
-        {wonCount} affaires gagnées
+        {totals === null ? (
+          <span className="text-[#C98B7F]">
+            Compteurs indisponibles
+            <br />
+            la base n'a pas répondu
+          </span>
+        ) : (
+          <>
+            <b className="font-mono text-[11px] text-[#B7CCC7]">
+              {moneyShort(totals.pipelineValue)}
+            </b>{" "}
+            en pipeline
+            <br />
+            {totals.wonCount} affaires gagnées
+          </>
+        )}
       </div>
     </aside>
   );

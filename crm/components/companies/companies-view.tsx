@@ -21,6 +21,8 @@ interface CompaniesViewProps {
   readonly industries: readonly string[];
   readonly owners: readonly string[];
   readonly sequences: readonly SequenceOption[];
+  /** Société désignée par `?fiche=` mais absente de la liste filtrée. */
+  readonly focused: CompanyRecord | null;
 }
 
 const CONTROL =
@@ -31,11 +33,11 @@ export function CompaniesView({
   industries,
   owners,
   sequences,
+  focused,
 }: CompaniesViewProps) {
   const router = useRouter();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
-  const [selected, setSelected] = useState<CompanyRecord | null>(null);
   const [creating, setCreating] = useState(false);
 
   const setParam = useCallback(
@@ -50,8 +52,12 @@ export function CompaniesView({
     [params, router],
   );
 
+  // Tiroir piloté par l'URL — voir le commentaire équivalent dans contacts-view.
+  const fiche = params.get("fiche");
+  const selected =
+    fiche === null ? null : (companies.find((c) => c.id === fiche) ?? focused);
+
   const refresh = () => {
-    setSelected(null);
     setCreating(false);
     router.refresh();
   };
@@ -119,7 +125,7 @@ export function CompaniesView({
             <button
               key={company.id}
               type="button"
-              onClick={() => setSelected(company)}
+              onClick={() => setParam({ fiche: company.id })}
               className="rounded-card border border-line bg-surface px-4 py-3.5 text-left shadow-card transition-colors hover:border-flux"
             >
               <div className="font-display text-[15px] font-semibold tracking-tight">
@@ -140,11 +146,11 @@ export function CompaniesView({
       )}
 
       <CompanyDrawer
-        company={selected}
+        company={selected ?? null}
         industries={industries}
         owners={owners}
         sequences={sequences}
-        onClose={() => setSelected(null)}
+        onClose={() => setParam({ fiche: null })}
         onChanged={refresh}
       />
 

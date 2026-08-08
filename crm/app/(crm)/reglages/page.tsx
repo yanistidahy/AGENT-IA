@@ -1,10 +1,30 @@
 import { SettingsView } from "@/components/settings/settings-view";
+import { getPilotage, listOffers, listOwners, listSources, listStages } from "@/lib/api/reference";
 import { listSequences } from "@/lib/api/sequences";
+import { stageDealCounts } from "@/lib/api/settings";
+import { prisma } from "@/lib/db";
+import { LIFECYCLES } from "@/lib/domain/types";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReglagesPage() {
-  const sequences = await listSequences();
+  const [sequences, stages, dealCounts, settings, owners, offers, sources, lifecycleRows] =
+    await Promise.all([
+      listSequences(),
+      listStages(),
+      stageDealCounts(),
+      getPilotage(),
+      listOwners(),
+      listOffers(),
+      listSources(),
+      prisma.settingsList.findMany({
+        where: { kind: "lifecycles" },
+        orderBy: { position: "asc" },
+        select: { value: true },
+      }),
+    ]);
+
+  const lifecycles = lifecycleRows.map((row) => row.value);
 
   return (
     <SettingsView
@@ -19,6 +39,16 @@ export default async function ReglagesPage() {
           label: step.label,
         })),
       }))}
+      stages={stages}
+      dealCounts={dealCounts}
+      settings={settings}
+      lists={{
+        owners,
+        offers,
+        sources,
+        // Repli sur l'union du domaine : la liste peut ne jamais avoir été peuplée.
+        lifecycles: lifecycles.length > 0 ? lifecycles : [...LIFECYCLES],
+      }}
     />
   );
 }

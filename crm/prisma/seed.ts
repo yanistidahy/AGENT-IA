@@ -293,7 +293,52 @@ const SETTINGS_LISTS: Record<string, string[]> = {
 
 // ----------------------------------------------------------------- main
 
+/**
+ * Chargement du jeu de démonstration.
+ *
+ * **Tout passe dans une seule transaction.** Le seed commence par vider les dix
+ * tables, puis les recharge. Séquentiel et non transactionnel, un échec au
+ * milieu — clé étrangère, coupure réseau, conteneur interrompu — laissait les
+ * suppressions validées et les insertions perdues : une base intégralement vide,
+ * sans message d'erreur visible dans l'application. C'est arrivé en production.
+ *
+ * Encadré par `$transaction`, un échec annule aussi les suppressions : la base
+ * reste telle qu'elle était. Le délai est relevé à 60 s parce que le défaut de
+ * Prisma (5 s) est plus court que ce chargement.
+ */
 async function main(): Promise<void> {
+  await prisma.$transaction(
+    async (tx) => {
+      await seedAll(tx);
+    },
+    { timeout: 60_000, maxWait: 15_000 },
+  );
+
+  const counts = {
+    étapes: await prisma.stage.count(),
+    sociétés: await prisma.company.count(),
+    contacts: await prisma.contact.count(),
+    affaires: await prisma.deal.count(),
+    interactions: await prisma.activity.count(),
+    tâches: await prisma.task.count(),
+    séquences: await prisma.sequence.count(),
+  };
+
+  console.log("Seed terminé :");
+  for (const [label, count] of Object.entries(counts)) {
+    console.log(`  ${label.padEnd(14)} ${count}`);
+  }
+
+  if (Object.values(counts).some((count) => count === 0)) {
+    console.error("✗ Une table est restée vide : le seed n'a pas abouti.");
+    process.exitCode = 1;
+  }
+}
+
+/** Client de transaction : mêmes modèles que `prisma`, sans `$transaction`. */
+type Tx = Omit<typeof prisma, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">;
+
+async function seedAll(prisma: Tx): Promise<void> {
   // Ordre de suppression contraint par les clés étrangères.
   await prisma.activity.deleteMany();
   await prisma.task.deleteMany();
@@ -416,20 +461,6 @@ async function main(): Promise<void> {
     })),
   });
 
-  const counts = {
-    étapes: await prisma.stage.count(),
-    sociétés: await prisma.company.count(),
-    contacts: await prisma.contact.count(),
-    affaires: await prisma.deal.count(),
-    interactions: await prisma.activity.count(),
-    tâches: await prisma.task.count(),
-    séquences: await prisma.sequence.count(),
-  };
-
-  console.log("Seed terminé :");
-  for (const [label, count] of Object.entries(counts)) {
-    console.log(`  ${label.padEnd(14)} ${count}`);
-  }
 }
 
 main()

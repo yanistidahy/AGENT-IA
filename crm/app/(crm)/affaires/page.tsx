@@ -1,6 +1,6 @@
 import { DealsView } from "@/components/deals/deals-view";
 import { parseDealsQuery } from "@/lib/api/deal-schemas";
-import { listDeals } from "@/lib/api/deals";
+import { getDeal, listDeals } from "@/lib/api/deals";
 import { readAlerts } from "@/lib/api/alerts";
 import { listOffers, listOwners, listStages, getPilotage } from "@/lib/api/reference";
 import { listSequences } from "@/lib/api/sequences";
@@ -45,6 +45,12 @@ export default async function AffairesPage({
       readAlerts(),
     ]);
 
+  const ficheId = flat.fiche;
+  const focused =
+    ficheId === undefined || deals.some((deal) => deal.id === ficheId)
+      ? null
+      : await getDeal(ficheId);
+
   return (
     <DealsView
       deals={deals}
@@ -56,6 +62,7 @@ export default async function AffairesPage({
       settings={settings}
       sequences={sequences}
       alerts={alerts}
+      focused={focused}
     />
   );
 }

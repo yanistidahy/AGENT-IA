@@ -20,11 +20,24 @@ const DOTS: Record<AlertLevel, string> = {
   low: "bg-line",
 };
 
-const ROUTES: Record<Alert["targetType"], string> = {
-  task: "/taches",
-  deal: "/affaires?status=all",
-  contact: "/contacts",
-};
+/**
+ * Destination d'une alerte : la fiche concernée, tiroir ouvert.
+ *
+ * `?fiche=` est lu par les vues Affaires et Contacts, qui chargent la fiche même
+ * si elle sort du filtre courant — cliquer une alerte ouvre donc toujours le bon
+ * enregistrement. Les tâches n'ont pas de tiroir : elles mènent à leur groupe
+ * d'urgence dans /taches.
+ */
+function hrefFor(alert: Alert): string {
+  switch (alert.targetType) {
+    case "deal":
+      return `/affaires?status=all&fiche=${encodeURIComponent(alert.targetId)}`;
+    case "contact":
+      return `/contacts?lifecycle=all&fiche=${encodeURIComponent(alert.targetId)}`;
+    case "task":
+      return "/taches";
+  }
+}
 
 export function AlertList({ alerts, limit = 8 }: { alerts: readonly Alert[]; limit?: number }) {
   if (alerts.length === 0) {
@@ -43,7 +56,7 @@ export function AlertList({ alerts, limit = 8 }: { alerts: readonly Alert[]; lim
         {shown.map((alert) => (
           <li key={`${alert.kind}-${alert.targetId}`}>
             <Link
-              href={ROUTES[alert.targetType]}
+              href={hrefFor(alert)}
               className={`flex items-start gap-2.5 rounded-card border px-3.5 py-2.5 transition-colors hover:border-flux ${STYLES[alert.level]}`}
             >
               <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${DOTS[alert.level]}`} />

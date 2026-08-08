@@ -127,8 +127,8 @@ sont donc dans `app/globals.css`. Le brief mentionnait `tailwind.config.ts`,
 
 **Composants** — 250 lignes maximum. Au-delà, découper.
 
-**Graphiques** — SVG écrit à la main, aucune librairie. Les cinq primitives du
-prototype (`fluxbar`, `bar`, `donut`, `line`, `funnel`) arrivent au jalon 5.
+**Graphiques** — SVG écrit à la main, aucune librairie, en composants serveur :
+`components/charts/` ne fait parvenir aucun JavaScript au navigateur.
 
 ---
 
@@ -165,7 +165,7 @@ contre un schéma SQLite échoue donc au typecheck.
 C'est assumé : la cible est PostgreSQL. SQLite reste utilisable pour une
 vérification jetable, au prix de retouches locales à ne jamais committer : le
 `provider` du schéma, et les `mode: "insensitive"` de `lib/api/deals.ts`,
-`contacts.ts`, `companies.ts`, `contact-import.ts`, `tasks.ts` et
+`contacts.ts`, `companies.ts`, `contact-import.ts`, `tasks.ts`, `search.ts` et
 `lib/agents/tools/reads.ts`.
 Sauvegarder les originaux avant, les restaurer après, et relancer
 `npm run build && npx tsc --noEmit && npx vitest run` sur le code restauré.
@@ -182,7 +182,7 @@ disponible localement.
 | Variable | Depuis | Rôle |
 |---|---|---|
 | `DATABASE_URL` | phase 1 | connexion PostgreSQL |
-| `WORKSPACE_PASSWORD` | phase 2 | mot de passe unique de l'espace de travail |
+| `WORKSPACE_PASSWORD` | à venir | mot de passe unique de l'espace de travail |
 | `ANTHROPIC_API_KEY` | phase 3 | conseil d'agents — **serveur uniquement** |
 | `AGENT_ETIENNE_ENABLED` | phase 4 | drapeau de l'agent verrouillé |
 
@@ -253,8 +253,8 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 1 | Affaires de bout en bout — API, liste, fiche, Kanban, gain/perte | **validé en production** |
 | 2 | Conseil d'agents — 8 personnalités, registre d'outils, streaming, confirmation des écritures | **livré, validation reportée** |
 | 3 | Contacts & Sociétés — même motif, import/export CSV | **validé en production** |
-| 4 | Tâches, interactions, séquences, moteur d'alertes | **livré, à valider** |
-| 5 | Centre de pilotage & rapports — SVG écrits à la main, palette Ctrl+K, réglages, `/api/health` | à faire |
+| 4 | Tâches, interactions, séquences, moteur d'alertes | **validé en production** |
+| 5 | Centre de pilotage & rapports — SVG écrits à la main, palette Ctrl+K, réglages, `/api/health` | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -596,6 +596,138 @@ peuplées. La page le dit désormais explicitement, avec la commande à lancer.
   qu'aucun numéro de jalon n'est écrit, et que les cartes correspondent exactement
   à `shippedEntries()`. Le garde-fou a été éprouvé en figeant volontairement la
   page : trois tests tombent.
+
+---
+
+## Jalon 5 — Centre de pilotage, rapports, réglages
+
+```
+lib/api/dashboard.ts       assemblage du centre de pilotage
+lib/api/reports.ts         fenêtre temporelle + agrégats (calculs dans lib/domain/kpis)
+lib/api/settings.ts        seuils, listes, étapes du pipeline
+lib/api/backup.ts          export/restauration JSON complets
+lib/api/search.ts          recherche transverse (palette Ctrl+K)
+components/dashboard/      en-tête, « dernière touche », relances, flux, risques
+components/charts/         barres, courbe, anneau, entonnoir — SVG écrit à la main
+components/search/palette  Ctrl+K, navigation au clavier
+app/api/health/            sonde : injoignable (503) / vide (200) / ok (200)
+```
+
+**Le tiroir est un état d'URL.** `?fiche=<id>` sur `/contacts`, `/societes` et
+`/affaires` ouvre la fiche correspondante. La page charge cette fiche
+*séparément* si elle ne figure pas dans la liste filtrée : cliquer une alerte
+depuis l'accueil ouvre donc toujours le bon enregistrement, même si le filtre
+courant l'exclut. Le lien est partageable et le bouton « précédent » referme le
+tiroir. C'est ce qui manquait au jalon 4.
+
+**Le centre de pilotage répond à une question, pas à dix.** L'ordre des blocs est
+celui de la question : ce qui brûle (« à traiter maintenant »), qui a été oublié
+(« dernière touche »), ce qui est prévu (« relances à venir »), ce qui dort
+(« affaires en sommeil »), ce qui vient de se passer.
+
+**Le rouge de « dernière touche » vient des réglages, pas d'une constante.** Le
+seuil affiché en légende est `coldDays` : le modifier dans Réglages change
+immédiatement la légende *et* les couleurs. Un test le vérifie en comparant
+l'écran à `DEFAULT_PILOTAGE`.
+
+**Les graphiques n'envoient aucun JavaScript.** Ce sont des composants serveur
+qui produisent du `<svg>` statique, `viewBox` + `width="100%"` pour la fluidité.
+Le tri du tableau « dernière touche » passe lui aussi par des liens : la page
+d'accueil est entièrement rendue côté serveur.
+
+**Les seuils sont liés, et l'invariant est vérifié sur la valeur finale.**
+`staleDays` doit rester strictement inférieur à `coldDays`, sinon `dealHeat()`
+ne renvoie plus jamais « tiède ». Modifier un seul des deux champs reste donc
+possible : le service relit l'autre en base avant de trancher.
+
+**Supprimer une étape qui porte des affaires est refusé, en les comptant.**
+`Deal.stage` n'a pas d'`onDelete` : la suppression échouerait sur une contrainte
+de clé étrangère avec un message Prisma illisible. Le réordonnancement décale
+d'abord toutes les positions hors de portée, sinon un simple échange de deux
+étapes violerait la contrainte d'unicité.
+
+**La restauration remplace tout, ou ne touche à rien.** Elle s'exécute dans une
+transaction et les dates sont reconverties par `z.coerce.date()` — JSON n'a pas
+de type date, et un export relu tel quel passerait des chaînes là où Prisma
+attend des `Date`.
+
+### Jalon 5 — ce qui est vérifié
+
+Rejoué contre une base réelle (SQLite jetable, retouches locales non committées) :
+
+- `/accueil` : 12 alertes, seuil « 14 jours » en légende, 4 contacts en rouge,
+  10 relances sur 7 jours, blocs sommeil et activité présents, barre d'objectif
+- cliquer une alerte contact → tiroir ouvert sur la bonne fiche, chronologie
+  comprise ; **une fiche hors du filtre courant s'ouvre quand même** (filtre
+  `lifecycle=Lead`, fiche d'un Client → tiroir correct) ; idem pour une affaire
+- `coldDays` 14 → 5 : la légende passe à 5 et les contacts en rouge passent de
+  4 à 10 ; `staleDays: 30` seul → 400 nommant l'invariant
+- Ctrl+K : « nadia » → le contact et son lien `?fiche=` ; « nutrivia » → contact,
+  société, affaires et tâche ; 1 caractère ou vide → 0 résultat
+- `/rapports` sur les quatre périodes : CA 2,4k€ / 14k€ / 22k€ / 22k€, closing
+  50 / 57 / 70 / 70 %, 14 `<svg>`, entonnoir, prévision, deux anneaux, tableau
+  par propriétaire
+- réglages : réordonnancement et renommage d'étapes appliqués ; suppression de
+  5 étapes portant 21 affaires → 409 les nommant ; couleur « vert » → 400 ;
+  liste avec doublon, espaces et ligne vide → nettoyée à 3 valeurs
+- sauvegarde → 111 lignes exportées ; 18 contacts supprimés (13 tâches emportées
+  en cascade) ; restauration → tout revient, tâches comprises
+- fichier non conforme → 400 sans rien supprimer ; sauvegarde cohérente en
+  apparence mais pointant une étape inexistante → 400, **base intacte** ;
+  version 99 → refus nommant les versions
+- `/api/health` : base peuplée → `ok` 200 ; base vide → `empty` 200 ; base
+  injoignable → `unreachable` 503, sans fuite d'URL ni d'identifiant
+- base injoignable : `/` répond quand même 200 et le rail affiche « Compteurs
+  indisponibles » au lieu de « 0 € en pipeline »
+
+### Jalon 5 — ce qui ne l'est pas
+
+La palette Ctrl+K et les formulaires de réglages sont des composants client :
+leur comportement au clavier a été vérifié par lecture et par les appels d'API
+sous-jacents, pas par un navigateur piloté. Le rendu visuel des graphiques n'a
+pas été comparé à une référence — seule leur présence et leurs données le sont.
+
+---
+
+## Incident — la base de production vidée
+
+**Signalé** : `/reglages` à « 0 séquences » et le rail à « 0 € en pipeline »,
+après des compteurs à 6/12/18/24/32/16/3 le matin même.
+
+**Ce que la chaîne de déploiement fait, vérifié fichier par fichier** :
+`nixpacks.toml` → `npm ci`, `npm run build`, `npm run start` ;
+`scripts/start.sh` → `prisma migrate deploy` puis le serveur. `migrate deploy`
+n'applique que des migrations en avant ; il ne réinitialise rien. Il n'y a dans
+le dépôt ni `migrate reset`, ni `db push`, ni `--accept-data-loss`, ni appel
+automatique au seed. La clé `package.json#prisma.seed` existe, mais elle n'est
+invoquée que par `migrate dev` et `migrate reset`, jamais par `migrate deploy`.
+**Aucun chemin de déploiement ne supprime de données.**
+
+**Deux défauts du code, en revanche, produisent exactement ce symptôme** — les
+deux sont corrigés :
+
+1. **Le seed vidait puis rechargeait, sans transaction.** Dix `deleteMany` suivis
+   d'une longue série d'insertions. Un échec au milieu — clé étrangère, coupure
+   réseau, conteneur interrompu — laissait les suppressions validées et les
+   insertions perdues : une base intégralement vide, sans erreur visible dans
+   l'application. C'est le seul mécanisme du dépôt capable de vider la base, et
+   il ne se déclenche qu'à la main. Il est désormais encadré par `$transaction`
+   (délai 60 s) et signale en sortie toute table restée vide.
+2. **Le rail affichait « 0 € » quand la requête échouait.** Le `catch` de
+   `readRailTotals()` renvoyait des zéros : une base injoignable et une base vide
+   donnaient le même affichage. Il renvoie maintenant `null`, et le rail écrit
+   « Compteurs indisponibles ».
+
+**Ce qui reste à vérifier côté Railway, et que le code ne peut pas dire** : si le
+service PostgreSQL dispose d'un volume persistant, et si `DATABASE_URL` désigne
+toujours la même instance après redéploiement. `/api/health` donne la réponse en
+un appel — `unreachable`, `empty` ou `ok`, avec les sept compteurs. Une base
+`empty` juste après un déploiement, alors qu'elle était `ok` avant, désigne
+l'infrastructure, pas l'application.
+
+**Filet de sécurité ajouté** : sauvegarde JSON complète téléchargeable et
+restauration transactionnelle dans Réglages. À exporter avant toute manipulation
+risquée.
 
 ### Journal des incidents
 
