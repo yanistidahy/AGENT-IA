@@ -30,6 +30,9 @@ export function ImportDialog({ open, onClose, onImported }: ImportDialogProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
+  // Décochée par défaut : un import qui modifie l'existant sans qu'on l'ait
+  // demandé est une perte de données qui ne dit pas son nom.
+  const [update, setUpdate] = useState(false);
 
   const grid = text.trim() === "" ? [] : parseGrid(text);
   const header = grid[0];
@@ -42,7 +45,7 @@ export function ImportDialog({ open, onClose, onImported }: ImportDialogProps) {
     setBusy(true);
     setError(null);
     setReport(null);
-    const result = await importContacts(text);
+    const result = await importContacts(text, update);
     setBusy(false);
     if (result.ok) {
       setReport(result.data.report);
@@ -79,6 +82,23 @@ export function ImportDialog({ open, onClose, onImported }: ImportDialogProps) {
         placeholder={"Prénom\tNom\tEmail\tSociété\nMarie\tDurand\tmarie@acme.fr\tACME"}
         className="w-full rounded-control border border-line bg-surface px-2.5 py-2 font-mono text-[12.5px] outline-none focus:border-flux"
       />
+
+      <label className="mt-3 flex items-start gap-2 text-[13px]">
+        <input
+          type="checkbox"
+          checked={update}
+          onChange={(event) => setUpdate(event.target.checked)}
+          className="mt-0.5"
+        />
+        <span>
+          Mettre à jour les contacts existants
+          <span className="mt-0.5 block text-[11.5px] leading-relaxed text-muted">
+            Le rapprochement se fait par adresse électronique, à défaut par nom + société.
+            Seules les colonnes présentes dans le collage sont modifiées : une colonne absente
+            ou une cellule vide ne vide jamais un champ, et rien n'est supprimé.
+          </span>
+        </span>
+      </label>
 
       {text.trim() !== "" && (
         <div className="mt-3 rounded-card border border-line bg-surface-2 px-3.5 py-3 text-[12.5px]">
@@ -139,11 +159,11 @@ function ReportCard({ report }: { report: ImportReport }) {
   return (
     <div className="mt-3 rounded-card border border-line bg-flux-l px-3.5 py-3 text-[12.5px] text-flux-d">
       <b className="font-display text-[14px]">
-        {report.created} contact(s) créé(s)
+        {report.created} créé(s) · {report.updated} mis à jour · {report.duplicates} ignoré(s)
       </b>
       <ul className="mt-1.5 grid gap-0.5">
         {report.duplicates > 0 && (
-          <li>{report.duplicates} ignoré(s) — adresse déjà présente en base.</li>
+          <li>{report.duplicates} ignoré(s) — déjà en base, rien à changer.</li>
         )}
         {report.companiesCreated.length > 0 && (
           <li>Sociétés créées : {report.companiesCreated.join(", ")}.</li>
@@ -151,6 +171,15 @@ function ReportCard({ report }: { report: ImportReport }) {
         {report.ignoredColumns.length > 0 && (
           <li>Colonnes non reconnues : {report.ignoredColumns.join(", ")}.</li>
         )}
+        {report.updates.map((entry) => (
+          <li key={`maj-${entry.line}`}>
+            <b className="font-semibold">{entry.name}</b>
+            {entry.company === null ? "" : ` (${entry.company})`} :{" "}
+            {entry.changes
+              .map((change) => `${change.field} ${change.from} → ${change.to}`)
+              .join(" · ")}
+          </li>
+        ))}
         {report.errors.map((issue) => (
           <li key={issue.line} className="text-[#B2311F]">
             Ligne {issue.line} : {issue.message}

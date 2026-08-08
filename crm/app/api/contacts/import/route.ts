@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   if (!parsed.success) return invalidPayload(parsed.error);
 
   try {
-    const outcome = await importContacts(parsed.data.text);
+    const outcome = await importContacts(parsed.data.text, { update: parsed.data.update === true });
     if (!outcome.ok) return badRequest(outcome.message);
     return jsonOk({ report: outcome.report });
   } catch (error) {

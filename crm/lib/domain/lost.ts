@@ -25,6 +25,14 @@ export const LOST_REASONS = [
   "Budget",
   "Timing",
   "Concurrent",
+  /**
+   * « Pas intéressé » nomme le cas le plus fréquent et le plus honnête : la
+   * personne a répondu, elle a dit non, elle n'a pas dit pourquoi. Sans cette
+   * valeur il fallait choisir entre inventer un motif et laisser vide le motif
+   * majoritaire du portefeuille. « Ne répond plus » serait faux — ils ont bien
+   * répondu.
+   */
+  "Pas intéressé",
   "Pas le bon interlocuteur",
   "Ne répond plus",
   "Ne souhaite plus être contacté",

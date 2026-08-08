@@ -260,6 +260,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 8 | Formulaire d'affaire réparé + couche d'automatisation | **livré, à valider** |
 | 9 | **Verrou d'espace de travail** — mot de passe partagé, sessions signées, sonde muette | **livré, à valider** |
 | 10 | Liens, filtres de colonne, étiquettes, prospects perdus | **livré, à valider** |
+| 11 | Correction des statuts depuis la feuille + import en mise à jour | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -1282,6 +1283,118 @@ compromis à 133 sociétés, ce ne l'était pas à 12.
 Les menus de colonne sont des composants client : leur comportement au clavier
 n'a pas été vérifié par un navigateur piloté, seulement leur effet sur les
 requêtes et sur le rendu serveur.
+
+## Jalon 11 — correction des statuts, et import en mise à jour
+
+### Ce que la feuille disait vraiment
+
+Relecture en **lecture seule** de « CRM AURA FLOW AI », onglet « Liste de
+prospection », 152 lignes. Deux constats ont décidé de tout le reste :
+
+1. **La table des clients signés est vide.** Le classeur porte bien une table
+   `Date Signature` / `CA Total (€)` / `Mois Actif` / `NPS /10` — sans une seule
+   ligne. Aucun achat n'est prouvé nulle part. Les 27 fiches en « Ancien Client »
+   venaient donc d'un mapping trop large au premier import, pas d'une réalité
+   commerciale.
+2. **Aucune opposition au démarchage n'apparaît.** Recherche sur les 152 lignes :
+   pas de désinscription, pas de « ne me recontactez plus », pas de STOP. Les 21
+   refus sont des « pas intéressé » commerciaux. **`Ne souhaite plus être
+   contacté` n'a été attribué à personne** — c'est une opposition RGPD ferme, elle
+   ne s'attribue pas par défaut.
+
+### `Pas intéressé` rejoint les motifs
+
+Vingt-et-un refus, aucun motif indiqué. Aucune des six valeurs existantes ne
+convenait : `Ne répond plus` aurait été faux — ils ont répondu — et laisser vide
+aurait privé le portefeuille de son motif majoritaire. La valeur nomme donc
+exactement ce que la feuille dit : la personne a répondu, elle a dit non, on ne
+sait pas pourquoi.
+
+### Un script, pas une migration
+
+`scripts/fix-lifecycles.ts` corrige des **valeurs**, sur la foi d'un tableur qui
+n'est pas le schéma. Dans `prisma/migrations/`, il rejouerait sur toute base
+neuve, y compris de test, où ces contacts n'existent pas.
+
+La correspondance vit à côté, dans `scripts/corrections-2026-08.ts` : une
+transcription, pas une règle. Chaque ligne porte son numéro dans la feuille et la
+preuve qui a motivé la décision, pour qu'on puisse la contester sans rouvrir le
+tableur.
+
+Six garanties, dans l'ordre où elles comptent :
+
+- **simulation par défaut** — sans `--apply`, rien n'est écrit ;
+- **deux champs, jamais plus** — `lifecycle` et `lostReason`. Le `data` de
+  l'`update` est court exprès : on doit pouvoir le lire d'un coup d'œil ;
+- **idempotent** — une fiche déjà dans l'état visé est comptée « déjà à jour » et
+  n'est ni réécrite, ni re-consignée ;
+- **sauvegarde horodatée** des fiches concernées **avant** toute écriture ;
+- **une interaction par fiche** — « Statut corrigé depuis la feuille de
+  prospection : X → Perdu (motif). <preuve> » — pour que l'historique explique le
+  changement dans six mois ;
+- **une transaction** — une base à moitié corrigée serait pire que pas corrigée.
+
+Le rapprochement se fait par adresse électronique, à défaut par nom + société
+comparés sans accents ni casse. Une ligne introuvable ou correspondant à
+plusieurs fiches est **signalée, pas appliquée**. Cinq lignes sans adresse sont
+marquées « rapprochement incertain » dans la sortie.
+
+### Les « Ancien Client » sans preuve d'achat
+
+Ceux que la feuille ne mentionne pas retournent d'où ils viennent : `Prospect`
+s'ils ont au moins une touche enregistrée (`lastContact` ou une interaction),
+`Lead` sinon. C'est la seule distinction que la base permette de faire
+honnêtement — elle ne sait pas ce qu'une feuille vide ne dit pas.
+
+### L'import sait enfin mettre à jour
+
+Case « Mettre à jour les contacts existants », **décochée par défaut** : un
+import qui modifie l'existant sans qu'on l'ait demandé est une perte de données
+qui ne dit pas son nom.
+
+Cochée, une ligne qui correspond à une fiche existante la met à jour selon deux
+règles strictes :
+
+1. **une colonne absente du collage n'est pas touchée** — elle n'exprime aucune
+   intention ;
+2. **une cellule vide ne vide pas le champ** — sinon un tableur partiellement
+   rempli effacerait des données qu'il ne prétendait pas modifier.
+
+Rien n'est jamais supprimé. Le rapport distingue créés / mis à jour / ignorés et
+**liste champ par champ ce qui a changé** : « 12 mis à jour » sans le détail
+n'apprend rien.
+
+**Défaut corrigé au passage** : l'import n'écrivait pas `searchText`. Les fiches
+importées depuis le jalon 10 étaient introuvables à la recherche jusqu'à leur
+prochaine modification.
+
+### Jalon 11 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, sur une base chargée à l'image de la production
+(146 contacts issus de la feuille, dont 27 en « Ancien Client ») :
+
+- simulation : 53 fiches à modifier, 0 écriture, la ligne 37 (sans nom dans la
+  feuille) signalée « introuvable » au lieu d'être devinée ;
+- répartition obtenue : 20 `Pas intéressé`, 5 `Ne répond plus`, 2 `Pas le bon
+  interlocuteur`, 1 `Concurrent`, 19 `Lead`, 6 `Prospect` ;
+- application : sauvegarde écrite, 53 fiches corrigées, 53 interactions
+  consignées, **0 fiche portant un téléphone, une note ou une étiquette modifiés** ;
+- second passage : « 28 déjà à jour, 0 fiche à modifier » — idempotent ;
+- import sans la case → 1 ignoré ; avec la case → 1 mis à jour, quatre
+  changements listés ; colonne absente et cellule vide → champs conservés ;
+  rejoué → 0 mis à jour ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (370 tests) verts.
+
+### Jalon 11 — ce qui ne l'est pas
+
+**Les chiffres ci-dessus viennent d'une base reconstituée, pas de la vôtre.** Le
+nombre de fiches réellement corrigées en production dépendra des rapprochements :
+la simulation sur la vraie base est le seul chiffre qui fasse foi. C'est
+précisément à cela que sert le mode simulation.
+
+La feuille n'a pas été modifiée et ne le sera pas par ce script : la
+correspondance est figée dans le dépôt à la date de relecture. Si la feuille
+évolue, il faut la relire et régénérer `corrections-2026-08.ts`.
 
 ### Journal des incidents
 

@@ -134,6 +134,12 @@ export type ListContactsQuery = z.infer<typeof listContactsQuerySchema>;
 /** Ligne d'import : les champs sont libres, la validation se fait ligne par ligne. */
 export const importContactsSchema = z.object({
   text: z.string().min(1, "Collez au moins une ligne"),
+  /**
+   * Mise à jour des fiches existantes. **Décochée par défaut** : un import qui
+   * modifie l'existant sans qu'on l'ait demandé est une perte de données qui ne
+   * dit pas son nom.
+   */
+  update: z.boolean().optional(),
 });
 
 /**

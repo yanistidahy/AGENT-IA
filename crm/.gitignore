@@ -18,3 +18,6 @@ prisma/dev.db*
 *.tsbuildinfo
 next-env.d.ts
 coverage/
+
+# Sauvegardes écrites par scripts/fix-lifecycles.ts
+backups/

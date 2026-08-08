@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { externalLabel, externalUrl } from "../links";
 import { fold, searchTerm, searchText } from "../text";
-import { DO_NOT_CONTACT, isLost, LOST_LIFECYCLE, optedOut } from "../lost";
+import { DO_NOT_CONTACT, isLost, LOST_LIFECYCLE, LOST_REASONS, optedOut } from "../lost";
 import {
   applyFilterToParams,
   clearFilters,
@@ -261,5 +261,22 @@ describe("valeurs distinctes proposées par un menu", () => {
   it("« (vide) » est classé en dernier", () => {
     const facets = facetsFor(ROWS, FACET_COLUMNS, {}, NOW);
     expect(facets.owner?.at(-1)?.value).toBe(VOID);
+  });
+});
+
+describe("motifs de perte", () => {
+  it("« Pas intéressé » est proposé, et n'est pas une opposition au démarchage", () => {
+    expect(LOST_REASONS).toContain("Pas intéressé");
+    expect(optedOut({ lostReason: "Pas intéressé" })).toBe(false);
+  });
+
+  /**
+   * Le garde-fou qui compte : seule la formule exacte vaut opposition RGPD. Un
+   * refus commercial, même catégorique, ne doit jamais la déclencher.
+   */
+  it("aucun autre motif ne vaut opposition", () => {
+    for (const reason of LOST_REASONS) {
+      expect(optedOut({ lostReason: reason }), reason).toBe(reason === DO_NOT_CONTACT);
+    }
   });
 });

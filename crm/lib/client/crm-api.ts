@@ -66,10 +66,10 @@ function isImportPayload(value: unknown): value is { report: ImportReport } {
   );
 }
 
-export function importContacts(text: string): Promise<ApiResult<{ report: ImportReport }>> {
+export function importContacts(text: string, update = false): Promise<ApiResult<{ report: ImportReport }>> {
   return requestJson(
     "/api/contacts/import",
-    { method: "POST", body: JSON.stringify({ text }) },
+    { method: "POST", body: JSON.stringify({ text, update }) },
     isImportPayload,
   );
 }
