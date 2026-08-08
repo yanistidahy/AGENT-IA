@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Eyebrow, FollowUpTag } from "@/components/ui/primitives";
 import type { ClientRow, ClientSort } from "@/lib/api/clients";
+import { needsAttention } from "@/lib/domain/follow-up";
 import { formatDate, money, moneyShort } from "@/lib/format";
 
 /**
@@ -70,7 +71,8 @@ export function ClientsTable({ clients, sort, coldDays }: ClientsTableProps) {
         </thead>
         <tbody>
           {clients.map((client) => {
-            const cold = client.idleDays === null || client.idleDays >= coldDays;
+            // Même source de vérité que /contacts et /accueil.
+            const cold = needsAttention(client.followUp);
 
             return (
               <tr key={client.id} className="transition-colors hover:bg-surface-2">

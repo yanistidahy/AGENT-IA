@@ -2,6 +2,7 @@ import { prisma } from "../db";
 import { toActivityType, toDealStatus, toLifecycle, toTaskPriority } from "../domain/guards";
 import { addDays, daysSince, monthKey, startOfDay } from "../domain/dates";
 import { dealHeat, weighted } from "../domain/pipeline";
+import { followUpStatus, idleDays as computeIdleDays, type FollowUpStatus } from "../domain/follow-up";
 import type {
   ActivityType,
   DealHeat,
@@ -31,6 +32,9 @@ export interface StaleContact {
   /** Jours depuis la dernière interaction ; `null` si aucune n'a jamais eu lieu. */
   readonly idleDays: number | null;
   readonly nextAction: { readonly title: string; readonly due: Date } | null;
+  readonly nextReminder: Date | null;
+  /** Même calcul que /contacts et /clients — voir lib/domain/follow-up.ts. */
+  readonly followUp: FollowUpStatus;
 }
 
 export interface UpcomingItem {
@@ -41,6 +45,8 @@ export interface UpcomingItem {
   readonly priority: TaskPriority;
   readonly targetLabel: string | null;
   readonly targetHref: string | null;
+  /** Tâche datée, ou relance programmée sur une fiche contact. */
+  readonly kind: "task" | "reminder";
 }
 
 export interface FeedItem {
@@ -83,7 +89,10 @@ export interface DashboardData {
  * Un contact jamais touché remonte en tête (`idleDays: null` trié en premier) —
  * c'est le cas le plus préoccupant, pas le moins.
  */
-async function readStaleContacts(now: Date): Promise<StaleContact[]> {
+async function readStaleContacts(
+  settings: PilotageSettings,
+  now: Date,
+): Promise<StaleContact[]> {
   const rows = await prisma.contact.findMany({
     where: { NOT: { lifecycle: "Ancien Client" } },
     select: {
@@ -93,7 +102,9 @@ async function readStaleContacts(now: Date): Promise<StaleContact[]> {
       lifecycle: true,
       owner: true,
       lastContact: true,
+      nextReminder: true,
       company: { select: { name: true } },
+      _count: { select: { activities: true } },
       tasks: {
         where: { done: false },
         select: { title: true, due: true },
@@ -106,6 +117,11 @@ async function readStaleContacts(now: Date): Promise<StaleContact[]> {
   return rows
     .map((row) => {
       const next = row.tasks[0];
+      const followUpInput = {
+        lastContact: row.lastContact,
+        nextReminder: row.nextReminder,
+        activityCount: row._count.activities,
+      };
       return {
         id: row.id,
         firstName: row.firstName,
@@ -114,31 +130,68 @@ async function readStaleContacts(now: Date): Promise<StaleContact[]> {
         lifecycle: toLifecycle(row.lifecycle),
         owner: row.owner,
         lastContact: row.lastContact,
-        idleDays: row.lastContact === null ? null : daysSince(row.lastContact, now),
+        idleDays: computeIdleDays(followUpInput, now),
         nextAction: next === undefined ? null : { title: next.title, due: next.due },
+        nextReminder: row.nextReminder,
+        followUp: followUpStatus(followUpInput, settings, now),
       };
     })
     .sort((a, b) => (b.idleDays ?? Number.MAX_SAFE_INTEGER) - (a.idleDays ?? Number.MAX_SAFE_INTEGER));
 }
 
-/** Relances des sept prochains jours, aujourd'hui compris. */
+/**
+ * Relances des sept prochains jours, aujourd'hui compris.
+ *
+ * Deux sources, et il faut les deux : les **tâches** datées, et les **relances
+ * programmées** sur les fiches contact (`Contact.nextReminder`). Ne lire que les
+ * tâches faisait mentir le titre du bloc — un contact relançable dans trois
+ * jours apparaissait sous « À relancer » dans /contacts et nulle part ici, alors
+ * que les deux écrans emploient le même mot.
+ */
 async function readUpcoming(now: Date): Promise<UpcomingItem[]> {
-  const rows = await prisma.task.findMany({
-    where: { done: false, due: { gte: startOfDay(now), lt: addDays(startOfDay(now), 8) } },
-    select: {
-      id: true,
-      title: true,
-      due: true,
-      owner: true,
-      priority: true,
-      contact: { select: { id: true, firstName: true, lastName: true } },
-      company: { select: { id: true, name: true } },
-      deal: { select: { id: true, name: true } },
-    },
-    orderBy: [{ due: "asc" }, { createdAt: "asc" }],
-  });
+  const from = startOfDay(now);
+  const to = addDays(from, 8);
 
-  return rows.map((row) => {
+  const [taskRows, reminderRows] = await Promise.all([
+    prisma.task.findMany({
+    where: { done: false, due: { gte: from, lt: to } },
+      select: {
+        id: true,
+        title: true,
+        due: true,
+        owner: true,
+        priority: true,
+        contact: { select: { id: true, firstName: true, lastName: true } },
+        company: { select: { id: true, name: true } },
+        deal: { select: { id: true, name: true } },
+      },
+      orderBy: [{ due: "asc" }, { createdAt: "asc" }],
+    }),
+    prisma.contact.findMany({
+      where: { nextReminder: { gte: from, lt: to } },
+      select: { id: true, firstName: true, lastName: true, owner: true, nextReminder: true },
+      orderBy: { nextReminder: "asc" },
+    }),
+  ]);
+
+  const reminders: UpcomingItem[] = reminderRows.flatMap((row) =>
+    row.nextReminder === null
+      ? []
+      : [
+          {
+            id: `reminder-${row.id}`,
+            title: "Relance programmée",
+            due: row.nextReminder,
+            owner: row.owner,
+            priority: "normale" as const,
+            targetLabel: `${row.firstName} ${row.lastName}`,
+            targetHref: `/contacts?lifecycle=all&fiche=${row.id}`,
+            kind: "reminder" as const,
+          },
+        ],
+  );
+
+  const tasks = taskRows.map((row) => {
     const target =
       row.deal !== null
         ? { label: row.deal.name, href: `/affaires?status=all&fiche=${row.deal.id}` }
@@ -159,13 +212,19 @@ async function readUpcoming(now: Date): Promise<UpcomingItem[]> {
       priority: toTaskPriority(row.priority),
       targetLabel: target?.label ?? null,
       targetHref: target?.href ?? null,
+      kind: "task" as const,
     };
   });
+
+  return [...tasks, ...reminders].sort((a, b) => a.due.getTime() - b.due.getTime());
 }
 
 export async function readDashboard(now: Date = new Date()): Promise<DashboardData> {
-  const [settings, stages, dealRows, staleContacts, upcoming, activityRows] = await Promise.all([
-    getPilotage(),
+  // Les réglages sont lus d'abord : le statut de relance en dépend, et le
+  // reste de l'assemblage les reçoit plutôt que de retomber sur les défauts.
+  const settings = await getPilotage();
+
+  const [stages, dealRows, staleContacts, upcoming, activityRows] = await Promise.all([
     listStages(),
     prisma.deal.findMany({
       select: {
@@ -183,7 +242,7 @@ export async function readDashboard(now: Date = new Date()): Promise<DashboardDa
         company: { select: { name: true } },
       },
     }),
-    readStaleContacts(now),
+    readStaleContacts(settings, now),
     readUpcoming(now),
     prisma.activity.findMany({
       where: { date: { gte: addDays(startOfDay(now), -2) } },

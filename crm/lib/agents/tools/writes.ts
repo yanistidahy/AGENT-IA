@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { moveDealStage, updateDeal } from "@/lib/api/deals";
+import { getSequence, runSequence } from "@/lib/api/sequences";
+import { updateContact } from "@/lib/api/contacts";
 import { ACTIVITY_TYPES, LIFECYCLES, TASK_PRIORITIES } from "@/lib/domain/types";
 import { formatDate, money } from "@/lib/format";
 import { defineTool } from "./types";
@@ -252,10 +254,106 @@ export const createContact = defineTool({
   },
 });
 
+/**
+ * Programme la prochaine relance d'un contact.
+ *
+ * C'est l'écriture qui ferme la boucle du conseil : Sacha lit les contacts sans
+ * nouvelles, en propose un, et pose la date. Le contact bascule aussitôt en
+ * « Relance prévue » et remonte dans la puce « À relancer » — même donnée, même
+ * calcul que l'écran.
+ */
+export const setReminder = defineTool({
+  name: "set_reminder",
+  description:
+    "Programme la prochaine relance d'un contact (champ « Prochaine relance »). Le contact apparaîtra alors dans la liste à relancer, à la date fixée. Utiliser après avoir convenu d'une date avec l'utilisateur.",
+  mode: "write",
+  schema: z.object({
+    contactId: z.string().trim().min(1),
+    contactName: z.string().trim().min(1).describe("Nom du contact, pour la carte de confirmation"),
+    date: dateInput,
+  }),
+  summarize: (input) => ({
+    headline: `Programmer une relance pour ${input.contactName}`,
+    details: [`Prochaine relance : ${formatDate(input.date)}`],
+  }),
+  run: async (input) => {
+    const contact = await updateContact(input.contactId, { nextReminder: input.date });
+    if (contact === null) return { programmée: false, erreur: "Contact introuvable" };
+    return {
+      programmée: true,
+      id: contact.id,
+      nom: `${contact.firstName} ${contact.lastName}`,
+      prochaineRelance: contact.nextReminder,
+    };
+  },
+});
+
+/**
+ * Lance une séquence sur une fiche : chaque étape devient une tâche datée.
+ *
+ * L'écriture la plus lourde du conseil — une séquence crée d'un coup trois à six
+ * tâches. La carte de confirmation annonce donc le nombre exact d'étapes avant
+ * le clic, pas après.
+ */
+export const runSequenceTool = defineTool({
+  name: "run_sequence",
+  description:
+    "Lance une séquence de relance sur un contact, une société ou une affaire : chaque étape devient une tâche datée, préfixée du nom de la séquence. Lire d'abord list_sequences pour choisir la séquence et connaître ses étapes.",
+  mode: "write",
+  schema: z.object({
+    sequenceId: z.string().trim().min(1),
+    sequenceName: z.string().trim().min(1).describe("Nom de la séquence, pour la confirmation"),
+    targetName: z.string().trim().min(1).describe("Nom de la fiche visée, pour la confirmation"),
+    owner: z.string().trim().min(1),
+    start: dateInput.describe("Date de départ ; les étapes sont datées à partir d'elle"),
+    contactId: z.string().nullish(),
+    companyId: z.string().nullish(),
+    dealId: z.string().nullish(),
+  }),
+  summarize: (input) => ({
+    headline: `Lancer « ${input.sequenceName} » sur ${input.targetName}`,
+    details: [
+      `Départ : ${formatDate(input.start)}`,
+      `Propriétaire des tâches : ${input.owner}`,
+      "Chaque étape de la séquence deviendra une tâche datée.",
+    ],
+  }),
+  run: async (input) => {
+    const sequence = await getSequence(input.sequenceId);
+    if (sequence === null) return { lancée: false, erreur: "Séquence introuvable" };
+
+    const result = await runSequence(input.sequenceId, {
+      owner: input.owner,
+      start: input.start,
+      contactId: input.contactId ?? null,
+      companyId: input.companyId ?? null,
+      dealId: input.dealId ?? null,
+    });
+
+    if (!result.ok) {
+      return {
+        lancée: false,
+        erreur:
+          result.reason === "inactive"
+            ? "Séquence en pause : la réactiver dans Réglages avant de la lancer"
+            : "Séquence introuvable",
+      };
+    }
+
+    return {
+      lancée: true,
+      tâchesCréées: result.tasks.length,
+      échéances: result.tasks.map((task) => task.due),
+    };
+  },
+});
+
 export const WRITE_TOOLS = [
   createTask,
   logInteraction,
   moveDealStageTool,
   updateDealTool,
   createContact,
+  setReminder,
+  runSequenceTool,
 ] as const;

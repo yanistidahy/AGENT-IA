@@ -3,7 +3,12 @@
 import { EmptyState, FollowUpTag, LifecycleTag } from "@/components/ui/primitives";
 import type { ContactRecord } from "@/lib/api/contacts";
 import { daysSince } from "@/lib/domain/dates";
-import { describeReminder } from "@/lib/domain/follow-up";
+import {
+  describeReminder,
+  emptyFilterMessage,
+  needsAttention,
+  type ContactFilter,
+} from "@/lib/domain/follow-up";
 import type { PilotageSettings } from "@/lib/domain/types";
 import { formatDate } from "@/lib/format";
 
@@ -24,6 +29,8 @@ interface ContactsTableProps {
   readonly dir: "asc" | "desc";
   readonly onSort: (key: ContactSortKey) => void;
   readonly onSelect: (contact: ContactRecord) => void;
+  /** Filtre actif, pour expliquer une liste vide par la règle qui l'a produite. */
+  readonly filter: ContactFilter | null;
 }
 
 const COLUMNS: ReadonlyArray<{ key: ContactSortKey | null; label: string }> = [
@@ -44,6 +51,7 @@ export function ContactsTable({
   dir,
   onSort,
   onSelect,
+  filter,
 }: ContactsTableProps) {
   const now = new Date();
 
@@ -51,8 +59,10 @@ export function ContactsTable({
     return (
       <div className="rounded-card border border-line bg-surface shadow-card">
         <EmptyState title="Aucun contact ne correspond.">
-          <span className="text-[13px]">
-            Modifiez les filtres, créez un contact, ou importez une liste depuis votre tableur.
+          <span className="mx-auto block max-w-[52ch] text-[13px] leading-relaxed">
+            {filter === null
+              ? "Modifiez les filtres, créez un contact, ou importez une liste depuis votre tableur."
+              : emptyFilterMessage(filter, settings)}
           </span>
         </EmptyState>
       </div>
@@ -89,7 +99,9 @@ export function ContactsTable({
         <tbody>
           {contacts.map((contact) => {
             const idle = contact.idleDays;
-            const stale = idle === null || idle >= settings.coldDays;
+            // Couleur pilotée par le statut, pas par un seuil recalculé ici :
+            // une relance déjà programmée n'est pas une alerte. Voir needsAttention().
+            const stale = needsAttention(contact.followUp);
             const openDeals = contact.deals.filter((deal) => deal.status === "open").length;
             // Hiérarchie de la colonne « Prochaine relance » : le retard et le
             // jour même en rouge, l'à-venir en poids normal avec son délai.

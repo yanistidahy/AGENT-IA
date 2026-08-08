@@ -5,7 +5,11 @@ import { useCallback, useState, useTransition } from "react";
 import { Drawer } from "@/components/ui/drawer";
 import { Icon } from "@/components/ui/icon";
 import type { ContactRecord } from "@/lib/api/contacts";
-import { CONTACT_FILTERS, CONTACT_FILTER_LABELS } from "@/lib/domain/follow-up";
+import {
+  CONTACT_FILTERS,
+  CONTACT_FILTER_LABELS,
+  isContactFilter,
+} from "@/lib/domain/follow-up";
 import { LIFECYCLES, type PilotageSettings } from "@/lib/domain/types";
 import { ContactDrawer } from "./contact-drawer";
 import { ContactForm, type ContactFormOptions } from "./contact-form";
@@ -201,6 +205,7 @@ export function ContactsView({
           setParam({ sort: key, dir: sortParam === key && dir === "asc" ? "desc" : "asc" })
         }
         onSelect={(contact) => setParam({ fiche: contact.id })}
+        filter={followUp !== null && isContactFilter(followUp) ? followUp : null}
       />
 
       <ContactDrawer

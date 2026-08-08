@@ -76,6 +76,38 @@ export function followUpRank(status: FollowUpStatus): number {
   return RANK[status];
 }
 
+/**
+ * Ce contact réclame-t-il une action ?
+ *
+ * **Source unique de la couleur d'alerte** dans toutes les vues : liste des
+ * contacts, « dernière touche » du centre de pilotage, portefeuille clients.
+ * Avant, chacune recalculait `joursÉcoulés >= coldDays` de son côté — et une
+ * fiche silencieuse depuis trente jours mais dont la relance est déjà programmée
+ * s'affichait « Relance prévue » en bleu dans une colonne et en rouge dans la
+ * suivante, sur la même ligne. Une relance planifiée n'est pas un problème :
+ * seuls `due` et `silent` en sont.
+ */
+export function needsAttention(status: FollowUpStatus): boolean {
+  return status === "due" || status === "silent";
+}
+
+/**
+ * Formulation de la règle de chaque filtre, pour les états vides.
+ *
+ * Une liste vide doit dire *pourquoi* elle est vide, sinon on ne sait pas si la
+ * donnée manque ou si le filtre ne correspond à rien.
+ */
+export function emptyFilterMessage(filter: ContactFilter, settings: PilotageSettings): string {
+  switch (filter) {
+    case "reminder":
+      return "Aucun contact n'a de relance programmée — ni en retard, ni aujourd'hui, ni à venir. Renseignez « Prochaine relance » sur une fiche, ou consignez une interaction avec une prochaine action.";
+    case "silent":
+      return `Aucun contact sans nouvelles : tous ont été touchés il y a moins de ${settings.coldDays} jours, ou portent déjà une relance programmée. Le seuil se règle dans Réglages.`;
+    case "never":
+      return "Aucun contact « jamais contacté » : tous ont au moins une interaction consignée ou une date de dernier contact.";
+  }
+}
+
 export const FOLLOW_UP_LABELS: Record<FollowUpStatus, string> = {
   never: "Jamais contacté",
   due: "À relancer",

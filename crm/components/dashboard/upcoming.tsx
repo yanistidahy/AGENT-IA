@@ -14,7 +14,8 @@ export function Upcoming({ items }: { items: readonly UpcomingItem[] }) {
   if (items.length === 0) {
     return (
       <p className="rounded-card border border-dashed border-line px-3.5 py-4 text-[12.5px] text-muted">
-        Aucune relance planifiée dans les sept prochains jours.
+        Aucune relance dans les sept prochains jours — ni tâche datée, ni relance programmée
+        sur une fiche contact.
       </p>
     );
   }
@@ -35,8 +36,16 @@ export function Upcoming({ items }: { items: readonly UpcomingItem[] }) {
             <ul className="grid gap-1">
               {dayItems.map((item) => (
                 <li key={item.id} className="flex flex-wrap items-center gap-2 text-[13px]">
-                  <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${DOTS[item.priority]}`} />
+                  <span
+                    aria-hidden
+                    className={`size-1.5 shrink-0 rounded-full ${DOTS[item.priority]}`}
+                  />
                   <span>{item.title}</span>
+                  {item.kind === "reminder" && (
+                    <span className="rounded-full bg-sky-l px-1.5 py-[1px] text-[10px] font-semibold text-[#1B5AB0]">
+                      relance fiche
+                    </span>
+                  )}
                   {item.targetHref !== null && item.targetLabel !== null && (
                     <Link
                       href={item.targetHref}

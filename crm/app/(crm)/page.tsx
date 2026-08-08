@@ -100,7 +100,7 @@ export default async function HomePage({
         title="Clients & prospects — dernière touche"
         hint={`rouge au-delà de ${data.settings.coldDays} jours sans contact`}
       >
-        <StaleContacts contacts={data.staleContacts} settings={data.settings} sort={sort} />
+        <StaleContacts contacts={data.staleContacts} sort={sort} />
       </Block>
 
       <div className="grid gap-5 lg:grid-cols-2">

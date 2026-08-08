@@ -16,6 +16,7 @@ import {
   winRate,
   wonDeals,
 } from "@/lib/domain/kpis";
+import { FOLLOW_UP_LABELS, followUpStatus } from "@/lib/domain/follow-up";
 import { dealHeat, pipelineValue, stuckDeals, weighted } from "@/lib/domain/pipeline";
 import { LIFECYCLES } from "@/lib/domain/types";
 import { defineTool } from "./types";
@@ -58,24 +59,47 @@ export const searchContacts = defineTool({
           },
         ],
       },
-      include: { company: { select: { name: true } } },
+      include: {
+        company: { select: { name: true } },
+        _count: { select: { activities: true } },
+      },
       take: input.limit,
       orderBy: { lastContact: "desc" },
     });
 
     if (rows.length === 0) return EMPTY;
-    return rows.map((c) => ({
-      id: c.id,
-      nom: `${c.firstName} ${c.lastName}`,
-      poste: c.title,
-      société: c.company?.name ?? null,
-      cycleDeVie: c.lifecycle,
-      source: c.source,
-      propriétaire: c.owner,
-      email: c.email,
-      dernierContact: c.lastContact,
-      notes: c.notes,
-    }));
+
+    // Le statut de relance vient de la même fonction que les écrans, avec les
+    // seuils enregistrés : un agent et /contacts ne peuvent pas diverger.
+    const [settings, now] = [await getPilotage(), new Date()];
+
+    return rows.map((c) => {
+      const status = followUpStatus(
+        {
+          lastContact: c.lastContact,
+          nextReminder: c.nextReminder,
+          activityCount: c._count.activities,
+        },
+        settings,
+        now,
+      );
+
+      return {
+        id: c.id,
+        nom: `${c.firstName} ${c.lastName}`,
+        poste: c.title,
+        société: c.company?.name ?? null,
+        cycleDeVie: c.lifecycle,
+        source: c.source,
+        propriétaire: c.owner,
+        email: c.email,
+        téléphone: c.phone,
+        dernierContact: c.lastContact,
+        prochaineRelance: c.nextReminder,
+        statutDeRelance: FOLLOW_UP_LABELS[status],
+        notes: c.notes,
+      };
+    });
   },
 });
 

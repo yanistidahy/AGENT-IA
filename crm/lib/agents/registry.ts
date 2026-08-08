@@ -67,7 +67,8 @@ export const AGENTS: readonly AgentDefinition[] = [
     initials: "NO",
     color: "#2C7BE5",
     persona: NOAH,
-    tools: [...READS, "create_task", "create_contact"],
+    // Acquisition : il crée des contacts et programme leur première relance.
+    tools: [...READS, "create_task", "create_contact", "set_reminder"],
   },
   {
     id: "sacha",
@@ -76,12 +77,16 @@ export const AGENTS: readonly AgentDefinition[] = [
     initials: "SA",
     color: "#E8503F",
     persona: SACHA,
+    // Sacha porte la relance de bout en bout : consigner, programmer la
+    // prochaine, déclencher une séquence. Ce sont ses trois gestes quotidiens.
     tools: [
       ...READS,
       "create_task",
       "log_interaction",
       "move_deal_stage",
       "update_deal",
+      "set_reminder",
+      "run_sequence",
     ],
   },
   {

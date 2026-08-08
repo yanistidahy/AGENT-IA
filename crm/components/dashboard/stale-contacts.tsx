@@ -1,16 +1,16 @@
 import Link from "next/link";
-import { LifecycleTag } from "@/components/ui/primitives";
+import { FollowUpTag, LifecycleTag } from "@/components/ui/primitives";
 import type { StaleContact } from "@/lib/api/dashboard";
-import type { PilotageSettings } from "@/lib/domain/types";
+import { needsAttention } from "@/lib/domain/follow-up";
 import { formatDate } from "@/lib/format";
 
 /**
  * « Qui avons-nous oublié ? »
  *
- * Le rouge n'est pas décoratif : il marque le franchissement de `coldDays`, le
- * seuil que l'utilisateur règle lui-même dans Réglages. Changer le seuil change
- * donc immédiatement ce qui est signalé — c'est la même valeur qui pilote les
- * alertes et la chaleur des affaires.
+ * Le rouge n'est pas décoratif et n'est pas calculé ici : il vient de
+ * `needsAttention(statut)`, la même fonction que /contacts et /clients. Le
+ * statut dépend de `coldDays`, réglable dans Réglages — changer le seuil déplace
+ * donc les trois écrans d'un coup, et aucun ne peut contredire les autres.
  *
  * Composant serveur : le tri passe par des liens, pas par un état de composant.
  * Aucun JavaScript n'est envoyé au navigateur pour trier un tableau, et l'ordre
@@ -25,7 +25,6 @@ export function toStaleSort(value: string | undefined): StaleSort {
 
 interface StaleContactsProps {
   readonly contacts: readonly StaleContact[];
-  readonly settings: PilotageSettings;
   readonly sort: StaleSort;
   readonly limit?: number;
 }
@@ -57,7 +56,7 @@ function sortContacts(
   return copy.sort((a, b) => rank(b) - rank(a));
 }
 
-export function StaleContacts({ contacts, settings, sort, limit = 12 }: StaleContactsProps) {
+export function StaleContacts({ contacts, sort, limit = 12 }: StaleContactsProps) {
   if (contacts.length === 0) {
     return (
       <p className="rounded-card border border-dashed border-line px-3.5 py-4 text-[12.5px] text-muted">
@@ -97,9 +96,10 @@ export function StaleContacts({ contacts, settings, sort, limit = 12 }: StaleCon
         </thead>
         <tbody>
           {shown.map((contact) => {
-            const cold = contact.idleDays === null || contact.idleDays >= settings.coldDays;
-            const warm =
-              !cold && contact.idleDays !== null && contact.idleDays >= settings.staleDays;
+            // Même règle que /contacts et /clients : c'est le statut qui décide,
+            // pas un seuil recalculé — sans quoi une relance programmée
+            // s'afficherait en rouge ici et en bleu là-bas.
+            const cold = needsAttention(contact.followUp);
 
             return (
               <tr key={contact.id} className="transition-colors hover:bg-surface-2">
@@ -114,18 +114,13 @@ export function StaleContacts({ contacts, settings, sort, limit = 12 }: StaleCon
                   <span className="text-[12px] text-muted">{contact.companyName ?? "—"}</span>
                 </td>
                 <td className="border-b border-line-2 px-3.5 py-2.5">
-                  <LifecycleTag lifecycle={contact.lifecycle} />
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <LifecycleTag lifecycle={contact.lifecycle} />
+                    <FollowUpTag status={contact.followUp} />
+                  </span>
                 </td>
                 <td className="border-b border-line-2 px-3.5 py-2.5 font-mono text-[12.5px]">
-                  <span
-                    className={
-                      cold
-                        ? "font-semibold text-[#B2311F]"
-                        : warm
-                          ? "font-semibold text-[#9A6410]"
-                          : "text-muted"
-                    }
-                  >
+                  <span className={cold ? "font-semibold text-[#B2311F]" : "text-muted"}>
                     {contact.idleDays === null ? "jamais" : `${contact.idleDays} j`}
                   </span>
                   <span className="block text-[11px] text-muted">

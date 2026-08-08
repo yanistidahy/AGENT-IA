@@ -251,11 +251,12 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 |---|---|---|
 | 0 | Fondations — Next 15, Tailwind, Prisma, seed, `lib/domain/` + tests, chaîne de déploiement | **validé en production** |
 | 1 | Affaires de bout en bout — API, liste, fiche, Kanban, gain/perte | **validé en production** |
-| 2 | Conseil d'agents — 8 personnalités, registre d'outils, streaming, confirmation des écritures | **livré, validation reportée** |
+| 2 | Conseil d'agents — 8 personnalités, registre d'outils, streaming, confirmation des écritures | **livré, à valider** (outils remis à jour au jalon 7) |
 | 3 | Contacts & Sociétés — même motif, import/export CSV | **validé en production** |
 | 4 | Tâches, interactions, séquences, moteur d'alertes | **validé en production** |
 | 5 | Centre de pilotage & rapports — SVG écrits à la main, palette Ctrl+K, réglages, `/api/health` | **validé en production** |
-| 6 | Confort d'usage — société à la volée, statut de relance, portefeuille clients | **livré, à valider** |
+| 6 | Confort d'usage — société à la volée, statut de relance, portefeuille clients | **validé en production** |
+| 7 | Conseil remis à jour + cohérence entre écrans | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -840,6 +841,104 @@ ceux enregistrés : changer `coldDays` déplaçait les couleurs de la page mais 
 la réponse de l'API, qui la contredisait donc en silence. Détecté par le test
 d'acceptation nº 4, qui comparait les deux. Les trois routes contacts (liste,
 fiche, export) lisent désormais les réglages.
+
+---
+
+## Jalon 7 — le conseil remis à jour, et la cohérence entre écrans
+
+### Les agents avaient quatre jalons de retard
+
+Le registre d'outils datait du jalon 2 : affaires, sociétés, tâches, indicateurs.
+Les jalons 3 à 6 ont livré les interactions, les séquences, le moteur d'alertes,
+le statut de relance et le portefeuille clients **sans rien en ouvrir au
+conseil**. Sacha, dont la raison d'être est « qu'est-ce que je fais
+aujourd'hui ? », ne pouvait pas lire la liste que l'application affiche pour
+répondre exactement à cette question.
+
+Six lectures ajoutées (`lib/agents/tools/reads-crm.ts`) :
+
+| Outil | Répond à |
+|---|---|
+| `list_reminders` | « qui dois-je relancer ? » — la puce À relancer, triée par échéance |
+| `list_neglected_contacts` | « qui ai-je oublié ? » — sans nouvelles, jamais contacté |
+| `list_alerts` | « qu'est-ce qui presse ? » — la liste « À traiter maintenant » |
+| `get_timeline` | « qu'est-ce qu'on s'est dit ? » — chronologie d'une fiche |
+| `list_sequences` | connaître les séquences avant d'en proposer une |
+| `list_clients` | le portefeuille : qui paie, combien, depuis quand |
+
+Deux écritures ajoutées, derrière la même carte de confirmation que les autres :
+`set_reminder` (programmer la prochaine relance) et `run_sequence` (lancer une
+séquence, chaque étape devenant une tâche datée). Sacha les porte toutes les
+deux, Noah seulement `set_reminder`. **Brutus reste en lecture seule.**
+
+`search_contacts` renvoie désormais le statut de relance et la prochaine
+échéance, calculés par la même fonction que les écrans.
+
+**Ces outils n'implémentent aucune règle.** Ils appellent `listContacts`,
+`readAlerts`, `readClients`, `listActivities`, `listSequences` — les couches de
+service des écrans. Un agent et une page qui regardent le même contact ne
+peuvent pas diverger, puisqu'ils exécutent le même code.
+
+### La cohérence est structurelle, pas testée écran par écran
+
+L'audit demandé a trouvé une divergence réelle : trois tableaux recalculaient
+`joursÉcoulés >= coldDays` de leur côté (`contacts-table`, `clients-table`,
+`stale-contacts`). Conséquence, un contact silencieux depuis trente jours **mais
+dont la relance était déjà programmée** s'affichait « Relance prévue » en bleu
+dans une colonne et en rouge dans la suivante, sur la même ligne.
+
+Une relance planifiée n'est pas un problème. La couleur d'alerte vient donc
+maintenant d'une seule fonction, `needsAttention(statut)` : rouge si et seulement
+si le statut est « à relancer » ou « sans nouvelles ». Les trois tableaux
+l'appellent, aucun ne compare plus lui-même.
+
+Deux autres écarts corrigés au passage :
+
+- **`readStaleContacts` ne calculait pas de statut** : le tableau « dernière
+  touche » de l'accueil affiche désormais le même badge que `/contacts` ;
+- **« Relances à venir » ne lisait que les tâches**. Un contact relançable dans
+  trois jours apparaissait sous « À relancer » et nulle part dans le bloc qui
+  porte le même mot. Le bloc agrège maintenant les deux sources, les relances de
+  fiche étant marquées « relance fiche ».
+
+`lib/domain/__tests__/no-duplicate-thresholds.test.ts` empêche la rechute : il
+parcourt `lib/`, `components/` et `app/`, et échoue si un fichier autre que
+`follow-up.ts`, `pipeline.ts` ou `alerts.ts` compare quoi que ce soit à
+`settings.coldDays` / `settings.staleDays`. Éprouvé en réintroduisant
+volontairement l'ancien calcul : le test le désigne par fichier et par ligne.
+
+### Jalon 7 — ce qui est vérifié
+
+Rejoué contre une base réelle (SQLite jetable, retouches locales non committées) :
+
+- **contrôle croisé automatisé** sur les mêmes 18 contacts : `/api/contacts`,
+  les trois puces, `/clients` (6 lignes) et l'accueil (12 lignes) — statut et
+  couleur comparés ligne à ligne, **aucune divergence**
+- sur l'accueil, rouge ⟺ statut « À relancer » ou « Sans nouvelles », sur les
+  12 lignes
+- le cas jadis divergent : 48 jours de silence + relance dans 5 jours → statut
+  « Relance prévue », **non rouge**, sur tous les écrans où il figure
+- outils du conseil contre couche de service : `list_reminders` 11 = 11 (dont 4
+  en retard = 4), ordre croissant vérifié ; `list_neglected` 4 = 4 ; seuil
+  annoncé 14 = réglage 14 ; `list_clients` 6 clients / 13 680 € ; `list_alerts`
+  12 ; `list_sequences` 3 ; `get_timeline` répond sur une fiche réelle
+- `search_contacts` expose bien statut et prochaine relance
+- états vides : chacun des trois filtres nomme sa règle, et celui de « sans
+  nouvelles » cite le seuil configuré (21 puis 14 après changement)
+- « Relances à venir » mêle tâches et relances de fiche, ces dernières marquées
+- les dix pages répondent 200
+
+### Jalon 7 — ce qui ne l'est pas
+
+Aucun appel Anthropic réel : `ANTHROPIC_API_KEY` n'existe pas dans cet
+environnement. Les outils ont été exercés directement contre la base, pas au
+travers d'une conversation. Que Sacha *choisisse* le bon outil relève du modèle
+et de son prompt — c'est ce que la validation en production doit établir.
+
+Différence de périmètre assumée, non corrigée : le tableau « dernière touche »
+de l'accueil exclut les « Ancien Client », que `/contacts` affiche. Ce sont deux
+populations différentes par intention, pas deux avis contradictoires sur un même
+contact.
 
 ### Journal des incidents
 

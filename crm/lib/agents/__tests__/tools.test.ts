@@ -8,8 +8,9 @@ import { ALL_TOOLS, READ_TOOL_NAMES, WRITE_TOOL_NAMES, findTool, toolsFor } from
  */
 
 describe("registre d'outils", () => {
-  it("expose les sept lectures et les cinq écritures attendues", () => {
+  it("expose les treize lectures et les sept écritures attendues", () => {
     expect(READ_TOOL_NAMES).toEqual([
+      // Jalon 2 : affaires, sociétés, tâches, indicateurs.
       "search_contacts",
       "get_company",
       "list_deals",
@@ -17,6 +18,14 @@ describe("registre d'outils", () => {
       "list_tasks",
       "get_kpis",
       "get_stuck_deals",
+      // Ouverts après les jalons 3 à 6 : relances, alertes, chronologies,
+      // séquences, portefeuille.
+      "list_reminders",
+      "list_neglected_contacts",
+      "list_alerts",
+      "get_timeline",
+      "list_sequences",
+      "list_clients",
     ]);
     expect(WRITE_TOOL_NAMES).toEqual([
       "create_task",
@@ -24,7 +33,27 @@ describe("registre d'outils", () => {
       "move_deal_stage",
       "update_deal",
       "create_contact",
+      "set_reminder",
+      "run_sequence",
     ]);
+  });
+
+  /**
+   * Le conseil doit voir ce que le CRM sait faire. Ce test tombe le jour où un
+   * jalon ajoute une capacité sans l'ouvrir aux agents — la régression exacte
+   * qui a laissé Sacha aveugle aux relances pendant quatre jalons.
+   */
+  it("couvre les capacités livrées : relances, alertes, chronologie, séquences, clients", () => {
+    for (const capability of [
+      "list_reminders",
+      "list_neglected_contacts",
+      "list_alerts",
+      "get_timeline",
+      "list_sequences",
+      "list_clients",
+    ]) {
+      expect(findTool(capability), capability).toBeDefined();
+    }
   });
 
   it("classe chaque outil dans un mode et un seul", () => {
