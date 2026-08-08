@@ -3,6 +3,8 @@ import { Eyebrow, FollowUpTag } from "@/components/ui/primitives";
 import type { ClientRow, ClientSort } from "@/lib/api/clients";
 import { needsAttention } from "@/lib/domain/follow-up";
 import { formatDate, money, moneyShort } from "@/lib/format";
+import type { FacetValue } from "@/lib/domain/column-match";
+import { ClientFilterCell } from "./client-filter-cell";
 
 /**
  * Portefeuille clients.
@@ -14,20 +16,27 @@ interface ClientsTableProps {
   readonly clients: readonly ClientRow[];
   readonly sort: ClientSort;
   readonly coldDays: number;
+  readonly facets: Readonly<Record<string, readonly FacetValue[]>>;
 }
 
-const COLUMNS: ReadonlyArray<{ key: ClientSort | null; label: string; numeric?: boolean }> = [
-  { key: "name", label: "Client" },
-  { key: null, label: "Société" },
-  { key: "revenue", label: "CA signé", numeric: true },
-  { key: null, label: "Pipeline ouvert", numeric: true },
-  { key: "signedAt", label: "Signé le" },
-  { key: "lastContact", label: "Dernière interaction" },
-  { key: null, label: "Prochaine relance" },
-  { key: "followUp", label: "Statut" },
+/** `filter` désigne la colonne filtrable ; `null` quand elle ne l'est pas. */
+const COLUMNS: ReadonlyArray<{
+  key: ClientSort | null;
+  label: string;
+  filter: string | null;
+  numeric?: boolean;
+}> = [
+  { key: "name", label: "Client", filter: null },
+  { key: null, label: "Société", filter: "company" },
+  { key: "revenue", label: "CA signé", filter: "wonValue", numeric: true },
+  { key: null, label: "Pipeline ouvert", filter: "openValue", numeric: true },
+  { key: "signedAt", label: "Signé le", filter: "signedAt" },
+  { key: "lastContact", label: "Dernière interaction", filter: "lastContact" },
+  { key: null, label: "Prochaine relance", filter: "nextReminder" },
+  { key: "followUp", label: "Statut", filter: "followUp" },
 ];
 
-export function ClientsTable({ clients, sort, coldDays }: ClientsTableProps) {
+export function ClientsTable({ clients, sort, coldDays, facets }: ClientsTableProps) {
   if (clients.length === 0) {
     return (
       <div className="rounded-card border border-line bg-surface px-5 py-11 text-center shadow-card">
@@ -45,7 +54,7 @@ export function ClientsTable({ clients, sort, coldDays }: ClientsTableProps) {
       <table className="w-full border-collapse">
         <thead>
           <tr>
-            {COLUMNS.map(({ key, label, numeric }) => (
+            {COLUMNS.map(({ key, label, filter, numeric }) => (
               <th
                 key={label}
                 scope="col"
@@ -53,18 +62,23 @@ export function ClientsTable({ clients, sort, coldDays }: ClientsTableProps) {
                   numeric === true ? "text-right" : "text-left"
                 }`}
               >
-                {key === null ? (
-                  label
-                ) : (
-                  <Link
-                    href={key === "revenue" ? "/clients" : `/clients?tri=${key}`}
-                    scroll={false}
-                    className="uppercase transition-colors hover:text-ink"
-                  >
-                    {label}
-                    {sort === key && " ↓"}
-                  </Link>
-                )}
+                <span className="inline-flex items-center">
+                  {key === null ? (
+                    label
+                  ) : (
+                    <Link
+                      href={key === "revenue" ? "/clients" : `/clients?tri=${key}`}
+                      scroll={false}
+                      className="uppercase transition-colors hover:text-ink"
+                    >
+                      {label}
+                      {sort === key && " ↓"}
+                    </Link>
+                  )}
+                  {filter !== null && (
+                    <ClientFilterCell columnKey={filter} facets={facets[filter] ?? []} />
+                  )}
+                </span>
               </th>
             ))}
           </tr>

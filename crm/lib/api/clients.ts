@@ -1,3 +1,6 @@
+import type { FilterState } from "../domain/column-filters";
+import { facetsFor, matchesAll, type FacetValue } from "../domain/column-match";
+import { CLIENT_FACET_COLUMNS } from "./client-columns";
 import { prisma } from "../db";
 import {
   followUpRank,
@@ -52,6 +55,9 @@ export function toClientSort(value: string | undefined): ClientSort {
 
 export interface ClientPortfolio {
   readonly clients: readonly ClientRow[];
+  /** Nombre de clients avant filtres de colonne, pour le « 3 sur 12 ». */
+  readonly total: number;
+  readonly facets: Readonly<Record<string, readonly FacetValue[]>>;
   readonly totalRevenue: number;
   readonly averageRevenue: number;
 }
@@ -60,6 +66,7 @@ export async function readClients(
   sort: ClientSort = "revenue",
   settings: PilotageSettings = DEFAULT_PILOTAGE,
   now: Date = new Date(),
+  filters: FilterState = {},
 ): Promise<ClientPortfolio> {
   const rows = await prisma.contact.findMany({
     where: { lifecycle: "Client" },
@@ -109,15 +116,24 @@ export async function readClients(
     };
   });
 
-  const sorted = sortClients(clients, sort);
-  const totalRevenue = clients.reduce((total, client) => total + client.wonValue, 0);
+  // Les filtres de colonne s'appliquent avant les totaux : « 3 sur 12 » doit
+  // s'accompagner du chiffre d'affaires de ces trois-là, pas des douze.
+  const kept =
+    Object.keys(filters).length === 0
+      ? clients
+      : clients.filter((client) => matchesAll(client, CLIENT_FACET_COLUMNS, filters, now));
+
+  const sorted = sortClients(kept, sort);
+  const totalRevenue = kept.reduce((total, client) => total + client.wonValue, 0);
 
   return {
     clients: sorted,
+    total: clients.length,
+    facets: facetsFor(clients, CLIENT_FACET_COLUMNS, filters, now),
     totalRevenue,
     // Moyenne sur le nombre de clients, pas sur ceux qui ont signé : un client
     // à zéro euro pèse dans la moyenne, c'est précisément ce qu'elle doit dire.
-    averageRevenue: clients.length === 0 ? 0 : Math.round(totalRevenue / clients.length),
+    averageRevenue: kept.length === 0 ? 0 : Math.round(totalRevenue / kept.length),
   };
 }
 

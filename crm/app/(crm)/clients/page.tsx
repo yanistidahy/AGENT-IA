@@ -1,5 +1,8 @@
 import { ClientsTable, PortfolioTotals } from "@/components/clients/clients-table";
 import { readClients, toClientSort } from "@/lib/api/clients";
+import { CLIENT_FILTER_COLUMNS } from "@/lib/api/client-columns";
+import { parseFilters } from "@/lib/domain/column-filters";
+import { ClientFilterSummary } from "@/components/clients/client-filter-cell";
 import { getPilotage } from "@/lib/api/reference";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +20,11 @@ export default async function ClientsPage({
   const tri = raw.tri;
   const sort = toClientSort(Array.isArray(tri) ? tri[0] : tri);
 
+  // Paramètres bruts : les filtres de colonne se répètent (`f.owner=…&f.owner=…`).
+  const filters = parseFilters(raw, CLIENT_FILTER_COLUMNS);
+
   const settings = await getPilotage();
-  const portfolio = await readClients(sort, settings);
+  const portfolio = await readClients(sort, settings, new Date(), filters);
 
   return (
     <div className="px-6 py-6">
@@ -36,10 +42,13 @@ export default async function ClientsPage({
         average={portfolio.averageRevenue}
       />
 
+      <ClientFilterSummary shown={portfolio.clients.length} total={portfolio.total} />
+
       <ClientsTable
         clients={portfolio.clients}
         sort={sort}
         coldDays={settings.coldDays}
+        facets={portfolio.facets}
       />
     </div>
   );

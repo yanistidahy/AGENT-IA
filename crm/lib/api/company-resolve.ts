@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { searchText } from "../domain/text";
 
 /**
  * Résolution d'une société nommée à la volée.
@@ -42,7 +43,12 @@ export async function resolveCompanyByName(
   if (existing !== undefined) return existing.id;
 
   // Le nom seul : le reste de la fiche se remplit depuis son propre tiroir.
-  const created = await tx.company.create({ data: { name: trimmed }, select: { id: true } });
+  const created = await tx.company.create({
+    // `searchText` dès la création : une société créée à la volée doit être
+    // trouvable immédiatement, pas à sa prochaine modification.
+    data: { name: trimmed, searchText: searchText([trimmed]) },
+    select: { id: true },
+  });
   return created.id;
 }
 

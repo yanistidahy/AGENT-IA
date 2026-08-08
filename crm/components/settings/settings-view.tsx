@@ -10,6 +10,7 @@ import { PilotageForm } from "./pilotage-form";
 import { RelancesForm } from "./relances-form";
 import { SequenceEditor, type SequenceEditable } from "./sequence-editor";
 import { TagsEditor } from "./tags-editor";
+import { MaintenancePanel } from "./maintenance-panel";
 import { StagesEditor } from "./stages-editor";
 
 interface SettingsViewProps {
@@ -99,6 +100,13 @@ export function SettingsView({
             <SequenceEditor key={sequence.id} sequence={sequence} onSaved={refresh} />
           ))}
         </div>
+      </Section>
+
+      <Section
+        title="Corrections de données"
+        hint="simulez d'abord — rien ne s'écrit sans confirmation, et le détail s'affiche avant"
+      >
+        <MaintenancePanel />
       </Section>
 
       <Section title="Sauvegarde" hint="exportez avant toute manipulation risquée">

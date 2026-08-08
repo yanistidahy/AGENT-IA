@@ -261,6 +261,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 9 | **Verrou d'espace de travail** — mot de passe partagé, sessions signées, sonde muette | **livré, à valider** |
 | 10 | Liens, filtres de colonne, étiquettes, prospects perdus | **livré, à valider** |
 | 11 | Correction des statuts depuis la feuille + import en mise à jour | **livré, à valider** |
+| 12 | Rattrapage `searchText`, corrections depuis `/reglages`, parité des filtres, `/clients` | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -1212,9 +1213,10 @@ que d'être séparés par des virgules : un nom de société contient parfois un
 virgule.
 
 **Deux chemins pour une même règle** — SQL pour les lignes, mémoire pour les
-comptes — ce qui est exactement le genre de duplication qui finit par diverger.
-C'est assumé et documenté ; les colonnes dérivées (agrégats de `/societes`) sont
-marquées `derived` et appliquées après lecture, sur les valeurs affichées.
+comptes. C'est exactement le genre de duplication qui finit par diverger ; le
+test de parité du jalon 12 la ferme. Les colonnes dérivées (agrégats de
+`/societes` et tout `/clients`) sont marquées `derived` et appliquées après
+lecture, sur les valeurs affichées.
 
 ### Étiquettes
 
@@ -1270,10 +1272,7 @@ Contre un vrai PostgreSQL 16 et le serveur standalone :
 
 ### Jalon 10 — ce qui ne l'est pas
 
-**`/clients` n'a pas de filtres de colonne.** Les trois autres tableaux
-(`/contacts`, `/societes`, `/affaires`) les ont ; le portefeuille est resté en
-dehors, faute de temps sur ce jalon. La mécanique est générique : il lui manque
-un `client-columns.ts` et le branchement de sa page.
+~~**`/clients` n'a pas de filtres de colonne.**~~ **Fait au jalon 12.**
 
 **`/societes` est passé d'une grille de cartes à un tableau.** Des colonnes
 triables et filtrables l'imposaient. La lecture « trois nombres d'un coup d'œil »
@@ -1395,6 +1394,103 @@ précisément à cela que sert le mode simulation.
 La feuille n'a pas été modifiée et ne le sera pas par ce script : la
 correspondance est figée dans le dépôt à la date de relecture. Si la feuille
 évolue, il faut la relire et régénérer `corrections-2026-08.ts`.
+
+## Jalon 12 — rattrapage, corrections depuis l'écran, parité des filtres
+
+### `searchText` n'était écrit que par la moitié des chemins
+
+Deux sources l'oubliaient : l'import de contacts et la création de société à la
+volée (`company-resolve.ts`, utilisée aussi par les formulaires contact et
+affaire). Toute fiche entrée par là depuis le jalon 10 était **introuvable à la
+recherche** jusqu'à sa prochaine modification — sans rien d'anormal à l'écran.
+
+Les deux sources sont corrigées, et `scripts/backfill-search.ts` rattrape
+l'existant sur les trois tables.
+
+Le rattrapage recalcule le miroir de **toutes** les lignes puis compare, au lieu
+de chercher les seules colonnes vides : une fiche renommée avant l'existence du
+miroir porte une valeur non vide *et* fausse. Chercher son nouveau nom échouerait
+sans que rien ne paraisse anormal.
+
+`searchText` étant dérivé — il ne porte aucune information qui ne soit ailleurs —
+le recalculer ne peut rien perdre. D'où l'absence de sauvegarde préalable,
+contrairement à une correction de statut.
+
+### Une seule logique, deux façades
+
+`lib/api/maintenance.ts` porte les deux corrections. `scripts/` et
+`/api/maintenance` n'en sont que des façades. Écrire la règle deux fois — une
+pour le terminal, une pour le bouton — c'est se garantir qu'elles divergeront le
+jour où l'une sera corrigée seule.
+
+### Le bouton n'est pas un pis-aller
+
+Railway n'expose pas de terminal attaché au service. Sans `/reglages`, ces
+corrections ne seraient exécutables que par quelqu'un ayant le dépôt, la CLI et
+l'URL de la base sous la main — c'est-à-dire, en pratique, personne. Le panneau
+est donc le chemin **normal** :
+
+- « Simuler » lit et n'écrit rien ; le détail s'affiche fiche par fiche ;
+- « Appliquer » renvoie le nombre attendu, **relu au moment d'écrire**. Si la
+  base a bougé entre l'affichage et le clic, le serveur refuse plutôt que
+  d'appliquer autre chose que ce qui a été validé à l'écran ;
+- la sauvegarde des statuts **descend dans le navigateur** : le conteneur n'a pas
+  de disque durable, un fichier écrit à côté disparaîtrait au déploiement suivant.
+
+### La parité des filtres est enfin prouvée
+
+Un filtre de colonne est appliqué deux fois : en SQL pour les lignes affichées,
+en mémoire pour compter les valeurs distinctes. `column-filters-parity.test.ts`
+exécute les deux sur le **même** jeu et compare les identifiants retenus, sur 20
+cas couvrant chaque forme que `columnsWhere` sait produire.
+
+La clause Prisma n'est pas envoyée à une base : elle est interprétée par un
+évaluateur minuscule, **volontairement strict** — toute forme inconnue lève. Un
+évaluateur permissif renverrait « vrai » par défaut et le test cesserait de
+démontrer quoi que ce soit le jour où la traduction changerait de forme. Un test
+vérifie d'ailleurs que l'évaluateur refuse bien ce qu'il ne connaît pas.
+
+Éprouvé en introduisant deux divergences réelles : borne haute exclusive côté
+SQL (2 cas tombent, nommés), et « (vide) » cessant de couvrir le nul (1 cas
+tombe). Un troisième test vérifie que les cas filtrent réellement — sans lui,
+une égalité entre deux ensembles complets serait vraie sans rien prouver.
+
+### `/clients` a ses filtres, sans devenir un composant client
+
+La table reste rendue côté serveur : le tri passe toujours par des liens. Le menu
+de colonne **écrit lui-même dans l'URL** au lieu de recevoir un `onChange` — une
+fonction ne franchit pas la frontière serveur → client, une lecture de l'URL si.
+
+Toutes ses colonnes sont dérivées : le portefeuille est un agrégat d'affaires
+gagnées, pas une table. Les filtres s'appliquent donc après lecture, sur les
+valeurs exactement telles qu'elles sont affichées. Les totaux suivent le filtre —
+« 3 sur 12 » s'accompagne du chiffre d'affaires de ces trois-là.
+
+### Jalon 12 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, sur une base à l'image de la production :
+
+- miroirs vidés → simulation « 279 lignes à corriger », 0 écriture ; après
+  `--apply`, une recherche qui ne trouvait rien trouve ; rejoué → « 0 ligne » ;
+- **0 fiche dont le téléphone, les notes, l'étiquette ou le motif ont bougé** ;
+- panneau `/reglages` : simulation identique au script (53 fiches, 5 incertaines,
+  1 avertissement) ; `expected: 999` → refus nommant l'écart ; application → 53
+  corrigées, 53 interactions, sauvegarde de 53 fiches renvoyée ; rejoué → 0 ;
+- `/clients` : sept icônes de filtre, « 8 sur 8 » puis « 0 sur 8 » en cumulant
+  deux colonnes, bandeau de réinitialisation présent ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (393 tests) verts.
+
+### Jalon 12 — ce qui ne l'est pas
+
+Le panneau applique la correction **dans la requête HTTP**. À 53 fiches c'est
+instantané ; à plusieurs milliers, la requête dépasserait le délai du proxy. Il
+faudrait alors découper en lots — ce n'est pas le cas aujourd'hui et le code ne
+prétend pas le contraire.
+
+L'évaluateur du test de parité n'est pas PostgreSQL. Il reproduit ce que Prisma
+fait des formes que `columnsWhere` produit, y compris `IN` avec `null` traduit en
+`IS NULL` ; il ne remplace pas une exécution réelle, il rend la divergence
+détectable sans base.
 
 ### Journal des incidents
 
