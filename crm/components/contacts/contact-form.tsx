@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Combobox, companyFields, type ComboboxValue } from "@/components/ui/combobox";
 import type { ContactRecord } from "@/lib/api/contacts";
 import { createContact, updateContact } from "@/lib/client/crm-api";
 import { LIFECYCLES } from "@/lib/domain/types";
@@ -45,6 +46,11 @@ export function ContactForm({
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string[]>>({});
 
+  const initialCompany = contact?.companyId ?? companyId ?? null;
+  const [company, setCompany] = useState<ComboboxValue>(
+    initialCompany === null ? { kind: "none" } : { kind: "existing", id: initialCompany },
+  );
+
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -62,7 +68,7 @@ export function ContactForm({
       source: text("source"),
       owner: text("owner"),
       notes: String(form.get("notes") ?? ""),
-      companyId: text("companyId") === "" ? null : text("companyId"),
+      ...companyFields(company),
       lastContact: text("lastContact"),
       nextReminder: text("nextReminder"),
     };
@@ -113,19 +119,14 @@ export function ContactForm({
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Société" errors={fields.companyId}>
-          <select
-            name="companyId"
-            defaultValue={contact?.companyId ?? companyId ?? ""}
-            className={CONTROL}
-          >
-            <option value="">Sans société</option>
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.name}
-              </option>
-            ))}
-          </select>
+        <Field label="Société" errors={fields.companyId ?? fields.companyName}>
+          <Combobox
+            options={companies.map((option) => ({ id: option.id, label: option.name }))}
+            value={company}
+            onChange={setCompany}
+            placeholder="Rechercher ou créer une société…"
+            emptyLabel="Sans société"
+          />
         </Field>
         <Field label="Cycle de vie" errors={fields.lifecycle}>
           <select name="lifecycle" defaultValue={contact?.lifecycle ?? "Lead"} className={CONTROL}>

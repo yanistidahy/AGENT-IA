@@ -254,7 +254,8 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 2 | Conseil d'agents — 8 personnalités, registre d'outils, streaming, confirmation des écritures | **livré, validation reportée** |
 | 3 | Contacts & Sociétés — même motif, import/export CSV | **validé en production** |
 | 4 | Tâches, interactions, séquences, moteur d'alertes | **validé en production** |
-| 5 | Centre de pilotage & rapports — SVG écrits à la main, palette Ctrl+K, réglages, `/api/health` | **livré, à valider** |
+| 5 | Centre de pilotage & rapports — SVG écrits à la main, palette Ctrl+K, réglages, `/api/health` | **validé en production** |
+| 6 | Confort d'usage — société à la volée, statut de relance, portefeuille clients | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -728,6 +729,96 @@ l'infrastructure, pas l'application.
 **Filet de sécurité ajouté** : sauvegarde JSON complète téléchargeable et
 restauration transactionnelle dans Réglages. À exporter avant toute manipulation
 risquée.
+
+---
+
+## Jalon 6 — société à la volée, statut de relance, portefeuille
+
+```
+lib/domain/follow-up.ts     statut de relance dérivé — pur, testé
+lib/api/company-resolve.ts  société créée dans la transaction du parent
+lib/api/clients.ts          portefeuille : CA signé, ancienneté, statut
+components/ui/combobox.tsx  saisie avec suggestions et création à la volée
+components/clients/         tableau du portefeuille
+```
+
+**La société se crée sans quitter le formulaire.** Le champ n'est plus une liste
+déroulante mais un combobox : on tape, il filtre, et s'il ne trouve rien il
+propose « Créer “X” ». Le composant ne rend pas un identifiant — il rend soit un
+identifiant existant, soit **un nom à créer**. La création réelle a lieu côté
+serveur, `resolveCompanyLink()` dans la transaction du contact ou de l'affaire :
+un contact refusé ne laisse donc aucune société fantôme derrière lui. La société
+est créée avec son seul nom ; le reste se remplit depuis sa propre fiche.
+
+**La correspondance des noms se fait en mémoire, pas en SQL.** `mode:
+"insensitive"` ne couvre pas les accents et n'existe pas sous SQLite : la règle
+serait invérifiable hors production — exactement la façon dont un doublon
+« ACME » / « acme » finit par arriver en base sans que personne l'ait vu venir.
+La table des sociétés se compte en dizaines ; la lire entièrement coûte moins
+qu'une règle qu'on ne peut pas tester. « zénith labs » retrouve donc « Zenith Labs ».
+
+**Le statut de relance est dérivé, jamais saisi.** Cinq états calculés depuis
+`lastContact`, `nextReminder` et le nombre d'interactions : jamais contacté, à
+relancer, relance prévue, en attente, sans nouvelles. Aucun champ manuel à tenir
+à jour, donc rien qui puisse mentir parce qu'on a oublié de le changer. Le seuil
+« sans nouvelles » est `coldDays`, la même valeur que la chaleur des affaires et
+les alertes : la régler déplace les trois d'un coup.
+
+**Un statut dérivé ne se filtre pas en SQL.** Le filtre et le tri par statut se
+font en mémoire, après lecture, et c'est écrit dans le code. Au volume d'un CRM
+d'indépendant c'est sans conséquence ; à dizaines de milliers de lignes il
+faudrait matérialiser le statut, au prix de la portabilité du schéma.
+
+**Ordre des règles.** « Jamais contacté » est évalué en premier : un contact
+jamais touché le reste même si une relance est programmée pour aujourd'hui.
+C'est l'écriture littérale de la règle demandée. Si l'usage montre qu'une relance
+due doit primer, il suffit d'intervertir les deux premières branches de
+`followUpStatus()` — un test couvre déjà ce cas précis.
+
+**Le portefeuille compte ce que la personne a signé.** `/clients` additionne les
+affaires gagnées **rattachées au contact**. Une affaire rattachée à la seule
+société, sans contact, n'y figure pas : la fiche société porte cette autre
+lecture. La moyenne se calcule sur tous les clients, y compris ceux à zéro euro —
+c'est précisément ce qu'une moyenne de portefeuille doit dire.
+
+### Jalon 6 — ce qui est vérifié
+
+Rejoué contre une base réelle (SQLite jetable, retouches locales non committées) :
+
+- contact créé avec « Studio Kaolin » inconnue → société créée, liée, visible
+  dans `/societes` avec le nom seul ; la page la rend
+- « studio KAOLIN » puis « zénith labs » → rattachés aux sociétés existantes,
+  **aucun doublon** (1 seule société « Kaolin », 1 seule « Zenith »)
+- contact invalide avec `companyName` → 400 et **aucune société fantôme** créée
+  (compteur inchangé)
+- affaire créée avec une société à la volée → même comportement
+- répartition des statuts sur le jeu de démonstration : 4 jamais contactés,
+  4 à relancer, 7 relances prévues, 3 en attente, 4 sans nouvelles
+- filtre « À relancer » → exactement les contacts dont la relance est due,
+  y compris celle datée du jour même (J+0)
+- filtre « Jamais contacté » → tous sans `lastContact` **et** sans interaction
+- `coldDays` 14 → 20 → 40 : « sans nouvelles » passe de 4 à 3 à 1, dans l'API
+  **et** dans la page rendue
+- `/clients` : 6 clients, 14k€ cumulés, 2,3k€ de moyenne — recoupés contre la
+  base ; tri par défaut décroissant sur le CA ; les cinq tris répondent ;
+  cliquer une ligne ouvre la fiche du contact
+- badge de statut présent dans le tiroir contact, colonnes Statut et Prochaine
+  relance dans `/contacts`, entrée « Clients » dans le rail et carte d'accueil
+
+### Jalon 6 — ce qui ne l'est pas
+
+Le combobox est un composant client monté à l'ouverture du tiroir : son
+comportement au clavier (flèches, Entrée, Échap, clic extérieur) a été écrit et
+relu, mais vérifié seulement par les appels d'API sous-jacents, pas par un
+navigateur piloté.
+
+### Incident corrigé au passage
+
+`GET /api/contacts` calculait le statut avec les seuils **par défaut** au lieu de
+ceux enregistrés : changer `coldDays` déplaçait les couleurs de la page mais pas
+la réponse de l'API, qui la contredisait donc en silence. Détecté par le test
+d'acceptation nº 4, qui comparait les deux. Les trois routes contacts (liste,
+fiche, export) lisent désormais les réglages.
 
 ### Journal des incidents
 

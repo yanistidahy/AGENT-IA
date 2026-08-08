@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { FOLLOW_UP_LABELS, type FollowUpStatus } from "@/lib/domain/follow-up";
 import type { DealHeat, DealStatus, Lifecycle, StageLike } from "@/lib/domain/types";
 
 /** Petites briques d'affichage partagées par les vues CRM. */
@@ -85,6 +86,34 @@ const LIFECYCLE_TONES: Record<Lifecycle, Tone> = {
 
 export function LifecycleTag({ lifecycle }: { lifecycle: Lifecycle }) {
   return <Tag tone={LIFECYCLE_TONES[lifecycle]}>{lifecycle}</Tag>;
+}
+
+/**
+ * Statut de relance. Les couleurs sont celles demandées : gris « jamais
+ * contacté », rouge « à relancer », bleu « relance prévue », vert « en attente »,
+ * ambre « sans nouvelles ».
+ */
+const FOLLOW_UP_TONES: Record<FollowUpStatus, Tone> = {
+  never: "mute",
+  due: "pulse",
+  planned: "sky",
+  waiting: "flux",
+  silent: "gold",
+};
+
+export function FollowUpTag({
+  status,
+  suffix,
+}: {
+  status: FollowUpStatus;
+  suffix?: string;
+}) {
+  return (
+    <Tag tone={FOLLOW_UP_TONES[status]} dot={status === "due"}>
+      {FOLLOW_UP_LABELS[status]}
+      {suffix !== undefined && suffix !== "" ? ` · ${suffix}` : ""}
+    </Tag>
+  );
 }
 
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {

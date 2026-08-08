@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { Combobox, companyFields, type ComboboxValue } from "@/components/ui/combobox";
 import { createDeal, updateDeal } from "@/lib/client/deals-api";
 import type { DealRecord } from "@/lib/api/deals";
 import type { StageLike } from "@/lib/domain/types";
@@ -71,7 +72,6 @@ export function DealForm({
     stageId: deal?.stageId ?? stages[0]?.id ?? "",
     owner: deal?.owner ?? owners[0] ?? "",
     offer: deal?.offer ?? offers[0] ?? "",
-    companyId: deal?.companyId ?? "",
     contactId: deal?.contactId ?? "",
     expectedClose: toDateInput(deal?.expectedClose ?? null),
     prob: deal?.prob === null || deal?.prob === undefined ? "" : String(deal.prob),
@@ -80,6 +80,10 @@ export function DealForm({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string[]>>({});
+
+  const [company, setCompany] = useState<ComboboxValue>(
+    deal?.companyId == null ? { kind: "none" } : { kind: "existing", id: deal.companyId },
+  );
 
   const set = (key: keyof typeof form, value: string) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -97,7 +101,7 @@ export function DealForm({
       owner: form.owner,
       offer: form.offer,
       notes: form.notes,
-      companyId: form.companyId === "" ? null : form.companyId,
+      ...companyFields(company),
       contactId: form.contactId === "" ? null : form.contactId,
       expectedClose: form.expectedClose === "" ? null : form.expectedClose,
       prob: form.prob === "" ? null : Number.parseInt(form.prob, 10),
@@ -182,18 +186,13 @@ export function DealForm({
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="Société">
-          <select
-            className={INPUT}
-            value={form.companyId}
-            onChange={(e) => set("companyId", e.target.value)}
-          >
-            <option value="">—</option>
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.name}
-              </option>
-            ))}
-          </select>
+          <Combobox
+            options={companies.map((option) => ({ id: option.id, label: option.name }))}
+            value={company}
+            onChange={setCompany}
+            placeholder="Rechercher ou créer une société…"
+            emptyLabel="Sans société"
+          />
         </Field>
         <Field label="Contact principal">
           <select

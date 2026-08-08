@@ -1,7 +1,14 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
+import { resolveCompanyLink } from "./company-resolve";
 import { toDealStatus, toLifecycle } from "../domain/guards";
-import type { DealStatus, Lifecycle } from "../domain/types";
+import {
+  followUpRank,
+  followUpStatus,
+  idleDays,
+  type FollowUpStatus,
+} from "../domain/follow-up";
+import { DEFAULT_PILOTAGE, type DealStatus, type Lifecycle, type PilotageSettings } from "../domain/types";
 import type {
   CreateContactInput,
   ListContactsQuery,
@@ -47,6 +54,12 @@ export interface ContactRecord {
   readonly companyId: string | null;
   readonly company: { readonly id: string; readonly name: string } | null;
   readonly deals: readonly ContactDealSummary[];
+  /** Interactions consignées — distingue « jamais contacté » d'un import daté. */
+  readonly activityCount: number;
+  /** Statut de relance, dérivé (voir lib/domain/follow-up.ts). */
+  readonly followUp: FollowUpStatus;
+  /** Jours depuis la dernière touche, `null` si elle n'a jamais eu lieu. */
+  readonly idleDays: number | null;
 }
 
 const contactInclude = {
@@ -61,12 +74,26 @@ const contactInclude = {
     },
     orderBy: { amount: "desc" },
   },
+  _count: { select: { activities: true } },
 } satisfies Prisma.ContactInclude;
 
 type ContactRow = Prisma.ContactGetPayload<{ include: typeof contactInclude }>;
 
-function toRecord(row: ContactRow): ContactRecord {
+function toRecord(
+  row: ContactRow,
+  settings: PilotageSettings,
+  now: Date,
+): ContactRecord {
+  const followUpInput = {
+    lastContact: row.lastContact,
+    nextReminder: row.nextReminder,
+    activityCount: row._count.activities,
+  };
+
   return {
+    activityCount: row._count.activities,
+    followUp: followUpStatus(followUpInput, settings, now),
+    idleDays: idleDays(followUpInput, now),
     id: row.id,
     firstName: row.firstName,
     lastName: row.lastName,
@@ -116,7 +143,20 @@ function orderBy(query: ListContactsQuery): Prisma.ContactOrderByWithRelationInp
   }
 }
 
-export async function listContacts(query: ListContactsQuery = {}): Promise<ContactRecord[]> {
+/**
+ * Liste des contacts.
+ *
+ * Le statut de relance est **dérivé**, pas stocké : il ne peut donc pas être
+ * filtré ni trié en SQL. Le filtrage et le tri correspondants se font en mémoire,
+ * après lecture. C'est assumé au volume d'un CRM d'indépendant ; si la table
+ * devait atteindre des dizaines de milliers de lignes, il faudrait matérialiser
+ * le statut ou l'exprimer en requête brute — au prix de la portabilité du schéma.
+ */
+export async function listContacts(
+  query: ListContactsQuery = {},
+  settings: PilotageSettings = DEFAULT_PILOTAGE,
+  now: Date = new Date(),
+): Promise<ContactRecord[]> {
   const where: Prisma.ContactWhereInput = {};
 
   if (query.lifecycle !== undefined && query.lifecycle !== "all") {
@@ -141,16 +181,56 @@ export async function listContacts(query: ListContactsQuery = {}): Promise<Conta
     include: contactInclude,
     orderBy: orderBy(query),
   });
-  return rows.map(toRecord);
+
+  let records = rows.map((row) => toRecord(row, settings, now));
+
+  if (query.followUp !== undefined) {
+    records = records.filter((contact) => contact.followUp === query.followUp);
+  }
+
+  if (query.sort === "followUp") {
+    const direction = query.dir === "desc" ? -1 : 1;
+    records = [...records].sort(
+      (a, b) => (followUpRank(a.followUp) - followUpRank(b.followUp)) * direction,
+    );
+  }
+
+  if (query.sort === "nextReminder") {
+    const direction = query.dir === "desc" ? -1 : 1;
+    // Sans relance programmée : en fin de liste dans les deux sens — l'absence
+    // de date n'est ni la plus urgente ni la plus lointaine, elle n'est rien.
+    const key = (contact: ContactRecord) =>
+      contact.nextReminder === null ? Number.MAX_SAFE_INTEGER : contact.nextReminder.getTime();
+    records = [...records].sort((a, b) => {
+      if (a.nextReminder === null) return 1;
+      if (b.nextReminder === null) return -1;
+      return (key(a) - key(b)) * direction;
+    });
+  }
+
+  return records;
 }
 
-export async function getContact(id: string): Promise<ContactRecord | null> {
+export async function getContact(
+  id: string,
+  settings: PilotageSettings = DEFAULT_PILOTAGE,
+  now: Date = new Date(),
+): Promise<ContactRecord | null> {
   const row = await prisma.contact.findUnique({ where: { id }, include: contactInclude });
-  return row === null ? null : toRecord(row);
+  return row === null ? null : toRecord(row, settings, now);
 }
 
+/**
+ * Création d'un contact.
+ *
+ * `companyName` déclenche la création de la société dans **la même
+ * transaction** : si l'écriture du contact échoue, aucune société fantôme ne
+ * reste derrière.
+ */
 export async function createContact(input: CreateContactInput): Promise<ContactRecord> {
-  const row = await prisma.contact.create({
+  const row = await prisma.$transaction(async (tx) => {
+    const companyId = await resolveCompanyLink(tx, input);
+    return tx.contact.create({
     data: {
       firstName: input.firstName,
       lastName: input.lastName,
@@ -163,13 +243,14 @@ export async function createContact(input: CreateContactInput): Promise<ContactR
       source: input.source ?? "",
       owner: input.owner ?? "",
       notes: input.notes ?? "",
-      companyId: input.companyId ?? null,
+      companyId: companyId ?? null,
       lastContact: input.lastContact ?? null,
       nextReminder: input.nextReminder ?? null,
     },
     include: contactInclude,
+    });
   });
-  return toRecord(row);
+  return toRecord(row, DEFAULT_PILOTAGE, new Date());
 }
 
 export async function updateContact(
@@ -195,13 +276,15 @@ export async function updateContact(
   if (input.lastContact !== undefined) data.lastContact = input.lastContact;
   if (input.nextReminder !== undefined) data.nextReminder = input.nextReminder;
 
-  if (input.companyId !== undefined) {
-    data.company =
-      input.companyId === null ? { disconnect: true } : { connect: { id: input.companyId } };
-  }
+  const row = await prisma.$transaction(async (tx) => {
+    const companyId = await resolveCompanyLink(tx, input);
+    if (companyId !== undefined) {
+      data.company = companyId === null ? { disconnect: true } : { connect: { id: companyId } };
+    }
+    return tx.contact.update({ where: { id }, data, include: contactInclude });
+  });
 
-  const row = await prisma.contact.update({ where: { id }, data, include: contactInclude });
-  return toRecord(row);
+  return toRecord(row, DEFAULT_PILOTAGE, new Date());
 }
 
 /**

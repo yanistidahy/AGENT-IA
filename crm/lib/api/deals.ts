@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
+import { resolveCompanyLink } from "./company-resolve";
 import { planStageMove } from "../domain/deal-transitions";
 import { toDealStatus, toLifecycle } from "../domain/guards";
 import type { DealLike, DealStatus, Lifecycle, StageLike } from "../domain/types";
@@ -127,9 +128,17 @@ export async function getDeal(id: string): Promise<DealRecord | null> {
   return row === null ? null : toRecord(row);
 }
 
+/**
+ * Création d'une affaire.
+ *
+ * `companyName` crée la société dans la même transaction — même règle que pour
+ * les contacts : on découvre souvent l'affaire et la société ensemble.
+ */
 export async function createDeal(input: CreateDealInput): Promise<DealRecord> {
   const now = new Date();
-  const row = await prisma.deal.create({
+  const row = await prisma.$transaction(async (tx) => {
+    const companyId = await resolveCompanyLink(tx, input);
+    return tx.deal.create({
     data: {
       name: input.name,
       amount: input.amount,
@@ -137,7 +146,7 @@ export async function createDeal(input: CreateDealInput): Promise<DealRecord> {
       owner: input.owner,
       offer: input.offer ?? "",
       notes: input.notes ?? "",
-      companyId: input.companyId ?? null,
+      companyId: companyId ?? null,
       contactId: input.contactId ?? null,
       expectedClose: input.expectedClose ?? null,
       prob: input.prob ?? null,
@@ -145,6 +154,7 @@ export async function createDeal(input: CreateDealInput): Promise<DealRecord> {
       lastActivityAt: now,
     },
     include: dealInclude,
+    });
   });
   return toRecord(row);
 }
@@ -171,10 +181,6 @@ export async function updateDeal(
   if (input.expectedClose !== undefined) data.expectedClose = input.expectedClose;
   if (input.stageId !== undefined) data.stage = { connect: { id: input.stageId } };
 
-  if (input.companyId !== undefined) {
-    data.company =
-      input.companyId === null ? { disconnect: true } : { connect: { id: input.companyId } };
-  }
   if (input.contactId !== undefined) {
     data.contact =
       input.contactId === null ? { disconnect: true } : { connect: { id: input.contactId } };
@@ -185,7 +191,14 @@ export async function updateDeal(
     data.closedAt = input.status === "open" ? null : (existing.closedAt ?? new Date());
   }
 
-  const row = await prisma.deal.update({ where: { id }, data, include: dealInclude });
+  const row = await prisma.$transaction(async (tx) => {
+    const companyId = await resolveCompanyLink(tx, input);
+    if (companyId !== undefined) {
+      data.company = companyId === null ? { disconnect: true } : { connect: { id: companyId } };
+    }
+    return tx.deal.update({ where: { id }, data, include: dealInclude });
+  });
+
   return toRecord(row);
 }
 

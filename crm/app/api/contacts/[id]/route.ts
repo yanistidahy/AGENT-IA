@@ -1,5 +1,6 @@
 import { updateContactSchema } from "@/lib/api/contact-schemas";
 import { deleteContact, getContact, updateContact } from "@/lib/api/contacts";
+import { getPilotage } from "@/lib/api/reference";
 import {
   badRequest,
   invalidPayload,
@@ -18,7 +19,7 @@ interface RouteContext {
 export async function GET(_request: Request, context: RouteContext) {
   const { id } = await context.params;
   try {
-    const contact = await getContact(id);
+    const contact = await getContact(id, await getPilotage(), new Date());
     if (contact === null) return notFound("Contact introuvable.");
     return jsonOk({ contact });
   } catch (error) {

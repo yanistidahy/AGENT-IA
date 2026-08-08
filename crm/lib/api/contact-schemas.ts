@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FOLLOW_UP_FILTERS } from "../domain/follow-up";
 import { LIFECYCLES } from "../domain/types";
 
 /**
@@ -53,6 +54,11 @@ export const createContactSchema = z.object({
   owner: z.string().trim().optional(),
   notes: z.string().optional(),
   companyId: idValue.optional(),
+  /**
+   * Société saisie au clavier plutôt que choisie dans la liste : elle est créée
+   * dans la même transaction que le contact. Prime sur `companyId`.
+   */
+  companyName: z.string().trim().min(1).optional(),
   lastContact: dateValue.optional(),
   nextReminder: dateValue.optional(),
 });
@@ -73,6 +79,7 @@ export const updateContactSchema = z
     owner: z.string().trim().optional(),
     notes: z.string().optional(),
     companyId: idValue.optional(),
+    companyName: z.string().trim().min(1).optional(),
     lastContact: dateValue.optional(),
     nextReminder: dateValue.optional(),
   })
@@ -90,11 +97,15 @@ export const CONTACT_SORT_KEYS = [
   "owner",
   "lastContact",
   "createdAt",
+  // Dérivés : triés en mémoire, voir lib/api/contacts.ts.
+  "followUp",
+  "nextReminder",
 ] as const;
 
 export const listContactsQuerySchema = z.object({
   q: z.string().optional(),
   lifecycle: z.enum([...LIFECYCLES, "all"]).optional(),
+  followUp: z.enum(FOLLOW_UP_FILTERS).optional(),
   owner: z.string().optional(),
   source: z.string().optional(),
   companyId: z.string().optional(),

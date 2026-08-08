@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Drawer } from "@/components/ui/drawer";
-import { Eyebrow, LifecycleTag, StatusTag } from "@/components/ui/primitives";
+import { Eyebrow, FollowUpTag, LifecycleTag, StatusTag } from "@/components/ui/primitives";
 import type { ContactRecord } from "@/lib/api/contacts";
 import { deleteContact } from "@/lib/client/crm-api";
 import { daysSince } from "@/lib/domain/dates";
@@ -97,6 +97,16 @@ export function ContactDrawer({
         <>
           <div className="mb-5 flex flex-wrap gap-2">
             <LifecycleTag lifecycle={contact.lifecycle} />
+            <FollowUpTag
+              status={contact.followUp}
+              suffix={
+                contact.followUp === "silent" && contact.idleDays !== null
+                  ? `${contact.idleDays} j`
+                  : contact.followUp === "planned" && contact.nextReminder !== null
+                    ? formatDate(contact.nextReminder)
+                    : undefined
+              }
+            />
             {contact.owner !== "" && (
               <span className="inline-flex items-center rounded-full bg-paper px-2 py-[3px] text-[11.5px] font-semibold text-muted">
                 {contact.owner}

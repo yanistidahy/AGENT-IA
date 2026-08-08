@@ -36,6 +36,8 @@ export const createDealSchema = z.object({
   offer: z.string().trim().optional(),
   notes: z.string().optional(),
   companyId: idValue.optional(),
+  /** Société saisie au clavier : créée dans la même transaction que l'affaire. */
+  companyName: z.string().trim().min(1).optional(),
   contactId: idValue.optional(),
   expectedClose: dateValue.optional(),
   prob: z.number().int().min(0).max(100).nullable().optional(),
@@ -56,6 +58,7 @@ export const updateDealSchema = z
     offer: z.string().trim().optional(),
     notes: z.string().optional(),
     companyId: idValue.optional(),
+    companyName: z.string().trim().min(1).optional(),
     contactId: idValue.optional(),
     expectedClose: dateValue.optional(),
     prob: z.number().int().min(0).max(100).nullable().optional(),

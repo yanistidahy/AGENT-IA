@@ -26,12 +26,16 @@ export default async function ContactsPage({
   const parsed = parseContactsQuery(flat);
   const query = parsed.success ? parsed.data : {};
 
-  const [contacts, owners, sources, settings, companies, linkableDeals, sequences, alerts] =
+  // Le statut de relance dépend de `coldDays` : les réglages sont lus avant la
+  // liste, pas en parallèle, pour que le calcul porte sur la valeur courante.
+  const settings = await getPilotage();
+  const now = new Date();
+
+  const [contacts, owners, sources, companies, linkableDeals, sequences, alerts] =
     await Promise.all([
-    listContacts(query),
+    listContacts(query, settings, now),
     listOwners(),
     listSources(),
-    getPilotage(),
     prisma.company.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     prisma.deal.findMany({
       where: { status: "open" },
@@ -48,7 +52,7 @@ export default async function ContactsPage({
   const focused =
     ficheId === undefined || contacts.some((contact) => contact.id === ficheId)
       ? null
-      : await getContact(ficheId);
+      : await getContact(ficheId, settings, now);
 
   return (
     <ContactsView

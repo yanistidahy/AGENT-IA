@@ -1,6 +1,6 @@
 "use client";
 
-import { EmptyState, LifecycleTag } from "@/components/ui/primitives";
+import { EmptyState, FollowUpTag, LifecycleTag } from "@/components/ui/primitives";
 import type { ContactRecord } from "@/lib/api/contacts";
 import { daysSince } from "@/lib/domain/dates";
 import type { PilotageSettings } from "@/lib/domain/types";
@@ -12,7 +12,9 @@ export type ContactSortKey =
   | "company"
   | "lifecycle"
   | "owner"
-  | "lastContact";
+  | "lastContact"
+  | "followUp"
+  | "nextReminder";
 
 interface ContactsTableProps {
   readonly contacts: readonly ContactRecord[];
@@ -27,7 +29,8 @@ const COLUMNS: ReadonlyArray<{ key: ContactSortKey | null; label: string }> = [
   { key: "lastName", label: "Contact" },
   { key: "company", label: "Société" },
   { key: "lifecycle", label: "Cycle de vie" },
-  { key: null, label: "Coordonnées" },
+  { key: "followUp", label: "Statut" },
+  { key: "nextReminder", label: "Prochaine relance" },
   { key: "lastContact", label: "Dernier contact" },
   { key: null, label: "Affaires" },
   { key: "owner", label: "Propriétaire" },
@@ -84,10 +87,11 @@ export function ContactsTable({
         </thead>
         <tbody>
           {contacts.map((contact) => {
-            const idle =
-              contact.lastContact === null ? null : daysSince(contact.lastContact, now);
+            const idle = contact.idleDays;
             const stale = idle === null || idle >= settings.coldDays;
             const openDeals = contact.deals.filter((deal) => deal.status === "open").length;
+            const reminderLate =
+              contact.nextReminder !== null && daysSince(contact.nextReminder, now) >= 0;
 
             return (
               <tr
@@ -115,10 +119,22 @@ export function ContactsTable({
                 <td className="border-b border-line-2 px-3.5 py-3">
                   <LifecycleTag lifecycle={contact.lifecycle} />
                 </td>
-                <td className="border-b border-line-2 px-3.5 py-3 text-[12.5px] text-muted">
-                  {contact.email || "—"}
-                  <br />
-                  {contact.phone || "—"}
+                <td className="border-b border-line-2 px-3.5 py-3">
+                  <FollowUpTag
+                    status={contact.followUp}
+                    suffix={
+                      contact.followUp === "silent" && idle !== null ? `${idle} j` : undefined
+                    }
+                  />
+                </td>
+                <td className="border-b border-line-2 px-3.5 py-3 font-mono text-[12.5px]">
+                  {contact.nextReminder === null ? (
+                    <span className="text-muted">—</span>
+                  ) : (
+                    <span className={reminderLate ? "font-semibold text-[#B2311F]" : "text-muted"}>
+                      {formatDate(contact.nextReminder)}
+                    </span>
+                  )}
                 </td>
                 <td className="border-b border-line-2 px-3.5 py-3 font-mono text-[12.5px]">
                   <span className={stale ? "font-semibold text-[#B2311F]" : "text-muted"}>

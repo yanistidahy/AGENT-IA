@@ -22,6 +22,9 @@ const contact: ContactRecord = {
   companyId: "co1",
   company: { id: "co1", name: "ACME;SA" },
   deals: [],
+  activityCount: 3,
+  followUp: "waiting",
+  idleDays: 9,
 };
 
 describe("contactsToCsv", () => {

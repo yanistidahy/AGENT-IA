@@ -103,3 +103,53 @@ describe("sociétés", () => {
     expect(parseCompaniesQuery({ q: "", industry: "SaaS" }).data).toEqual({ industry: "SaaS" });
   });
 });
+
+describe("société créée à la volée", () => {
+  it("accepte un nom de société au lieu d'un identifiant", () => {
+    const parsed = createContactSchema.safeParse({ ...base, companyName: "Zénith Labs" });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.companyName).toBe("Zénith Labs");
+  });
+
+  it("refuse un nom de société vide plutôt que d'en créer une sans nom", () => {
+    expect(createContactSchema.safeParse({ ...base, companyName: "   " }).success).toBe(false);
+  });
+
+  it("tolère les deux champs : le service tranche en faveur du nom saisi", () => {
+    const parsed = createContactSchema.safeParse({
+      ...base,
+      companyId: "co1",
+      companyName: "Nouvelle",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("accepte aussi un nom de société sur une affaire", async () => {
+    const { createDealSchema } = await import("../deal-schemas");
+    const parsed = createDealSchema.safeParse({
+      name: "Bot SAV",
+      amount: 6480,
+      stageId: "s1",
+      owner: "Yanis",
+      companyName: "Atelier MV",
+    });
+    expect(parsed.success).toBe(true);
+  });
+});
+
+describe("filtres de relance", () => {
+  it("accepte les trois filtres de statut", () => {
+    for (const value of ["due", "silent", "never"]) {
+      expect(parseContactsQuery({ followUp: value }).success, value).toBe(true);
+    }
+  });
+
+  it("refuse un statut qui n'est pas proposé en filtre", () => {
+    expect(parseContactsQuery({ followUp: "waiting" }).success).toBe(false);
+  });
+
+  it("accepte les tris dérivés", () => {
+    expect(parseContactsQuery({ sort: "followUp" }).success).toBe(true);
+    expect(parseContactsQuery({ sort: "nextReminder" }).success).toBe(true);
+  });
+});

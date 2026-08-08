@@ -5,6 +5,7 @@ import { useCallback, useState, useTransition } from "react";
 import { Drawer } from "@/components/ui/drawer";
 import { Icon } from "@/components/ui/icon";
 import type { ContactRecord } from "@/lib/api/contacts";
+import { FOLLOW_UP_FILTERS, FOLLOW_UP_LABELS } from "@/lib/domain/follow-up";
 import { LIFECYCLES, type PilotageSettings } from "@/lib/domain/types";
 import { ContactDrawer } from "./contact-drawer";
 import { ContactForm, type ContactFormOptions } from "./contact-form";
@@ -46,6 +47,7 @@ export function ContactsView({
   const [importing, setImporting] = useState(false);
 
   const lifecycle = params.get("lifecycle") ?? "all";
+  const followUp = params.get("followUp");
   const sortParam = params.get("sort");
   const dir = params.get("dir") === "desc" ? "desc" : "asc";
 
@@ -123,6 +125,30 @@ export function ContactsView({
               }`}
             >
               {LIFECYCLE_LABELS[value] ?? value}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex overflow-hidden rounded-control border border-line bg-surface">
+          <button
+            type="button"
+            onClick={() => setParam({ followUp: null })}
+            className={`border-r border-line px-3 py-1.5 text-[12.5px] font-semibold transition-colors last:border-r-0 ${
+              followUp === null ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
+            }`}
+          >
+            Tous
+          </button>
+          {FOLLOW_UP_FILTERS.map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setParam({ followUp: value })}
+              className={`border-r border-line px-3 py-1.5 text-[12.5px] font-semibold transition-colors last:border-r-0 ${
+                followUp === value ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
+              }`}
+            >
+              {FOLLOW_UP_LABELS[value]}
             </button>
           ))}
         </div>
@@ -209,6 +235,8 @@ const SORT_KEYS: readonly ContactSortKey[] = [
   "lifecycle",
   "owner",
   "lastContact",
+  "followUp",
+  "nextReminder",
 ];
 
 function isSortKey(value: string | null): value is ContactSortKey {
