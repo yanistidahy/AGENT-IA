@@ -174,6 +174,11 @@ export function ContactForm({
         </Field>
       </div>
 
+      <p className="-mt-1 text-[11.5px] leading-relaxed text-muted">
+        Une date de relance crée aussi la tâche « Relancer {"…"} » dans /taches, et l'y déplace si
+        vous la changez. Effacer la date retire la tâche ; la terminer efface la date.
+      </p>
+
       <Field label="Notes" errors={fields.notes}>
         <textarea name="notes" rows={3} defaultValue={contact?.notes ?? ""} className={CONTROL} />
       </Field>

@@ -16,6 +16,15 @@ export type DealHeat = (typeof DEAL_HEATS)[number];
 export const ACTIVITY_TYPES = ["call", "email", "meeting", "demo", "note"] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
+/** Libellés d'affichage des types d'interaction. Une seule table pour tout l'app. */
+export const ACTIVITY_LABELS: Record<ActivityType, string> = {
+  call: "Appel",
+  email: "Email",
+  meeting: "Réunion",
+  demo: "Démo",
+  note: "Note",
+};
+
 export const TASK_PRIORITIES = ["haute", "normale", "basse"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 

@@ -57,6 +57,48 @@ async function sourceFiles(dir: string): Promise<string[]> {
   return files;
 }
 
+/**
+ * Même garantie, appliquée aux clés d'automatisation.
+ *
+ * L'anti-doublon repose entièrement sur `autoKey()` : deux endroits qui
+ * fabriquent la même clé « à la main » finissent par diverger d'un caractère, et
+ * la contrainte d'unicité cesse alors de protéger quoi que ce soit — on obtient
+ * deux tâches pour le même déclencheur, exactement ce qu'on voulait interdire.
+ * Seul `lib/domain/automation.ts` a le droit d'écrire un préfixe de clé.
+ */
+const KEY_OWNER = path.join("lib", "domain", "automation.ts");
+
+const HAND_MADE_KEY = /["'`](?:reminder|stage|stale):/;
+
+describe("un seul module fabrique les clés d'automatisation", () => {
+  it("personne ne recompose une autoKey à la main", async () => {
+    const offenders: string[] = [];
+
+    for (const root of SEARCHED) {
+      for (const file of await sourceFiles(path.join(ROOT, root))) {
+        const relative = path.relative(ROOT, file);
+        if (relative === KEY_OWNER) continue;
+
+        const lines = (await readFile(file, "utf8")).split("\n");
+        lines.forEach((line, index) => {
+          const code = line.replace(/\/\/.*$/, "").replace(/^\s*\*.*$/, "");
+          if (HAND_MADE_KEY.test(code)) {
+            offenders.push(`${relative}:${index + 1} — ${line.trim()}`);
+          }
+        });
+      }
+    }
+
+    expect(offenders, "utilisez autoKey(kind, …) de lib/domain/automation.ts").toEqual([]);
+  });
+
+  it("le module propriétaire, lui, en fabrique bien", async () => {
+    const content = await readFile(path.join(ROOT, KEY_OWNER), "utf8");
+    expect(content).toMatch(/AUTO_KINDS/);
+    expect(content).toMatch(/\[kind, \.\.\.parts\]\.join/);
+  });
+});
+
 describe("un seul module décide des seuils", () => {
   it("aucune vue ne compare elle-même à coldDays ou staleDays", async () => {
     const offenders: string[] = [];

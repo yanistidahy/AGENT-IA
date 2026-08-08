@@ -1,13 +1,13 @@
 import { badRequest, invalidPayload, jsonOk, serverError } from "@/lib/api/errors";
 import { readJson } from "@/lib/api/request";
-import { getPilotage } from "@/lib/api/reference";
+import { getPilotage, getReminderDelays } from "@/lib/api/reference";
 import { updateSettings, updateSettingsSchema } from "@/lib/api/settings";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    return jsonOk({ settings: await getPilotage() });
+    return jsonOk({ settings: await getPilotage(), delays: await getReminderDelays() });
   } catch (error) {
     return serverError("GET /api/settings", error);
   }
@@ -23,7 +23,7 @@ export async function PATCH(request: Request) {
   try {
     const result = await updateSettings(parsed.data);
     if (!result.ok) return badRequest(result.message);
-    return jsonOk({ settings: await getPilotage() });
+    return jsonOk({ settings: await getPilotage(), delays: await getReminderDelays() });
   } catch (error) {
     return serverError("PATCH /api/settings", error);
   }

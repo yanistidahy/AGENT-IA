@@ -1,7 +1,9 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
+import { applyTaskIntent, ownerOrDefault, type AutoTaskOutcome } from "./automation";
 import { resolveCompanyLink } from "./company-resolve";
 import { planStageMove } from "../domain/deal-transitions";
+import { stageTask } from "../domain/automation";
 import { toDealStatus, toLifecycle } from "../domain/guards";
 import type { DealLike, DealStatus, Lifecycle, StageLike } from "../domain/types";
 import type { CreateDealInput, ListDealsQuery, UpdateDealInput } from "./deal-schemas";
@@ -123,6 +125,25 @@ export async function listDeals(query: ListDealsQuery = {}): Promise<DealRecord[
   return rows.map(toRecord);
 }
 
+/**
+ * Comptes par statut, sur **toutes** les affaires.
+ *
+ * Volontairement indépendant des filtres en cours : une puce qui compterait son
+ * propre résultat afficherait toujours le total de ce qu'elle vient de
+ * sélectionner, ce qui n'apprend rien. Même règle que les puces de /contacts.
+ */
+export async function countDealsByStatus(): Promise<Record<string, number>> {
+  const rows = await prisma.deal.groupBy({ by: ["status"], _count: { _all: true } });
+
+  const counts: Record<string, number> = {};
+  let all = 0;
+  for (const row of rows) {
+    counts[row.status] = row._count._all;
+    all += row._count._all;
+  }
+  return { ...counts, all };
+}
+
 export async function getDeal(id: string): Promise<DealRecord | null> {
   const row = await prisma.deal.findUnique({ where: { id }, include: dealInclude });
   return row === null ? null : toRecord(row);
@@ -203,7 +224,12 @@ export async function updateDeal(
 }
 
 export type MoveStageResult =
-  | { readonly ok: true; readonly deal: DealRecord }
+  | {
+      readonly ok: true;
+      readonly deal: DealRecord;
+      /** Tâche d'étape créée ou déplacée, à annoncer à l'utilisateur. */
+      readonly autoTask: AutoTaskOutcome | null;
+    }
   | { readonly ok: false; readonly reason: "deal_not_found" | "stage_not_found" };
 
 /**
@@ -230,18 +256,24 @@ export async function moveDealStage(id: string, stageId: string): Promise<MoveSt
     new Date(),
   );
 
-  const [row] = await prisma.$transaction([
-    prisma.deal.update({
+  const changed = current.stageId !== plan.stageId;
+
+  const { row, autoTask } = await prisma.$transaction(async (tx) => {
+    const updated = await tx.deal.update({
       where: { id },
       data: {
         stageId: plan.stageId,
         status: plan.status,
         closedAt: plan.closedAt,
         lastActivityAt: plan.lastActivityAt,
+        // Ancienneté *dans l'étape*, distincte de la dernière touche : une
+        // affaire peut être relancée sans avancer d'un pouce dans le pipeline.
+        ...(changed ? { stageSince: plan.lastActivityAt } : {}),
       },
       include: dealInclude,
-    }),
-    prisma.activity.create({
+    });
+
+    await tx.activity.create({
       data: {
         type: "note",
         date: plan.lastActivityAt,
@@ -251,10 +283,36 @@ export async function moveDealStage(id: string, stageId: string): Promise<MoveSt
         contactId: current.contactId,
         companyId: current.companyId,
       },
-    }),
-  ]);
+    });
 
-  return { ok: true, deal: toRecord(row) };
+    // Action de suivi propre à l'étape d'arrivée, si elle en déclare une.
+    // Idempotente par `stage:<affaire>:<étape>` : repasser par la même étape
+    // déplace la tâche existante, il n'en apparaît jamais deux.
+    if (!changed) return { row: updated, autoTask: null };
+
+    const stageRow = await tx.stage.findUnique({
+      where: { id: plan.stageId },
+      select: { nextActionLabel: true, nextActionDays: true },
+    });
+    if (stageRow === null) return { row: updated, autoTask: null };
+
+    const intent = stageTask({
+      dealId: updated.id,
+      dealName: updated.name,
+      stageId: plan.stageId,
+      stageLabel: stageRow.nextActionLabel,
+      stageDays: stageRow.nextActionDays,
+      owner: await ownerOrDefault(tx, updated.owner),
+      from: plan.lastActivityAt,
+    });
+
+    return {
+      row: updated,
+      autoTask: intent === null ? null : await applyTaskIntent(tx, intent),
+    };
+  });
+
+  return { ok: true, deal: toRecord(row), autoTask };
 }
 
 /** Statuts acceptés par les filtres de la vue liste. */

@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
+import { ownerOrDefault, syncReminderTask } from "./automation";
 import { resolveCompanyLink } from "./company-resolve";
 import { toDealStatus, toLifecycle } from "../domain/guards";
 import {
@@ -248,7 +249,7 @@ export async function getContact(
 export async function createContact(input: CreateContactInput): Promise<ContactRecord> {
   const row = await prisma.$transaction(async (tx) => {
     const companyId = await resolveCompanyLink(tx, input);
-    return tx.contact.create({
+    const created = await tx.contact.create({
     data: {
       firstName: input.firstName,
       lastName: input.lastName,
@@ -267,6 +268,17 @@ export async function createContact(input: CreateContactInput): Promise<ContactR
     },
     include: contactInclude,
     });
+
+    if (created.nextReminder !== null) {
+      await syncReminderTask(tx, {
+        contactId: created.id,
+        contactName: `${created.firstName} ${created.lastName}`,
+        owner: await ownerOrDefault(tx, created.owner),
+        reminder: created.nextReminder,
+      });
+    }
+
+    return created;
   });
   return toRecord(row, DEFAULT_PILOTAGE, new Date());
 }
@@ -299,7 +311,20 @@ export async function updateContact(
     if (companyId !== undefined) {
       data.company = companyId === null ? { disconnect: true } : { connect: { id: companyId } };
     }
-    return tx.contact.update({ where: { id }, data, include: contactInclude });
+    const updated = await tx.contact.update({ where: { id }, data, include: contactInclude });
+
+    // La tâche « Relancer X » suit la date saisie : posée elle apparaît, déplacée
+    // elle bouge, effacée elle disparaît. Voir lib/domain/automation.ts.
+    if (input.nextReminder !== undefined) {
+      await syncReminderTask(tx, {
+        contactId: updated.id,
+        contactName: `${updated.firstName} ${updated.lastName}`,
+        owner: await ownerOrDefault(tx, updated.owner),
+        reminder: updated.nextReminder,
+      });
+    }
+
+    return updated;
   });
 
   return toRecord(row, DEFAULT_PILOTAGE, new Date());

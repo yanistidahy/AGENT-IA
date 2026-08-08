@@ -16,6 +16,11 @@ interface DealsTableProps {
   readonly dir: "asc" | "desc";
   readonly onSort: (key: SortKey) => void;
   readonly onSelect: (deal: DealRecord) => void;
+  /** Filtre de statut actif, pour expliquer une liste vide par sa règle. */
+  readonly status: string;
+  readonly searching: boolean;
+  /** Nombre total d'affaires, tous statuts — distingue « vide » de « filtré ». */
+  readonly total: number;
 }
 
 const COLUMNS: ReadonlyArray<{ key: SortKey | null; label: string; numeric?: boolean }> = [
@@ -29,6 +34,29 @@ const COLUMNS: ReadonlyArray<{ key: SortKey | null; label: string; numeric?: boo
   { key: "owner", label: "Propriétaire" },
 ];
 
+/** Une liste vide dit laquelle de ses règles l'a produite, pas « rien à afficher ». */
+function emptyReason(status: string, searching: boolean, total: number): string {
+  // Le pipeline entièrement vide passe avant tout le reste : dire « toutes sont
+  // gagnées ou perdues » alors qu'aucune affaire n'existe serait faux, et c'est
+  // exactement l'écran que voit quelqu'un qui démarre.
+  if (total === 0) {
+    return "Aucune affaire n'existe encore. Créez la première avec « Nouvelle affaire », ou chargez le jeu de démonstration.";
+  }
+  if (searching) {
+    return "Aucune affaire ne porte ce texte dans son nom ni dans celui de sa société. Videz la recherche pour revoir la liste.";
+  }
+  switch (status) {
+    case "open":
+      return "Aucune affaire en cours : toutes sont gagnées ou perdues. Choisissez « Toutes » pour voir l'historique, ou créez une affaire.";
+    case "won":
+      return "Aucune affaire gagnée pour l'instant. Une affaire devient gagnée en atteignant l'étape à 100 %.";
+    case "lost":
+      return "Aucune affaire perdue — bonne nouvelle.";
+    default:
+      return "Le pipeline est vide. Créez une première affaire, ou chargez le jeu de démonstration.";
+  }
+}
+
 export function DealsTable({
   deals,
   settings,
@@ -36,6 +64,9 @@ export function DealsTable({
   dir,
   onSort,
   onSelect,
+  status,
+  searching,
+  total,
 }: DealsTableProps) {
   const now = new Date();
 
@@ -43,8 +74,8 @@ export function DealsTable({
     return (
       <div className="rounded-card border border-line bg-surface shadow-card">
         <EmptyState title="Aucune affaire ne correspond.">
-          <span className="text-[13px]">
-            Modifiez les filtres, ou créez une affaire pour alimenter le pipeline.
+          <span className="mx-auto block max-w-[54ch] text-[13px] leading-relaxed">
+            {emptyReason(status, searching, total)}
           </span>
         </EmptyState>
       </div>

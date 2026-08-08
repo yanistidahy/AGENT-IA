@@ -1,14 +1,29 @@
 import { z } from "zod";
 import { prisma } from "../db";
+import { DEFAULT_REMINDER_DELAYS } from "../domain/automation";
 import { SETTINGS_LIST_KINDS, type SettingsListKind } from "../domain/types";
 
 /** Réglages : seuils de pilotage, listes éditables, étapes du pipeline. */
+
+/**
+ * Délai de relance proposé après une interaction.
+ *
+ * `0` est accepté : il vaut « propose aujourd'hui », pas « désactivé ». Le
+ * plafond de 365 est le même que celui des seuils — au-delà, la proposition
+ * n'est plus une relance.
+ */
+const delayField = z.number().int().min(0, "Un délai ne peut être négatif").max(365).optional();
 
 export const updateSettingsSchema = z
   .object({
     staleDays: z.number().int().min(1, "Au moins 1 jour").max(365).optional(),
     coldDays: z.number().int().min(1, "Au moins 1 jour").max(365).optional(),
     objectifMensuel: z.number().int().min(0, "L'objectif ne peut être négatif").optional(),
+    relanceApresAppel: delayField,
+    relanceApresEmail: delayField,
+    relanceApresDemo: delayField,
+    relanceApresReunion: delayField,
+    relanceApresNote: delayField,
   })
   .refine((value) => Object.keys(value).length > 0, { message: "Aucun champ à mettre à jour" })
   .refine(
@@ -48,6 +63,16 @@ export async function updateSettings(
     staleDays,
     coldDays,
     objectifMensuel: input.objectifMensuel ?? current?.objectifMensuel ?? 15000,
+    relanceApresAppel:
+      input.relanceApresAppel ?? current?.relanceApresAppel ?? DEFAULT_REMINDER_DELAYS.call,
+    relanceApresEmail:
+      input.relanceApresEmail ?? current?.relanceApresEmail ?? DEFAULT_REMINDER_DELAYS.email,
+    relanceApresDemo:
+      input.relanceApresDemo ?? current?.relanceApresDemo ?? DEFAULT_REMINDER_DELAYS.demo,
+    relanceApresReunion:
+      input.relanceApresReunion ?? current?.relanceApresReunion ?? DEFAULT_REMINDER_DELAYS.meeting,
+    relanceApresNote:
+      input.relanceApresNote ?? current?.relanceApresNote ?? DEFAULT_REMINDER_DELAYS.note,
   };
 
   await prisma.settings.upsert({
@@ -91,6 +116,12 @@ export const stageSchema = z.object({
   name: z.string().trim().min(1, "Nommez l'étape"),
   color: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, "Couleur au format #RRGGBB"),
   prob: z.number().int().min(0).max(100),
+  /**
+   * Action de suivi proposée à l'entrée dans l'étape. Vide = aucune proposition,
+   * ce qui est le comportement voulu pour les étapes terminales.
+   */
+  nextActionLabel: z.string().trim().max(120).optional(),
+  nextActionDays: z.number().int().min(0).max(365).optional(),
 });
 
 export const updateStagesSchema = z.object({
@@ -144,15 +175,19 @@ export async function updateStages(input: UpdateStagesInput): Promise<UpdateStag
     await tx.stage.deleteMany({ where: { id: { notIn: [...kept] } } });
 
     for (const [position, stage] of input.stages.entries()) {
+      const data = {
+        name: stage.name,
+        color: stage.color,
+        prob: stage.prob,
+        position,
+        nextActionLabel: stage.nextActionLabel ?? "",
+        nextActionDays: stage.nextActionDays ?? 3,
+      };
+
       if (stage.id !== undefined && kept.has(stage.id)) {
-        await tx.stage.update({
-          where: { id: stage.id },
-          data: { name: stage.name, color: stage.color, prob: stage.prob, position },
-        });
+        await tx.stage.update({ where: { id: stage.id }, data });
       } else {
-        await tx.stage.create({
-          data: { name: stage.name, color: stage.color, prob: stage.prob, position },
-        });
+        await tx.stage.create({ data });
       }
     }
   });

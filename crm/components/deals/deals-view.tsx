@@ -20,6 +20,8 @@ interface DealsViewProps extends DealFormOptions {
   readonly alerts: readonly Alert[];
   /** Affaire désignée par `?fiche=` mais absente de la liste filtrée. */
   readonly focused: DealRecord | null;
+  /** Comptes par statut, sur l'ensemble des affaires — pas sur la liste filtrée. */
+  readonly statusCounts: Readonly<Record<string, number>>;
 }
 
 const CONTROL =
@@ -31,6 +33,7 @@ export function DealsView({
   sequences,
   alerts,
   focused,
+  statusCounts,
   ...options
 }: DealsViewProps) {
   const router = useRouter();
@@ -96,6 +99,11 @@ export function DealsView({
               }`}
             >
               {filter.label}
+              {(statusCounts[filter.value] ?? 0) > 0 && (
+                <span className="ml-1 font-normal opacity-80">
+                  ({statusCounts[filter.value]})
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -141,6 +149,9 @@ export function DealsView({
           setParam({ sort: key, dir: sortParam === key && dir === "asc" ? "desc" : "asc" })
         }
         onSelect={(deal) => setParam({ fiche: deal.id })}
+        status={status}
+        searching={(params.get("q") ?? "") !== ""}
+        total={statusCounts.all ?? 0}
       />
 
       <DealDrawer

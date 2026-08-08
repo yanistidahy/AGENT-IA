@@ -230,6 +230,7 @@ export function ContactDrawer({
             defaultOwner={contact.owner === "" ? (options.owners[0] ?? "") : contact.owner}
             sequences={sequences}
             alerts={alerts}
+            currentReminder={contact.nextReminder}
             onChanged={onChanged}
           />
         </>

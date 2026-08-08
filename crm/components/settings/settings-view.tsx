@@ -1,18 +1,22 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { PilotageSettings, SettingsListKind, StageLike } from "@/lib/domain/types";
+import type { StageWithAction } from "@/lib/api/reference";
+import type { ReminderDelays } from "@/lib/domain/automation";
+import type { PilotageSettings, SettingsListKind } from "@/lib/domain/types";
 import { BackupPanel } from "./backup-panel";
 import { ListEditor } from "./list-editor";
 import { PilotageForm } from "./pilotage-form";
+import { RelancesForm } from "./relances-form";
 import { SequenceEditor, type SequenceEditable } from "./sequence-editor";
 import { StagesEditor } from "./stages-editor";
 
 interface SettingsViewProps {
   readonly sequences: readonly SequenceEditable[];
-  readonly stages: readonly StageLike[];
+  readonly stages: readonly StageWithAction[];
   readonly dealCounts: Record<string, number>;
   readonly settings: PilotageSettings;
+  readonly delays: ReminderDelays;
   readonly lists: Record<SettingsListKind, readonly string[]>;
 }
 
@@ -28,6 +32,7 @@ export function SettingsView({
   stages,
   dealCounts,
   settings,
+  delays,
   lists,
 }: SettingsViewProps) {
   const router = useRouter();
@@ -48,6 +53,13 @@ export function SettingsView({
         hint="pilotent la chaleur des affaires, les alertes et la colonne « dernière touche »"
       >
         <PilotageForm settings={settings} onSaved={refresh} />
+      </Section>
+
+      <Section
+        title="Délais de relance"
+        hint="pré-remplissent la date proposée après une interaction — rien n'est écrit sans vous"
+      >
+        <RelancesForm delays={delays} onSaved={refresh} />
       </Section>
 
       <Section title="Étapes du pipeline" hint="l'ordre ici est l'ordre des colonnes du Kanban">

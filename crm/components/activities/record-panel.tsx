@@ -25,6 +25,13 @@ export interface RecordPanelProps {
   readonly defaultOwner: string;
   readonly sequences: readonly SequenceOption[];
   readonly alerts: readonly Alert[];
+  /**
+   * Relance actuellement posée sur la fiche, quand il s'agit d'un contact.
+   * Sert à décider si une nouvelle date mérite d'être proposée : écraser une
+   * relance plus lointaine, déjà choisie, serait décider à la place de
+   * l'utilisateur.
+   */
+  readonly currentReminder?: Date | null;
   /** Prévient le parent qu'une écriture a eu lieu, pour rafraîchir la vue. */
   readonly onChanged: () => void;
 }
@@ -37,6 +44,7 @@ export function RecordPanel({
   defaultOwner,
   sequences,
   alerts,
+  currentReminder = null,
   onChanged,
 }: RecordPanelProps) {
   const [activities, setActivities] = useState<readonly ActivityView[]>([]);
@@ -105,14 +113,9 @@ export function RecordPanel({
           link={link}
           owners={owners}
           defaultOwner={defaultOwner}
+          currentReminder={currentReminder}
           onCancel={() => setPanel("none")}
-          onLogged={(createdTask) =>
-            afterWrite(
-              createdTask
-                ? "Interaction consignée, et la prochaine action est créée dans /taches."
-                : "Interaction consignée.",
-            )
-          }
+          onLogged={(summary) => afterWrite(summary)}
         />
       )}
 

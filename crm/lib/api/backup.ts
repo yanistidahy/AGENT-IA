@@ -76,6 +76,9 @@ const stageRow = z.object({
   color: text,
   prob: z.number().int(),
   position: z.number().int(),
+  // Optionnels : une sauvegarde antérieure à l'automatisation reste restaurable.
+  nextActionLabel: optionalText,
+  nextActionDays: z.number().int().optional(),
 });
 
 const companyRow = z.object({
@@ -120,6 +123,7 @@ const dealRow = z.object({
   createdAt: day,
   expectedClose: optionalDay,
   lastActivityAt: optionalDay,
+  stageSince: optionalDay,
   closedAt: optionalDay,
   stageId: z.string(),
   companyId: z.string().nullable().optional(),
@@ -146,6 +150,8 @@ const taskRow = z.object({
   priority: text,
   owner: text,
   done: z.boolean(),
+  auto: z.boolean().optional(),
+  autoKey: z.string().nullable().optional(),
   doneAt: optionalDay,
   createdAt: day,
   contactId: z.string().nullable().optional(),
@@ -158,6 +164,11 @@ const settingsRow = z.object({
   staleDays: z.number().int(),
   coldDays: z.number().int(),
   objectifMensuel: z.number().int(),
+  relanceApresAppel: z.number().int().optional(),
+  relanceApresEmail: z.number().int().optional(),
+  relanceApresDemo: z.number().int().optional(),
+  relanceApresReunion: z.number().int().optional(),
+  relanceApresNote: z.number().int().optional(),
   notifs: z.boolean(),
   updatedAt: day,
 });

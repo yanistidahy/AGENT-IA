@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import Link from "next/link";
 import { Combobox, companyFields, type ComboboxValue } from "@/components/ui/combobox";
 import { createDeal, updateDeal } from "@/lib/client/deals-api";
 import type { DealRecord } from "@/lib/api/deals";
@@ -68,7 +69,7 @@ export function DealForm({
 }: DealFormProps) {
   const [form, setForm] = useState({
     name: deal?.name ?? "",
-    amount: String(deal?.amount ?? 0),
+    amount: deal === null ? "" : String(deal.amount),
     stageId: deal?.stageId ?? stages[0]?.id ?? "",
     owner: deal?.owner ?? owners[0] ?? "",
     offer: deal?.offer ?? offers[0] ?? "",
@@ -80,6 +81,17 @@ export function DealForm({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string[]>>({});
+
+  /**
+   * Une liste de référence vide rendait un `<select>` vide, sans un mot
+   * d'explication : impossible de choisir une étape, donc impossible
+   * d'enregistrer une affaire cohérente, et rien à l'écran pour dire pourquoi.
+   * Le formulaire nomme désormais ce qui manque et mène au bon écran.
+   */
+  const missing = [
+    stages.length === 0 ? "les étapes du pipeline" : null,
+    owners.length === 0 ? "au moins un propriétaire" : null,
+  ].filter((label): label is string => label !== null);
 
   const [company, setCompany] = useState<ComboboxValue>(
     deal?.companyId == null ? { kind: "none" } : { kind: "existing", id: deal.companyId },
@@ -118,6 +130,26 @@ export function DealForm({
     setMessage(result.message);
     if (result.fields !== undefined) setFields(result.fields);
   };
+
+  if (missing.length > 0) {
+    return (
+      <div className="rounded-card border border-[#F0DFB8] bg-gold-l px-4 py-4 text-[13px] leading-relaxed text-[#9A6410]">
+        <b className="mb-1 block font-display text-[14px]">
+          Impossible de créer une affaire pour l'instant.
+        </b>
+        <p>
+          Il manque {missing.join(" et ")} dans les réglages. Une affaire sans étape ne peut
+          pas être enregistrée de façon cohérente : le pipeline ne saurait pas où la placer.
+        </p>
+        <Link
+          href="/reglages"
+          className="mt-2.5 inline-block rounded-control bg-ink px-3.5 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-ink-3"
+        >
+          Ouvrir les réglages
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <form

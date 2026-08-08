@@ -31,7 +31,9 @@ export async function POST(request: Request, context: RouteContext) {
         result.reason === "deal_not_found" ? "Affaire introuvable." : "Étape introuvable.",
       );
     }
-    return jsonOk({ deal: result.deal });
+    // La tâche d'étape est renvoyée pour que l'écran l'annonce : rien de ce qui
+    // est créé automatiquement ne doit rester invisible.
+    return jsonOk({ deal: result.deal, autoTask: result.autoTask });
   } catch (error) {
     return serverError(`POST /api/deals/${id}/move-stage`, error);
   }

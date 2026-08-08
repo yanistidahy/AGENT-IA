@@ -3,6 +3,7 @@ import { prisma } from "../db";
 import { toTaskPriority } from "../domain/guards";
 import { taskTarget, type TaskTargetType } from "../domain/tasks";
 import type { TaskPriority } from "../domain/types";
+import { clearReminderAfterTask } from "./automation";
 import type { CreateTaskInput, ListTasksQuery, UpdateTaskInput } from "./task-schemas";
 
 /** Accès aux tâches. Même motif de couche de service que les autres entités. */
@@ -153,7 +154,10 @@ export async function updateTask(
   id: string,
   input: UpdateTaskInput,
 ): Promise<TaskRecord | null> {
-  const existing = await prisma.task.findUnique({ where: { id }, select: { done: true } });
+  const existing = await prisma.task.findUnique({
+    where: { id },
+    select: { done: true, autoKey: true, contactId: true },
+  });
   if (existing === null) return null;
 
   const data: Prisma.TaskUpdateInput = {};
@@ -180,7 +184,18 @@ export async function updateTask(
       input.dealId === null ? { disconnect: true } : { connect: { id: input.dealId } };
   }
 
-  const row = await prisma.task.update({ where: { id }, data, include: taskInclude });
+  const row = await prisma.$transaction(async (tx) => {
+    const updated = await tx.task.update({ where: { id }, data, include: taskInclude });
+
+    // Terminer la tâche miroir d'une relance efface la relance : sans cela, le
+    // contact resterait « À relancer » alors que le travail est fait.
+    if (input.done === true) {
+      await clearReminderAfterTask(tx, existing);
+    }
+
+    return updated;
+  });
+
   return toTaskRecord(row);
 }
 

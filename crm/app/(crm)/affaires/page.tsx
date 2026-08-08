@@ -1,6 +1,6 @@
 import { DealsView } from "@/components/deals/deals-view";
 import { parseDealsQuery } from "@/lib/api/deal-schemas";
-import { getDeal, listDeals } from "@/lib/api/deals";
+import { countDealsByStatus, getDeal, listDeals } from "@/lib/api/deals";
 import { readAlerts } from "@/lib/api/alerts";
 import { listOffers, listOwners, listStages, getPilotage } from "@/lib/api/reference";
 import { listSequences } from "@/lib/api/sequences";
@@ -29,8 +29,18 @@ export default async function AffairesPage({
   const parsed = parseDealsQuery(flat);
   const query = parsed.success ? parsed.data : {};
 
-  const [deals, stages, owners, offers, settings, companies, contacts, sequences, alerts] =
-    await Promise.all([
+  const [
+    deals,
+    stages,
+    owners,
+    offers,
+    settings,
+    companies,
+    contacts,
+    sequences,
+    alerts,
+    statusCounts,
+  ] = await Promise.all([
     listDeals({ status: "open", ...query }),
     listStages(),
     listOwners(),
@@ -41,9 +51,10 @@ export default async function AffairesPage({
       select: { id: true, firstName: true, lastName: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
-      listSequences(),
-      readAlerts(),
-    ]);
+    listSequences(),
+    readAlerts(),
+    countDealsByStatus(),
+  ]);
 
   const ficheId = flat.fiche;
   const focused =
@@ -63,6 +74,7 @@ export default async function AffairesPage({
       sequences={sequences}
       alerts={alerts}
       focused={focused}
+      statusCounts={statusCounts}
     />
   );
 }

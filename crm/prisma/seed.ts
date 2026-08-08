@@ -29,13 +29,21 @@ function slug(value: string): string {
 
 // ---------------------------------------------------------------- étapes
 
+// `nextActionLabel` vide sur l'étape terminale : « Gagné » n'a pas de suite dans
+// le pipeline, et proposer une tâche à ce moment serait du bruit.
 const STAGES = [
-  { id: "s1", name: "Nouveau lead", color: "#94A9A4", prob: 10, position: 0 },
-  { id: "s2", name: "Contacté", color: "#2C7BE5", prob: 25, position: 1 },
-  { id: "s3", name: "Démo planifiée", color: "#6D5AE6", prob: 45, position: 2 },
-  { id: "s4", name: "Proposition envoyée", color: "#D99323", prob: 65, position: 3 },
-  { id: "s5", name: "Négociation", color: "#E8503F", prob: 85, position: 4 },
-  { id: "s6", name: "Gagné", color: "#0FA88F", prob: 100, position: 5 },
+  { id: "s1", name: "Nouveau lead", color: "#94A9A4", prob: 10, position: 0,
+    nextActionLabel: "Qualifier le besoin", nextActionDays: 2 },
+  { id: "s2", name: "Contacté", color: "#2C7BE5", prob: 25, position: 1,
+    nextActionLabel: "Relancer pour un rendez-vous", nextActionDays: 3 },
+  { id: "s3", name: "Démo planifiée", color: "#6D5AE6", prob: 45, position: 2,
+    nextActionLabel: "Préparer la démo", nextActionDays: 1 },
+  { id: "s4", name: "Proposition envoyée", color: "#D99323", prob: 65, position: 3,
+    nextActionLabel: "Relancer sur la proposition", nextActionDays: 4 },
+  { id: "s5", name: "Négociation", color: "#E8503F", prob: 85, position: 4,
+    nextActionLabel: "Relancer la négociation", nextActionDays: 3 },
+  { id: "s6", name: "Gagné", color: "#0FA88F", prob: 100, position: 5,
+    nextActionLabel: "", nextActionDays: 0 },
 ] as const;
 
 // -------------------------------------------------------------- sociétés

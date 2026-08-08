@@ -2,10 +2,14 @@
 
 import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
-import type { StageLike } from "@/lib/domain/types";
+import type { StageWithAction } from "@/lib/api/reference";
 
 /**
  * Étapes du pipeline : nom, couleur, probabilité, ordre.
+ *
+ * Chaque étape porte aussi son « action de suivi » : l'intitulé et le délai de
+ * la tâche proposée quand une affaire entre dans l'étape. Intitulé vide = aucune
+ * proposition, ce qui est voulu pour les étapes terminales.
  *
  * L'ordre du tableau devient l'ordre des colonnes du Kanban. Le nombre
  * d'affaires est affiché à côté de chaque étape parce que c'est lui qui décide
@@ -13,7 +17,7 @@ import type { StageLike } from "@/lib/domain/types";
  * supprimée porte encore des affaires, plutôt que de les laisser orphelines.
  */
 interface StagesEditorProps {
-  readonly stages: readonly StageLike[];
+  readonly stages: readonly StageWithAction[];
   readonly dealCounts: Record<string, number>;
   readonly onSaved: () => void;
 }
@@ -23,6 +27,8 @@ interface Draft {
   name: string;
   color: string;
   prob: number;
+  nextActionLabel: string;
+  nextActionDays: number;
 }
 
 const CONTROL =
@@ -39,6 +45,8 @@ export function StagesEditor({ stages, dealCounts, onSaved }: StagesEditorProps)
       name: stage.name,
       color: stage.color,
       prob: stage.prob,
+      nextActionLabel: stage.nextActionLabel,
+      nextActionDays: stage.nextActionDays,
     })),
   );
   const [busy, setBusy] = useState(false);
@@ -84,13 +92,22 @@ export function StagesEditor({ stages, dealCounts, onSaved }: StagesEditorProps)
 
   return (
     <section className="rounded-card border border-line bg-surface p-4 shadow-card">
+      <div className="mb-2 grid grid-cols-[1fr_72px_66px_1fr_60px_auto] gap-2 font-mono text-[10px] tracking-[0.1em] text-muted uppercase">
+        <span>Étape</span>
+        <span>Couleur</span>
+        <span>Proba</span>
+        <span>Action de suivi</span>
+        <span>Délai</span>
+        <span />
+      </div>
+
       <div className="grid gap-1.5">
         {drafts.map((draft, index) => {
           const count = draft.id === undefined ? 0 : (dealCounts[draft.id] ?? 0);
           return (
             <div
               key={draft.id ?? `nouvelle-${index}`}
-              className="grid grid-cols-[1fr_88px_74px_auto] items-center gap-2"
+              className="grid grid-cols-[1fr_72px_66px_1fr_60px_auto] items-center gap-2"
             >
               <input
                 value={draft.name}
@@ -114,6 +131,25 @@ export function StagesEditor({ stages, dealCounts, onSaved }: StagesEditorProps)
                   className={CONTROL}
                 />
                 %
+              </label>
+              <input
+                value={draft.nextActionLabel}
+                onChange={(e) => patch(index, { nextActionLabel: e.target.value })}
+                placeholder="Action de suivi (vide = aucune)"
+                aria-label="Action de suivi proposée"
+                className={CONTROL}
+              />
+              <label className="flex items-center gap-1 text-[12px] text-muted">
+                <input
+                  type="number"
+                  min={0}
+                  max={365}
+                  value={draft.nextActionDays}
+                  onChange={(e) => patch(index, { nextActionDays: Number(e.target.value) })}
+                  aria-label="Délai de l'action de suivi, en jours"
+                  className={CONTROL}
+                />
+                j
               </label>
               <div className="flex items-center gap-1">
                 <button
@@ -159,7 +195,13 @@ export function StagesEditor({ stages, dealCounts, onSaved }: StagesEditorProps)
           type="button"
           onClick={() => {
             setSaved(false);
-            setDrafts((current) => [...current, { name: "Nouvelle étape", color: "#6E8B86", prob: 50 }]);
+            setDrafts((current) => [...current, {
+                name: "Nouvelle étape",
+                color: "#6E8B86",
+                prob: 50,
+                nextActionLabel: "",
+                nextActionDays: 3,
+              }]);
           }}
           className="rounded-control border border-line px-3 py-1.5 text-[12.5px] font-semibold transition-colors hover:bg-surface-2"
         >

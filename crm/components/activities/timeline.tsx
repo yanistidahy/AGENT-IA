@@ -1,5 +1,5 @@
 import { Eyebrow, Tag, type Tone } from "@/components/ui/primitives";
-import type { ActivityType } from "@/lib/domain/types";
+import { ACTIVITY_LABELS, type ActivityType } from "@/lib/domain/types";
 import type { ActivityView } from "./types";
 import { formatDate } from "@/lib/format";
 
@@ -9,14 +9,6 @@ import { formatDate } from "@/lib/format";
  * Purement présentationnel : il reçoit des `ActivityView` déjà converties. La
  * saisie vit dans `log-form.tsx`, le chargement dans `record-panel.tsx`.
  */
-
-const TYPE_LABELS: Record<ActivityType, string> = {
-  call: "Appel",
-  email: "Email",
-  meeting: "Réunion",
-  demo: "Démo",
-  note: "Note",
-};
 
 const TYPE_TONES: Record<ActivityType, Tone> = {
   call: "flux",
@@ -45,7 +37,7 @@ export function Timeline({ activities }: { activities: readonly ActivityView[] }
           />
           <div className="rounded-card border border-line bg-surface px-3.5 py-2.5">
             <div className="flex flex-wrap items-center gap-2">
-              <Tag tone={TYPE_TONES[activity.type]}>{TYPE_LABELS[activity.type]}</Tag>
+              <Tag tone={TYPE_TONES[activity.type]}>{ACTIVITY_LABELS[activity.type]}</Tag>
               <span className="font-mono text-[11.5px] text-muted">
                 {formatDate(activity.date)}
               </span>

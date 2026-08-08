@@ -3,6 +3,7 @@ import { prisma } from "../db";
 import { toActivityType } from "../domain/guards";
 import type { ActivityType } from "../domain/types";
 import type { CreateActivityInput, ListActivitiesQuery } from "./activity-schemas";
+import { ownerOrDefault, syncReminderTask, type AutoTaskOutcome } from "./automation";
 import { taskInclude, toTaskRecord, type TaskRecord } from "./tasks";
 
 /**
@@ -116,6 +117,8 @@ export interface LogActivityResult {
   readonly activity: ActivityRecord;
   /** Tâche créée par « prochaine action », si elle était renseignée. */
   readonly task: TaskRecord | null;
+  /** Tâche miroir créée par la relance acceptée dans le formulaire. */
+  readonly reminderTask: AutoTaskOutcome | null;
 }
 
 /**
@@ -151,15 +154,33 @@ export async function logActivity(input: CreateActivityInput): Promise<LogActivi
       include: activityInclude,
     });
 
+    let reminderTask: AutoTaskOutcome | null = null;
+
     if (contactId !== null) {
       const current = await tx.contact.findUnique({
         where: { id: contactId },
-        select: { lastContact: true },
+        select: { lastContact: true, firstName: true, lastName: true, owner: true },
       });
       if (current !== null && (current.lastContact === null || current.lastContact < input.date)) {
         await tx.contact.update({
           where: { id: contactId },
           data: { lastContact: input.date },
+        });
+      }
+
+      // Relance proposée par le formulaire et acceptée : la date est posée sur
+      // la fiche, et la tâche miroir suit — même chemin que si l'utilisateur
+      // l'avait saisie à la main dans le tiroir.
+      if (input.setReminder !== undefined && current !== null) {
+        await tx.contact.update({
+          where: { id: contactId },
+          data: { nextReminder: input.setReminder },
+        });
+        reminderTask = await syncReminderTask(tx, {
+          contactId,
+          contactName: `${current.firstName} ${current.lastName}`,
+          owner: await ownerOrDefault(tx, current.owner),
+          reminder: input.setReminder,
         });
       }
     }
@@ -198,6 +219,6 @@ export async function logActivity(input: CreateActivityInput): Promise<LogActivi
       task = toTaskRecord(row);
     }
 
-    return { activity: toRecord(activity), task };
+    return { activity: toRecord(activity), task, reminderTask };
   });
 }

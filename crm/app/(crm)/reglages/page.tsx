@@ -1,5 +1,12 @@
 import { SettingsView } from "@/components/settings/settings-view";
-import { getPilotage, listOffers, listOwners, listSources, listStages } from "@/lib/api/reference";
+import {
+  getPilotage,
+  getReminderDelays,
+  listOffers,
+  listOwners,
+  listSources,
+  listStagesWithActions,
+} from "@/lib/api/reference";
 import { listSequences } from "@/lib/api/sequences";
 import { stageDealCounts } from "@/lib/api/settings";
 import { prisma } from "@/lib/db";
@@ -8,12 +15,22 @@ import { LIFECYCLES } from "@/lib/domain/types";
 export const dynamic = "force-dynamic";
 
 export default async function ReglagesPage() {
-  const [sequences, stages, dealCounts, settings, owners, offers, sources, lifecycleRows] =
-    await Promise.all([
+  const [
+    sequences,
+    stages,
+    dealCounts,
+    settings,
+    delays,
+    owners,
+    offers,
+    sources,
+    lifecycleRows,
+  ] = await Promise.all([
       listSequences(),
-      listStages(),
+      listStagesWithActions(),
       stageDealCounts(),
       getPilotage(),
+      getReminderDelays(),
       listOwners(),
       listOffers(),
       listSources(),
@@ -42,6 +59,7 @@ export default async function ReglagesPage() {
       stages={stages}
       dealCounts={dealCounts}
       settings={settings}
+      delays={delays}
       lists={{
         owners,
         offers,

@@ -40,6 +40,13 @@ export const createActivitySchema = z
     companyId: idValue.optional(),
     dealId: idValue.optional(),
     nextAction: nextActionSchema.nullable().optional(),
+    /**
+     * Relance de contact proposée par le formulaire et acceptée par
+     * l'utilisateur. Distincte de `nextAction` : celle-ci crée une tâche libre,
+     * celle-là pose la date sur la fiche et laisse l'automatisation créer la
+     * tâche miroir.
+     */
+    setReminder: dateValue.nullable().optional(),
   })
   .refine(
     (value) =>

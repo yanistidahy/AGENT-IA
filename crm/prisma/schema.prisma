@@ -25,6 +25,11 @@ model Stage {
   prob     Int
   position Int    @unique
 
+  /// Action de suivi proposée quand une affaire entre dans cette étape.
+  /// Vide = aucune proposition. Configurable dans /reglages.
+  nextActionLabel String @default("")
+  nextActionDays  Int    @default(3)
+
   deals Deal[]
 
   @@map("stages")
@@ -95,6 +100,10 @@ model Deal {
   lastActivityAt DateTime?
   closedAt       DateTime?
   createdAt      DateTime  @default(now())
+  /// Entrée dans l'étape courante. Distinct de `lastActivityAt` : une affaire
+  /// peut être touchée sans changer d'étape, et c'est l'ancienneté *dans
+  /// l'étape* qui dit si elle stagne à un endroit précis du pipeline.
+  stageSince     DateTime?
 
   stageId String
   stage   Stage  @relation(fields: [stageId], references: [id])
@@ -185,6 +194,11 @@ model Activity {
 /// clés étrangères nullables : l'intégrité référentielle est ainsi garantie par
 /// la base, et les jointures Prisma deviennent possibles. Au plus une des trois
 /// est renseignée ; `taskTarget()` dans lib/domain/tasks.ts fait la lecture.
+/// `auto` marque les tâches créées par une règle d'automatisation plutôt que
+/// par une saisie. `autoKey` porte l'identité de la règle et de sa cible
+/// (« reminder:<contactId> ») : son unicité *est* le garde-fou anti-doublon —
+/// rejouer le même déclencheur ne peut pas créer une seconde tâche, la base le
+/// refuse. Voir lib/domain/automation.ts.
 model Task {
   id        String    @id @default(cuid())
   title     String
@@ -194,6 +208,8 @@ model Task {
   done      Boolean   @default(false)
   doneAt    DateTime?
   createdAt DateTime  @default(now())
+  auto      Boolean   @default(false)
+  autoKey   String?   @unique
 
   contactId String?
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
@@ -217,6 +233,14 @@ model Settings {
   objectifMensuel  Int      @default(15000)
   notifs           Boolean  @default(true)
   updatedAt        DateTime @updatedAt
+
+  /// Délais de relance proposés après une interaction, par type. Ce sont des
+  /// propositions pré-remplies dans le formulaire, jamais des écritures muettes.
+  relanceApresAppel   Int @default(7)
+  relanceApresEmail   Int @default(4)
+  relanceApresDemo    Int @default(2)
+  relanceApresReunion Int @default(3)
+  relanceApresNote    Int @default(7)
 
   @@map("settings")
 }

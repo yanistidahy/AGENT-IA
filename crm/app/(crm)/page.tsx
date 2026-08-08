@@ -5,6 +5,8 @@ import { DashboardHeader } from "@/components/dashboard/header";
 import { StaleContacts, toStaleSort } from "@/components/dashboard/stale-contacts";
 import { Upcoming } from "@/components/dashboard/upcoming";
 import { readAlerts } from "@/lib/api/alerts";
+import { staleDealsWithoutTask } from "@/lib/api/automation";
+import { WakeStaleDeals } from "@/components/activities/wake-stale";
 import { readDashboard } from "@/lib/api/dashboard";
 import { readDbStatus, type Counts } from "@/lib/db-status";
 import { readDeployInfo } from "@/lib/deploy-info";
@@ -81,6 +83,12 @@ export default async function HomePage({
 
   const [data, alerts] = await Promise.all([readDashboard(renderedAt), readAlerts(renderedAt)]);
 
+  // Affaires en sommeil qui n'ont pas encore de tâche de réveil ouverte. Rien
+  // n'est écrit ici : on ne fait que compter ce que l'action groupée créerait.
+  const wakeable = await staleDealsWithoutTask(
+    alerts.filter((alert) => alert.kind === "deal-stale").map((alert) => alert.targetId),
+  );
+
   return (
     <Shell deploy={deploy} renderedAt={renderedAt}>
       <DashboardHeader
@@ -93,6 +101,7 @@ export default async function HomePage({
       />
 
       <Block title="À traiter maintenant" count={alerts.length}>
+        <WakeStaleDeals dealIds={wakeable} />
         <AlertList alerts={alerts} />
       </Block>
 

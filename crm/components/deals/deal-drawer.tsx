@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { Drawer } from "@/components/ui/drawer";
 import { Eyebrow, HeatTag, StageTag, StatusTag } from "@/components/ui/primitives";
 import type { DealRecord } from "@/lib/api/deals";
-import { moveDealStage } from "@/lib/client/deals-api";
+import { autoTaskNotice, moveDealStage } from "@/lib/client/deals-api";
 import { daysSince } from "@/lib/domain/dates";
 import { dealHeat, dealProb, weightedValue } from "@/lib/domain/pipeline";
 import type { PilotageSettings } from "@/lib/domain/types";
@@ -37,6 +38,7 @@ export function DealDrawer({
   const [editing, setEditing] = useState(false);
   const [busyStage, setBusyStage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [autoNotice, setAutoNotice] = useState<string | null>(null);
 
   if (deal === null) return null;
 
@@ -48,10 +50,17 @@ export function DealDrawer({
   const move = async (stageId: string) => {
     setBusyStage(stageId);
     setError(null);
+    setAutoNotice(null);
     const result = await moveDealStage(deal.id, stageId);
     setBusyStage(null);
-    if (result.ok) onChanged();
-    else setError(result.message);
+    if (result.ok) {
+      setAutoNotice(
+        result.data.autoTask === null ? null : autoTaskNotice(result.data.autoTask),
+      );
+      onChanged();
+    } else {
+      setError(result.message);
+    }
   };
 
   return (
@@ -150,6 +159,15 @@ export function DealDrawer({
           {error !== null && (
             <p className="mt-3 rounded-control border border-[#F5D5CF] bg-pulse-l px-3 py-2 text-[12.5px] text-[#B2311F]">
               {error}
+            </p>
+          )}
+
+          {autoNotice !== null && (
+            <p className="mt-3 flex flex-wrap items-center gap-2 rounded-control border border-[#B9E7DC] bg-flux-l px-3 py-2 text-[12.5px] text-flux-d">
+              {autoNotice}
+              <Link href="/taches" className="font-semibold underline">
+                Ouvrir /taches
+              </Link>
             </p>
           )}
 

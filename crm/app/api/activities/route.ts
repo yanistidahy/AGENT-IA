@@ -39,7 +39,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await logActivity(parsed.data);
-    return jsonOk({ activity: result.activity, task: result.task }, 201);
+    return jsonOk(
+      { activity: result.activity, task: result.task, reminderTask: result.reminderTask },
+      201,
+    );
   } catch (error) {
     return serverError("POST /api/activities", error);
   }

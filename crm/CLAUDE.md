@@ -940,6 +940,108 @@ de l'accueil exclut les « Ancien Client », que `/contacts` affiche. Ce sont de
 populations différentes par intention, pas deux avis contradictoires sur un même
 contact.
 
+## Jalon 8 — le formulaire d'affaire, et la couche d'automatisation
+
+### Le formulaire d'affaire était vide parce que la base l'était
+
+Trois listes déroulantes vides — Étape, Propriétaire, Offre. Le formulaire
+n'était pas en cause : `deal-form.tsx` retombait déjà sur `stages[0]`,
+`owners[0]`, `offers[0]`. Des listes vides à l'écran voulaient donc dire des
+tables vides en base, très probablement vidées par l'éditeur de listes de
+`/reglages` avant le jalon 6.
+
+Deux réponses, parce qu'une seule ne suffit pas :
+
+1. **La donnée.** La migration `2_automation` sème les six étapes, les
+   propriétaires, les offres, les sources et les cycles de vie — mais seulement
+   `WHERE NOT EXISTS`, donc sans jamais écraser une configuration existante.
+2. **L'écran.** Quand une liste indispensable manque malgré tout, le formulaire
+   le dit et renvoie vers `/reglages` au lieu d'afficher un menu vide. Le montant
+   naît vide plutôt qu'à `0` : un zéro pré-rempli est un chiffre qu'on oublie de
+   corriger.
+
+`/affaires` est passé au standard de `/contacts` : compteurs sur les puces
+(calculés sur **toutes** les affaires, jamais sur la liste filtrée), états vides
+qui nomment la règle appliquée, et distinction explicite entre « pipeline vide »
+et « rien ne correspond au filtre ».
+
+### Six règles d'automatisation, et celles qu'on a refusées
+
+Tout le décidé vit dans `lib/domain/automation.ts` (pur, testé) ; tout l'écrit
+dans `lib/api/automation.ts`. Aucune route, aucun composant ne recompose une
+règle — le test `no-duplicate-thresholds` couvre désormais aussi les clés
+d'automatisation.
+
+| Évènement | Comportement |
+|---|---|
+| Relance posée sur un contact | Tâche miroir « Relancer X » créée dans `/taches` |
+| Relance déplacée | La **même** tâche se déplace |
+| Relance effacée | La tâche ouverte disparaît |
+| Tâche de relance terminée | La relance du contact s'efface |
+| Interaction consignée | Date de relance **proposée** selon le type (délais configurables) |
+| Entrée dans une étape | Action de suivi **proposée** par l'étape, si elle en déclare une |
+| Affaire en sommeil | Tâche de réveil, sur action groupée explicite |
+
+**Refusé — créer la tâche de réveil au moment où l'alerte s'affiche.** `/api/alerts`
+est lu par les agents, dont Brutus, en lecture seule par conception. Une
+consultation qui écrit en base n'est plus une consultation. L'action est donc
+groupée et explicite, et elle annonce combien de tâches elle va créer.
+
+**Refusé — avancer une relance existante plus lointaine.** `proposedReminder()`
+renvoie `null` dans ce cas : la date était un choix, la remplacer en silence
+serait décider à la place de l'utilisateur.
+
+**Refusé — promouvoir automatiquement un contact en Client sur affaire gagnée.**
+La carte de confirmation existait déjà et reste la bonne réponse ; les deux
+promotions (contact et séquence post-vente) coexistent sans se masquer.
+
+### L'anti-doublon est une contrainte de base, pas une vérification
+
+Chaque tâche automatique porte une `autoKey` unique en base :
+`reminder:<contact>`, `stage:<affaire>:<étape>`, `stale:<affaire>`. Rejouer un
+déclencheur met la tâche à jour au lieu d'en créer une seconde — une course ne
+peut pas contourner une contrainte d'unicité, elle contourne toujours une
+vérification applicative.
+
+Un cas a été trouvé à la vérification, pas à l'écriture : une tâche **terminée**
+bloquait la clé, si bien que reposer volontairement une relance après l'avoir
+traitée laissait la fiche marquée « à relancer » sans rien dans `/taches`. La
+tâche terminée libère désormais sa clé (son historique reste intact) et une
+nouvelle naît à côté — mais uniquement si l'échéance a changé, sinon un
+déclencheur qui repasse ne produit toujours rien.
+
+### Jalon 8 — ce qui est vérifié
+
+Vérifié contre un **vrai PostgreSQL 16**, pas un substitut : cluster local,
+`prisma migrate deploy` des trois migrations, puis `migrate diff` renvoyant une
+migration vide — le SQL écrit à la main est fidèle au schéma.
+
+- base neuve : étapes, propriétaires et offres présents, `/affaires` annonce
+  « aucune affaire n'existe encore » et non « toutes sont gagnées ou perdues » ;
+- relance posée → tâche créée ; déplacée → même tâche, nouvelle date ; effacée →
+  tâche supprimée ; tâche terminée → relance effacée ;
+- interaction avec relance acceptée → date posée **et** tâche miroir, dans la
+  même transaction ;
+- déplacement d'étape → tâche de l'étape d'arrivée ; aller-retour → `effect:
+  "moved"`, jamais un second exemplaire ; étape terminale → rien ;
+- réveil groupé → une tâche en priorité haute, rejoué → `created: 0` ;
+- sauvegarde/restauration : `auto`, `autoKey`, `stageSince`, `nextActionLabel`,
+  `nextActionDays` et les cinq `relanceApres*` survivent au tour complet ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (312 tests) verts.
+
+### Jalon 8 — ce qui ne l'est pas
+
+Le formulaire d'affaire vit dans un tiroir rendu au clic : ses menus n'ont pas
+été inspectés dans le HTML initial. Ce qui est vérifié, ce sont les données qui
+l'alimentent — les mêmes listes servent les filtres de la page, eux bien
+présents dans le HTML.
+
+Aucune règle ne se déclenche seule dans le temps : il n'y a pas de tâche
+planifiée. Une affaire ne devient « en sommeil » que quand quelqu'un ouvre
+l'accueil et lance l'action groupée. C'est délibéré pour l'instant — un
+planificateur qui écrit sans témoin est exactement ce que « rien de muet »
+interdit.
+
 ### Journal des incidents
 
 **Healthcheck en échec au premier déploiement** — build vert, conteneur démarré,

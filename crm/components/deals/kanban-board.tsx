@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { DealRecord } from "@/lib/api/deals";
-import { moveDealStage } from "@/lib/client/deals-api";
+import Link from "next/link";
+import { autoTaskNotice, moveDealStage } from "@/lib/client/deals-api";
 import { daysSince } from "@/lib/domain/dates";
 import { dealHeat, dealProb } from "@/lib/domain/pipeline";
 import type { DealHeat, PilotageSettings, StageLike } from "@/lib/domain/types";
@@ -36,6 +37,7 @@ export function KanbanBoard({ deals, stages, settings, onSelect }: KanbanBoardPr
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const stageOf = (deal: DealRecord) => placement[deal.id] ?? deal.stageId;
 
@@ -46,9 +48,11 @@ export function KanbanBoard({ deals, stages, settings, onSelect }: KanbanBoardPr
     const previous = stageOf(deal);
     setPlacement((current) => ({ ...current, [dealId]: stageId }));
     setError(null);
+    setNotice(null);
 
     const result = await moveDealStage(dealId, stageId);
     if (result.ok) {
+      setNotice(result.data.autoTask === null ? null : autoTaskNotice(result.data.autoTask));
       router.refresh();
       return;
     }
@@ -62,6 +66,15 @@ export function KanbanBoard({ deals, stages, settings, onSelect }: KanbanBoardPr
       {error !== null && (
         <p className="mb-3 rounded-control border border-[#F5D5CF] bg-pulse-l px-3 py-2 text-[12.5px] text-[#B2311F]">
           {error}
+        </p>
+      )}
+
+      {notice !== null && (
+        <p className="mb-3 flex flex-wrap items-center gap-2 rounded-control border border-[#B9E7DC] bg-flux-l px-3 py-2 text-[12.5px] text-flux-d">
+          {notice}
+          <Link href="/taches" className="font-semibold underline">
+            Ouvrir /taches
+          </Link>
         </p>
       )}
 
