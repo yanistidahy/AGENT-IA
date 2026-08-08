@@ -34,6 +34,17 @@ export interface ToolDefinition {
   readonly inputSchema: Record<string, unknown>;
   /** Valide puis exécute. Une entrée invalide ne touche jamais la base. */
   readonly run: (input: unknown) => Promise<ToolResult>;
+  /**
+   * Les arguments passent-ils le schéma de l'outil ?
+   *
+   * Exposé parce qu'une vacation doit pouvoir **écarter** une action mal formée
+   * avant de la proposer, sans l'exécuter. `summarize()` ne sert pas à cela : il
+   * ne lève pas, il retombe sur un titre de repli — une action invalide y
+   * survivrait jusqu'à la carte de confirmation, où elle n'échouerait qu'au
+   * clic. Le générique reste confiné à `defineTool` : on renvoie un booléen,
+   * pas le schéma.
+   */
+  readonly accepts: (input: unknown) => boolean;
   /** Résumé pour la carte de confirmation. Écritures uniquement. */
   readonly summarize: (input: unknown) => Promise<ActionSummary>;
 }
@@ -70,6 +81,10 @@ export function defineTool<S extends z.ZodType>(spec: ToolSpec<S>): ToolDefiniti
     description: spec.description,
     mode: spec.mode,
     inputSchema: toJsonSchema(spec.schema),
+
+    accepts(input: unknown): boolean {
+      return spec.schema.safeParse(input).success;
+    },
 
     async run(input: unknown): Promise<ToolResult> {
       const parsed = spec.schema.safeParse(input);

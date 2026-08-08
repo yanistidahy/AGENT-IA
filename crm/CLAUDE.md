@@ -263,6 +263,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 11 | Correction des statuts depuis la feuille + import en mise à jour | **livré, à valider** |
 | 12 | Rattrapage `searchText`, corrections depuis `/reglages`, parité des filtres, `/clients` | **livré, à valider** |
 | 13 | Statut saisi à la consignation, accueil actionnable, noms débordés | **livré, à valider** |
+| 14 | **Le conseil en vacations** — recommandations prouvées, planificateur, budget | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -1612,3 +1613,188 @@ runtime de conteneur, Next se liant à l'identifiant du conteneur au lieu de
 `0.0.0.0` (voir § Déploiement). Le défaut avait échappé à la vérification locale
 parce que celle-ci forçait `HOSTNAME=0.0.0.0` — elle testait le correctif avant
 qu'il existe. Corrigé par `scripts/start.sh`.
+
+## Jalon 14 — le conseil en vacations
+
+### Le renversement
+
+Jusqu'ici le conseil était un chatbot : il ne savait rien tant qu'on ne lui
+demandait rien. Un agent qui ne parle que lorsqu'on l'interroge ne remplace pas
+un collègue, il remplace un moteur de recherche. Une **vacation** inverse la
+charge : l'agent lit le CRM à heure fixe et laisse un constat écrit.
+
+```
+lib/domain/recommendations.ts   cycle de vie, déduplication, sommeil — pur, testé
+lib/agents/shifts/briefing.ts   collecte déterministe des faits
+lib/agents/shifts/prompt.ts     règles communes aux vacations
+lib/agents/shifts/run.ts        une vacation, du briefing au journal
+lib/api/recommendations.ts      lecture, décision, exécution après confirmation
+app/api/cron/shifts/            point d'entrée du planificateur (secret propre)
+app/conseil/suggestions/        la liste complète, filtrable, avec historique
+components/recommendations/     la carte : preuves, décisions, actions
+```
+
+### Le modèle ne compte pas, il juge
+
+`briefing.ts` fait les requêtes et rend une liste de faits déjà établis :
+échéances dépassées, silences au-delà de `coldDays`, contacts touchés une fois
+et jamais suivis, relances repoussées plus de trois fois. Le modèle reçoit des
+identifiants et des libellés, et n'a plus qu'à décider **ce qui mérite d'être
+dit**.
+
+Trois conséquences, et c'est pour elles que le briefing existe :
+
+1. **un compte faux devient impossible** — « 12 relances en retard » vient de
+   PostgreSQL, pas d'une addition faite dans une complétion ;
+2. **le silence est gratuit** — un briefing vide sort en `outcome: "empty"`
+   **sans aucun appel à l'API**. Le cas le plus fréquent est le moins cher ;
+3. **l'entrée est bornée** — 25 lignes par section, donc un coût prévisible
+   quelle que soit la taille de la base.
+
+### Une recommandation sans preuve n'existe pas
+
+`isPublishable()` refuse d'écrire un constat sans preuve, et les preuves sont
+résolues **deux fois avant l'écriture** : d'abord contre le briefing — un
+identifiant que l'agent n'a pas reçu ne peut pas être cité — puis contre la
+base. Ce qui ne résout pas est retiré ; si rien ne reste, la recommandation est
+abandonnée.
+
+Vérifié en faisant délibérément citer un identifiant inventé : le constat n'est
+jamais arrivé en base. Sans cette double résolution, une preuve fausse produirait
+un lien mort, c'est-à-dire une affirmation invérifiable — exactement ce que le
+jalon interdit.
+
+### Rien ne s'écrit, jamais, pendant une vacation
+
+Une vacation n'appelle aucun outil d'écriture. Elle **propose** des actions, dont
+les arguments sont validés contre le schéma réel de l'outil, et qui ne
+s'exécutent qu'une par une, chacune derrière son bouton, après acceptation.
+
+**Accepter n'exécute rien** : le statut passe à « accepté » et les actions
+apparaissent. Accepter un constat et vouloir toutes ses conséquences ne sont pas
+la même chose.
+
+**Défaut trouvé à la vérification, pas à l'écriture.** La validation s'appuyait
+d'abord sur `summarize()`, en supposant qu'il lèverait sur des arguments
+invalides. Il ne lève pas : il retombe sur « <outil> — arguments invalides ». Une
+action mal formée traversait donc toute la chaîne et n'échouait qu'au clic. Les
+outils exposent désormais `accepts()`, et `executeProposedAction()` teste le
+`ok` du résultat au lieu de le supposer — `run()` refuse en renvoyant
+`{ok: false}`, sans lever non plus. Trois tests fixent ces trois comportements.
+
+### La déduplication est une contrainte, pas une vérification
+
+`dedupeKey` = agent + type de constat + identifiants cités **triés**. Le tri est
+ce qui fait qu'un même constat sur les mêmes fiches produit la même clé quel que
+soit l'ordre où le modèle les a listées. La clé est unique en base : un doublon
+est impossible, pas seulement improbable.
+
+Écarter pose une fenêtre de silence dont la durée vient du motif — « Pas
+pertinent » 60 jours, « Déjà traité » 30, « Plus tard » 7. Un motif en un clic,
+jamais un champ libre : c'est ce qui les rend comparables. Passé la fenêtre, le
+constat peut revenir — s'il tient encore après deux mois, il méritait bien d'être
+signalé.
+
+### Le coût est plafonné avant l'appel, pas pendant
+
+Le budget de jetons est configurable dans `/reglages` et vérifié **avant**
+l'appel : on n'interrompt pas une complétion en cours, on refuse de la lancer.
+Une vacation qui dépasserait sort en `skipped` **en le disant** — elle ne se tait
+pas. Le journal porte la consommation cumulée du mois.
+
+### Un échec est bruyant, et n'arrête pas la suite
+
+La ligne de journal est créée **avant** la vacation et mise à jour dans tous les
+cas, y compris l'échec. Un run silencieux qui a échoué est indiscernable d'un run
+qui n'a rien trouvé — c'est précisément la confusion à éviter. Sacha qui échoue
+n'empêche pas Alfred de passer.
+
+### Ce que j'ai jugé mauvais d'automatiser
+
+**Refusé — les huit agents en vacation.** Deux suffisent à établir si le format
+vaut quelque chose. Huit agents produiraient huit fois plus de constats à trier
+avant qu'on sache si le premier valait la peine d'être lu — et le risque d'un
+outil pareil n'est pas de trop peu dire, c'est de devenir un bruit qu'on ferme.
+
+**Refusé — expirer les recommandations toutes seules.** Le statut `expired`
+existe au schéma mais rien ne le pose. Une recommandation qui disparaît sans que
+personne l'ait lue est une alerte manquée, silencieuse.
+
+**Refusé — laisser une vacation écrire, même « trivialement ».** Il n'y a pas
+d'écriture triviale : poser une relance, c'est engager un démarchage.
+
+**Refusé — réutiliser le mot de passe de l'espace pour le planificateur.** Un
+secret placé dans la configuration d'un cron n'a pas le même cycle de vie qu'un
+mot de passe humain. `CRON_SECRET` se change sans déconnecter personne, et fuiter
+l'un ne donne pas l'autre.
+
+**Refusé — laisser le modèle compter.** Voir le briefing plus haut.
+
+**Refusé — le mode « approfondi » sur les vacations.** Une vacation quotidienne
+doit être bon marché et prévisible. Le raisonnement long reste dans la
+conversation, où quelqu'un l'a demandé.
+
+### Statut saisi contre statut calculé, corrigé dans le prompt
+
+Signalé au jalon 13 : les agents voyaient `status` sans qu'aucun prompt
+n'explique son origine. `SHARED_RULES` porte désormais la distinction, et
+l'interdiction qui va avec — **ne jamais conclure d'un libellé de statut qu'une
+action a été faite ou non**. Un statut saisi dit ce que quelqu'un a observé ; un
+statut calculé dit ce que les dates impliquent. Les confondre, c'est inventer.
+
+### Le planificateur, côté Railway
+
+Cron sur le service `crm`, `0 7 * * *` (fuseau du service : Europe/Paris),
+appelant `POST /api/cron/shifts` avec `Authorization: Bearer $CRON_SECRET`.
+Générer le secret avec `openssl rand -hex 32`. La route est publique au sens du
+middleware — elle n'a pas de session — et fermée par son propre secret, comparé
+à temps constant, répondant 401 et non une redirection.
+
+### Jalon 14 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** et le serveur standalone de production, la
+migration `5_shifts` appliquée puis `migrate diff` renvoyant une migration vide :
+
+- **base vide** → 2 vacations `empty` « Rien à signaler. », **0 jeton consommé**,
+  aucun appel émis ; Alfred passe bien après Sacha ;
+- **secret** : sans en-tête et avec un mauvais secret → 401 ; `/api/shifts` sans
+  session → 401 ;
+- **preuves** → les constats citent des contacts réels (`p12`, `p15`), le lien
+  `?fiche=p15` répond 200 ; un identifiant inventé est écarté, sa recommandation
+  n'atteint jamais la base ;
+- **action mal formée** → retirée, le constat survit avec sa seule action valide ;
+- **accepter n'écrit rien** : `nextReminder` inchangé après acceptation ; après
+  confirmation explicite → posé au 15/09 **et** tâche miroir
+  « Relancer Élise Chartier » créée dans la même foulée ;
+- **rejet** → la vacation suivante produit 0 et le constat ne revient pas ;
+  un constat accepté n'est pas recréé ;
+- **budget à 500** → `skipped` nommant l'écart (~2054 jetons), **avant l'appel** ;
+- **journal** : durée (176 ms), jetons (1234 / 210), `produced`, `manual`, et la
+  consommation mensuelle cumulée ;
+- `/`, `/conseil/suggestions` et ses filtres, `/reglages` → 200 ; « Le point
+  d'Alfred » rend le titre, la preuve et son lien `?fiche=` ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (431 tests) verts.
+
+### Jalon 14 — ce qui ne l'est pas
+
+**Aucun appel Anthropic réel.** `ANTHROPIC_API_KEY` n'existe pas dans cet
+environnement. Tout ce qui entoure l'appel — briefing, plafond, résolution des
+preuves, déduplication, journal, décisions, exécution — a été exercé contre la
+vraie base, en substituant à l'API un serveur local via `ANTHROPIC_BASE_URL`.
+Ce qui n'est donc **pas** établi ici : que Sacha *juge bien*, qu'il choisisse la
+bonne sévérité et qu'il sache se taire quand le briefing ne porte rien de grave.
+Le sens du silence relève du modèle et du prompt — c'est ce que la première
+vraie vacation en production doit établir.
+
+**Le budget est estimé, pas mesuré**, à quatre caractères par jeton. Il sert à
+refuser un appel manifestement trop gros, pas à facturer. Le plafond porte sur
+l'entrée estimée et sur `max_tokens` en sortie ; il ne borne pas une facture.
+
+**Les blocs de l'accueil ne sont toujours pas repliables** — demandé au jalon 13,
+toujours pas fait.
+
+**La file d'action écrit toujours dans la requête HTTP**, sans reprise.
+
+**Un seul planificateur, sans reprise sur échec.** Si le cron ne se déclenche pas
+du tout — service arrêté, Railway en panne — rien ne le signale : le journal ne
+peut montrer que les runs qui ont eu lieu. Une vacation manquée est invisible.

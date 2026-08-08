@@ -24,6 +24,8 @@ export const updateSettingsSchema = z
     relanceApresDemo: delayField,
     relanceApresReunion: delayField,
     relanceApresNote: delayField,
+    /** Plafond de jetons de sortie par vacation. Bas par défaut, voir CLAUDE.md. */
+    shiftTokenBudget: z.number().int().min(500).max(32000).optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: "Aucun champ à mettre à jour" })
   .refine(
@@ -73,6 +75,7 @@ export async function updateSettings(
       input.relanceApresReunion ?? current?.relanceApresReunion ?? DEFAULT_REMINDER_DELAYS.meeting,
     relanceApresNote:
       input.relanceApresNote ?? current?.relanceApresNote ?? DEFAULT_REMINDER_DELAYS.note,
+    shiftTokenBudget: input.shiftTokenBudget ?? current?.shiftTokenBudget ?? 4000,
   };
 
   await prisma.settings.upsert({

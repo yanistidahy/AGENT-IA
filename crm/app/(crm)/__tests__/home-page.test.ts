@@ -63,6 +63,7 @@ vi.mock("@/lib/db", () => ({
     task: { count: () => Promise.resolve(counts.task), findMany: empty },
     sequence: { count: () => Promise.resolve(counts.sequence), findMany: empty },
     settingsList: { findMany: empty },
+    recommendation: { findMany: empty },
     settings: { findUnique: () => Promise.resolve(null) },
   },
 }));

@@ -5,6 +5,8 @@ import { DashboardHeader } from "@/components/dashboard/header";
 import { StaleContacts, toStaleSort } from "@/components/dashboard/stale-contacts";
 import { Upcoming } from "@/components/dashboard/upcoming";
 import { readAlerts } from "@/lib/api/alerts";
+import { listRecommendations } from "@/lib/api/recommendations";
+import { RecommendationCard } from "@/components/recommendations/recommendation-card";
 import { readActionQueue, readProspecting, readWeek } from "@/lib/api/dashboard";
 import { ActionQueue } from "@/components/dashboard/action-queue";
 import { ProspectingCards, WeekCard } from "@/components/dashboard/prospecting";
@@ -87,11 +89,12 @@ export default async function HomePage({
 
   const [data, alerts] = await Promise.all([readDashboard(renderedAt), readAlerts(renderedAt)]);
 
-  const [actions, prospecting, week, owners] = await Promise.all([
+  const [actions, prospecting, week, owners, recommendations] = await Promise.all([
     readActionQueue(data.settings, renderedAt),
     readProspecting(renderedAt),
     readWeek(renderedAt),
     listOwners(),
+    listRecommendations({ scope: "open" }, renderedAt),
   ]);
 
   // L'écran suit l'état de la base : sans affaire, les cartes de revenu ne
@@ -106,6 +109,27 @@ export default async function HomePage({
 
   return (
     <Shell deploy={deploy} renderedAt={renderedAt}>
+      {recommendations.length > 0 && (
+        <Block
+          title="Le point d'Alfred"
+          count={recommendations.length}
+          hint="les trois plus importantes — la suite dans /conseil/suggestions"
+        >
+          <ul className="grid gap-2">
+            {recommendations.slice(0, 3).map((item) => (
+              <RecommendationCard key={item.id} item={item} />
+            ))}
+          </ul>
+          {recommendations.length > 3 && (
+            <p className="mt-2 text-[12.5px] text-muted">
+              <Link href="/conseil/suggestions" className="underline hover:text-flux-d">
+                Voir les {recommendations.length} recommandations
+              </Link>
+            </p>
+          )}
+        </Block>
+      )}
+
       {!hasDeals && <ProspectingCards metrics={prospecting} />}
 
       {hasDeals && (

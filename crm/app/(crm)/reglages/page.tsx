@@ -9,6 +9,7 @@ import {
 } from "@/lib/api/reference";
 import { listSequences } from "@/lib/api/sequences";
 import { listTags } from "@/lib/api/contacts";
+import { prisma as db } from "@/lib/db";
 import { stageDealCounts } from "@/lib/api/settings";
 import { prisma } from "@/lib/db";
 import { LIFECYCLES } from "@/lib/domain/types";
@@ -27,6 +28,7 @@ export default async function ReglagesPage() {
     sources,
     lifecycleRows,
     tags,
+    settingsRow,
   ] = await Promise.all([
       listSequences(),
       listStagesWithActions(),
@@ -42,6 +44,7 @@ export default async function ReglagesPage() {
         select: { value: true },
       }),
       listTags(),
+      db.settings.findUnique({ where: { id: "singleton" } }),
     ]);
 
   const lifecycles = lifecycleRows.map((row) => row.value);
@@ -62,6 +65,7 @@ export default async function ReglagesPage() {
       stages={stages}
       dealCounts={dealCounts}
       settings={settings}
+      tokenBudget={settingsRow?.shiftTokenBudget ?? 4000}
       delays={delays}
       tags={tags}
       lists={{

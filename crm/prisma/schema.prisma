@@ -279,6 +279,10 @@ model Settings {
   relanceApresReunion Int @default(3)
   relanceApresNote    Int @default(7)
 
+  /// Plafond de jetons de sortie par vacation. Bas par défaut : une vacation qui
+  /// dépasserait s'arrête et le dit, plutôt que de faire monter la facture.
+  shiftTokenBudget Int @default(4000)
+
   @@map("settings")
 }
 
@@ -320,4 +324,67 @@ model SequenceStep {
 
   @@index([sequenceId, position])
   @@map("sequence_steps")
+}
+
+/// Recommandation produite par un agent pendant sa vacation.
+///
+/// `evidence` et `proposedActions` sont stockés en JSON **sérialisé dans une
+/// chaîne** : le schéma s'interdit le type `Json` (voir en-tête). La forme est
+/// validée par Zod à l'écriture comme à la lecture — la base ne garantit ici que
+/// la présence, pas la structure.
+model Recommendation {
+  id        String   @id @default(cuid())
+  agentId   String
+  createdAt DateTime @default(now())
+  /// info | attention | urgent
+  severity  String
+  title     String
+  rationale String   @default("")
+  /// JSON : [{ type: "contact" | "deal" | "company" | "task", id, label }]
+  evidence  String   @default("[]")
+  /// JSON : [{ tool, input, summary }] — exécutés seulement après confirmation.
+  actions   String   @default("[]")
+  /// new | accepted | dismissed | snoozed | expired
+  status    String   @default("new")
+
+  /// Identité du constat. Son unicité empêche la même trouvaille de revenir à
+  /// chaque run — c'est la contrainte de base qui protège, pas une vérification.
+  dedupeKey String @unique
+
+  snoozedUntil DateTime?
+  /// Fenêtre pendant laquelle un constat écarté ne revient pas.
+  mutedUntil   DateTime?
+  /// Pas pertinent | Déjà traité | Plus tard — sert à améliorer les prompts.
+  dismissReason String   @default("")
+  decidedAt     DateTime?
+
+  runId String?
+  run   ShiftRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([agentId])
+  @@map("recommendations")
+}
+
+/// Trace d'une vacation. Écrite même — surtout — quand elle échoue.
+model ShiftRun {
+  id        String   @id @default(cuid())
+  agentId   String
+  startedAt DateTime @default(now())
+  /// Durée en millisecondes. `null` tant que le run n'est pas terminé.
+  durationMs Int?
+  /// ok | empty | skipped | error
+  outcome   String   @default("ok")
+  /// Message d'échec ou raison du saut, en français, sans trace d'exécution.
+  detail    String   @default("")
+  inputTokens  Int @default(0)
+  outputTokens Int @default(0)
+  produced     Int @default(0)
+  /// Déclenché à la main depuis /reglages plutôt que par le cron.
+  manual    Boolean @default(false)
+
+  recommendations Recommendation[]
+
+  @@index([startedAt])
+  @@map("shift_runs")
 }

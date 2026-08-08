@@ -11,6 +11,7 @@ import { RelancesForm } from "./relances-form";
 import { SequenceEditor, type SequenceEditable } from "./sequence-editor";
 import { TagsEditor } from "./tags-editor";
 import { MaintenancePanel } from "./maintenance-panel";
+import { ShiftsPanel } from "./shifts-panel";
 import { StagesEditor } from "./stages-editor";
 
 interface SettingsViewProps {
@@ -18,6 +19,7 @@ interface SettingsViewProps {
   readonly stages: readonly StageWithAction[];
   readonly dealCounts: Record<string, number>;
   readonly settings: PilotageSettings;
+  readonly tokenBudget: number;
   readonly delays: ReminderDelays;
   readonly lists: Record<SettingsListKind, readonly string[]>;
   readonly tags: ReadonlyArray<{ value: string; count: number }>;
@@ -35,6 +37,7 @@ export function SettingsView({
   stages,
   dealCounts,
   settings,
+  tokenBudget,
   delays,
   lists,
   tags,
@@ -56,7 +59,7 @@ export function SettingsView({
         title="Seuils et objectif"
         hint="pilotent la chaleur des affaires, les alertes et la colonne « dernière touche »"
       >
-        <PilotageForm settings={settings} onSaved={refresh} />
+        <PilotageForm settings={settings} tokenBudget={tokenBudget} onSaved={refresh} />
       </Section>
 
       <Section
@@ -100,6 +103,13 @@ export function SettingsView({
             <SequenceEditor key={sequence.id} sequence={sequence} onSaved={refresh} />
           ))}
         </div>
+      </Section>
+
+      <Section
+        title="Vacations des agents"
+        hint="ce que chaque passage a coûté, et ce qu'il a produit — y compris les échecs"
+      >
+        <ShiftsPanel />
       </Section>
 
       <Section

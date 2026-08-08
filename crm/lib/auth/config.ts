@@ -31,6 +31,12 @@ export const PUBLIC_PATHS: readonly string[] = [
   "/api/auth/login",
   "/api/auth/logout",
   "/api/health",
+  /**
+   * Le planificateur n'a pas de session : il présente son propre secret
+   * (`CRON_SECRET`) et la route le vérifie elle-même. Public au sens du
+   * middleware, fermé au sens de l'accès.
+   */
+  "/api/cron/shifts",
 ];
 
 /** Ressources servies par Next lui-même, jamais porteuses de données métier. */

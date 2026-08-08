@@ -21,14 +21,18 @@ function isSettings(value: unknown): value is { settings: PilotageSettings } {
 
 export function PilotageForm({
   settings,
+  tokenBudget,
   onSaved,
 }: {
   settings: PilotageSettings;
+  /** Plafond de jetons par vacation — voir components/settings/shifts-panel. */
+  tokenBudget: number;
   onSaved: () => void;
 }) {
   const [stale, setStale] = useState(settings.staleDays);
   const [cold, setCold] = useState(settings.coldDays);
   const [objective, setObjective] = useState(settings.objectifMensuel);
+  const [budget, setBudget] = useState(tokenBudget);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -40,7 +44,12 @@ export function PilotageForm({
       "/api/settings",
       {
         method: "PATCH",
-        body: JSON.stringify({ staleDays: stale, coldDays: cold, objectifMensuel: objective }),
+        body: JSON.stringify({
+          staleDays: stale,
+          coldDays: cold,
+          objectifMensuel: objective,
+          shiftTokenBudget: budget,
+        }),
       },
       isSettings,
     );
@@ -55,7 +64,7 @@ export function PilotageForm({
 
   return (
     <section className="rounded-card border border-line bg-surface p-4 shadow-card">
-      <div className="grid gap-2.5 sm:grid-cols-3">
+      <div className="grid gap-2.5 sm:grid-cols-4">
         <Field label="Tiède au-delà de (jours)">
           <input
             type="number"
@@ -80,6 +89,20 @@ export function PilotageForm({
             className={CONTROL}
           />
         </Field>
+        <Field label="Jetons max par vacation">
+          <input
+            type="number"
+            min={500}
+            max={32000}
+            step={500}
+            value={budget}
+            onChange={(e) => {
+              setBudget(Number(e.target.value));
+              setSaved(false);
+            }}
+            className={CONTROL}
+          />
+        </Field>
         <Field label="Objectif mensuel (€)">
           <input
             type="number"
@@ -96,7 +119,8 @@ export function PilotageForm({
 
       <p className="mt-2 text-[12px] text-muted">
         Le seuil « tiède » doit rester inférieur au seuil « froid », sans quoi aucune affaire
-        ne serait jamais tiède.
+        ne serait jamais tiède. Le plafond de jetons s'applique <b>avant</b> l'appel : une
+        vacation qui le dépasserait ne se lance pas et le journal le dit.
       </p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">

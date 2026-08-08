@@ -141,3 +141,33 @@ describe("cartes de confirmation", () => {
     }
   });
 });
+
+/**
+ * Régression : une vacation doit pouvoir écarter une action mal formée **avant**
+ * de la proposer. `summarize()` ne sert pas à cela — c'est le piège qui a laissé
+ * passer une action invalide jusqu'à la carte de confirmation, où elle
+ * n'échouait qu'au clic.
+ */
+describe("validation des arguments avant proposition", () => {
+  const setReminder = findTool("set_reminder");
+
+  it("`accepts` refuse une entrée invalide et accepte une entrée valide", () => {
+    expect(setReminder).toBeDefined();
+    expect(
+      setReminder?.accepts({ contactId: "c1", contactName: "Awa", date: "pas-une-date" }),
+    ).toBe(false);
+    expect(setReminder?.accepts({ contactId: "c1", contactName: "Awa", date: "2026-09-15" })).toBe(
+      true,
+    );
+  });
+
+  it("`summarize` ne lève pas sur une entrée invalide — d'où l'existence de `accepts`", async () => {
+    const summary = await setReminder?.summarize({ date: "pas-une-date" });
+    expect(summary?.headline).toContain("arguments invalides");
+  });
+
+  it("`run` refuse sans lever, en renvoyant ok: false", async () => {
+    const result = await setReminder?.run({ date: "pas-une-date" });
+    expect(result?.ok).toBe(false);
+  });
+});
