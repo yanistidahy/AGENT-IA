@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readDbStatus } from "@/lib/db-status";
-import { readDeployInfo } from "@/lib/deploy-info";
+import { healthPayload, healthStatusCode } from "@/lib/health-payload";
 
 export const dynamic = "force-dynamic";
 
@@ -8,40 +8,26 @@ export const dynamic = "force-dynamic";
  * Sonde de santé, destinée au healthcheck Railway.
  *
  * Contrairement à `/`, elle **échoue** quand la base ne répond pas : c'est tout
- * son intérêt comme cible de healthcheck. `/` doit au contraire répondre 200 en
- * toute circonstance pour pouvoir afficher son diagnostic.
+ * son intérêt comme cible de healthcheck.
  *
- * Trois états distincts, parce que les confondre est précisément ce qui a rendu
- * une perte de données difficile à diagnostiquer :
+ * **Route publique, donc muette.** C'est la seule surface de l'application
+ * accessible sans session — le healthcheck Railway l'interroge sans cookie. Elle
+ * ne renvoie donc qu'un état : plus aucun compteur, aucun nom de table, aucune
+ * information de déploiement. Publier le nombre de contacts n'est pas anodin,
+ * c'est déjà renseigner un tiers sur la taille du portefeuille et, en le suivant
+ * dans le temps, sur l'activité.
  *
- * - `unreachable` (503) — la base ne répond pas ;
- * - `empty` (200) — la base répond, les tables existent, aucune ligne. Ce n'est
- *   pas une panne de l'application : c'est une base jamais peuplée, ou vidée ;
- * - `ok` (200) — la base répond et contient des données.
+ * Les compteurs détaillés existent toujours, mais derrière le verrou, sur `/`.
  *
- * Aucun secret ne sort : ni URL, ni hôte, ni identifiant.
+ * La forme exacte du corps est décidée par `lib/health-payload.ts`, et testée
+ * là-bas : ce qui sort d'une route publique doit être vérifiable autrement que
+ * par une relecture.
  */
 export async function GET() {
-  const status = await readDbStatus();
-  const deploy = readDeployInfo();
-  const checkedAt = new Date().toISOString();
+  const payload = healthPayload(await readDbStatus(), new Date());
 
-  if (!status.ok) {
-    return NextResponse.json(
-      {
-        status: "unreachable",
-        database: { reachable: false, reason: status.diagnosis.reason },
-        deploy,
-        checkedAt,
-      },
-      { status: 503 },
-    );
-  }
-
-  return NextResponse.json({
-    status: status.total === 0 ? "empty" : "ok",
-    database: { reachable: true, counts: status.counts, total: status.total },
-    deploy,
-    checkedAt,
+  return NextResponse.json(payload, {
+    status: healthStatusCode(payload),
+    headers: { "Cache-Control": "no-store" },
   });
 }

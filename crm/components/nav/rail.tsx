@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LogoutButton } from "@/components/auth/logout-button";
 import { Icon } from "@/components/ui/icon";
 import { moneyShort } from "@/lib/format";
 import { NAV_GROUPS, type NavEntry } from "@/lib/navigation";
@@ -73,6 +74,7 @@ export function Rail({ totals }: { totals: RailTotals }) {
             {totals.wonCount} affaires gagnées
           </>
         )}
+        <LogoutButton />
       </div>
     </aside>
   );

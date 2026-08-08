@@ -182,7 +182,7 @@ disponible localement.
 | Variable | Depuis | Rôle |
 |---|---|---|
 | `DATABASE_URL` | phase 1 | connexion PostgreSQL |
-| `WORKSPACE_PASSWORD` | à venir | mot de passe unique de l'espace de travail |
+| `WORKSPACE_PASSWORD` | **jalon 9, obligatoire** | mot de passe unique de l'espace + clé de signature des sessions |
 | `ANTHROPIC_API_KEY` | phase 3 | conseil d'agents — **serveur uniquement** |
 | `AGENT_ETIENNE_ENABLED` | phase 4 | drapeau de l'agent verrouillé |
 
@@ -257,6 +257,8 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 5 | Centre de pilotage & rapports — SVG écrits à la main, palette Ctrl+K, réglages, `/api/health` | **validé en production** |
 | 6 | Confort d'usage — société à la volée, statut de relance, portefeuille clients | **validé en production** |
 | 7 | Conseil remis à jour + cohérence entre écrans | **livré, à valider** |
+| 8 | Formulaire d'affaire réparé + couche d'automatisation | **livré, à valider** |
+| 9 | **Verrou d'espace de travail** — mot de passe partagé, sessions signées, sonde muette | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -1041,6 +1043,120 @@ planifiée. Une affaire ne devient « en sommeil » que quand quelqu'un ouvre
 l'accueil et lance l'action groupée. C'est délibéré pour l'instant — un
 planificateur qui écrit sans témoin est exactement ce que « rien de muet »
 interdit.
+
+## Jalon 9 — verrou d'espace de travail (P0 sécurité)
+
+### L'incident
+
+Le CRM de production était accessible **sans aucune authentification**. Un agent
+externe a lu la liste des contacts et téléchargé l'export CSV complet sans
+présenter de justificatif. Avec 150 prospects réels — noms, adresses
+électroniques, téléphones — sur le point d'être importés, c'est une exposition de
+données personnelles, avec les obligations RGPD qui vont avec.
+
+Corrigé avant toute autre chose.
+
+### Un seul point de passage, fermé par défaut
+
+```
+middleware.ts              le verrou : tout est privé sauf PUBLIC_PATHS
+lib/auth/config.ts         cookie, durée, chemins publics, lecture de la variable
+lib/auth/session.ts        signature HMAC, vérification, comparaison à temps constant
+lib/auth/rate-limit.ts     fenêtre glissante par adresse IP
+lib/auth/redirect.ts       ?next= — chemins relatifs seulement
+app/api/auth/login|logout  ouverture et fermeture de session
+app/login/                 saisie du mot de passe partagé
+```
+
+**Tout est privé par défaut.** `PUBLIC_PATHS` énumère quatre exceptions ; le
+reste — pages, `/api/*`, exports CSV, sauvegarde JSON — est fermé sans que
+personne ait à y penser. L'inverse (une liste de chemins *à protéger*) laisse
+passer toute route ajoutée ensuite et oubliée, ce qui est précisément le mode de
+défaillance qu'on répare.
+
+**Sans `WORKSPACE_PASSWORD`, on ferme.** L'application répond 503 partout au lieu
+de laisser passer. Remplacer un accès sans condition par un accès conditionné à
+une variable qui, manquante, ouvre tout, serait le même défaut avec une étape de
+plus. `/api/health` reste public : le healthcheck Railway passe, le déploiement
+ne se replie pas, mais l'espace reste clos.
+
+**La sonde publique est devenue muette.** Elle renvoyait sept compteurs et les
+informations de déploiement. Le nombre de contacts n'est pas anodin — c'est déjà
+renseigner un tiers sur la taille du portefeuille, et son évolution trahit
+l'activité. Elle ne renvoie plus qu'un état (`ok` / `empty` / `unreachable`). La
+distinction vide/injoignable, qui avait servi à diagnostiquer une perte de
+données, est conservée : c'est un bit, pas un inventaire.
+
+**Web Crypto, pas `node:crypto`.** La vérification du jeton doit avoir lieu dans
+le middleware — c'est lui qui voit *toutes* les requêtes — et le middleware
+tourne en runtime Edge. `crypto.subtle` fonctionne dans les deux.
+
+**Aucune session en base.** Le jeton porte son expiration et une signature
+HMAC-SHA256 dont la clé est le mot de passe lui-même. Conséquence utile : changer
+`WORKSPACE_PASSWORD` invalide toutes les sessions en cours — le seul moyen de
+révoquer un accès quand il n'y a pas de comptes.
+
+**Comparaison à temps constant, sur des empreintes.** On compare les HMAC des
+deux mots de passe plutôt que les chaînes : deux empreintes font toujours la même
+longueur, la comparaison ne divulgue donc pas non plus la longueur du secret.
+
+**`?next=` n'accepte que des chemins relatifs.** Sans ce filtre, la page de
+connexion devient un tremplin : `?next=https://…` enverrait ailleurs quelqu'un
+qui vient de saisir son mot de passe sur le bon domaine. `//ailleurs` et `/\ailleurs`
+sont refusés aussi — le navigateur les lit comme des URL absolues.
+
+### La couche est isolée, pour pouvoir être remplacée
+
+Rien hors de `lib/auth/`, `middleware.ts`, `app/login/` et `app/api/auth/` ne
+connaît l'authentification. Aucune route, aucun service, aucun composant ne lit
+de session. Passer à de vrais comptes, des rôles ou OAuth se fera en remplaçant
+ce module — le reste de l'application n'a pas à bouger.
+
+### Ce que la limitation de tentatives fait, et ce qu'elle ne fait pas
+
+Fenêtre de 15 minutes, 8 échecs par adresse, **en mémoire**. Un redémarrage remet
+les compteurs à zéro et deux instances comptent séparément : ce n'est pas une
+défense contre un attaquant distribué. C'est ce qui met un mot de passe hors de
+portée d'un script naïf. Le vrai rempart reste la longueur du secret.
+
+### Jalon 9 — ce qui est vérifié
+
+Contre un vrai PostgreSQL et le serveur standalone de production
+(`NODE_ENV=production`) :
+
+- **sans session** : les dix pages renvoient 307 vers `/login?next=…` ; les neuf
+  routes d'API testées renvoient 401, dont `/api/contacts/export`,
+  `/api/companies/export` et `/api/backup` — le corps de l'export ne contient
+  plus que `{"error":{"message":"Session requise."}}` ;
+- **cookie** : `HttpOnly`, `Secure`, `SameSite=lax`, `Path=/`, `Max-Age=2592000`
+  (30 jours) ;
+- **avec session** : pages et export CSV répondent 200, l'export est complet ;
+- **limitation** : 8 refus puis 429 ; une autre adresse n'est pas pénalisée ; le
+  *bon* mot de passe est refusé aussi tant que la fenêtre court ;
+- **déconnexion** : l'export retombe à 401 immédiatement ;
+- **sans `WORKSPACE_PASSWORD`** : 503 sur les pages et les API, `/api/health`
+  toujours 200 ;
+- **`?next=` hostile** : le formulaire reçoit `/`. L'URL hostile n'apparaît que
+  dans le descripteur de route interne de Next, qui répète l'URL demandée — ce
+  n'est pas une destination ;
+- `tests/auth-routes.test.ts` énumère les routes **sur le disque** et exerce le
+  vrai middleware : une route ajoutée demain entre automatiquement dans le test
+  et le fait échouer si elle échappe au verrou ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (340 tests) verts.
+
+### Jalon 9 — ce qui ne l'est pas
+
+Un seul mot de passe partagé, sans comptes : impossible de savoir *qui* a agi, et
+le retrait d'un accès passe par un changement de mot de passe pour tout le monde.
+C'est le compromis demandé pour deux personnes ; il ne tient plus à cinq.
+
+Les données restées exposées avant ce correctif le sont : le verrou ferme la
+porte, il ne rappelle pas ce qui est sorti. Si des données personnelles réelles
+ont été lues, l'analyse RGPD (registre, notification éventuelle) est une décision
+qui n'appartient pas au code.
+
+Aucun chiffrement au repos, aucune journalisation des accès, aucune limitation de
+débit sur les routes de lecture une fois la session ouverte.
 
 ### Journal des incidents
 
