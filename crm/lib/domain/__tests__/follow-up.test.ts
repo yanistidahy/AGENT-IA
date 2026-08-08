@@ -4,7 +4,9 @@ import {
   followUpRank,
   followUpStatus,
   idleDays,
-  isFollowUpFilter,
+  isContactFilter,
+  matchesContactFilter,
+  describeReminder,
   type FollowUpLike,
 } from "../follow-up";
 import { DEFAULT_PILOTAGE } from "../types";
@@ -102,12 +104,76 @@ describe("followUpRank", () => {
   });
 });
 
-describe("isFollowUpFilter", () => {
+describe("isContactFilter", () => {
   it("n'accepte que les trois filtres proposés", () => {
-    expect(isFollowUpFilter("due")).toBe(true);
-    expect(isFollowUpFilter("silent")).toBe(true);
-    expect(isFollowUpFilter("never")).toBe(true);
-    expect(isFollowUpFilter("waiting")).toBe(false);
-    expect(isFollowUpFilter("nimporte")).toBe(false);
+    expect(isContactFilter("reminder")).toBe(true);
+    expect(isContactFilter("silent")).toBe(true);
+    expect(isContactFilter("never")).toBe(true);
+    expect(isContactFilter("due")).toBe(false);
+    expect(isContactFilter("planned")).toBe(false);
+  });
+});
+
+/**
+ * Le point de cette série : la puce « À relancer » n'est **pas** le statut
+ * « à relancer ». Elle retient toute relance programmée, y compris à venir.
+ */
+describe("matchesContactFilter", () => {
+  const overdue = contact({ lastContact: addDays(now, -3), nextReminder: addDays(now, -5) });
+  const dueToday = contact({ lastContact: addDays(now, -3), nextReminder: now });
+  const future = contact({ lastContact: addDays(now, -3), nextReminder: addDays(now, 21) });
+  const noReminder = contact({ lastContact: addDays(now, -3) });
+
+  it("retient les relances en retard, du jour, et à venir", () => {
+    for (const [label, state] of [
+      ["en retard", overdue],
+      ["aujourd'hui", dueToday],
+      ["dans trois semaines", future],
+    ] as const) {
+      expect(matchesContactFilter(state, "reminder", settings, now), label).toBe(true);
+    }
+  });
+
+  it("écarte un contact sans relance programmée", () => {
+    expect(matchesContactFilter(noReminder, "reminder", settings, now)).toBe(false);
+  });
+
+  it("retient une relance à venir alors que son statut est « relance prévue »", () => {
+    expect(followUpStatus(future, settings, now)).toBe("planned");
+    expect(matchesContactFilter(future, "reminder", settings, now)).toBe(true);
+  });
+
+  it("« sans nouvelles » et « jamais contacté » restent alignés sur le statut", () => {
+    const silent = contact({ lastContact: addDays(now, -30) });
+    expect(matchesContactFilter(silent, "silent", settings, now)).toBe(true);
+    expect(matchesContactFilter(silent, "never", settings, now)).toBe(false);
+    expect(matchesContactFilter(contact(), "never", settings, now)).toBe(true);
+  });
+});
+
+describe("describeReminder", () => {
+  it("qualifie un retard et le compte", () => {
+    const view = describeReminder(addDays(now, -4), now);
+    expect(view.urgency).toBe("late");
+    expect(view.days).toBe(4);
+    expect(view.label).toBe("4 j de retard");
+  });
+
+  it("qualifie le jour même", () => {
+    const view = describeReminder(now, now);
+    expect(view.urgency).toBe("today");
+    expect(view.label).toBe("aujourd'hui");
+  });
+
+  it("qualifie une échéance à venir et annonce le délai", () => {
+    const view = describeReminder(addDays(now, 21), now);
+    expect(view.urgency).toBe("future");
+    expect(view.label).toBe("dans 21 j");
+  });
+
+  it("compare au jour, pas à l'heure", () => {
+    const morning = new Date("2026-08-08T07:00:00Z");
+    const laterToday = new Date("2026-08-08T20:00:00Z");
+    expect(describeReminder(laterToday, morning).urgency).toBe("today");
   });
 });

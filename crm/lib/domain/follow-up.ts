@@ -84,10 +84,60 @@ export const FOLLOW_UP_LABELS: Record<FollowUpStatus, string> = {
   silent: "Sans nouvelles",
 };
 
-/** Filtres proposés au-dessus du tableau des contacts. */
-export const FOLLOW_UP_FILTERS = ["due", "silent", "never"] as const;
-export type FollowUpFilter = (typeof FOLLOW_UP_FILTERS)[number];
+/**
+ * Filtres proposés au-dessus du tableau des contacts.
+ *
+ * **Un filtre n'est pas un statut**, et `reminder` est précisément le cas où les
+ * deux divergent : la puce « À relancer » retient *tout contact ayant une
+ * relance programmée* — en retard, aujourd'hui ou à venir — là où le statut
+ * `due` ne désigne que les échéances atteintes. C'est voulu : la puce sert à
+ * voir tout son pipeline de relances d'un coup, la colonne Statut à situer une
+ * ligne. Les deux noms sont donc distincts dans le code, pour qu'aucun des deux
+ * ne mente sur ce qu'il fait.
+ */
+export const CONTACT_FILTERS = ["reminder", "silent", "never"] as const;
+export type ContactFilter = (typeof CONTACT_FILTERS)[number];
 
-export function isFollowUpFilter(value: string): value is FollowUpFilter {
-  return FOLLOW_UP_FILTERS.some((candidate) => candidate === value);
+export function isContactFilter(value: string): value is ContactFilter {
+  return CONTACT_FILTERS.some((candidate) => candidate === value);
+}
+
+export const CONTACT_FILTER_LABELS: Record<ContactFilter, string> = {
+  reminder: "À relancer",
+  silent: FOLLOW_UP_LABELS.silent,
+  never: FOLLOW_UP_LABELS.never,
+};
+
+/** Un contact passe-t-il le filtre ? Le statut n'intervient que pour deux d'entre eux. */
+export function matchesContactFilter(
+  contact: FollowUpLike,
+  filter: ContactFilter,
+  settings: PilotageSettings,
+  now: Date,
+): boolean {
+  if (filter === "reminder") return contact.nextReminder !== null;
+  return followUpStatus(contact, settings, now) === filter;
+}
+
+/**
+ * Lecture d'une échéance de relance, pour la hiérarchie visuelle de la liste.
+ *
+ * `days` est positif quand l'échéance est passée — même convention que
+ * `daysSince` dans tout le projet. La comparaison se fait au jour, pas à
+ * l'heure : une relance datée d'aujourd'hui est « aujourd'hui » dès le matin.
+ */
+export type ReminderUrgency = "late" | "today" | "future";
+
+export interface ReminderView {
+  readonly urgency: ReminderUrgency;
+  readonly days: number;
+  readonly label: string;
+}
+
+export function describeReminder(reminder: Date, now: Date): ReminderView {
+  const days = daysSince(startOfDay(reminder), startOfDay(now));
+
+  if (days > 0) return { urgency: "late", days, label: `${days} j de retard` };
+  if (days === 0) return { urgency: "today", days: 0, label: "aujourd'hui" };
+  return { urgency: "future", days, label: `dans ${-days} j` };
 }

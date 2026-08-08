@@ -6,6 +6,7 @@ import {
   followUpRank,
   followUpStatus,
   idleDays,
+  matchesContactFilter,
   type FollowUpStatus,
 } from "../domain/follow-up";
 import { DEFAULT_PILOTAGE, type DealStatus, type Lifecycle, type PilotageSettings } from "../domain/types";
@@ -184,18 +185,35 @@ export async function listContacts(
 
   let records = rows.map((row) => toRecord(row, settings, now));
 
-  if (query.followUp !== undefined) {
-    records = records.filter((contact) => contact.followUp === query.followUp);
+  const filter = query.followUp;
+  if (filter !== undefined) {
+    records = records.filter((contact) =>
+      matchesContactFilter(
+        {
+          lastContact: contact.lastContact,
+          nextReminder: contact.nextReminder,
+          activityCount: contact.activityCount,
+        },
+        filter,
+        settings,
+        now,
+      ),
+    );
   }
 
-  if (query.sort === "followUp") {
+  // Le filtre « à relancer » rassemble retards et échéances à venir : sans tri
+  // explicite, il s'ordonne par échéance croissante, du plus urgent au plus
+  // lointain. C'est la lecture attendue d'un pipeline de relances.
+  const sortKey = query.sort ?? (filter === "reminder" ? "nextReminder" : undefined);
+
+  if (sortKey === "followUp") {
     const direction = query.dir === "desc" ? -1 : 1;
     records = [...records].sort(
       (a, b) => (followUpRank(a.followUp) - followUpRank(b.followUp)) * direction,
     );
   }
 
-  if (query.sort === "nextReminder") {
+  if (sortKey === "nextReminder") {
     const direction = query.dir === "desc" ? -1 : 1;
     // Sans relance programmée : en fin de liste dans les deux sens — l'absence
     // de date n'est ni la plus urgente ni la plus lointaine, elle n'est rien.

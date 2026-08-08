@@ -5,7 +5,7 @@ import { useCallback, useState, useTransition } from "react";
 import { Drawer } from "@/components/ui/drawer";
 import { Icon } from "@/components/ui/icon";
 import type { ContactRecord } from "@/lib/api/contacts";
-import { FOLLOW_UP_FILTERS, FOLLOW_UP_LABELS } from "@/lib/domain/follow-up";
+import { CONTACT_FILTERS, CONTACT_FILTER_LABELS } from "@/lib/domain/follow-up";
 import { LIFECYCLES, type PilotageSettings } from "@/lib/domain/types";
 import { ContactDrawer } from "./contact-drawer";
 import { ContactForm, type ContactFormOptions } from "./contact-form";
@@ -21,6 +21,8 @@ interface ContactsViewProps extends ContactFormOptions {
   readonly linkableDeals: readonly LinkableDeal[];
   readonly sequences: readonly SequenceOption[];
   readonly alerts: readonly Alert[];
+  /** Compteurs de la puce « À relancer », calculés sur l'ensemble des contacts. */
+  readonly reminderCounts: { readonly total: number; readonly late: number };
   /** Fiche désignée par `?fiche=` mais absente de la liste filtrée. */
   readonly focused: ContactRecord | null;
 }
@@ -38,6 +40,7 @@ export function ContactsView({
   sequences,
   alerts,
   focused,
+  reminderCounts,
   ...options
 }: ContactsViewProps) {
   const router = useRouter();
@@ -139,7 +142,7 @@ export function ContactsView({
           >
             Tous
           </button>
-          {FOLLOW_UP_FILTERS.map((value) => (
+          {CONTACT_FILTERS.map((value) => (
             <button
               key={value}
               type="button"
@@ -148,7 +151,13 @@ export function ContactsView({
                 followUp === value ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
               }`}
             >
-              {FOLLOW_UP_LABELS[value]}
+              {CONTACT_FILTER_LABELS[value]}
+              {value === "reminder" && reminderCounts.total > 0 && (
+                <span className="ml-1 font-normal opacity-80">
+                  ({reminderCounts.total}
+                  {reminderCounts.late > 0 && ` · ${reminderCounts.late} en retard`})
+                </span>
+              )}
             </button>
           ))}
         </div>

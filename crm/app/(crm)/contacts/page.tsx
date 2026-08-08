@@ -5,6 +5,7 @@ import { readAlerts } from "@/lib/api/alerts";
 import { getPilotage, listOwners, listSources } from "@/lib/api/reference";
 import { listSequences } from "@/lib/api/sequences";
 import { prisma } from "@/lib/db";
+import { startOfDay } from "@/lib/domain/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,21 @@ export default async function ContactsPage({
 
   // La fiche visée par `?fiche=` peut ne pas figurer dans la liste filtrée :
   // on la charge séparément pour que le lien ouvre bien le tiroir.
+  // Les compteurs de la puce portent sur **tous** les contacts, pas sur la liste
+  // filtrée : une puce qui compte son propre résultat afficherait toujours le
+  // total de ce qu'elle vient de sélectionner, ce qui n'apprend rien.
+  const withReminder = await prisma.contact.findMany({
+    where: { nextReminder: { not: null } },
+    select: { nextReminder: true },
+  });
+  const startOfToday = startOfDay(now);
+  const reminderCounts = {
+    total: withReminder.length,
+    late: withReminder.filter(
+      (row) => row.nextReminder !== null && startOfDay(row.nextReminder) <= startOfToday,
+    ).length,
+  };
+
   const ficheId = flat.fiche;
   const focused =
     ficheId === undefined || contacts.some((contact) => contact.id === ficheId)
@@ -65,6 +81,7 @@ export default async function ContactsPage({
       sequences={sequences}
       alerts={alerts}
       focused={focused}
+      reminderCounts={reminderCounts}
     />
   );
 }

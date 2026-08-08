@@ -3,6 +3,7 @@
 import { EmptyState, FollowUpTag, LifecycleTag } from "@/components/ui/primitives";
 import type { ContactRecord } from "@/lib/api/contacts";
 import { daysSince } from "@/lib/domain/dates";
+import { describeReminder } from "@/lib/domain/follow-up";
 import type { PilotageSettings } from "@/lib/domain/types";
 import { formatDate } from "@/lib/format";
 
@@ -90,8 +91,12 @@ export function ContactsTable({
             const idle = contact.idleDays;
             const stale = idle === null || idle >= settings.coldDays;
             const openDeals = contact.deals.filter((deal) => deal.status === "open").length;
-            const reminderLate =
-              contact.nextReminder !== null && daysSince(contact.nextReminder, now) >= 0;
+            // Hiérarchie de la colonne « Prochaine relance » : le retard et le
+            // jour même en rouge, l'à-venir en poids normal avec son délai.
+            const reminder =
+              contact.nextReminder === null
+                ? null
+                : describeReminder(contact.nextReminder, now);
 
             return (
               <tr
@@ -128,12 +133,29 @@ export function ContactsTable({
                   />
                 </td>
                 <td className="border-b border-line-2 px-3.5 py-3 font-mono text-[12.5px]">
-                  {contact.nextReminder === null ? (
+                  {reminder === null || contact.nextReminder === null ? (
                     <span className="text-muted">—</span>
                   ) : (
-                    <span className={reminderLate ? "font-semibold text-[#B2311F]" : "text-muted"}>
-                      {formatDate(contact.nextReminder)}
-                    </span>
+                    <>
+                      <span
+                        className={
+                          reminder.urgency === "future"
+                            ? "text-ink"
+                            : "font-semibold text-[#B2311F]"
+                        }
+                      >
+                        {formatDate(contact.nextReminder)}
+                      </span>
+                      <span
+                        className={`block text-[11.5px] ${
+                          reminder.urgency === "future"
+                            ? "text-muted"
+                            : "font-semibold text-[#B2311F]"
+                        }`}
+                      >
+                        {reminder.label}
+                      </span>
+                    </>
                   )}
                 </td>
                 <td className="border-b border-line-2 px-3.5 py-3 font-mono text-[12.5px]">

@@ -138,13 +138,15 @@ describe("société créée à la volée", () => {
 });
 
 describe("filtres de relance", () => {
-  it("accepte les trois filtres de statut", () => {
-    for (const value of ["due", "silent", "never"]) {
+  it("accepte les trois filtres proposés", () => {
+    for (const value of ["reminder", "silent", "never"]) {
       expect(parseContactsQuery({ followUp: value }).success, value).toBe(true);
     }
   });
 
-  it("refuse un statut qui n'est pas proposé en filtre", () => {
+  it("refuse un statut employé comme filtre : les deux notions sont distinctes", () => {
+    expect(parseContactsQuery({ followUp: "due" }).success).toBe(false);
+    expect(parseContactsQuery({ followUp: "planned" }).success).toBe(false);
     expect(parseContactsQuery({ followUp: "waiting" }).success).toBe(false);
   });
 

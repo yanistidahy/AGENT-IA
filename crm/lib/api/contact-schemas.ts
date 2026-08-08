@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { FOLLOW_UP_FILTERS } from "../domain/follow-up";
+import { CONTACT_FILTERS } from "../domain/follow-up";
 import { LIFECYCLES } from "../domain/types";
 
 /**
@@ -105,7 +105,7 @@ export const CONTACT_SORT_KEYS = [
 export const listContactsQuerySchema = z.object({
   q: z.string().optional(),
   lifecycle: z.enum([...LIFECYCLES, "all"]).optional(),
-  followUp: z.enum(FOLLOW_UP_FILTERS).optional(),
+  followUp: z.enum(CONTACT_FILTERS).optional(),
   owner: z.string().optional(),
   source: z.string().optional(),
   companyId: z.string().optional(),

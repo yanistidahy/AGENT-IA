@@ -769,6 +769,21 @@ font en mémoire, après lecture, et c'est écrit dans le code. Au volume d'un C
 d'indépendant c'est sans conséquence ; à dizaines de milliers de lignes il
 faudrait matérialiser le statut, au prix de la portabilité du schéma.
 
+**La puce « À relancer » n'est pas le statut « à relancer ».** La puce retient
+*tout contact ayant une relance programmée* — en retard, aujourd'hui ou à venir —
+et trie par échéance croissante : c'est le pipeline de relances vu d'un coup. Le
+statut, lui, distingue « à relancer » de « relance prévue » sur une ligne donnée.
+Les deux notions portent des noms distincts dans le code (`ContactFilter` contre
+`FollowUpStatus`, valeur `reminder` contre `due`) pour qu'aucune ne mente sur ce
+qu'elle fait. Dans la liste, l'échéance est en rouge si elle est dépassée ou du
+jour, en poids normal si elle est à venir, avec dans les trois cas le délai
+exprimé (« 3 j de retard », « aujourd'hui », « dans 21 j »).
+
+Les compteurs de la puce — « À relancer (12 · 4 en retard) » — portent sur
+**tous** les contacts, pas sur la liste filtrée : une puce qui compterait son
+propre résultat afficherait toujours le total de ce qu'elle vient de
+sélectionner, ce qui n'apprend rien.
+
 **Ordre des règles.** « Jamais contacté » est évalué en premier : un contact
 jamais touché le reste même si une relance est programmée pour aujourd'hui.
 C'est l'écriture littérale de la règle demandée. Si l'usage montre qu'une relance
@@ -794,8 +809,14 @@ Rejoué contre une base réelle (SQLite jetable, retouches locales non committé
 - affaire créée avec une société à la volée → même comportement
 - répartition des statuts sur le jeu de démonstration : 4 jamais contactés,
   4 à relancer, 7 relances prévues, 3 en attente, 4 sans nouvelles
-- filtre « À relancer » → exactement les contacts dont la relance est due,
-  y compris celle datée du jour même (J+0)
+- puce « À relancer » → les 12 contacts ayant une relance, triés par échéance
+  croissante : 4 en retard, 1 du jour, 7 à venir jusqu'à J+21 ; la colonne Statut
+  y montre bien 4 « À relancer » et 8 « Relance prévue »
+- un tri explicite (`sort=lastName`) n'est pas écrasé par le tri par défaut
+- l'ancienne valeur de filtre `due` est désormais refusée en 400 : filtre et
+  statut ne partagent plus de vocabulaire
+- compteurs de la puce : (12 · 4 en retard), puis (13 · 5 en retard) après ajout
+  d'une relance en retard
 - filtre « Jamais contacté » → tous sans `lastContact` **et** sans interaction
 - `coldDays` 14 → 20 → 40 : « sans nouvelles » passe de 4 à 3 à 1, dans l'API
   **et** dans la page rendue
