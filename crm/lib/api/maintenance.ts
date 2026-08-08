@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { fold, searchText } from "../domain/text";
+import { nameOverflow, splitOverflow } from "../domain/status";
 
 /**
  * Opérations de maintenance sur les données.
@@ -319,4 +320,68 @@ export async function applyLifecycleFix(plan: LifecyclePlan): Promise<number> {
   });
 
   return plan.changes.length;
+}
+
+// ---------------------------------------------------- noms débordés
+
+export interface NameFixRow {
+  readonly id: string;
+  readonly field: "firstName" | "lastName";
+  readonly before: string;
+  readonly kept: string;
+  readonly moved: string;
+  readonly notesBefore: string;
+}
+
+/**
+ * Noms qui ont avalé une note à l'import.
+ *
+ * « Alexandra Alexandra herrau, mais possible numéro de son équipe » est un nom
+ * *et* un commentaire dans la même cellule. La coupe est **proposée**, jamais
+ * appliquée seule : c'est une réécriture de donnée saisie, pas un champ dérivé.
+ */
+export async function planNameFix(): Promise<readonly NameFixRow[]> {
+  const rows = await prisma.contact.findMany({
+    select: { id: true, firstName: true, lastName: true, notes: true },
+  });
+
+  const plan: NameFixRow[] = [];
+  for (const row of rows) {
+    for (const field of ["firstName", "lastName"] as const) {
+      const value = row[field];
+      if (!nameOverflow(value)) continue;
+
+      const { kept, moved } = splitOverflow(value);
+      // Une coupe qui ne déplace rien, ou qui viderait le nom, n'apporte rien.
+      if (moved === "" || kept === "") continue;
+
+      plan.push({ id: row.id, field, before: value, kept, moved, notesBefore: row.notes });
+    }
+  }
+  return plan;
+}
+
+/**
+ * Applique les coupes. Deux champs touchés : le nom concerné et les notes, où le
+ * débordement est **ajouté** — jamais substitué à ce qui s'y trouvait déjà.
+ */
+export async function applyNameFix(plan: readonly NameFixRow[]): Promise<number> {
+  if (plan.length === 0) return 0;
+
+  await prisma.$transaction(async (tx) => {
+    for (const row of plan) {
+      const notes = row.notesBefore.trim() === ""
+        ? row.moved
+        : `${row.notesBefore}\n${row.moved}`;
+
+      await tx.contact.update({
+        where: { id: row.id },
+        data: row.field === "firstName"
+          ? { firstName: row.kept, notes }
+          : { lastName: row.kept, notes },
+      });
+    }
+  });
+
+  return plan.length;
 }

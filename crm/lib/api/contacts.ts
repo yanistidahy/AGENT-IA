@@ -11,6 +11,7 @@ import {
   type FollowUpStatus,
 } from "../domain/follow-up";
 import { isLost, LOST_LIFECYCLE } from "../domain/lost";
+import { isStale, nameOverflow } from "../domain/status";
 import { searchText, searchTerm } from "../domain/text";
 import type { FilterState } from "../domain/column-filters";
 import { facetsFor, matchesAll, type FacetValue } from "../domain/column-match";
@@ -61,6 +62,11 @@ export interface ContactRecord {
   readonly owner: string;
   readonly tag: string;
   readonly lostReason: string;
+  /** Statut saisi ; vide = le calcul fait foi. Voir lib/domain/status.ts. */
+  readonly status: string;
+  readonly statusSetAt: Date | null;
+  /** Date de la dernière interaction, pour repérer un statut figé. */
+  readonly lastActivityAt: Date | null;
   readonly notes: string;
   readonly createdAt: Date;
   readonly lastContact: Date | null;
@@ -89,6 +95,9 @@ const contactInclude = {
     orderBy: { amount: "desc" },
   },
   _count: { select: { activities: true } },
+  // La dernière interaction seule : elle sert à repérer un statut figé, pas à
+  // afficher la chronologie — celle-ci est chargée à l'ouverture du tiroir.
+  activities: { select: { date: true }, orderBy: { date: "desc" }, take: 1 },
 } satisfies Prisma.ContactInclude;
 
 type ContactRow = Prisma.ContactGetPayload<{ include: typeof contactInclude }>;
@@ -121,6 +130,9 @@ function toRecord(
     owner: row.owner,
     tag: row.tag,
     lostReason: row.lostReason,
+    status: row.status,
+    statusSetAt: row.statusSetAt,
+    lastActivityAt: row.activities[0]?.date ?? null,
     notes: row.notes,
     createdAt: row.createdAt,
     lastContact: row.lastContact,
@@ -276,8 +288,11 @@ function contactsWhere(
     });
   }
 
+  // Le critère de longueur ne s'exprime pas en SQL avec Prisma : la puce
+  // « incomplets » applique donc son prédicat complet après lecture (voir
+  // `applyDerived`). C'est une puce délibérée et rare, sur ~150 fiches.
   if (query.incomplete === true) {
-    and.push(INCOMPLETE_WHERE);
+    and.push({ OR: [...INCOMPLETE_BRANCHES, { firstName: { contains: "," } }] });
   }
 
   const columns = columnsWhere(filters, CONTACT_DB_COLUMNS, now);
@@ -293,12 +308,15 @@ function contactsWhere(
  * aucun moyen de contact (ni adresse ni téléphone), ou un nom explicitement
  * marqué à compléter par l'import.
  */
-const INCOMPLETE_WHERE: Prisma.ContactWhereInput = {
-  OR: [
-    { AND: [{ email: "" }, { phone: "" }] },
-    { lastName: { contains: "(à compléter)", mode: "insensitive" } },
-  ],
-};
+const INCOMPLETE_BRANCHES: Prisma.ContactWhereInput[] = [
+  { AND: [{ email: "" }, { phone: "" }] },
+  { lastName: { contains: "(à compléter)", mode: "insensitive" } },
+  // Nom débordé : une note avalée dans le champ à l'import. La virgule se
+  // cherche en SQL ; la longueur, non — elle est reprise après lecture.
+  { lastName: { contains: "," } },
+];
+
+const INCOMPLETE_WHERE: Prisma.ContactWhereInput = { OR: INCOMPLETE_BRANCHES };
 
 /** Filtres qui ne s'expriment pas en SQL : puce de relance et colonnes dérivées. */
 function applyDerived(
@@ -311,6 +329,19 @@ function applyDerived(
   let result = [...records];
 
   const filter = query.followUp;
+
+  // « Statut figé » compare deux dates que le domaine ne reçoit pas dans
+  // `FollowUpLike` : il est appliqué ici, où elles sont disponibles.
+  if (filter === "stale-status") {
+    return result.filter((contact) =>
+      isStale({
+        status: contact.status,
+        statusSetAt: contact.statusSetAt,
+        lastActivityAt: contact.lastActivityAt,
+      }),
+    );
+  }
+
   if (filter !== undefined) {
     result = result.filter((contact) =>
       matchesContactFilter(
@@ -324,6 +355,10 @@ function applyDerived(
         now,
       ),
     );
+  }
+
+  if (query.incomplete === true) {
+    result = result.filter(isIncomplete);
   }
 
   const derived = derivedFilters(filters, CONTACT_DB_COLUMNS);
@@ -426,9 +461,30 @@ export async function listCompaniesWithContacts(): Promise<
   return rows.map((row) => ({ id: row.id, name: row.name, count: row._count.contacts }));
 }
 
-/** Nombre de fiches incomplètes — alimente le compteur de la puce. */
-export function countIncompleteContacts(): Promise<number> {
-  return prisma.contact.count({ where: INCOMPLETE_WHERE });
+/**
+ * Nombre de fiches incomplètes — alimente le compteur de la puce.
+ *
+ * Compte aussi les noms trop longs, que SQL ne sait pas mesurer ici : la
+ * projection reste minuscule (deux colonnes) et le compte doit correspondre
+ * exactement à ce que la puce affichera.
+ */
+export async function countIncompleteContacts(): Promise<number> {
+  const rows = await prisma.contact.findMany({
+    select: { id: true, firstName: true, lastName: true, email: true, phone: true },
+  });
+  return rows.filter(isIncomplete).length;
+}
+
+/** Le prédicat complet, appliqué en mémoire. Source unique du compte et du filtre. */
+function isIncomplete(contact: {
+  readonly firstName: string;
+  readonly lastName: string;
+  readonly email: string;
+  readonly phone: string;
+}): boolean {
+  if (contact.email.trim() === "" && contact.phone.trim() === "") return true;
+  if (contact.lastName.toLowerCase().includes("(à compléter)")) return true;
+  return nameOverflow(contact.firstName) || nameOverflow(contact.lastName);
 }
 
 export async function getContact(

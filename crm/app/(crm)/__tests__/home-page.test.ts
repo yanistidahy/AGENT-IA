@@ -30,15 +30,36 @@ const counts = {
  * de ce test : les collections sont vides, ce qui laisse les compteurs seuls
  * sous observation et exerce au passage tous les états « rien à afficher ».
  */
+/**
+ * `renderToStaticMarkup` ne monte pas de routeur : un composant client qui en
+ * demande un lève « invariant expected app router to be mounted ». On le fournit
+ * plutôt que d'appauvrir le composant — la file d'action a besoin de rafraîchir
+ * la page après une écriture, c'est le comportement voulu.
+ */
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: () => undefined, replace: () => undefined, push: () => undefined }),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => "/",
+}));
+
 const empty = () => Promise.resolve([]);
+const aggregate = () => Promise.resolve({ _sum: { amount: null } });
 
 vi.mock("@/lib/db", () => ({
   prisma: {
     stage: { count: () => Promise.resolve(counts.stage), findMany: empty },
     company: { count: () => Promise.resolve(counts.company), findMany: empty },
-    contact: { count: () => Promise.resolve(counts.contact), findMany: empty },
-    deal: { count: () => Promise.resolve(counts.deal), findMany: empty },
-    activity: { count: () => Promise.resolve(counts.activity), findMany: empty },
+    contact: {
+      count: () => Promise.resolve(counts.contact),
+      findMany: empty,
+      groupBy: empty,
+    },
+    deal: { count: () => Promise.resolve(counts.deal), findMany: empty, aggregate },
+    activity: {
+      count: () => Promise.resolve(counts.activity),
+      findMany: empty,
+      groupBy: empty,
+    },
     task: { count: () => Promise.resolve(counts.task), findMany: empty },
     sequence: { count: () => Promise.resolve(counts.sequence), findMany: empty },
     settingsList: { findMany: empty },
@@ -52,6 +73,21 @@ async function renderHome(): Promise<string> {
 }
 
 describe("centre de pilotage", () => {
+  /**
+   * L'écran suit l'état de la base. Sans affaire, trois cartes de revenu à 0 €
+   * n'apprennent rien : elles cèdent la place aux indicateurs de prospection, et
+   * le bloc « Affaires en sommeil » disparaît au lieu d'afficher un vide.
+   */
+  it("sans affaire, montre la prospection et pas le revenu", async () => {
+    const html = await renderHome();
+
+    expect(html).toContain("Contactés cette semaine");
+    expect(html).toContain("Taux de réponse");
+    expect(html).toContain("Jamais contactés");
+    expect(html).not.toContain("Affaires en sommeil");
+    expect(html).not.toContain("en pipeline pondéré");
+  });
+
   beforeEach(() => {
     vi.resetModules();
   });
@@ -99,14 +135,14 @@ describe("centre de pilotage", () => {
     expect(html).not.toMatch(/phase\s*\d/i);
   });
 
-  it("rend les cinq blocs du centre de pilotage", async () => {
+  it("rend les blocs du centre de pilotage", async () => {
     const html = await renderHome();
 
     for (const block of [
       "À traiter maintenant",
+      "Ma semaine",
       "dernière touche",
       "Relances à venir",
-      "Affaires en sommeil",
       "Activité récente",
     ]) {
       expect(html, `bloc « ${block} »`).toContain(block);

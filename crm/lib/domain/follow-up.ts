@@ -105,6 +105,8 @@ export function emptyFilterMessage(filter: ContactFilter, settings: PilotageSett
       return `Aucun contact sans nouvelles : tous ont été touchés il y a moins de ${settings.coldDays} jours, ou portent déjà une relance programmée. Le seuil se règle dans Réglages.`;
     case "never":
       return "Aucun contact « jamais contacté » : tous ont au moins une interaction consignée ou une date de dernier contact.";
+    case "stale-status":
+      return "Aucun statut figé : partout où un statut a été saisi, il est postérieur à la dernière interaction. C'est le signe que le statut est bien rafraîchi en consignant les échanges.";
   }
 }
 
@@ -127,7 +129,7 @@ export const FOLLOW_UP_LABELS: Record<FollowUpStatus, string> = {
  * ligne. Les deux noms sont donc distincts dans le code, pour qu'aucun des deux
  * ne mente sur ce qu'il fait.
  */
-export const CONTACT_FILTERS = ["reminder", "silent", "never"] as const;
+export const CONTACT_FILTERS = ["reminder", "silent", "never", "stale-status"] as const;
 export type ContactFilter = (typeof CONTACT_FILTERS)[number];
 
 export function isContactFilter(value: string): value is ContactFilter {
@@ -138,6 +140,7 @@ export const CONTACT_FILTER_LABELS: Record<ContactFilter, string> = {
   reminder: "À relancer",
   silent: FOLLOW_UP_LABELS.silent,
   never: FOLLOW_UP_LABELS.never,
+  "stale-status": "Statut figé",
 };
 
 /** Un contact passe-t-il le filtre ? Le statut n'intervient que pour deux d'entre eux. */
@@ -148,6 +151,10 @@ export function matchesContactFilter(
   now: Date,
 ): boolean {
   if (filter === "reminder") return contact.nextReminder !== null;
+  // « Statut figé » ne porte pas sur le statut calculé : il compare la date de
+  // pose du statut saisi à celle de la dernière interaction. Il est donc appliqué
+  // par l'appelant, qui a ces deux dates — voir lib/api/contacts.ts.
+  if (filter === "stale-status") return true;
   return followUpStatus(contact, settings, now) === filter;
 }
 

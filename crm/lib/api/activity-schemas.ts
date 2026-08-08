@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { ACTIVITY_TYPES, TASK_PRIORITIES } from "../domain/types";
+import { ACTIVITY_TYPES, LIFECYCLES, TASK_PRIORITIES } from "../domain/types";
+import { OUTCOMES } from "../domain/status";
 
 /** Schémas de validation des requêtes sur les interactions. */
 
@@ -47,6 +48,16 @@ export const createActivitySchema = z
      * tâche miroir.
      */
     setReminder: dateValue.nullable().optional(),
+    /**
+     * Issue de l'échange. Facultative au schéma, obligatoire à l'écran : une
+     * interaction importée ou créée par un agent n'en porte pas, et refuser ces
+     * écritures casserait l'import pour un champ d'ergonomie.
+     */
+    outcome: z.enum(OUTCOMES, { error: "Issue inconnue" }).optional(),
+    /** Statut du contact après l'échange. Chaîne vide = effacer le statut saisi. */
+    status: z.string().trim().max(60, "Statut trop long").optional(),
+    lifecycle: z.enum(LIFECYCLES, { error: "Cycle de vie inconnu" }).optional(),
+    lostReason: z.string().trim().max(120, "Motif trop long").optional(),
   })
   .refine(
     (value) =>

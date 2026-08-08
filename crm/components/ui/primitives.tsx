@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { FOLLOW_UP_LABELS, type FollowUpStatus } from "@/lib/domain/follow-up";
+import { resolveStatus } from "@/lib/domain/status";
 import type { DealHeat, DealStatus, Lifecycle, StageLike } from "@/lib/domain/types";
 
 /** Petites briques d'affichage partagées par les vues CRM. */
@@ -102,6 +103,46 @@ const FOLLOW_UP_TONES: Record<FollowUpStatus, Tone> = {
   waiting: "flux",
   silent: "gold",
 };
+
+/**
+ * Badge de statut **résolu** : la saisie l'emporte sur le calcul.
+ *
+ * Source unique de l'affichage du statut — tableau des contacts, tiroir,
+ * accueil, portefeuille. Un composant unique est ce qui garantit qu'aucun écran
+ * n'affichera le calcul alors qu'un autre affiche la saisie.
+ */
+export function ContactStatusTag({
+  status,
+  followUp,
+  suffix,
+}: {
+  status: string;
+  followUp: FollowUpStatus;
+  suffix?: string;
+}) {
+  const resolved = resolveStatus({ status, followUp });
+
+  // Le ton suit le statut *calculé* tant que rien n'est saisi ; un libellé saisi
+  // et connu reprend son ton, un libellé libre reste neutre.
+  const tone = resolved.source === "computed" ? FOLLOW_UP_TONES[followUp] : toneFor(resolved.label);
+
+  return (
+    <Tag tone={tone} dot={resolved.attention}>
+      {resolved.label}
+      {suffix !== undefined && suffix !== "" ? ` · ${suffix}` : ""}
+    </Tag>
+  );
+}
+
+function toneFor(label: string): Tone {
+  for (const status of Object.keys(FOLLOW_UP_LABELS) as FollowUpStatus[]) {
+    if (FOLLOW_UP_LABELS[status] === label) return FOLLOW_UP_TONES[status];
+  }
+  if (label === "Ne répond plus") return "pulse";
+  if (label === "Intéressé" || label === "RDV pris") return "flux";
+  if (label === "Perdu") return "mute";
+  return "sky";
+}
 
 export function FollowUpTag({
   status,

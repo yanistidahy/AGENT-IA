@@ -1,14 +1,14 @@
 "use client";
 
-import { EmptyState, FollowUpTag, LifecycleTag } from "@/components/ui/primitives";
+import { ContactStatusTag, EmptyState, LifecycleTag } from "@/components/ui/primitives";
 import type { ContactRecord } from "@/lib/api/contacts";
 import { daysSince } from "@/lib/domain/dates";
 import {
   describeReminder,
   emptyFilterMessage,
-  needsAttention,
   type ContactFilter,
 } from "@/lib/domain/follow-up";
+import { resolveStatus } from "@/lib/domain/status";
 import type { PilotageSettings } from "@/lib/domain/types";
 import type { ColumnFilter, ColumnSpec, FilterState } from "@/lib/domain/column-filters";
 import type { FacetValue } from "@/lib/domain/column-match";
@@ -147,7 +147,7 @@ export function ContactsTable({
             const idle = contact.idleDays;
             // Couleur pilotée par le statut, pas par un seuil recalculé ici :
             // une relance déjà programmée n'est pas une alerte. Voir needsAttention().
-            const stale = needsAttention(contact.followUp);
+            const stale = resolveStatus(contact).attention;
             const openDeals = contact.deals.filter((deal) => deal.status === "open").length;
             // Hiérarchie de la colonne « Prochaine relance » : le retard et le
             // jour même en rouge, l'à-venir en poids normal avec son délai.
@@ -197,8 +197,9 @@ export function ContactsTable({
                   )}
                 </td>
                 <td className="border-b border-line-2 px-3.5 py-3">
-                  <FollowUpTag
-                    status={contact.followUp}
+                  <ContactStatusTag
+                    status={contact.status}
+                    followUp={contact.followUp}
                     suffix={
                       contact.followUp === "silent" && idle !== null ? `${idle} j` : undefined
                     }

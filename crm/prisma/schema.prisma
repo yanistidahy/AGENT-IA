@@ -87,6 +87,15 @@ model Contact {
   /// et est appliquée dans lib/domain/lost.ts, quel que soit le cycle de vie.
   lostReason String @default("")
 
+  /// Statut de relance **saisi**, qui l'emporte sur le statut calculé quand il
+  /// est renseigné. Vide = on retombe sur le calcul (lib/domain/follow-up.ts),
+  /// ce qui laisse les fiches importées inchangées tant qu'on ne les touche pas.
+  /// Champ libre : la liste proposée n'est qu'une liste de suggestions.
+  status      String    @default("")
+  /// Quand le statut saisi a été posé. Sert à repérer un statut figé : une fiche
+  /// dont le statut n'a pas bougé alors qu'une interaction plus récente existe.
+  statusSetAt DateTime?
+
   /// Miroir normalisé des champs cherchables — voir Company.searchText.
   searchText String @default("")
 
@@ -186,6 +195,8 @@ model Message {
 }
 
 /// `type` : call | email | meeting | demo | note
+/// `outcome` : issue de l'échange, saisie au moment de consigner l'interaction.
+/// C'est elle qui propose le statut du contact — voir lib/domain/status.ts.
 model Activity {
   id        String   @id @default(cuid())
   type      String
@@ -194,6 +205,10 @@ model Activity {
   notes     String   @default("")
   duration  Int?
   createdAt DateTime @default(now())
+
+  /// Issue de l'échange, saisie au moment de consigner. Vide pour les
+  /// interactions antérieures à ce champ.
+  outcome String @default("")
 
   contactId String?
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)

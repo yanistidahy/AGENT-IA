@@ -329,3 +329,227 @@ export function groupByDay(items: readonly UpcomingItem[]): Array<[string, Upcom
   }
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
+
+/**
+ * Indicateurs de prospection, quand il n'y a pas encore d'affaire.
+ *
+ * Trois cartes de chiffre d'affaires à 0 € n'apprennent rien à quelqu'un qui
+ * n'a pas encore créé d'affaire : elles occupent la place de ce qu'il fait
+ * réellement, qui est de la prospection. Les cartes de revenu reviennent seules
+ * dès qu'une affaire existe — l'écran suit l'état, il ne demande pas de réglage.
+ */
+export interface ProspectingMetrics {
+  readonly byLifecycle: ReadonlyArray<{ label: string; value: number }>;
+  readonly contactedThisWeek: number;
+  /** Interactions ayant reçu une réponse, sur celles dont l'issue est connue. */
+  readonly responseRate: number | null;
+  readonly neverContacted: number;
+  readonly total: number;
+}
+
+export async function readProspecting(now: Date = new Date()): Promise<ProspectingMetrics> {
+  const weekAgo = addDays(startOfDay(now), -7);
+
+  const [byLifecycle, total, contactedThisWeek, neverContacted, outcomes] = await Promise.all([
+    prisma.contact.groupBy({ by: ["lifecycle"], _count: { _all: true } }),
+    prisma.contact.count(),
+    prisma.contact.count({ where: { activities: { some: { date: { gte: weekAgo } } } } }),
+    prisma.contact.count({ where: { lastContact: null, activities: { none: {} } } }),
+    prisma.activity.groupBy({
+      by: ["outcome"],
+      where: { NOT: { outcome: "" }, date: { gte: addDays(startOfDay(now), -30) } },
+      _count: { _all: true },
+    }),
+  ]);
+
+  // Le taux ne porte que sur les échanges dont l'issue est **connue** : compter
+  // les interactions sans issue comme des non-réponses gonflerait l'échec avec
+  // de la donnée manquante.
+  const known = outcomes.reduce((sum, row) => sum + row._count._all, 0);
+  const answered = outcomes
+    .filter((row) => row.outcome !== "no-answer")
+    .reduce((sum, row) => sum + row._count._all, 0);
+
+  return {
+    byLifecycle: byLifecycle
+      .map((row) => ({ label: row.lifecycle, value: row._count._all }))
+      .sort((a, b) => b.value - a.value),
+    contactedThisWeek,
+    responseRate: known === 0 ? null : Math.round((answered / known) * 100),
+    neverContacted,
+    total,
+  };
+}
+
+/**
+ * Bilan de la semaine : ce qui a été fait, et ce qui était prévu et ne l'a pas
+ * été. C'est la seule mesure qui dise si on a prospecté — un compteur
+ * d'interactions seul ne distingue pas l'activité de la discipline.
+ */
+export interface WeekReview {
+  readonly byType: ReadonlyArray<{ label: string; value: number }>;
+  readonly remindersHonoured: number;
+  readonly remindersMissed: number;
+}
+
+export async function readWeek(now: Date = new Date()): Promise<WeekReview> {
+  const from = addDays(startOfDay(now), -7);
+
+  const [byType, honoured, missed] = await Promise.all([
+    prisma.activity.groupBy({
+      by: ["type"],
+      where: { date: { gte: from } },
+      _count: { _all: true },
+    }),
+    // Relance honorée : une tâche automatique de relance terminée cette semaine.
+    prisma.task.count({ where: { auto: true, done: true, doneAt: { gte: from } } }),
+    // Manquée : encore ouverte, et son échéance est passée.
+    prisma.task.count({ where: { auto: true, done: false, due: { lt: startOfDay(now) } } }),
+  ]);
+
+  return {
+    byType: byType
+      .map((row) => ({ label: row.type, value: row._count._all }))
+      .sort((a, b) => b.value - a.value),
+    remindersHonoured: honoured,
+    remindersMissed: missed,
+  };
+}
+
+/**
+ * File d'action de l'accueil : ce qu'on peut traiter sans quitter la page.
+ *
+ * Remplace une liste d'alertes qui répétait dix fois la même phrase. Chaque
+ * ligne porte de quoi décider **et** de quoi agir : le nom, la société, le
+ * téléphone, le silence en jours, et le dernier mot échangé. Une ligne qui ne
+ * dit rien de spécifique à son enregistrement n'aide pas à choisir laquelle
+ * traiter en premier.
+ */
+export type ActionGroup = "reminders" | "tasks" | "deals";
+
+export interface ActionRow {
+  readonly id: string;
+  readonly group: ActionGroup;
+  readonly title: string;
+  readonly company: string | null;
+  readonly phone: string;
+  readonly idleDays: number | null;
+  /** Dernier mot échangé, tronqué : le contexte qui évite de rouvrir la fiche. */
+  readonly lastNote: string;
+  readonly due: Date | null;
+  /** Cible du tiroir et des actions en ligne. */
+  readonly contactId: string | null;
+  readonly taskId: string | null;
+  readonly dealId: string | null;
+}
+
+const NOTE_MAX = 90;
+
+function truncate(value: string): string {
+  const clean = value.replace(/\s+/g, " ").trim();
+  return clean.length <= NOTE_MAX ? clean : `${clean.slice(0, NOTE_MAX - 1)}…`;
+}
+
+export async function readActionQueue(
+  settings: PilotageSettings,
+  now: Date = new Date(),
+): Promise<readonly ActionRow[]> {
+  const today = startOfDay(now);
+
+  const [dueContacts, lateTasks, staleDeals] = await Promise.all([
+    prisma.contact.findMany({
+      where: {
+        nextReminder: { lte: today },
+        NOT: { lifecycle: LOST_LIFECYCLE },
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        lastContact: true,
+        nextReminder: true,
+        company: { select: { name: true } },
+        activities: { select: { notes: true }, orderBy: { date: "desc" }, take: 1 },
+      },
+      orderBy: { nextReminder: "asc" },
+    }),
+    prisma.task.findMany({
+      where: { done: false, due: { lt: today } },
+      select: {
+        id: true,
+        title: true,
+        due: true,
+        contactId: true,
+        dealId: true,
+        contact: { select: { phone: true, lastContact: true, company: { select: { name: true } } } },
+        deal: { select: { name: true } },
+      },
+      orderBy: { due: "asc" },
+    }),
+    prisma.deal.findMany({
+      where: {
+        status: "open",
+        OR: [
+          { lastActivityAt: { lt: addDays(today, -settings.staleDays) } },
+          { lastActivityAt: null },
+        ],
+      },
+      select: { id: true, name: true, lastActivityAt: true, company: { select: { name: true } } },
+      orderBy: { lastActivityAt: "asc" },
+    }),
+  ]);
+
+  const rows: ActionRow[] = [];
+
+  for (const contact of dueContacts) {
+    rows.push({
+      id: `reminder-${contact.id}`,
+      group: "reminders",
+      title: `${contact.firstName} ${contact.lastName}`.trim(),
+      company: contact.company?.name ?? null,
+      phone: contact.phone,
+      idleDays: contact.lastContact === null ? null : daysSince(contact.lastContact, now),
+      lastNote: truncate(contact.activities[0]?.notes ?? ""),
+      due: contact.nextReminder,
+      contactId: contact.id,
+      taskId: null,
+      dealId: null,
+    });
+  }
+
+  for (const task of lateTasks) {
+    rows.push({
+      id: `task-${task.id}`,
+      group: "tasks",
+      title: task.title,
+      company: task.contact?.company?.name ?? task.deal?.name ?? null,
+      phone: task.contact?.phone ?? "",
+      idleDays:
+        task.contact?.lastContact == null ? null : daysSince(task.contact.lastContact, now),
+      lastNote: "",
+      due: task.due,
+      contactId: task.contactId,
+      taskId: task.id,
+      dealId: task.dealId,
+    });
+  }
+
+  for (const deal of staleDeals) {
+    rows.push({
+      id: `deal-${deal.id}`,
+      group: "deals",
+      title: deal.name,
+      company: deal.company?.name ?? null,
+      phone: "",
+      idleDays: deal.lastActivityAt === null ? null : daysSince(deal.lastActivityAt, now),
+      lastNote: "",
+      due: null,
+      contactId: null,
+      taskId: null,
+      dealId: deal.id,
+    });
+  }
+
+  return rows;
+}

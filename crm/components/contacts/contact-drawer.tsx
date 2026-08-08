@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Drawer } from "@/components/ui/drawer";
 import { ExternalLink } from "@/components/ui/external-link";
-import { Eyebrow, FollowUpTag, LifecycleTag, StatusTag } from "@/components/ui/primitives";
+import { Eyebrow, ContactStatusTag, LifecycleTag, StatusTag } from "@/components/ui/primitives";
 import type { ContactRecord } from "@/lib/api/contacts";
 import { deleteContact } from "@/lib/client/crm-api";
 import { daysSince } from "@/lib/domain/dates";
@@ -19,6 +19,8 @@ interface ContactDrawerProps extends ContactFormOptions {
   readonly linkableDeals: readonly LinkableDeal[];
   readonly sequences: readonly SequenceOption[];
   readonly alerts: readonly Alert[];
+  /** Statuts déjà employés ailleurs, proposés avant la liste de départ. */
+  readonly statusSuggestions?: readonly string[];
   readonly onClose: () => void;
   readonly onChanged: () => void;
 }
@@ -28,6 +30,7 @@ export function ContactDrawer({
   linkableDeals,
   sequences,
   alerts,
+  statusSuggestions = [],
   onClose,
   onChanged,
   ...options
@@ -98,8 +101,9 @@ export function ContactDrawer({
         <>
           <div className="mb-5 flex flex-wrap gap-2">
             <LifecycleTag lifecycle={contact.lifecycle} />
-            <FollowUpTag
-              status={contact.followUp}
+            <ContactStatusTag
+              status={contact.status}
+              followUp={contact.followUp}
               suffix={
                 contact.followUp === "silent" && contact.idleDays !== null
                   ? `${contact.idleDays} j`
@@ -222,6 +226,8 @@ export function ContactDrawer({
             sequences={sequences}
             alerts={alerts}
             currentReminder={contact.nextReminder}
+            currentStatus={contact.status}
+            statusSuggestions={statusSuggestions}
             onChanged={onChanged}
           />
         </>

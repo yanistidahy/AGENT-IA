@@ -32,6 +32,8 @@ export interface RecordPanelProps {
    * l'utilisateur.
    */
   readonly currentReminder?: Date | null;
+  readonly currentStatus?: string;
+  readonly statusSuggestions?: readonly string[];
   /** Prévient le parent qu'une écriture a eu lieu, pour rafraîchir la vue. */
   readonly onChanged: () => void;
 }
@@ -45,6 +47,8 @@ export function RecordPanel({
   sequences,
   alerts,
   currentReminder = null,
+  currentStatus = "",
+  statusSuggestions = [],
   onChanged,
 }: RecordPanelProps) {
   const [activities, setActivities] = useState<readonly ActivityView[]>([]);
@@ -114,6 +118,8 @@ export function RecordPanel({
           owners={owners}
           defaultOwner={defaultOwner}
           currentReminder={currentReminder}
+          currentStatus={currentStatus}
+          statusSuggestions={statusSuggestions}
           onCancel={() => setPanel("none")}
           onLogged={(summary) => afterWrite(summary)}
         />

@@ -148,6 +148,7 @@ export async function logActivity(input: CreateActivityInput): Promise<LogActivi
         owner: input.owner,
         notes: input.notes ?? "",
         duration: input.duration ?? null,
+        outcome: input.outcome ?? "",
         contactId,
         companyId,
         dealId,
@@ -178,10 +179,45 @@ export async function logActivity(input: CreateActivityInput): Promise<LogActivi
       // Relance proposée par le formulaire et acceptée : la date est posée sur
       // la fiche, et la tâche miroir suit — même chemin que si l'utilisateur
       // l'avait saisie à la main dans le tiroir.
+      /**
+       * Statut, cycle de vie et motif, écrits **dans la même transaction** que
+       * l'interaction.
+       *
+       * C'est tout l'objet du changement : le moment où l'on apprend quelque
+       * chose est celui où l'on raccroche. Un second passage sur la fiche serait
+       * un second passage à oublier.
+       */
+      const contactData: Prisma.ContactUpdateInput = {};
+
+      if (input.status !== undefined) {
+        contactData.status = input.status;
+        // Vider le statut, c'est rendre la main au calcul : la date de pose n'a
+        // alors plus de sens et doit disparaître avec lui.
+        contactData.statusSetAt = input.status === "" ? null : new Date();
+      }
+      if (input.lifecycle !== undefined) contactData.lifecycle = input.lifecycle;
+      if (input.lostReason !== undefined) contactData.lostReason = input.lostReason;
+
+      if (Object.keys(contactData).length > 0) {
+        await tx.contact.update({ where: { id: contactId }, data: contactData });
+      }
+
+      // `setReminder: null` efface la relance — c'est ce que produit l'issue
+      // « pas intéressé », qui referme aussi la tâche miroir par `syncReminderTask`.
+      if (input.setReminder === null) {
+        await tx.contact.update({ where: { id: contactId }, data: { nextReminder: null } });
+        reminderTask = await syncReminderTask(tx, {
+          contactId,
+          contactName: `${current?.firstName ?? ""} ${current?.lastName ?? ""}`.trim(),
+          owner: await ownerOrDefault(tx, current?.owner ?? ""),
+          reminder: null,
+        });
+      }
+
       // L'opposition au démarchage prime sur la saisie : la relance n'est pas
       // posée, et l'interaction est consignée quand même — ce qui s'est dit doit
       // rester dans l'historique.
-      if (input.setReminder !== undefined && current !== null && !optedOut(current)) {
+      if (input.setReminder !== undefined && input.setReminder !== null && current !== null && !optedOut(current)) {
         await tx.contact.update({
           where: { id: contactId },
           data: { nextReminder: input.setReminder },

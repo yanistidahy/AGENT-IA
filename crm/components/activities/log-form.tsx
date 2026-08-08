@@ -9,6 +9,9 @@ import {
 } from "@/lib/domain/automation";
 import { requestJson } from "@/lib/client/http";
 import { toActivityType } from "@/lib/domain/guards";
+import { proposalFor, type Outcome } from "@/lib/domain/status";
+import { OutcomeFields } from "./outcome-fields";
+import type { ComboboxValue } from "@/components/ui/combobox";
 import { ACTIVITY_LABELS, ACTIVITY_TYPES, type ActivityType } from "@/lib/domain/types";
 import type { RecordLink } from "./record-link";
 
@@ -31,6 +34,10 @@ interface LogFormProps {
   readonly owners: readonly string[];
   readonly defaultOwner: string;
   readonly currentReminder?: Date | null;
+  /** Statut actuellement saisi sur la fiche, pour le pré-remplir. */
+  readonly currentStatus?: string;
+  /** Statuts déjà employés ailleurs, proposés avant la liste de départ. */
+  readonly statusSuggestions?: readonly string[];
   readonly onCancel: () => void;
   /** Reçoit le résumé de ce qui a été créé, pour que rien ne soit muet. */
   readonly onLogged: (summary: string) => void;
@@ -58,6 +65,8 @@ export function LogForm({
   owners,
   defaultOwner,
   currentReminder = null,
+  currentStatus = "",
+  statusSuggestions = [],
   onCancel,
   onLogged,
 }: LogFormProps) {
@@ -70,6 +79,24 @@ export function LogForm({
   const [date, setDate] = useState(isoDay());
   const [remind, setRemind] = useState(true);
   const [reminderDate, setReminderDate] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<Outcome | "">("");
+  const [status, setStatus] = useState<ComboboxValue>(
+    currentStatus === "" ? { kind: "none" } : { kind: "existing", id: currentStatus },
+  );
+  const [lostReason, setLostReason] = useState("");
+
+  // L'issue choisie **propose** : chaque champ reste modifiable ensuite. C'est
+  // ce qui distingue un pré-remplissage utile d'une décision prise à sa place.
+  const outcomePlan = outcome === "" ? null : proposalFor(outcome);
+
+  const chooseOutcome = (value: Outcome) => {
+    setOutcome(value);
+    const next = proposalFor(value);
+    setStatus({ kind: "existing", id: next.status });
+    if (next.clearReminder) setRemind(false);
+    if (next.focusReminder) setRemind(true);
+    if (!next.needsLostReason) setLostReason("");
+  };
 
   // Les délais vivent dans les réglages : les recopier ici les figerait.
   useEffect(() => {
@@ -114,11 +141,27 @@ export function LogForm({
             priority: text("nextPriority"),
           };
 
+    if (outcome === "") {
+      setError("Choisissez le résultat de l'échange.");
+      return;
+    }
+
     setBusy(true);
     setError(null);
     setFields({});
 
-    const setReminder = remind && shownReminder !== null ? shownReminder : null;
+    // `null` **efface** la relance ; `undefined` la laisse telle quelle. La
+    // distinction compte : « pas intéressé » doit retirer une échéance déjà
+    // posée, alors qu'une simple note ne doit toucher à rien.
+    const setReminder =
+      remind && shownReminder !== null
+        ? shownReminder
+        : outcomePlan?.clearReminder === true
+          ? null
+          : undefined;
+
+    const statusValue =
+      status.kind === "existing" ? status.id : status.kind === "new" ? status.name : "";
 
     const result = await logActivity({
       ...link,
@@ -129,13 +172,18 @@ export function LogForm({
       duration: duration === "" ? null : Number(duration),
       nextAction,
       setReminder,
+      outcome,
+      status: statusValue,
+      lifecycle: outcomePlan?.lifecycle ?? undefined,
+      lostReason: outcomePlan?.needsLostReason === true ? lostReason : undefined,
     });
 
     setBusy(false);
     if (result.ok) {
       const created = [
         nextAction === null ? null : `la tâche « ${nextAction.title} »`,
-        setReminder === null
+        statusValue === "" ? null : `le statut « ${statusValue} »`,
+        setReminder === null || setReminder === undefined
           ? null
           : `une relance le ${new Date(`${setReminder}T00:00:00`).toLocaleDateString("fr-FR")}`,
       ].filter((part): part is string => part !== null);
@@ -231,7 +279,20 @@ export function LogForm({
         </p>
       </fieldset>
 
-      {shownReminder !== null && (
+      <OutcomeFields
+        outcome={outcome}
+        onOutcome={chooseOutcome}
+        status={status}
+        onStatus={setStatus}
+        lostReason={lostReason}
+        onLostReason={setLostReason}
+        needsLostReason={outcomePlan?.needsLostReason === true}
+        lifecycle={outcomePlan?.lifecycle ?? null}
+        suggestions={statusSuggestions}
+        error={fields.outcome}
+      />
+
+      {shownReminder !== null && outcomePlan?.clearReminder !== true && (
         <fieldset className="grid gap-2.5 rounded-control border border-line bg-surface px-3 py-2.5">
           <legend className="px-1 font-mono text-[10px] tracking-[0.1em] text-muted uppercase">
             Relance du contact

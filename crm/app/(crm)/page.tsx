@@ -5,6 +5,10 @@ import { DashboardHeader } from "@/components/dashboard/header";
 import { StaleContacts, toStaleSort } from "@/components/dashboard/stale-contacts";
 import { Upcoming } from "@/components/dashboard/upcoming";
 import { readAlerts } from "@/lib/api/alerts";
+import { readActionQueue, readProspecting, readWeek } from "@/lib/api/dashboard";
+import { ActionQueue } from "@/components/dashboard/action-queue";
+import { ProspectingCards, WeekCard } from "@/components/dashboard/prospecting";
+import { listOwners } from "@/lib/api/reference";
 import { staleDealsWithoutTask } from "@/lib/api/automation";
 import { WakeStaleDeals } from "@/components/activities/wake-stale";
 import { readDashboard } from "@/lib/api/dashboard";
@@ -83,6 +87,17 @@ export default async function HomePage({
 
   const [data, alerts] = await Promise.all([readDashboard(renderedAt), readAlerts(renderedAt)]);
 
+  const [actions, prospecting, week, owners] = await Promise.all([
+    readActionQueue(data.settings, renderedAt),
+    readProspecting(renderedAt),
+    readWeek(renderedAt),
+    listOwners(),
+  ]);
+
+  // L'écran suit l'état de la base : sans affaire, les cartes de revenu ne
+  // disent rien qu'on ne sache déjà, et cèdent la place à la prospection.
+  const hasDeals = data.openCount > 0 || data.monthRevenue > 0;
+
   // Affaires en sommeil qui n'ont pas encore de tâche de réveil ouverte. Rien
   // n'est écrit ici : on ne fait que compter ce que l'action groupée créerait.
   const wakeable = await staleDealsWithoutTask(
@@ -91,6 +106,9 @@ export default async function HomePage({
 
   return (
     <Shell deploy={deploy} renderedAt={renderedAt}>
+      {!hasDeals && <ProspectingCards metrics={prospecting} />}
+
+      {hasDeals && (
       <DashboardHeader
         now={renderedAt}
         pipelineValue={data.pipelineValue}
@@ -99,10 +117,19 @@ export default async function HomePage({
         objective={data.settings.objectifMensuel}
         openCount={data.openCount}
       />
+      )}
 
-      <Block title="À traiter maintenant" count={alerts.length}>
+      <Block title="À traiter maintenant" count={actions.length}>
         <WakeStaleDeals dealIds={wakeable} />
-        <AlertList alerts={alerts} />
+        <ActionQueue
+          rows={actions}
+          owners={owners}
+          defaultOwner={owners[0] ?? ""}
+        />
+      </Block>
+
+      <Block title="Ma semaine" hint="le second chiffre est celui qui dit si j'ai prospecté">
+        <WeekCard week={week} />
       </Block>
 
       <Block
@@ -117,9 +144,12 @@ export default async function HomePage({
           <Upcoming items={data.upcoming} />
         </Block>
 
-        <Block title="Affaires en sommeil" count={data.risks.length}>
-          <RiskDeals deals={data.risks} />
-        </Block>
+        {/* Les affaires à risque n'ont de sens que s'il y a des affaires. */}
+        {hasDeals && (
+          <Block title="Affaires en sommeil" count={data.risks.length}>
+            <RiskDeals deals={data.risks} />
+          </Block>
+        )}
       </div>
 
       <Block title="Activité récente">

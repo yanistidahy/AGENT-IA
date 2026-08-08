@@ -37,9 +37,15 @@ interface LifecyclePlan {
   }>;
 }
 
+interface NamePlan {
+  total: number;
+  rows: Array<{ before: string; kept: string; moved: string }>;
+}
+
 interface Plans {
   search: SearchPlan;
   lifecycles: LifecyclePlan;
+  names: NamePlan;
 }
 
 function isPlans(value: unknown): value is Plans {
@@ -69,7 +75,11 @@ export function MaintenancePanel() {
     else setError(result.message);
   };
 
-  const apply = async (operation: "search" | "lifecycles", expected: number, what: string) => {
+  const apply = async (
+    operation: "search" | "lifecycles" | "names",
+    expected: number,
+    what: string,
+  ) => {
     if (!window.confirm(`${what}\n\nCette action écrit en base. Continuer ?`)) return;
 
     setBusy(true);
@@ -143,6 +153,26 @@ export function MaintenancePanel() {
             {plans.search.sample.map((row) => (
               <li key={row.label} className="truncate">
                 {row.label} : « {row.before || "vide"} » → « {row.after} »
+              </li>
+            ))}
+          </Block>
+
+          <Block
+            title="Noms débordés"
+            summary={`${plans.names.total} nom(s) contenant une note avalée à l'import.`}
+            hint="Le débordement part dans les Notes, ajouté à ce qui s'y trouve déjà — jamais substitué. Deux champs touchés : le nom concerné et les notes."
+            disabled={busy || plans.names.total === 0}
+            onApply={() =>
+              void apply(
+                "names",
+                plans.names.total,
+                `Déplacer le débordement de ${plans.names.total} nom(s) vers les Notes.`,
+              )
+            }
+          >
+            {plans.names.rows.map((row) => (
+              <li key={row.before} className="truncate">
+                « {row.before} » → nom « {row.kept} » + notes « {row.moved} »
               </li>
             ))}
           </Block>

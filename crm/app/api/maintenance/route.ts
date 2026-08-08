@@ -5,7 +5,9 @@ import {
   applySearchBackfill,
   lifecycleSnapshot,
   planLifecycleFix,
+  planNameFix,
   planSearchBackfill,
+  applyNameFix,
 } from "@/lib/api/maintenance";
 import { STATUS_CORRECTIONS } from "@/scripts/corrections-2026-08";
 import { z } from "zod";
@@ -23,7 +25,7 @@ export const dynamic = "force-dynamic";
  * `GET` simule et n'écrit rien. `POST` écrit, et exige de nommer l'opération :
  * une requête vide ne peut pas déclencher une écriture par accident.
  */
-const OPERATIONS = ["search", "lifecycles"] as const;
+const OPERATIONS = ["search", "lifecycles", "names"] as const;
 
 const applySchema = z.object({
   operation: z.enum(OPERATIONS, { error: "Opération inconnue" }),
@@ -33,9 +35,10 @@ const applySchema = z.object({
 
 export async function GET() {
   try {
-    const [search, lifecycles] = await Promise.all([
+    const [search, lifecycles, names] = await Promise.all([
       planSearchBackfill(),
       planLifecycleFix(STATUS_CORRECTIONS),
+      planNameFix(),
     ]);
 
     return jsonOk({
@@ -48,6 +51,14 @@ export async function GET() {
           label: row.label,
           before: row.before,
           after: row.after,
+        })),
+      },
+      names: {
+        total: names.length,
+        rows: names.map((row) => ({
+          before: row.before,
+          kept: row.kept,
+          moved: row.moved,
         })),
       },
       lifecycles: {
@@ -89,6 +100,16 @@ export async function POST(request: Request) {
         );
       }
       return jsonOk({ applied: await applySearchBackfill(plan) });
+    }
+
+    if (parsed.data.operation === "names") {
+      const plan = await planNameFix();
+      if (plan.length !== parsed.data.expected) {
+        return badRequest(
+          `La base a changé depuis la simulation (${plan.length} lignes au lieu de ${parsed.data.expected}). Relancez la simulation.`,
+        );
+      }
+      return jsonOk({ applied: await applyNameFix(plan) });
     }
 
     const plan = await planLifecycleFix(STATUS_CORRECTIONS);

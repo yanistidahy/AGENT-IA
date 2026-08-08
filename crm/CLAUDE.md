@@ -262,6 +262,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 10 | Liens, filtres de colonne, étiquettes, prospects perdus | **livré, à valider** |
 | 11 | Correction des statuts depuis la feuille + import en mise à jour | **livré, à valider** |
 | 12 | Rattrapage `searchText`, corrections depuis `/reglages`, parité des filtres, `/clients` | **livré, à valider** |
+| 13 | Statut saisi à la consignation, accueil actionnable, noms débordés | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -762,7 +763,8 @@ serait invérifiable hors production — exactement la façon dont un doublon
 La table des sociétés se compte en dizaines ; la lire entièrement coûte moins
 qu'une règle qu'on ne peut pas tester. « zénith labs » retrouve donc « Zenith Labs ».
 
-**Le statut de relance est dérivé, jamais saisi.** Cinq états calculés depuis
+**Le statut de relance est dérivé, jamais saisi.** *(Révisé au jalon 13 : un
+statut saisi peut désormais l'emporter. Le calcul reste le repli.)* Cinq états calculés depuis
 `lastContact`, `nextReminder` et le nombre d'interactions : jamais contacté, à
 relancer, relance prévue, en attente, sans nouvelles. Aucun champ manuel à tenir
 à jour, donc rien qui puisse mentir parce qu'on a oublié de le changer. Le seuil
@@ -1491,6 +1493,116 @@ L'évaluateur du test de parité n'est pas PostgreSQL. Il reproduit ce que Prism
 fait des formes que `columnsWhere` produit, y compris `IN` avec `null` traduit en
 `IS NULL` ; il ne remplace pas une exécution réelle, il rend la divergence
 détectable sans base.
+
+## Jalon 13 — le statut change au moment où l'on apprend quelque chose
+
+### La décision de conception qui change
+
+Le statut de relance était **entièrement dérivé** depuis le jalon 6 : calculé
+depuis les dates, donc incapable de mentir — mais incapable aussi de dire ce
+qu'on vient d'apprendre. Or le moment où l'on apprend quelque chose est celui où
+l'on raccroche, pas un second passage sur la fiche qu'on oublierait.
+
+Le champ est donc **stocké et facultatif** : `Contact.status` l'emporte quand il
+est renseigné, `followUpStatus()` reprend la main quand il ne l'est pas. Les
+fiches jamais touchées gardent exactement le comportement d'avant — ce
+changement n'invente aucune information sur les contacts déjà en base. Vérifié :
+147 contacts importés, 0 statut saisi, tous calculés.
+
+`resolveStatus()` est la **source unique** de ce qui s'affiche, et
+`ContactStatusTag` le seul composant qui le rend — tableau, tiroir, accueil,
+portefeuille. Un libellé libre reste neutre : lui inventer une urgence à partir
+d'un mot qu'on ne comprend pas serait pire que de n'en signaler aucune.
+
+### Le formulaire d'interaction est devenu l'endroit où le statut change
+
+`Résultat de l'échange` est obligatoire à l'écran (facultatif au schéma : un
+import ou un agent n'en porte pas, et refuser ces écritures casserait l'import
+pour un champ d'ergonomie). Il **propose** le reste — `proposalFor()`, pure et
+testée :
+
+| Issue | Statut proposé | Effet |
+|---|---|---|
+| Pas de réponse | Ne répond plus | — |
+| Répondu — intéressé | Intéressé | cycle → Prospect |
+| Répondu — à relancer plus tard | Relance prévue | curseur sur l'échéance |
+| Répondu — pas intéressé | Perdu | cycle → Perdu, motif demandé, relance effacée |
+| RDV obtenu | RDV pris | cycle → Prospect |
+| Mauvais interlocuteur | Contacté — en attente | — |
+
+Tout reste modifiable avant l'enregistrement, et **tout part dans la même
+transaction** que l'interaction : interaction, statut, cycle de vie, motif,
+relance et tâche miroir. Un écran, un moment, aucune seconde étape à oublier.
+
+Deux garanties pour que le champ ne pourrisse pas : il est rafraîchi par l'acte
+de travailler, et la puce **« Statut figé »** rassemble les fiches dont le statut
+saisi est antérieur à leur dernière interaction.
+
+### `/accueil` suit l'état de la base
+
+Trois cartes de revenu à 0 € n'apprennent rien à quelqu'un qui n'a pas encore
+créé d'affaire : elles occupent la place de ce qu'il fait réellement. Sans
+affaire, elles cèdent la place aux indicateurs de prospection — contacts par
+cycle, contactés cette semaine, taux de réponse, jamais contactés — et le bloc
+« Affaires en sommeil » disparaît. Le revenu revient seul dès la première
+affaire : l'écran suit l'état, il ne demande pas de réglage.
+
+Le taux de réponse ne porte que sur les échanges dont l'**issue est connue** :
+compter les interactions sans issue comme des non-réponses gonflerait l'échec
+avec de la donnée manquante.
+
+« À traiter maintenant » n'est plus une liste d'alertes répétant dix fois la même
+phrase. Chaque ligne porte ce qui lui est propre — nom, société, **téléphone
+cliquable**, jours de silence, dernier mot échangé tronqué — sous trois en-têtes
+(Relances dues · Tâches en retard · Affaires bloquées), un groupe vide
+disparaissant. Et trois actions en ligne : consigner un appel (le formulaire
+ci-dessus, sans quitter la page), reporter à +3 j, marquer fait.
+
+« Ma semaine » ajoute le seul chiffre qui dise si l'on a prospecté : relances
+honorées contre relances en retard. Un compteur d'interactions seul ne distingue
+pas l'activité de la discipline.
+
+### Noms débordés à l'import
+
+« Alexandra herrau, mais possible numéro de son équipe » est un nom *et* un
+commentaire dans la même cellule. Deux signes suffisent à les repérer : une
+longueur qu'aucun patronyme n'atteint, ou une virgule. Ils rejoignent la puce
+« Contacts incomplets », et une simulation de `/reglages` propose de déplacer le
+débordement dans les Notes — **ajouté** à ce qui s'y trouve déjà, jamais
+substitué.
+
+### Jalon 13 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, 147 contacts à l'image de la production :
+
+- **statut calculé préservé** : 0 statut saisi sur les 147 fiches importées ;
+- issue `à relancer plus tard` → statut « Relance prévue », `statusSetAt` posé,
+  relance au 20/08, tâche miroir « Relancer Gregoire Rolland » — **une écriture** ;
+- issue `pas intéressé` → cycle `Perdu`, motif `Budget`, relance effacée,
+  **0 tâche de relance ouverte** ;
+- l'issue est stockée sur l'interaction (`later`, `not-interested` en base) ;
+- puce « Statut figé » → la fiche dont le statut précède la dernière interaction ;
+- `/accueil` sans affaire → cartes de prospection, « Ma semaine », « Relances
+  dues », « Consigner un appel », `href="tel:0611223344"`, « j sans contact »,
+  **aucune carte de revenu** ;
+- noms débordés → 27 fiches dans « incomplets », simulation de 2 coupes,
+  application → nom « Alexandra herrau » + notes « mais possible numéro de son
+  équipe », rejoué → 0 ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (413 tests) verts.
+
+### Jalon 13 — ce qui ne l'est pas
+
+**Les blocs de l'accueil ne sont pas repliables et ne mémorisent pas leur état.**
+C'était demandé ; ce n'est pas fait. Le reste du bloc 2 l'est.
+
+Les outils du conseil lisent `ContactRecord`, qui porte désormais `status` : ils
+voient donc le statut saisi. Mais aucun **prompt** ne leur explique la différence
+entre statut saisi et calculé — un agent pourrait le mentionner sans savoir ce
+qu'il désigne.
+
+La file d'action applique ses écritures dans la requête HTTP, sans file d'attente
+ni reprise : une action qui échoue à mi-parcours laisse la page à rafraîchir à la
+main.
 
 ### Journal des incidents
 
