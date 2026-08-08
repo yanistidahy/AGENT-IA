@@ -15,6 +15,8 @@ const contact: ContactRecord = {
   lifecycle: "Client",
   source: "Recommandation",
   owner: "Yanis",
+  tag: "",
+  lostReason: "",
   notes: "Premier appel\nÀ relancer en mars",
   createdAt: new Date("2026-01-05T10:00:00Z"),
   lastContact: new Date("2026-02-11T09:00:00Z"),

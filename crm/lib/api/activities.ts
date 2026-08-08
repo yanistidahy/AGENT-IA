@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { optedOut } from "../domain/lost";
 import { prisma } from "../db";
 import { toActivityType } from "../domain/guards";
 import type { ActivityType } from "../domain/types";
@@ -159,7 +160,13 @@ export async function logActivity(input: CreateActivityInput): Promise<LogActivi
     if (contactId !== null) {
       const current = await tx.contact.findUnique({
         where: { id: contactId },
-        select: { lastContact: true, firstName: true, lastName: true, owner: true },
+        select: {
+          lastContact: true,
+          firstName: true,
+          lastName: true,
+          owner: true,
+          lostReason: true,
+        },
       });
       if (current !== null && (current.lastContact === null || current.lastContact < input.date)) {
         await tx.contact.update({
@@ -171,7 +178,10 @@ export async function logActivity(input: CreateActivityInput): Promise<LogActivi
       // Relance proposée par le formulaire et acceptée : la date est posée sur
       // la fiche, et la tâche miroir suit — même chemin que si l'utilisateur
       // l'avait saisie à la main dans le tiroir.
-      if (input.setReminder !== undefined && current !== null) {
+      // L'opposition au démarchage prime sur la saisie : la relance n'est pas
+      // posée, et l'interaction est consignée quand même — ce qui s'est dit doit
+      // rester dans l'historique.
+      if (input.setReminder !== undefined && current !== null && !optedOut(current)) {
         await tx.contact.update({
           where: { id: contactId },
           data: { nextReminder: input.setReminder },

@@ -259,6 +259,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 7 | Conseil remis à jour + cohérence entre écrans | **livré, à valider** |
 | 8 | Formulaire d'affaire réparé + couche d'automatisation | **livré, à valider** |
 | 9 | **Verrou d'espace de travail** — mot de passe partagé, sessions signées, sonde muette | **livré, à valider** |
+| 10 | Liens, filtres de colonne, étiquettes, prospects perdus | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -473,10 +474,9 @@ non committées) :
 
 ### Jalon 3 — ce qui ne l'est pas
 
-**La recherche est insensible à la casse, pas aux accents.** Chercher « zenith »
-ne remonte pas « Zénith Labs ». `mode: "insensitive"` de PostgreSQL couvre la
-casse seule ; l'insensibilité aux accents demanderait l'extension `unaccent` et
-une migration. À arbitrer si le besoin se confirme à l'usage.
+~~**La recherche est insensible à la casse, pas aux accents.**~~ **Corrigé au
+jalon 10** : une colonne miroir `searchText` porte la version normalisée des
+champs cherchables. « zenith » trouve « Zénith Labs ».
 
 ---
 
@@ -1157,6 +1157,131 @@ qui n'appartient pas au code.
 
 Aucun chiffrement au repos, aucune journalisation des accès, aucune limitation de
 débit sur les routes de lecture une fois la session ouverte.
+
+## Jalon 10 — liens, filtres de colonne, étiquettes, prospects perdus
+
+Premier jalon écrit après un usage réel : 150 prospects importés, 133 sociétés.
+
+### Les liens menaient dans le vide
+
+Une valeur importée d'un tableur s'écrit `linkedin.com/in/pascal-charpentier`,
+sans schéma. Dans un `href`, un navigateur la lit comme un chemin **relatif** :
+le lien menait à `https://mon-crm/linkedin.com/in/…`, une 404.
+
+Corrigé **au rendu**, jamais en base (`lib/domain/links.ts`, `ExternalLink`).
+Réécrire la donnée stockée rendrait l'export infidèle à la source : un
+aller-retour tableur → CRM → tableur modifierait le fichier de l'utilisateur sans
+qu'il l'ait demandé. Les liens s'ouvrent dans un nouvel onglet avec
+`rel="noopener noreferrer"`. Un `javascript:` n'est jamais rendu cliquable.
+
+### La recherche ignore enfin les accents
+
+Deux chemins étaient possibles. L'extension `unaccent` fait le travail en SQL
+mais dépend d'un privilège qu'un service de base géré peut refuser — et une
+recherche qui marche en développement et pas en production est pire qu'une
+recherche limitée. Retenu : une **colonne miroir** `searchText` (contacts,
+sociétés, affaires), écrite par l'application à chaque écriture, avec la règle
+dans `lib/domain/text.ts`, testable sans PostgreSQL.
+
+La migration remplit la colonne pour les lignes existantes avec `translate()` —
+pur SQL, aucun privilège particulier. Sans ce bloc, les 150 fiches déjà
+importées seraient restées introuvables jusqu'à leur prochaine modification.
+
+### Filtres de colonne, façon tableur
+
+Une seule mécanique pour tous les tableaux : `lib/domain/column-filters.ts`
+(modèle et URL), `lib/domain/column-match.ts` (application en mémoire),
+`lib/api/column-filters.ts` (traduction Prisma), `components/table/`
+(le menu). Chaque tableau déclare ses colonnes dans un `*-columns.ts` ; une
+colonne ajoutée là apparaît partout.
+
+- **tout l'état vit dans l'URL** — une vue filtrée se met en favori, se partage,
+  survit à un rechargement. C'est aussi ce qui permet de filtrer **en base** :
+  la page est un composant serveur qui lit l'URL et interroge PostgreSQL ;
+- **valeurs multiples** par colonne, **ET** entre colonnes ;
+- **les valeurs distinctes sont comptées côté serveur**, sur une projection
+  légère (huit petits champs), jamais en chargeant la table dans le navigateur ;
+- **une colonne ne compte pas son propre filtre** — sinon le menu n'afficherait
+  que les valeurs déjà cochées et il deviendrait impossible d'en ajouter une ;
+- icône pleine quand un filtre est posé, bandeau « 54 sur 138 » avec
+  réinitialisation.
+
+Les paramètres se **répètent** (`f.lifecycle=Lead&f.lifecycle=Prospect`) plutôt
+que d'être séparés par des virgules : un nom de société contient parfois une
+virgule.
+
+**Deux chemins pour une même règle** — SQL pour les lignes, mémoire pour les
+comptes — ce qui est exactement le genre de duplication qui finit par diverger.
+C'est assumé et documenté ; les colonnes dérivées (agrégats de `/societes`) sont
+marquées `derived` et appliquées après lecture, sur les valeurs affichées.
+
+### Étiquettes
+
+Champ libre `tag` sur le contact, combobox qui propose les étiquettes déjà en
+usage puis une liste de départ, création à la volée. Pas de table dédiée : une
+table imposerait une jointure et un cycle de vie propre pour une valeur créée au
+fil de l'eau. La contrepartie — renommer est un `updateMany`, supprimer une
+remise à vide — est payée dans `/reglages`, où les deux actions annoncent le
+nombre de fiches concernées **avant** d'agir.
+
+L'étiquette n'entre pas dans `searchText` : chercher « devis » ne doit pas
+remonter tous les « Devis envoyé ».
+
+### `Perdu` : un statut, pas une suppression
+
+Supprimer un prospect qui a dit non détruirait l'historique, fausserait le taux
+de conversion et le ferait re-prospecter dans un an. C'est donc un cycle de vie,
+**exclu par défaut** de `/contacts`, des puces de relance, du tableau
+« dernière touche », des « Relances à venir » et du moteur d'alertes — et
+accessible par sa propre puce, avec son historique intact.
+
+Passer une fiche en `Perdu` efface sa relance et referme la tâche miroir :
+laisser une échéance sur quelqu'un qui a refusé, c'est se rappeler de rappeler
+quelqu'un qui a demandé qu'on ne le rappelle pas.
+
+**`Ne souhaite plus être contacté` est une opposition ferme**, appliquée dans le
+domaine (`lib/domain/lost.ts`) et non dans l'interface : un bouton grisé n'est
+pas une garantie, l'API est appelée par les agents du conseil et par l'import,
+qui ne voient aucun bouton. `runSequence()` refuse en 409, `proposedReminder()`
+renvoie `null`, `logActivity()` consigne l'interaction sans poser la relance, et
+l'outil `set_reminder` du conseil refuse. `/rapports` gagne la répartition des
+motifs de perte.
+
+### Jalon 10 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 et le serveur standalone :
+
+- **le remplissage de migration** rejoué sur une base au schéma précédent
+  contenant déjà des données : « Zénith Labs » devient `zenith labs …` ;
+- « cosmetique », « cosmétique » et « COSMETIQUE » ramènent la même société ;
+  un contact se trouve par le nom de sa société ;
+- étiquette posée → visible dans `/api/tags`, filtrable, proposée ensuite ;
+- « Contacts incomplets » → les fiches sans email **ni** téléphone et celles
+  marquées « (à compléter) » ;
+- `Perdu` → sort de « À relancer », relance effacée, historique intact, visible
+  par sa puce ; `lifecycle=all` en montre 18, la vue par défaut 17 ;
+- opposition ferme → séquence refusée en 409 avec le message du domaine, témoin
+  sur un autre contact → 3 tâches créées ; interaction consignée sans relance ;
+- filtres de colonne : `f.owner=Yanis` → « 10 sur 17 » ; en ajoutant
+  `f.lifecycle=Lead` → « 2 sur 17 » (ET entre colonnes) ;
+- lien LinkedIn rendu en `https://…`, `target="_blank"`, `rel="noopener noreferrer"` ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (368 tests) verts.
+
+### Jalon 10 — ce qui ne l'est pas
+
+**`/clients` n'a pas de filtres de colonne.** Les trois autres tableaux
+(`/contacts`, `/societes`, `/affaires`) les ont ; le portefeuille est resté en
+dehors, faute de temps sur ce jalon. La mécanique est générique : il lui manque
+un `client-columns.ts` et le branchement de sa page.
+
+**`/societes` est passé d'une grille de cartes à un tableau.** Des colonnes
+triables et filtrables l'imposaient. La lecture « trois nombres d'un coup d'œil »
+du jalon 3 est perdue au profit de la comparaison ligne à ligne — c'est le bon
+compromis à 133 sociétés, ce ne l'était pas à 12.
+
+Les menus de colonne sont des composants client : leur comportement au clavier
+n'a pas été vérifié par un navigateur piloté, seulement leur effet sur les
+requêtes et sur le rendu serveur.
 
 ### Journal des incidents
 

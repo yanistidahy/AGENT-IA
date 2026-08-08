@@ -1,6 +1,8 @@
 import { DealsView } from "@/components/deals/deals-view";
 import { parseDealsQuery } from "@/lib/api/deal-schemas";
-import { countDealsByStatus, getDeal, listDeals } from "@/lib/api/deals";
+import { countDealsByStatus, dealFacets, getDeal, listDeals } from "@/lib/api/deals";
+import { DEAL_FILTER_COLUMNS } from "@/lib/api/deal-columns";
+import { parseFilters } from "@/lib/domain/column-filters";
 import { readAlerts } from "@/lib/api/alerts";
 import { listOffers, listOwners, listStages, getPilotage } from "@/lib/api/reference";
 import { listSequences } from "@/lib/api/sequences";
@@ -29,6 +31,10 @@ export default async function AffairesPage({
   const parsed = parseDealsQuery(flat);
   const query = parsed.success ? parsed.data : {};
 
+  // Paramètres bruts : les filtres de colonne se répètent (`f.owner=…&f.owner=…`).
+  const filters = parseFilters(raw, DEAL_FILTER_COLUMNS);
+  const now = new Date();
+
   const [
     deals,
     stages,
@@ -40,8 +46,9 @@ export default async function AffairesPage({
     sequences,
     alerts,
     statusCounts,
+    facetData,
   ] = await Promise.all([
-    listDeals({ status: "open", ...query }),
+    listDeals({ status: "open", ...query }, filters, now),
     listStages(),
     listOwners(),
     listOffers(),
@@ -54,6 +61,7 @@ export default async function AffairesPage({
     listSequences(),
     readAlerts(),
     countDealsByStatus(),
+    dealFacets({ status: "open", ...query }, filters, now),
   ]);
 
   const ficheId = flat.fiche;
@@ -75,6 +83,8 @@ export default async function AffairesPage({
       alerts={alerts}
       focused={focused}
       statusCounts={statusCounts}
+      facets={facetData.facets}
+      totalRows={facetData.total}
     />
   );
 }

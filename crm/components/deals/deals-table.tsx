@@ -6,6 +6,10 @@ import { daysSince } from "@/lib/domain/dates";
 import { dealHeat, weightedValue } from "@/lib/domain/pipeline";
 import type { PilotageSettings } from "@/lib/domain/types";
 import { formatDate, money } from "@/lib/format";
+import { DEAL_FILTER_COLUMNS } from "@/lib/api/deal-columns";
+import type { ColumnFilter, FilterState } from "@/lib/domain/column-filters";
+import type { FacetValue } from "@/lib/domain/column-match";
+import { ColumnFilterMenu } from "@/components/table/column-filter";
 
 export type SortKey = "name" | "amount" | "expectedClose" | "lastActivityAt" | "owner";
 
@@ -21,7 +25,18 @@ interface DealsTableProps {
   readonly searching: boolean;
   /** Nombre total d'affaires, tous statuts — distingue « vide » de « filtré ». */
   readonly total: number;
+  readonly facets: Readonly<Record<string, readonly FacetValue[]>>;
+  readonly filters: FilterState;
+  readonly onFilter: (key: string, filter: ColumnFilter | null) => void;
 }
+
+/** Colonne de filtrage associée à chaque en-tête triable. */
+const FILTER_KEYS: Readonly<Record<string, string>> = {
+  amount: "amount",
+  expectedClose: "expectedClose",
+  lastActivityAt: "lastActivityAt",
+  owner: "owner",
+};
 
 const COLUMNS: ReadonlyArray<{ key: SortKey | null; label: string; numeric?: boolean }> = [
   { key: "name", label: "Affaire" },
@@ -67,6 +82,9 @@ export function DealsTable({
   status,
   searching,
   total,
+  facets,
+  filters,
+  onFilter,
 }: DealsTableProps) {
   const now = new Date();
 
@@ -95,18 +113,36 @@ export function DealsTable({
                   numeric === true ? "text-right" : "text-left"
                 }`}
               >
-                {key === null ? (
-                  label
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => onSort(key)}
-                    className="uppercase transition-colors hover:text-ink"
-                  >
-                    {label}
-                    {sort === key && (dir === "desc" ? " ↓" : " ↑")}
-                  </button>
-                )}
+                <span className="inline-flex items-center">
+                  {key === null ? (
+                    label
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onSort(key)}
+                      className="uppercase transition-colors hover:text-ink"
+                    >
+                      {label}
+                      {sort === key && (dir === "desc" ? " ↓" : " ↑")}
+                    </button>
+                  )}
+                  {(() => {
+                    const filterKey = key === null ? undefined : FILTER_KEYS[key];
+                    const spec =
+                      filterKey === undefined
+                        ? null
+                        : (DEAL_FILTER_COLUMNS.find((column) => column.key === filterKey) ?? null);
+                    if (spec === null) return null;
+                    return (
+                      <ColumnFilterMenu
+                        column={spec}
+                        facets={facets[spec.key] ?? []}
+                        value={filters[spec.key] ?? null}
+                        onChange={(next) => onFilter(spec.key, next)}
+                      />
+                    );
+                  })()}
+                </span>
               </th>
             ))}
           </tr>

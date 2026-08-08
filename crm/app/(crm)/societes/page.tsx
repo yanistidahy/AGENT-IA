@@ -1,5 +1,12 @@
 import { CompaniesView } from "@/components/companies/companies-view";
-import { getCompany, listCompanies, listIndustries } from "@/lib/api/companies";
+import {
+  companyFacets,
+  getCompany,
+  listCompanies,
+  listIndustries,
+} from "@/lib/api/companies";
+import { COMPANY_FILTER_COLUMNS } from "@/lib/api/company-columns";
+import { parseFilters } from "@/lib/domain/column-filters";
 import { parseCompaniesQuery } from "@/lib/api/company-schemas";
 import { listOwners } from "@/lib/api/reference";
 import { listSequences } from "@/lib/api/sequences";
@@ -20,11 +27,16 @@ export default async function SocietesPage({
   const parsed = parseCompaniesQuery(flat);
   const query = parsed.success ? parsed.data : {};
 
-  const [companies, industries, owners, sequences] = await Promise.all([
-    listCompanies(query),
+  // Paramètres bruts : les filtres de colonne se répètent (`f.size=…&f.size=…`).
+  const filters = parseFilters(raw, COMPANY_FILTER_COLUMNS);
+  const now = new Date();
+
+  const [companies, industries, owners, sequences, facetData] = await Promise.all([
+    listCompanies(query, filters, now),
     listIndustries(),
     listOwners(),
     listSequences(),
+    companyFacets(query, filters, now),
   ]);
 
   const ficheId = flat.fiche;
@@ -40,6 +52,8 @@ export default async function SocietesPage({
       owners={owners}
       sequences={sequences}
       focused={focused}
+      facets={facetData.facets}
+      totalRows={facetData.total}
     />
   );
 }

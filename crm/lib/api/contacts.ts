@@ -10,6 +10,16 @@ import {
   matchesContactFilter,
   type FollowUpStatus,
 } from "../domain/follow-up";
+import { isLost, LOST_LIFECYCLE } from "../domain/lost";
+import { searchText, searchTerm } from "../domain/text";
+import type { FilterState } from "../domain/column-filters";
+import { facetsFor, matchesAll, type FacetValue } from "../domain/column-match";
+import { columnsWhere, derivedFilters } from "./column-filters";
+import {
+  CONTACT_DB_COLUMNS,
+  CONTACT_FACET_COLUMNS,
+  type ContactFacetRow,
+} from "./contact-columns";
 import { DEFAULT_PILOTAGE, type DealStatus, type Lifecycle, type PilotageSettings } from "../domain/types";
 import type {
   CreateContactInput,
@@ -49,6 +59,8 @@ export interface ContactRecord {
   readonly lifecycle: Lifecycle;
   readonly source: string;
   readonly owner: string;
+  readonly tag: string;
+  readonly lostReason: string;
   readonly notes: string;
   readonly createdAt: Date;
   readonly lastContact: Date | null;
@@ -107,6 +119,8 @@ function toRecord(
     lifecycle: toLifecycle(row.lifecycle),
     source: row.source,
     owner: row.owner,
+    tag: row.tag,
+    lostReason: row.lostReason,
     notes: row.notes,
     createdAt: row.createdAt,
     lastContact: row.lastContact,
@@ -121,6 +135,30 @@ function toRecord(
       stage: deal.stage,
     })),
   };
+}
+
+/**
+ * Miroir de recherche d'une fiche.
+ *
+ * Recalculé à chaque écriture plutôt que dérivé en base : la règle vit dans
+ * `lib/domain/text.ts`, testable sans PostgreSQL, et n'oblige à aucune extension.
+ */
+function contactSearchText(contact: {
+  readonly firstName?: string;
+  readonly lastName?: string;
+  readonly email?: string;
+  readonly phone?: string;
+  readonly title?: string;
+  readonly dep?: string;
+}): string {
+  return searchText([
+    contact.firstName,
+    contact.lastName,
+    contact.email,
+    contact.phone,
+    contact.title,
+    contact.dep,
+  ]);
 }
 
 function orderBy(query: ListContactsQuery): Prisma.ContactOrderByWithRelationInput[] {
@@ -140,6 +178,10 @@ function orderBy(query: ListContactsQuery): Prisma.ContactOrderByWithRelationInp
       return [{ lastContact: { sort: dir, nulls: "first" } }];
     case "createdAt":
       return [{ createdAt: dir }];
+    case "tag":
+      // Les fiches sans étiquette en fin de liste : une absence n'est pas une
+      // valeur qui se classe avant « À rappeler ».
+      return [{ tag: dir }, { lastName: "asc" }];
     default:
       return [{ lastName: dir }, { firstName: "asc" }];
   }
@@ -158,54 +200,21 @@ export async function listContacts(
   query: ListContactsQuery = {},
   settings: PilotageSettings = DEFAULT_PILOTAGE,
   now: Date = new Date(),
+  filters: FilterState = {},
 ): Promise<ContactRecord[]> {
-  const where: Prisma.ContactWhereInput = {};
-
-  if (query.lifecycle !== undefined && query.lifecycle !== "all") {
-    where.lifecycle = query.lifecycle;
-  }
-  if (query.owner !== undefined) where.owner = query.owner;
-  if (query.source !== undefined) where.source = query.source;
-  if (query.companyId !== undefined) where.companyId = query.companyId;
-  if (query.q !== undefined) {
-    const contains = containsFilter(query.q);
-    where.OR = [
-      { firstName: contains },
-      { lastName: contains },
-      { email: contains },
-      { title: contains },
-      { company: { name: contains } },
-    ];
-  }
-
   const rows = await prisma.contact.findMany({
-    where,
+    where: contactsWhere(query, filters, now),
     include: contactInclude,
     orderBy: orderBy(query),
   });
 
   let records = rows.map((row) => toRecord(row, settings, now));
-
-  const filter = query.followUp;
-  if (filter !== undefined) {
-    records = records.filter((contact) =>
-      matchesContactFilter(
-        {
-          lastContact: contact.lastContact,
-          nextReminder: contact.nextReminder,
-          activityCount: contact.activityCount,
-        },
-        filter,
-        settings,
-        now,
-      ),
-    );
-  }
+  records = applyDerived(records, query, filters, settings, now);
 
   // Le filtre « à relancer » rassemble retards et échéances à venir : sans tri
   // explicite, il s'ordonne par échéance croissante, du plus urgent au plus
   // lointain. C'est la lecture attendue d'un pipeline de relances.
-  const sortKey = query.sort ?? (filter === "reminder" ? "nextReminder" : undefined);
+  const sortKey = query.sort ?? (query.followUp === "reminder" ? "nextReminder" : undefined);
 
   if (sortKey === "followUp") {
     const direction = query.dir === "desc" ? -1 : 1;
@@ -228,6 +237,198 @@ export async function listContacts(
   }
 
   return records;
+}
+
+/**
+ * Clause de lecture : recherche, puces, et filtres de colonne.
+ *
+ * **`Perdu` est écarté par défaut.** Un prospect qui a dit non n'a rien à faire
+ * dans la liste d'appels du matin ; il reste accessible par sa propre puce, par
+ * la recherche, et sa fiche est intacte. L'exclusion est une règle d'affichage,
+ * pas un archivage — d'où sa place ici plutôt que dans la donnée.
+ */
+function contactsWhere(
+  query: ListContactsQuery,
+  filters: FilterState,
+  now: Date,
+): Prisma.ContactWhereInput {
+  const and: Prisma.ContactWhereInput[] = [];
+
+  if (query.lifecycle !== undefined && query.lifecycle !== "all") {
+    and.push({ lifecycle: query.lifecycle });
+  } else if (query.lifecycle === undefined && filters.lifecycle === undefined) {
+    and.push({ NOT: { lifecycle: LOST_LIFECYCLE } });
+  }
+
+  if (query.owner !== undefined) and.push({ owner: query.owner });
+  if (query.source !== undefined) and.push({ source: query.source });
+  if (query.companyId !== undefined) and.push({ companyId: query.companyId });
+  if (query.tag !== undefined) {
+    and.push(query.tag === "" ? { tag: "" } : { tag: query.tag });
+  }
+
+  // Recherche insensible aux accents : elle porte sur le miroir normalisé, pas
+  // sur les champs d'origine — voir lib/domain/text.ts.
+  const term = searchTerm(query.q);
+  if (term !== "") {
+    and.push({
+      OR: [{ searchText: { contains: term } }, { company: { searchText: { contains: term } } }],
+    });
+  }
+
+  if (query.incomplete === true) {
+    and.push(INCOMPLETE_WHERE);
+  }
+
+  const columns = columnsWhere(filters, CONTACT_DB_COLUMNS, now);
+  if (Object.keys(columns).length > 0) and.push(columns as Prisma.ContactWhereInput);
+
+  return and.length === 0 ? {} : { AND: and };
+}
+
+/**
+ * « Contacts incomplets » : la fiche existe mais on ne sait pas la joindre.
+ *
+ * Deux cas, réunis parce qu'ils demandent le même travail — reprendre la ligne :
+ * aucun moyen de contact (ni adresse ni téléphone), ou un nom explicitement
+ * marqué à compléter par l'import.
+ */
+const INCOMPLETE_WHERE: Prisma.ContactWhereInput = {
+  OR: [
+    { AND: [{ email: "" }, { phone: "" }] },
+    { lastName: { contains: "(à compléter)", mode: "insensitive" } },
+  ],
+};
+
+/** Filtres qui ne s'expriment pas en SQL : puce de relance et colonnes dérivées. */
+function applyDerived(
+  records: readonly ContactRecord[],
+  query: ListContactsQuery,
+  filters: FilterState,
+  settings: PilotageSettings,
+  now: Date,
+): ContactRecord[] {
+  let result = [...records];
+
+  const filter = query.followUp;
+  if (filter !== undefined) {
+    result = result.filter((contact) =>
+      matchesContactFilter(
+        {
+          lastContact: contact.lastContact,
+          nextReminder: contact.nextReminder,
+          activityCount: contact.activityCount,
+        },
+        filter,
+        settings,
+        now,
+      ),
+    );
+  }
+
+  const derived = derivedFilters(filters, CONTACT_DB_COLUMNS);
+  if (Object.keys(derived).length > 0) {
+    result = result.filter((contact) =>
+      matchesAll(toFacetRow(contact), CONTACT_FACET_COLUMNS, derived, now),
+    );
+  }
+
+  return result;
+}
+
+function toFacetRow(contact: ContactRecord): ContactFacetRow {
+  return {
+    id: contact.id,
+    lifecycle: contact.lifecycle,
+    owner: contact.owner,
+    source: contact.source,
+    tag: contact.tag,
+    lostReason: contact.lostReason,
+    companyName: contact.company?.name ?? null,
+    lastContact: contact.lastContact,
+    nextReminder: contact.nextReminder,
+  };
+}
+
+/**
+ * Valeurs distinctes proposées par les menus de colonne, avec leur nombre.
+ *
+ * Une projection légère est lue — huit petits champs, aucune jointure lourde —
+ * et le comptage se fait dessus. Le tableau affiché, lui, reste filtré en base :
+ * la table complète ne traverse jamais le réseau vers le navigateur.
+ */
+export async function contactFacets(
+  query: ListContactsQuery,
+  filters: FilterState,
+  now: Date = new Date(),
+): Promise<{
+  readonly facets: Readonly<Record<string, readonly FacetValue[]>>;
+  readonly total: number;
+}> {
+  // Les filtres de colonne sont volontairement retirés de la clause : chaque
+  // menu compte sur ce que *les autres* colonnes ont laissé passer.
+  const rows = await prisma.contact.findMany({
+    where: contactsWhere(query, {}, now),
+    select: {
+      id: true,
+      lifecycle: true,
+      owner: true,
+      source: true,
+      tag: true,
+      lostReason: true,
+      lastContact: true,
+      nextReminder: true,
+      company: { select: { name: true } },
+    },
+  });
+
+  const projected: ContactFacetRow[] = rows.map((row) => ({
+    id: row.id,
+    lifecycle: row.lifecycle,
+    owner: row.owner,
+    source: row.source,
+    tag: row.tag,
+    lostReason: row.lostReason,
+    companyName: row.company?.name ?? null,
+    lastContact: row.lastContact,
+    nextReminder: row.nextReminder,
+  }));
+
+  return {
+    facets: facetsFor(projected, CONTACT_FACET_COLUMNS, filters, now),
+    total: projected.length,
+  };
+}
+
+/** Étiquettes réellement utilisées, avec leur nombre de fiches. */
+export async function listTags(): Promise<ReadonlyArray<{ value: string; count: number }>> {
+  const rows = await prisma.contact.groupBy({
+    by: ["tag"],
+    where: { NOT: { tag: "" } },
+    _count: { _all: true },
+  });
+
+  return rows
+    .map((row) => ({ value: row.tag, count: row._count._all }))
+    .sort((a, b) => a.value.localeCompare(b.value, "fr"));
+}
+
+/** Sociétés qui portent au moins un contact — les seules utiles au filtre. */
+export async function listCompaniesWithContacts(): Promise<
+  ReadonlyArray<{ id: string; name: string; count: number }>
+> {
+  const rows = await prisma.company.findMany({
+    where: { contacts: { some: {} } },
+    select: { id: true, name: true, _count: { select: { contacts: true } } },
+    orderBy: { name: "asc" },
+  });
+
+  return rows.map((row) => ({ id: row.id, name: row.name, count: row._count.contacts }));
+}
+
+/** Nombre de fiches incomplètes — alimente le compteur de la puce. */
+export function countIncompleteContacts(): Promise<number> {
+  return prisma.contact.count({ where: INCOMPLETE_WHERE });
 }
 
 export async function getContact(
@@ -261,7 +462,10 @@ export async function createContact(input: CreateContactInput): Promise<ContactR
       linkedin: input.linkedin ?? "",
       source: input.source ?? "",
       owner: input.owner ?? "",
+      tag: input.tag ?? "",
+      lostReason: input.lostReason ?? "",
       notes: input.notes ?? "",
+      searchText: contactSearchText(input),
       companyId: companyId ?? null,
       lastContact: input.lastContact ?? null,
       nextReminder: input.nextReminder ?? null,
@@ -287,7 +491,19 @@ export async function updateContact(
   id: string,
   input: UpdateContactInput,
 ): Promise<ContactRecord | null> {
-  const existing = await prisma.contact.findUnique({ where: { id }, select: { id: true } });
+  const existing = await prisma.contact.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      phone: true,
+      title: true,
+      dep: true,
+      lifecycle: true,
+    },
+  });
   if (existing === null) return null;
 
   const data: Prisma.ContactUpdateInput = {};
@@ -302,6 +518,8 @@ export async function updateContact(
   if (input.linkedin !== undefined) data.linkedin = input.linkedin;
   if (input.source !== undefined) data.source = input.source;
   if (input.owner !== undefined) data.owner = input.owner;
+  if (input.tag !== undefined) data.tag = input.tag;
+  if (input.lostReason !== undefined) data.lostReason = input.lostReason;
   if (input.notes !== undefined) data.notes = input.notes;
   if (input.lastContact !== undefined) data.lastContact = input.lastContact;
   if (input.nextReminder !== undefined) data.nextReminder = input.nextReminder;
@@ -311,11 +529,26 @@ export async function updateContact(
     if (companyId !== undefined) {
       data.company = companyId === null ? { disconnect: true } : { connect: { id: companyId } };
     }
+    // Passer en « Perdu » efface la relance et referme la tâche miroir : laisser
+    // une échéance sur quelqu'un qui a dit non, c'est se rappeler soi-même de
+    // rappeler quelqu'un qui a refusé d'être rappelé.
+    const becomesLost =
+      input.lifecycle !== undefined &&
+      isLost(input.lifecycle) &&
+      !isLost(toLifecycle(existing.lifecycle));
+
+    if (becomesLost) data.nextReminder = null;
+
     const updated = await tx.contact.update({ where: { id }, data, include: contactInclude });
+
+    await tx.contact.update({
+      where: { id },
+      data: { searchText: contactSearchText(updated) },
+    });
 
     // La tâche « Relancer X » suit la date saisie : posée elle apparaît, déplacée
     // elle bouge, effacée elle disparaît. Voir lib/domain/automation.ts.
-    if (input.nextReminder !== undefined) {
+    if (input.nextReminder !== undefined || becomesLost) {
       await syncReminderTask(tx, {
         contactId: updated.id,
         contactName: `${updated.firstName} ${updated.lastName}`,

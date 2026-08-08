@@ -45,6 +45,11 @@ model Company {
   desc      String   @default("")
   createdAt DateTime @default(now())
 
+  /// Miroir normalisé (minuscules, sans accents) des champs cherchables.
+  /// Écrit par l'application à chaque écriture — voir lib/domain/text.ts.
+  /// Permet à « zenith » de trouver « Zénith » sans extension PostgreSQL.
+  searchText String @default("")
+
   contacts   Contact[]
   deals      Deal[]
   activities Activity[]
@@ -54,7 +59,8 @@ model Company {
   @@map("companies")
 }
 
-/// `lifecycle` : Lead | Prospect | Client | Ancien Client
+/// `lifecycle` : Lead | Prospect | Client | Ancien Client | Perdu
+/// `Perdu` parque un prospect qui a dit non sans effacer son historique.
 model Contact {
   id           String    @id @default(cuid())
   firstName    String
@@ -72,6 +78,18 @@ model Contact {
   notes        String    @default("")
   createdAt    DateTime  @default(now())
 
+  /// Étiquette libre, choisie ou créée depuis le formulaire. Vide = sans étiquette.
+  tag String @default("")
+
+  /// Motif de perte, renseigné quand `lifecycle` vaut « Perdu ». Champ libre :
+  /// une raison qu'on n'avait pas prévue est justement celle qu'il faut écrire.
+  /// La valeur « Ne souhaite plus être contacté » vaut opposition au démarchage
+  /// et est appliquée dans lib/domain/lost.ts, quel que soit le cycle de vie.
+  lostReason String @default("")
+
+  /// Miroir normalisé des champs cherchables — voir Company.searchText.
+  searchText String @default("")
+
   companyId String?
   company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
 
@@ -81,6 +99,7 @@ model Contact {
 
   @@index([companyId])
   @@index([lifecycle])
+  @@index([tag])
   @@map("contacts")
 }
 
@@ -104,6 +123,9 @@ model Deal {
   /// peut être touchée sans changer d'étape, et c'est l'ancienneté *dans
   /// l'étape* qui dit si elle stagne à un endroit précis du pipeline.
   stageSince     DateTime?
+
+  /// Miroir normalisé des champs cherchables — voir Company.searchText.
+  searchText String @default("")
 
   stageId String
   stage   Stage  @relation(fields: [stageId], references: [id])

@@ -28,7 +28,11 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
 export const TASK_PRIORITIES = ["haute", "normale", "basse"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 
-export const LIFECYCLES = ["Lead", "Prospect", "Client", "Ancien Client"] as const;
+/**
+ * `Perdu` est en dernier : c'est la fin du parcours, pas une étape. Il est exclu
+ * par défaut des vues du quotidien — voir lib/domain/lost.ts.
+ */
+export const LIFECYCLES = ["Lead", "Prospect", "Client", "Ancien Client", "Perdu"] as const;
 export type Lifecycle = (typeof LIFECYCLES)[number];
 
 export const SEQUENCE_CHANNELS = ["email", "call", "linkedin"] as const;

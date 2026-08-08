@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Drawer } from "@/components/ui/drawer";
+import { ExternalLink } from "@/components/ui/external-link";
 import { Eyebrow, LifecycleTag, StatusTag } from "@/components/ui/primitives";
 import type { CompanyRecord } from "@/lib/api/companies";
 import { deleteCompany } from "@/lib/client/crm-api";
@@ -103,18 +104,7 @@ export function CompanyDrawer({
 
           <dl className="grid grid-cols-[130px_1fr] gap-x-3.5 gap-y-2.5 text-[13.5px]">
             <Row label="Domaine">
-              {company.domain === "" ? (
-                "—"
-              ) : (
-                <a
-                  href={`https://${company.domain}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-flux-d hover:underline"
-                >
-                  {company.domain}
-                </a>
-              )}
+              <ExternalLink value={company.domain} />
             </Row>
             <Row label="Secteur">{company.industry || "—"}</Row>
             <Row label="Taille">{company.size || "—"}</Row>

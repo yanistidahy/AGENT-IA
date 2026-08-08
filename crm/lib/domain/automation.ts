@@ -1,4 +1,5 @@
 import { addDays, startOfDay } from "./dates";
+import { optedOut } from "./lost";
 import type { ActivityType, TaskPriority } from "./types";
 
 /**
@@ -159,8 +160,8 @@ export function reminderDelayFor(type: ActivityType, delays: ReminderDelays): nu
 /**
  * Date de relance proposée après une interaction.
  *
- * `null` quand aucune proposition ne doit être faite : le contact porte déjà une
- * relance postérieure — la remplacer par une date plus proche sans le dire
+ * `null` quand aucune proposition ne doit être faite : la personne s'oppose au
+ * démarchage, ou le contact porte déjà une relance postérieure — la remplacer par une date plus proche sans le dire
  * reviendrait à décider à la place de l'utilisateur.
  */
 export function proposedReminder(input: {
@@ -168,7 +169,14 @@ export function proposedReminder(input: {
   readonly interactionDate: Date;
   readonly existingReminder: Date | null;
   readonly delays: ReminderDelays;
+  /** Motif de perte de la fiche, s'il y en a un. Voir lib/domain/lost.ts. */
+  readonly lostReason?: string;
 }): Date | null {
+  // Opposition au démarchage : aucune relance n'est proposée, quel que soit le
+  // cycle de vie. La règle est ici, dans le domaine, et non dans le formulaire —
+  // le formulaire n'est qu'un des appelants.
+  if (optedOut({ lostReason: input.lostReason ?? "" })) return null;
+
   const proposal = startOfDay(
     addDays(input.interactionDate, reminderDelayFor(input.type, input.delays)),
   );

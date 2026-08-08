@@ -8,6 +8,7 @@ import {
   listStagesWithActions,
 } from "@/lib/api/reference";
 import { listSequences } from "@/lib/api/sequences";
+import { listTags } from "@/lib/api/contacts";
 import { stageDealCounts } from "@/lib/api/settings";
 import { prisma } from "@/lib/db";
 import { LIFECYCLES } from "@/lib/domain/types";
@@ -25,6 +26,7 @@ export default async function ReglagesPage() {
     offers,
     sources,
     lifecycleRows,
+    tags,
   ] = await Promise.all([
       listSequences(),
       listStagesWithActions(),
@@ -39,6 +41,7 @@ export default async function ReglagesPage() {
         orderBy: { position: "asc" },
         select: { value: true },
       }),
+      listTags(),
     ]);
 
   const lifecycles = lifecycleRows.map((row) => row.value);
@@ -60,6 +63,7 @@ export default async function ReglagesPage() {
       dealCounts={dealCounts}
       settings={settings}
       delays={delays}
+      tags={tags}
       lists={{
         owners,
         offers,

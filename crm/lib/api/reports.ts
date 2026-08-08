@@ -1,3 +1,4 @@
+import { isLost } from "../domain/lost";
 import { prisma } from "../db";
 import { lastMonthKeys, monthKey } from "../domain/dates";
 import { toActivityType, toDealStatus, toLifecycle } from "../domain/guards";
@@ -64,6 +65,12 @@ export interface ReportData {
   readonly revenueByMonth: readonly ForecastPoint[];
   readonly leadsByMonth: readonly Distribution[];
   readonly leadsBySource: readonly Distribution[];
+  /**
+   * Motifs de perte des contacts « Perdu ». Perdre sur le budget et perdre sur
+   * le timing n'appellent pas la même correction : le premier interroge l'offre,
+   * le second demande de reprendre contact plus tard.
+   */
+  readonly lostReasons: readonly Distribution[];
   readonly revenueByOffer: readonly Distribution[];
   readonly owners: readonly OwnerRow[];
   readonly stages: readonly StageLike[];
@@ -106,6 +113,7 @@ export async function readReports(period: Period, now: Date = new Date()): Promi
         owner: true,
         createdAt: true,
         nextReminder: true,
+        lostReason: true,
       },
     }),
     prisma.activity.findMany({ select: { type: true, date: true, owner: true } }),
@@ -181,6 +189,7 @@ export async function readReports(period: Period, now: Date = new Date()): Promi
       month: point.month.slice(5),
     })),
     leadsByMonth,
+    lostReasons: lostReasonBreakdown(contactRows),
     leadsBySource: [...sources.entries()]
       .map(([label, value]) => ({ label, value }))
       .sort((a, b) => b.value - a.value),
@@ -190,4 +199,27 @@ export async function readReports(period: Period, now: Date = new Date()): Promi
     owners,
     stages,
   };
+}
+
+/**
+ * Répartition des motifs de perte.
+ *
+ * Les fiches perdues sans motif renseigné sont comptées à part plutôt
+ * qu'écartées : elles disent quelque chose — qu'on ne sait pas pourquoi on a
+ * perdu — et les masquer donnerait une lecture faussement nette.
+ */
+function lostReasonBreakdown(
+  contacts: ReadonlyArray<{ lifecycle: string; lostReason: string }>,
+): Distribution[] {
+  const counts = new Map<string, number>();
+
+  for (const contact of contacts) {
+    if (!isLost(toLifecycle(contact.lifecycle))) continue;
+    const label = contact.lostReason.trim() === "" ? "Motif non renseigné" : contact.lostReason.trim();
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value);
 }

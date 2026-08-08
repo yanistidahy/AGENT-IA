@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { searchText } from "../lib/domain/text";
 
 /**
  * Jeu de démonstration.
@@ -385,10 +386,15 @@ async function seedAll(prisma: Tx): Promise<void> {
     });
   }
 
+  // `searchText` est le miroir normalisé de la recherche : il est écrit ici
+  // comme il l'est par les services. L'oublier rendrait le jeu de démonstration
+  // introuvable à la recherche, ce qui n'est pas ce que la démonstration doit
+  // montrer.
   await prisma.company.createMany({
     data: COMPANIES.map(({ createdAgo, ...company }) => ({
       ...company,
       createdAt: daysAgo(createdAgo),
+      searchText: searchText([company.name, company.domain, company.industry, company.loc]),
     })),
   });
 
@@ -413,6 +419,14 @@ async function seedAll(prisma: Tx): Promise<void> {
         nextReminder: contact.nextReminderAgo === null ? null : daysAgo(contact.nextReminderAgo),
         notes: contact.notes,
         createdAt: daysAgo(contact.createdAgo),
+        searchText: searchText([
+          contact.firstName,
+          contact.lastName,
+          `${slug(contact.firstName)}@${domain}`,
+          "06 12 34 56 78",
+          contact.title,
+          contact.dep,
+        ]),
       };
     }),
   });
@@ -434,6 +448,7 @@ async function seedAll(prisma: Tx): Promise<void> {
       expectedClose: daysAgo(deal.expectedCloseAgo),
       lastActivityAt: daysAgo(deal.lastActivityAgo),
       closedAt: deal.closedAgo === undefined ? null : daysAgo(deal.closedAgo),
+      searchText: searchText([deal.name, deal.offer]),
     })),
   });
 

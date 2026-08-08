@@ -12,6 +12,9 @@ import type { Alert } from "@/lib/domain/types";
 import { DealDrawer } from "./deal-drawer";
 import { DealForm, type DealFormOptions } from "./deal-form";
 import { DealsTable, type SortKey } from "./deals-table";
+import { DEAL_FILTER_COLUMNS } from "@/lib/api/deal-columns";
+import type { FacetValue } from "@/lib/domain/column-match";
+import { FilterSummary, useColumnFilters } from "@/components/table/filter-state";
 
 interface DealsViewProps extends DealFormOptions {
   readonly deals: readonly DealRecord[];
@@ -22,6 +25,8 @@ interface DealsViewProps extends DealFormOptions {
   readonly focused: DealRecord | null;
   /** Comptes par statut, sur l'ensemble des affaires — pas sur la liste filtrée. */
   readonly statusCounts: Readonly<Record<string, number>>;
+  readonly facets: Readonly<Record<string, readonly FacetValue[]>>;
+  readonly totalRows: number;
 }
 
 const CONTROL =
@@ -34,8 +39,15 @@ export function DealsView({
   alerts,
   focused,
   statusCounts,
+  facets,
+  totalRows,
   ...options
 }: DealsViewProps) {
+  const {
+    state: columnFilters,
+    setFilter,
+    reset,
+  } = useColumnFilters("/affaires", DEAL_FILTER_COLUMNS);
   const router = useRouter();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
@@ -140,8 +152,18 @@ export function DealsView({
         </select>
       </div>
 
+      <FilterSummary
+        shown={deals.length}
+        total={totalRows}
+        active={Object.keys(columnFilters).length}
+        onReset={reset}
+      />
+
       <DealsTable
         deals={deals}
+        facets={facets}
+        filters={columnFilters}
+        onFilter={setFilter}
         settings={settings}
         sort={isSortKey(sortParam) ? sortParam : undefined}
         dir={dir}

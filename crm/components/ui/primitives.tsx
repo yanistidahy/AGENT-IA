@@ -82,6 +82,8 @@ const LIFECYCLE_TONES: Record<Lifecycle, Tone> = {
   Prospect: "violet",
   Client: "flux",
   "Ancien Client": "mute",
+  // Gris : un prospect perdu n'est ni une alerte ni une réussite, il est classé.
+  Perdu: "mute",
 };
 
 export function LifecycleTag({ lifecycle }: { lifecycle: Lifecycle }) {

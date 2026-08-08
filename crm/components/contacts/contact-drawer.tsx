@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Drawer } from "@/components/ui/drawer";
+import { ExternalLink } from "@/components/ui/external-link";
 import { Eyebrow, FollowUpTag, LifecycleTag, StatusTag } from "@/components/ui/primitives";
 import type { ContactRecord } from "@/lib/api/contacts";
 import { deleteContact } from "@/lib/client/crm-api";
@@ -153,19 +154,9 @@ export function ContactDrawer({
             </Row>
             <Row label="Téléphone">{contact.phone || "—"}</Row>
             <Row label="LinkedIn">
-              {contact.linkedin === "" ? (
-                "—"
-              ) : (
-                <a
-                  href={contact.linkedin}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-flux-d hover:underline"
-                >
-                  {contact.linkedin}
-                </a>
-              )}
+              <ExternalLink value={contact.linkedin} />
             </Row>
+            <Row label="Étiquette">{contact.tag || "—"}</Row>
             <Row label="Département">{contact.dep || "—"}</Row>
             <Row label="Société">{contact.company?.name ?? "—"}</Row>
             <Row label="Dernier contact">

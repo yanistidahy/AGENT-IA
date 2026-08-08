@@ -95,6 +95,20 @@ export default async function RapportsPage({
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        <Card
+          title="Motifs de perte"
+          hint="contacts marqués « Perdu », tous exercices confondus"
+        >
+          {data.lostReasons.length === 0 ? (
+            <p className="rounded-card border border-dashed border-line px-3.5 py-6 text-center text-[12.5px] text-muted">
+              Aucun contact marqué « Perdu ». Le motif se renseigne sur la fiche, une fois le
+              cycle de vie passé à « Perdu ».
+            </p>
+          ) : (
+            <BarChart points={data.lostReasons} format={(value) => String(value)} />
+          )}
+        </Card>
+
         <Card title="CA par offre">
           <DonutChart points={data.revenueByOffer} />
         </Card>

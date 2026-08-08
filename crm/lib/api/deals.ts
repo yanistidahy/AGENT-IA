@@ -8,6 +8,15 @@ import { toDealStatus, toLifecycle } from "../domain/guards";
 import type { DealLike, DealStatus, Lifecycle, StageLike } from "../domain/types";
 import type { CreateDealInput, ListDealsQuery, UpdateDealInput } from "./deal-schemas";
 import { listStages } from "./reference";
+import type { FilterState } from "../domain/column-filters";
+import { facetsFor, type FacetValue } from "../domain/column-match";
+import { searchText, searchTerm } from "../domain/text";
+import { columnsWhere } from "./column-filters";
+import {
+  DEAL_DB_COLUMNS,
+  DEAL_FACET_COLUMNS,
+  type DealFacetRow,
+} from "./deal-columns";
 
 /**
  * Accès aux affaires.
@@ -106,23 +115,83 @@ function orderBy(query: ListDealsQuery): Prisma.DealOrderByWithRelationInput[] {
   }
 }
 
-export async function listDeals(query: ListDealsQuery = {}): Promise<DealRecord[]> {
-  const where: Prisma.DealWhereInput = {};
-
-  if (query.stageId !== undefined) where.stageId = query.stageId;
-  if (query.owner !== undefined) where.owner = query.owner;
-  if (query.status !== undefined && query.status !== "all") where.status = query.status;
-  if (query.q !== undefined) {
-    const contains = containsFilter(query.q);
-    where.OR = [{ name: contains }, { company: { name: contains } }];
-  }
-
+export async function listDeals(
+  query: ListDealsQuery = {},
+  filters: FilterState = {},
+  now: Date = new Date(),
+): Promise<DealRecord[]> {
   const rows = await prisma.deal.findMany({
-    where,
+    where: dealsWhere(query, filters, now),
     include: dealInclude,
     orderBy: orderBy(query),
   });
   return rows.map(toRecord);
+}
+
+function dealsWhere(
+  query: ListDealsQuery,
+  filters: FilterState,
+  now: Date,
+): Prisma.DealWhereInput {
+  const and: Prisma.DealWhereInput[] = [];
+
+  if (query.stageId !== undefined) and.push({ stageId: query.stageId });
+  if (query.owner !== undefined) and.push({ owner: query.owner });
+  if (query.status !== undefined && query.status !== "all") and.push({ status: query.status });
+
+  // Recherche insensible aux accents, sur le miroir normalisé de l'affaire ou
+  // celui de sa société — voir lib/domain/text.ts.
+  const term = searchTerm(query.q);
+  if (term !== "") {
+    and.push({
+      OR: [{ searchText: { contains: term } }, { company: { searchText: { contains: term } } }],
+    });
+  }
+
+  const columns = columnsWhere(filters, DEAL_DB_COLUMNS, now);
+  if (Object.keys(columns).length > 0) and.push(columns as Prisma.DealWhereInput);
+
+  return and.length === 0 ? {} : { AND: and };
+}
+
+/** Valeurs distinctes des colonnes de `/affaires`. */
+export async function dealFacets(
+  query: ListDealsQuery,
+  filters: FilterState,
+  now: Date = new Date(),
+): Promise<{
+  readonly facets: Readonly<Record<string, readonly FacetValue[]>>;
+  readonly total: number;
+}> {
+  const rows = await prisma.deal.findMany({
+    where: dealsWhere(query, {}, now),
+    select: {
+      id: true,
+      owner: true,
+      offer: true,
+      amount: true,
+      expectedClose: true,
+      lastActivityAt: true,
+      stage: { select: { name: true } },
+      company: { select: { name: true } },
+    },
+  });
+
+  const projected: DealFacetRow[] = rows.map((row) => ({
+    id: row.id,
+    stage: row.stage.name,
+    owner: row.owner,
+    offer: row.offer,
+    companyName: row.company?.name ?? null,
+    amount: row.amount,
+    expectedClose: row.expectedClose,
+    lastActivityAt: row.lastActivityAt,
+  }));
+
+  return {
+    facets: facetsFor(projected, DEAL_FACET_COLUMNS, filters, now),
+    total: projected.length,
+  };
 }
 
 /**
@@ -161,6 +230,7 @@ export async function createDeal(input: CreateDealInput): Promise<DealRecord> {
     const companyId = await resolveCompanyLink(tx, input);
     return tx.deal.create({
     data: {
+      searchText: searchText([input.name, input.offer]),
       name: input.name,
       amount: input.amount,
       stageId: input.stageId,
@@ -201,6 +271,10 @@ export async function updateDeal(
   if (input.prob !== undefined) data.prob = input.prob;
   if (input.expectedClose !== undefined) data.expectedClose = input.expectedClose;
   if (input.stageId !== undefined) data.stage = { connect: { id: input.stageId } };
+
+  // Miroir de recherche : recalculé sur les valeurs finales, pas seulement sur
+  // les champs envoyés — modifier le seul nom doit suffire à le rafraîchir.
+  data.searchText = searchText([input.name ?? existing.name, input.offer ?? existing.offer]);
 
   if (input.contactId !== undefined) {
     data.contact =

@@ -5,6 +5,7 @@ import { Combobox, companyFields, type ComboboxValue } from "@/components/ui/com
 import type { ContactRecord } from "@/lib/api/contacts";
 import { createContact, updateContact } from "@/lib/client/crm-api";
 import { LIFECYCLES } from "@/lib/domain/types";
+import { isLost, LOST_REASONS } from "@/lib/domain/lost";
 
 /**
  * Formulaire de contact, création et édition.
@@ -17,6 +18,8 @@ export interface ContactFormOptions {
   readonly owners: readonly string[];
   readonly sources: readonly string[];
   readonly companies: ReadonlyArray<{ readonly id: string; readonly name: string }>;
+  /** Étiquettes déjà utilisées, proposées avant la liste de départ. */
+  readonly tags?: readonly string[];
 }
 
 interface ContactFormProps extends ContactFormOptions {
@@ -39,6 +42,7 @@ export function ContactForm({
   owners,
   sources,
   companies,
+  tags = [],
   onCancel,
   onSaved,
 }: ContactFormProps) {
@@ -47,6 +51,12 @@ export function ContactForm({
   const [fields, setFields] = useState<Record<string, string[]>>({});
 
   const initialCompany = contact?.companyId ?? companyId ?? null;
+  const [lifecycle, setLifecycle] = useState(contact?.lifecycle ?? "Lead");
+  const [tag, setTag] = useState<ComboboxValue>(
+    contact === null || contact.tag === ""
+      ? { kind: "none" }
+      : { kind: "existing", id: contact.tag },
+  );
   const [company, setCompany] = useState<ComboboxValue>(
     initialCompany === null ? { kind: "none" } : { kind: "existing", id: initialCompany },
   );
@@ -67,6 +77,11 @@ export function ContactForm({
       linkedin: text("linkedin"),
       source: text("source"),
       owner: text("owner"),
+      tag: tag.kind === "existing" ? tag.id : tag.kind === "new" ? tag.name : "",
+      // Le motif ne part que si la fiche est perdue : conserver un motif sur un
+      // contact redevenu prospect ferait mentir la fiche, et l'opposition au
+      // démarchage se lit sur ce champ.
+      lostReason: isLost(lifecycle) ? text("lostReason") : "",
       notes: String(form.get("notes") ?? ""),
       ...companyFields(company),
       lastContact: text("lastContact"),
@@ -129,11 +144,25 @@ export function ContactForm({
           />
         </Field>
         <Field label="Cycle de vie" errors={fields.lifecycle}>
-          <select name="lifecycle" defaultValue={contact?.lifecycle ?? "Lead"} className={CONTROL}>
-            {LIFECYCLES.map((lifecycle) => (
-              <option key={lifecycle}>{lifecycle}</option>
+          <select
+            name="lifecycle"
+            value={lifecycle}
+            onChange={(event) => setLifecycle(toLifecycleValue(event.target.value))}
+            className={CONTROL}
+          >
+            {LIFECYCLES.map((value) => (
+              <option key={value}>{value}</option>
             ))}
           </select>
+        </Field>
+        <Field label="Étiquette" errors={fields.tag}>
+          <Combobox
+            options={TAG_OPTIONS(tags).map((value) => ({ id: value, label: value }))}
+            value={tag}
+            onChange={setTag}
+            placeholder="Choisir ou créer une étiquette…"
+            emptyLabel="Sans étiquette"
+          />
         </Field>
         <Field label="Propriétaire" errors={fields.owner}>
           <select name="owner" defaultValue={contact?.owner ?? ""} className={CONTROL}>
@@ -178,6 +207,27 @@ export function ContactForm({
         Une date de relance crée aussi la tâche « Relancer {"…"} » dans /taches, et l'y déplace si
         vous la changez. Effacer la date retire la tâche ; la terminer efface la date.
       </p>
+
+      {isLost(lifecycle) && (
+        <Field label="Motif de perte" errors={fields.lostReason}>
+          <input
+            name="lostReason"
+            list="motifs-de-perte"
+            defaultValue={contact?.lostReason ?? ""}
+            placeholder="Budget, Timing, Concurrent…"
+            className={CONTROL}
+          />
+          <datalist id="motifs-de-perte">
+            {LOST_REASONS.map((reason) => (
+              <option key={reason} value={reason} />
+            ))}
+          </datalist>
+          <span className="mt-1 block text-[11.5px] leading-relaxed text-muted">
+            « Ne souhaite plus être contacté » vaut opposition ferme : aucune séquence ni
+            relance ne pourra plus viser cette personne, quel que soit son cycle de vie.
+          </span>
+        </Field>
+      )}
 
       <Field label="Notes" errors={fields.notes}>
         <textarea name="notes" rows={3} defaultValue={contact?.notes ?? ""} className={CONTROL} />
@@ -229,4 +279,22 @@ function Field({
       )}
     </label>
   );
+}
+
+/** Liste proposée : les étiquettes déjà en usage d'abord, puis celles de départ. */
+function TAG_OPTIONS(used: readonly string[]): string[] {
+  const starters = [
+    "À rappeler",
+    "Devis envoyé",
+    "En négociation",
+    "Injoignable",
+    "Pas intéressé",
+    "Signature imminente",
+  ];
+  return [...new Set([...used, ...starters])];
+}
+
+/** La valeur d'un `<select>` est une chaîne : elle se vérifie, elle ne s'assère pas. */
+function toLifecycleValue(value: string): (typeof LIFECYCLES)[number] {
+  return LIFECYCLES.find((candidate) => candidate === value) ?? "Lead";
 }

@@ -5,12 +5,12 @@ import { useCallback, useState, useTransition } from "react";
 import { Drawer } from "@/components/ui/drawer";
 import { Icon } from "@/components/ui/icon";
 import type { ContactRecord } from "@/lib/api/contacts";
-import {
-  CONTACT_FILTERS,
-  CONTACT_FILTER_LABELS,
-  isContactFilter,
-} from "@/lib/domain/follow-up";
-import { LIFECYCLES, type PilotageSettings } from "@/lib/domain/types";
+import { isContactFilter } from "@/lib/domain/follow-up";
+import type { PilotageSettings } from "@/lib/domain/types";
+import type { FacetValue } from "@/lib/domain/column-match";
+import { CONTACT_FILTER_COLUMNS } from "@/lib/api/contact-columns";
+import { FilterSummary, useColumnFilters } from "@/components/table/filter-state";
+import { ContactsFilters } from "./contacts-filters";
 import { ContactDrawer } from "./contact-drawer";
 import { ContactForm, type ContactFormOptions } from "./contact-form";
 import { ContactsTable, type ContactSortKey } from "./contacts-table";
@@ -29,13 +29,14 @@ interface ContactsViewProps extends ContactFormOptions {
   readonly reminderCounts: { readonly total: number; readonly late: number };
   /** Fiche désignée par `?fiche=` mais absente de la liste filtrée. */
   readonly focused: ContactRecord | null;
+  /** Valeurs distinctes par colonne, calculées côté serveur. */
+  readonly facets: Readonly<Record<string, readonly FacetValue[]>>;
+  /** Total avant filtres de colonne, pour le « 54 sur 138 ». */
+  readonly totalRows: number;
+  readonly incompleteCount: number;
+  readonly companyOptions: ReadonlyArray<{ id: string; name: string; count: number }>;
+  readonly tagCounts: ReadonlyArray<{ value: string; count: number }>;
 }
-
-const CONTROL =
-  "rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-flux";
-
-const LIFECYCLE_FILTERS = ["all", ...LIFECYCLES] as const;
-const LIFECYCLE_LABELS: Record<string, string> = { all: "Tous" };
 
 export function ContactsView({
   contacts,
@@ -45,6 +46,11 @@ export function ContactsView({
   alerts,
   focused,
   reminderCounts,
+  facets,
+  totalRows,
+  incompleteCount,
+  companyOptions,
+  tagCounts,
   ...options
 }: ContactsViewProps) {
   const router = useRouter();
@@ -53,8 +59,15 @@ export function ContactsView({
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
 
+  const {
+    state: filters,
+    setFilter,
+    reset,
+  } = useColumnFilters("/contacts", CONTACT_FILTER_COLUMNS);
+
   const lifecycle = params.get("lifecycle") ?? "all";
   const followUp = params.get("followUp");
+  const incomplete = params.get("incomplete") === "1";
   const sortParam = params.get("sort");
   const dir = params.get("dir") === "desc" ? "desc" : "asc";
 
@@ -120,81 +133,26 @@ export function ContactsView({
         </div>
       </header>
 
-      <div className="mb-3.5 flex flex-wrap items-center gap-2">
-        <div className="flex overflow-hidden rounded-control border border-line bg-surface">
-          {LIFECYCLE_FILTERS.map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setParam({ lifecycle: value })}
-              className={`border-r border-line px-3 py-1.5 text-[12.5px] font-semibold transition-colors last:border-r-0 ${
-                lifecycle === value ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
-              }`}
-            >
-              {LIFECYCLE_LABELS[value] ?? value}
-            </button>
-          ))}
-        </div>
+      <ContactsFilters
+        lifecycle={lifecycle}
+        followUp={followUp}
+        incomplete={incomplete}
+        incompleteCount={incompleteCount}
+        reminderCounts={reminderCounts}
+        owners={options.owners}
+        sources={options.sources}
+        companies={companyOptions}
+        tags={tagCounts}
+        current={Object.fromEntries(params.entries())}
+        onChange={setParam}
+      />
 
-        <div className="flex overflow-hidden rounded-control border border-line bg-surface">
-          <button
-            type="button"
-            onClick={() => setParam({ followUp: null })}
-            className={`border-r border-line px-3 py-1.5 text-[12.5px] font-semibold transition-colors last:border-r-0 ${
-              followUp === null ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
-            }`}
-          >
-            Tous
-          </button>
-          {CONTACT_FILTERS.map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setParam({ followUp: value })}
-              className={`border-r border-line px-3 py-1.5 text-[12.5px] font-semibold transition-colors last:border-r-0 ${
-                followUp === value ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
-              }`}
-            >
-              {CONTACT_FILTER_LABELS[value]}
-              {value === "reminder" && reminderCounts.total > 0 && (
-                <span className="ml-1 font-normal opacity-80">
-                  ({reminderCounts.total}
-                  {reminderCounts.late > 0 && ` · ${reminderCounts.late} en retard`})
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        <input
-          className={`${CONTROL} min-w-[220px]`}
-          placeholder="Rechercher un contact…"
-          defaultValue={params.get("q") ?? ""}
-          onChange={(event) => setParam({ q: event.target.value })}
-        />
-
-        <select
-          className={CONTROL}
-          value={params.get("owner") ?? ""}
-          onChange={(event) => setParam({ owner: event.target.value })}
-        >
-          <option value="">Tous les propriétaires</option>
-          {options.owners.map((owner) => (
-            <option key={owner}>{owner}</option>
-          ))}
-        </select>
-
-        <select
-          className={CONTROL}
-          value={params.get("source") ?? ""}
-          onChange={(event) => setParam({ source: event.target.value })}
-        >
-          <option value="">Toutes les sources</option>
-          {options.sources.map((source) => (
-            <option key={source}>{source}</option>
-          ))}
-        </select>
-      </div>
+      <FilterSummary
+        shown={contacts.length}
+        total={totalRows}
+        active={Object.keys(filters).length}
+        onReset={reset}
+      />
 
       <ContactsTable
         contacts={contacts}
@@ -206,6 +164,9 @@ export function ContactsView({
         }
         onSelect={(contact) => setParam({ fiche: contact.id })}
         filter={followUp !== null && isContactFilter(followUp) ? followUp : null}
+        facets={facets}
+        filters={filters}
+        onFilter={setFilter}
       />
 
       <ContactDrawer
@@ -249,6 +210,7 @@ const SORT_KEYS: readonly ContactSortKey[] = [
   "lifecycle",
   "owner",
   "lastContact",
+  "tag",
   "followUp",
   "nextReminder",
 ];

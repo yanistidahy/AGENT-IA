@@ -2,7 +2,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { moveDealStage, updateDeal } from "@/lib/api/deals";
 import { getSequence, runSequence } from "@/lib/api/sequences";
-import { updateContact } from "@/lib/api/contacts";
+import { getContact, updateContact } from "@/lib/api/contacts";
+import { OPT_OUT_MESSAGE, optedOut } from "@/lib/domain/lost";
 import { ACTIVITY_TYPES, LIFECYCLES, TASK_PRIORITIES } from "@/lib/domain/types";
 import { formatDate, money } from "@/lib/format";
 import { defineTool } from "./types";
@@ -277,6 +278,12 @@ export const setReminder = defineTool({
     details: [`Prochaine relance : ${formatDate(input.date)}`],
   }),
   run: async (input) => {
+    const existing = await getContact(input.contactId);
+    if (existing === null) return { programmée: false, erreur: "Contact introuvable" };
+    // Un agent qui programme une relance fait du démarchage, pas un geste
+    // délibéré de l'utilisateur sur une fiche : l'opposition s'applique.
+    if (optedOut(existing)) return { programmée: false, erreur: OPT_OUT_MESSAGE };
+
     const contact = await updateContact(input.contactId, { nextReminder: input.date });
     if (contact === null) return { programmée: false, erreur: "Contact introuvable" };
     return {
@@ -336,7 +343,9 @@ export const runSequenceTool = defineTool({
         erreur:
           result.reason === "inactive"
             ? "Séquence en pause : la réactiver dans Réglages avant de la lancer"
-            : "Séquence introuvable",
+            : result.reason === "opted_out"
+              ? OPT_OUT_MESSAGE
+              : "Séquence introuvable",
       };
     }
 

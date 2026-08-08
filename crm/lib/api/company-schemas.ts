@@ -28,11 +28,36 @@ export const updateCompanySchema = z
 
 export type UpdateCompanyInput = z.infer<typeof updateCompanySchema>;
 
-export const COMPANY_SORT_KEYS = ["name", "industry", "size", "createdAt"] as const;
+export const COMPANY_SORT_KEYS = [
+  "name",
+  "industry",
+  "size",
+  "loc",
+  "createdAt",
+  // Dérivés d'agrégats : triés en mémoire, voir lib/api/companies.ts.
+  "contacts",
+  "openValue",
+  "wonValue",
+] as const;
+
+/**
+ * Puces de `/societes`. Ce sont des raccourcis vers les trois questions posées
+ * le plus souvent à un portefeuille de sociétés : où y a-t-il de l'argent en
+ * jeu, qui a déjà signé, et quelles fiches sont restées vides.
+ */
+export const COMPANY_FILTERS = ["pipeline", "clients", "orphan"] as const;
+export type CompanyFilter = (typeof COMPANY_FILTERS)[number];
+
+export const COMPANY_FILTER_LABELS: Record<CompanyFilter, string> = {
+  pipeline: "Avec pipeline ouvert",
+  clients: "Clients",
+  orphan: "Sans contact",
+};
 
 export const listCompaniesQuerySchema = z.object({
   q: z.string().optional(),
   industry: z.string().optional(),
+  filter: z.enum(COMPANY_FILTERS).optional(),
   sort: z.enum(COMPANY_SORT_KEYS).optional(),
   dir: z.enum(["asc", "desc"]).optional(),
 });

@@ -1,3 +1,4 @@
+import { isLost } from "./lost";
 import { daysSince } from "./dates";
 import { money } from "../format";
 import { daysSinceLastTouch, openDeals, resolveStage } from "./pipeline";
@@ -107,7 +108,13 @@ export function closeDatePassedAlerts(
     }));
 }
 
-/** 5 — Contact dont le rappel programmé est dû. */
+/**
+ * 5 — Contact dont le rappel programmé est dû.
+ *
+ * Les fiches « Perdu » sont écartées : une relance sur quelqu'un qui a dit non
+ * n'est pas une alerte, c'est du bruit dans la liste du matin. La date reste sur
+ * la fiche et son historique est intact — seule l'alerte disparaît.
+ */
 export function contactReminderAlerts(
   contacts: readonly ContactLike[],
   now: Date,
@@ -115,7 +122,9 @@ export function contactReminderAlerts(
   return contacts
     .filter(
       (contact) =>
-        contact.nextReminder !== null && daysSince(contact.nextReminder, now) >= 0,
+        !isLost(contact.lifecycle) &&
+        contact.nextReminder !== null &&
+        daysSince(contact.nextReminder, now) >= 0,
     )
     .map((contact) => ({
       kind: "contact-reminder" as const,

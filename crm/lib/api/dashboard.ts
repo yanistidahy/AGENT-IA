@@ -1,3 +1,4 @@
+import { LOST_LIFECYCLE } from "../domain/lost";
 import { prisma } from "../db";
 import { toActivityType, toDealStatus, toLifecycle, toTaskPriority } from "../domain/guards";
 import { addDays, daysSince, monthKey, startOfDay } from "../domain/dates";
@@ -94,7 +95,10 @@ async function readStaleContacts(
   now: Date,
 ): Promise<StaleContact[]> {
   const rows = await prisma.contact.findMany({
-    where: { NOT: { lifecycle: "Ancien Client" } },
+    // « Ancien Client » et « Perdu » sont hors du quotidien : l'un a cessé
+    // d'acheter, l'autre a dit non. Les faire figurer dans « dernière touche »
+    // remplirait la liste de fiches sur lesquelles il n'y a rien à faire.
+    where: { NOT: { lifecycle: { in: ["Ancien Client", LOST_LIFECYCLE] } } },
     select: {
       id: true,
       firstName: true,
@@ -168,7 +172,10 @@ async function readUpcoming(now: Date): Promise<UpcomingItem[]> {
       orderBy: [{ due: "asc" }, { createdAt: "asc" }],
     }),
     prisma.contact.findMany({
-      where: { nextReminder: { gte: from, lt: to } },
+      where: {
+        nextReminder: { gte: from, lt: to },
+        NOT: { lifecycle: LOST_LIFECYCLE },
+      },
       select: { id: true, firstName: true, lastName: true, owner: true, nextReminder: true },
       orderBy: { nextReminder: "asc" },
     }),

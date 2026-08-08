@@ -52,6 +52,10 @@ export const createContactSchema = z.object({
   linkedin: z.string().trim().optional(),
   source: z.string().trim().optional(),
   owner: z.string().trim().optional(),
+  /** Étiquette libre. Vide = sans étiquette. */
+  tag: z.string().trim().max(60, "Étiquette trop longue").optional(),
+  /** Motif de perte. N'a de sens que si `lifecycle` vaut « Perdu ». */
+  lostReason: z.string().trim().max(120, "Motif trop long").optional(),
   notes: z.string().optional(),
   companyId: idValue.optional(),
   /**
@@ -77,6 +81,8 @@ export const updateContactSchema = z
     linkedin: z.string().trim().optional(),
     source: z.string().trim().optional(),
     owner: z.string().trim().optional(),
+    tag: z.string().trim().max(60, "Étiquette trop longue").optional(),
+    lostReason: z.string().trim().max(120, "Motif trop long").optional(),
     notes: z.string().optional(),
     companyId: idValue.optional(),
     companyName: z.string().trim().min(1).optional(),
@@ -97,6 +103,7 @@ export const CONTACT_SORT_KEYS = [
   "owner",
   "lastContact",
   "createdAt",
+  "tag",
   // Dérivés : triés en mémoire, voir lib/api/contacts.ts.
   "followUp",
   "nextReminder",
@@ -109,6 +116,15 @@ export const listContactsQuerySchema = z.object({
   owner: z.string().optional(),
   source: z.string().optional(),
   companyId: z.string().optional(),
+  /** Chaîne vide = « sans étiquette », qui est une sélection, pas une absence. */
+  tag: z.string().optional(),
+  /**
+   * Fiches qu'on ne sait pas joindre. Booléen porté par l'URL : `?incomplete=1`.
+   */
+  incomplete: z
+    .union([z.boolean(), z.string()])
+    .transform((value) => value === true || value === "1" || value === "true")
+    .optional(),
   sort: z.enum(CONTACT_SORT_KEYS).optional(),
   dir: z.enum(["asc", "desc"]).optional(),
 });

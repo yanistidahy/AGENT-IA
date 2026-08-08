@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optedOut } from "../domain/lost";
 import { prisma } from "../db";
 import { generateSequenceTasks } from "../domain/sequences";
 import { SEQUENCE_CHANNELS, TASK_PRIORITIES, type SequenceChannel } from "../domain/types";
@@ -146,7 +147,7 @@ export type RunSequenceInput = z.infer<typeof runSequenceSchema>;
 
 export type RunSequenceResult =
   | { readonly ok: true; readonly tasks: readonly TaskRecord[] }
-  | { readonly ok: false; readonly reason: "not_found" | "inactive" };
+  | { readonly ok: false; readonly reason: "not_found" | "inactive" | "opted_out" };
 
 /**
  * Lance une séquence sur une fiche : chaque étape devient une tâche datée.
@@ -165,6 +166,18 @@ export async function runSequence(
   const sequence = await getSequence(id);
   if (sequence === null) return { ok: false, reason: "not_found" };
   if (!sequence.active) return { ok: false, reason: "inactive" };
+
+  // Opposition au démarchage : le refus est prononcé **ici**, dans le service,
+  // pas dans l'interface. Un bouton grisé n'est pas une garantie — l'API est
+  // appelée par les agents du conseil et par l'import, qui ne voient aucun
+  // bouton. Voir lib/domain/lost.ts.
+  if (input.contactId !== undefined && input.contactId !== null) {
+    const contact = await prisma.contact.findUnique({
+      where: { id: input.contactId },
+      select: { lostReason: true },
+    });
+    if (contact !== null && optedOut(contact)) return { ok: false, reason: "opted_out" };
+  }
 
   const drafts = generateSequenceTasks(sequence, input.start, {
     owner: input.owner,

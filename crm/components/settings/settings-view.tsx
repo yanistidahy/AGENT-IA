@@ -9,6 +9,7 @@ import { ListEditor } from "./list-editor";
 import { PilotageForm } from "./pilotage-form";
 import { RelancesForm } from "./relances-form";
 import { SequenceEditor, type SequenceEditable } from "./sequence-editor";
+import { TagsEditor } from "./tags-editor";
 import { StagesEditor } from "./stages-editor";
 
 interface SettingsViewProps {
@@ -18,6 +19,7 @@ interface SettingsViewProps {
   readonly settings: PilotageSettings;
   readonly delays: ReminderDelays;
   readonly lists: Record<SettingsListKind, readonly string[]>;
+  readonly tags: ReadonlyArray<{ value: string; count: number }>;
 }
 
 const LIST_LABELS: Array<{ kind: SettingsListKind; label: string }> = [
@@ -34,6 +36,7 @@ export function SettingsView({
   settings,
   delays,
   lists,
+  tags,
 }: SettingsViewProps) {
   const router = useRouter();
   const refresh = () => router.refresh();
@@ -78,6 +81,13 @@ export function SettingsView({
             />
           ))}
         </div>
+      </Section>
+
+      <Section
+        title="Étiquettes"
+        hint="renommer met à jour toutes les fiches ; supprimer efface l'étiquette, pas les contacts"
+      >
+        <TagsEditor tags={tags} onSaved={refresh} />
       </Section>
 
       <Section

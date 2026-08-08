@@ -4,8 +4,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
 import { Drawer } from "@/components/ui/drawer";
 import { Icon } from "@/components/ui/icon";
-import { EmptyState, Eyebrow } from "@/components/ui/primitives";
 import type { CompanyRecord } from "@/lib/api/companies";
+import { COMPANY_FILTER_COLUMNS } from "@/lib/api/company-columns";
+import { COMPANY_FILTERS, COMPANY_FILTER_LABELS } from "@/lib/api/company-schemas";
+import type { FacetValue } from "@/lib/domain/column-match";
+import { FilterSummary, useColumnFilters } from "@/components/table/filter-state";
+import { CompaniesTable, type CompanySortKey } from "./companies-table";
 import { moneyShort } from "@/lib/format";
 import type { SequenceOption } from "@/components/activities/run-sequence";
 import { CompanyDrawer } from "./company-drawer";
@@ -18,7 +22,9 @@ import { CompanyForm } from "./company-form";
  */
 interface CompaniesViewProps {
   readonly companies: readonly CompanyRecord[];
-  readonly industries: readonly string[];
+  readonly industries: ReadonlyArray<{ value: string; count: number }>;
+  readonly facets: Readonly<Record<string, readonly FacetValue[]>>;
+  readonly totalRows: number;
   readonly owners: readonly string[];
   readonly sequences: readonly SequenceOption[];
   /** Société désignée par `?fiche=` mais absente de la liste filtrée. */
@@ -34,11 +40,23 @@ export function CompaniesView({
   owners,
   sequences,
   focused,
+  facets,
+  totalRows,
 }: CompaniesViewProps) {
   const router = useRouter();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
   const [creating, setCreating] = useState(false);
+  const {
+    state: filters,
+    setFilter,
+    reset,
+  } = useColumnFilters("/societes", COMPANY_FILTER_COLUMNS);
+
+  const industryNames = industries.map((industry) => industry.value);
+  const chip = params.get("filter");
+  const sortParam = params.get("sort");
+  const dir = params.get("dir") === "desc" ? "desc" : "asc";
 
   const setParam = useCallback(
     (updates: Record<string, string | null>) => {
@@ -92,9 +110,33 @@ export function CompaniesView({
       </header>
 
       <div className="mb-3.5 flex flex-wrap items-center gap-2">
+        <div className="flex overflow-hidden rounded-control border border-line bg-surface">
+          <button
+            type="button"
+            onClick={() => setParam({ filter: null })}
+            className={`border-r border-line px-3 py-1.5 text-[12.5px] font-semibold transition-colors last:border-r-0 ${
+              chip === null ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
+            }`}
+          >
+            Toutes
+          </button>
+          {COMPANY_FILTERS.map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setParam({ filter: value })}
+              className={`border-r border-line px-3 py-1.5 text-[12.5px] font-semibold transition-colors last:border-r-0 ${
+                chip === value ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
+              }`}
+            >
+              {COMPANY_FILTER_LABELS[value]}
+            </button>
+          ))}
+        </div>
+
         <input
           className={`${CONTROL} min-w-[240px]`}
-          placeholder="Rechercher une société…"
+          placeholder="Rechercher : nom, domaine, secteur…"
           defaultValue={params.get("q") ?? ""}
           onChange={(event) => setParam({ q: event.target.value })}
         />
@@ -105,49 +147,37 @@ export function CompaniesView({
         >
           <option value="">Tous les secteurs</option>
           {industries.map((industry) => (
-            <option key={industry}>{industry}</option>
+            <option key={industry.value} value={industry.value}>
+              {industry.value} ({industry.count})
+            </option>
           ))}
         </select>
       </div>
 
-      {companies.length === 0 ? (
-        <div className="rounded-card border border-line bg-surface shadow-card">
-          <EmptyState title="Aucune société ne correspond.">
-            <span className="text-[13px]">
-              Modifiez la recherche, ou créez une société. L'import de contacts en crée
-              également, à partir de la colonne « Société ».
-            </span>
-          </EmptyState>
-        </div>
-      ) : (
-        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))]">
-          {companies.map((company) => (
-            <button
-              key={company.id}
-              type="button"
-              onClick={() => setParam({ fiche: company.id })}
-              className="rounded-card border border-line bg-surface px-4 py-3.5 text-left shadow-card transition-colors hover:border-flux"
-            >
-              <div className="font-display text-[15px] font-semibold tracking-tight">
-                {company.name}
-              </div>
-              <div className="mt-0.5 truncate text-[12.5px] text-muted">
-                {[company.industry, company.loc].filter((v) => v !== "").join(" · ") || "—"}
-              </div>
+      <FilterSummary
+        shown={companies.length}
+        total={totalRows}
+        active={Object.keys(filters).length}
+        onReset={reset}
+      />
 
-              <div className="mt-3 grid grid-cols-3 gap-2 border-t border-line-2 pt-2.5">
-                <Stat label="Contacts" value={String(company.contacts.length)} />
-                <Stat label="Ouvert" value={moneyShort(company.openValue)} />
-                <Stat label="Signé" value={moneyShort(company.wonValue)} />
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
+      <CompaniesTable
+        companies={companies}
+        sort={isSortKey(sortParam) ? sortParam : undefined}
+        dir={dir}
+        onSort={(key) =>
+          setParam({ sort: key, dir: sortParam === key && dir === "asc" ? "desc" : "asc" })
+        }
+        onSelect={(company) => setParam({ fiche: company.id })}
+        facets={facets}
+        filters={filters}
+        onFilter={setFilter}
+        emptyReason={emptyReason(chip)}
+      />
 
       <CompanyDrawer
         company={selected ?? null}
-        industries={industries}
+        industries={industryNames}
         owners={owners}
         sequences={sequences}
         onClose={() => setParam({ fiche: null })}
@@ -157,7 +187,7 @@ export function CompaniesView({
       <Drawer open={creating} title="Nouvelle société" onClose={() => setCreating(false)}>
         <CompanyForm
           company={null}
-          industries={industries}
+          industries={industryNames}
           onCancel={() => setCreating(false)}
           onSaved={refresh}
         />
@@ -166,11 +196,30 @@ export function CompaniesView({
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <Eyebrow>{label}</Eyebrow>
-      <div className="mt-0.5 font-mono text-[13.5px] font-semibold tabular-nums">{value}</div>
-    </div>
-  );
+const SORT_KEYS: readonly CompanySortKey[] = [
+  "name",
+  "industry",
+  "size",
+  "loc",
+  "contacts",
+  "openValue",
+  "wonValue",
+];
+
+function isSortKey(value: string | null): value is CompanySortKey {
+  return value !== null && SORT_KEYS.some((key) => key === value);
+}
+
+/** Une liste vide dit la règle qui l'a produite, pas seulement qu'elle est vide. */
+function emptyReason(chip: string | null): string {
+  switch (chip) {
+    case "pipeline":
+      return "Aucune société ne porte d'affaire en cours. Créez une affaire, ou rattachez-en une à une société.";
+    case "clients":
+      return "Aucune société n'a d'affaire gagnée. Une société devient cliente au premier gain enregistré.";
+    case "orphan":
+      return "Toutes les sociétés portent au moins un contact — rien à compléter de ce côté.";
+    default:
+      return "Modifiez la recherche ou les filtres, ou créez une société. L'import de contacts en crée également, à partir de la colonne « Société ».";
+  }
 }
