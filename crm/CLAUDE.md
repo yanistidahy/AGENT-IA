@@ -269,6 +269,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 17 | **Clés de schéma en ASCII** — cause nommée, garde vitest, substitut qui valide | **livré, à valider** |
 | 18 | **Le fil comme une conversation** — bande de portraits, écran d'ouverture, amorces | **livré, à valider** |
 | 19 | **Le filet** — fusion vers `main`, sauvegardes automatiques, planificateur | **livré, à valider** |
+| 20 | **Le cockpit** — file dense et groupable, anneau du jour, entonnoir, annulation | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -2403,3 +2404,180 @@ route) et répond correctement.
 
 **La rétention n'efface pas l'historique git.** Voir plus haut : c'est le prix
 du dépôt GitHub, et il est assumé tant que S3 n'est pas branché.
+
+## Jalon 19 (suite) — le pilote GitHub, exercé enfin
+
+Avant de livrer les instructions de configuration, le pilote GitHub a été
+exercé contre une imitation fidèle de l'API Contents — le seul chemin que le
+jalon 19 laissait non prouvé. Deux défauts en sont sortis, aucun visible à la
+lecture du code.
+
+**Au-delà d'un mégaoctet, la lecture revenait vide.** La réponse JSON de l'API
+Contents rend `content: ""` avec `encoding: "none"` passé ce seuil : elle
+réussit, et elle ne contient rien. Une sauvegarde de CRM franchit le mégaoctet
+très vite, et le défaut ne se serait manifesté qu'à la restauration — le seul
+moment où il coûte tout. La lecture passe désormais par le type média
+`application/vnd.github.raw`, qui rend le fichier tel quel jusqu'à cent
+mégaoctets. Le round-trip est vérifié sur une charge de 1,4 Mo contenant des
+caractères accentués.
+
+**Les erreurs ne portaient que le code HTTP.** Un 404 en écriture veut dire
+« branche absente », « dépôt inconnu » ou « jeton sans accès à ce dépôt » :
+trois causes, trois gestes différents. GitHub le dit dans `message` ; ce texte
+remonte maintenant jusqu'à l'écran de réglages, là où la configuration se fait.
+
+Vérifié contre l'imitation : première écriture, écrasement avec `sha`, listage,
+lecture, suppression, suppression d'un absent (silencieuse, la rétention a
+atteint son but), et dossier inexistant traité comme « rien encore ».
+
+### Configuration retenue
+
+Les variables du service Railway portent la destination
+(`SNAPSHOT_STORE=github`, `SNAPSHOT_GITHUB_REPO`, `SNAPSHOT_GITHUB_TOKEN`) ;
+les secrets de dépôt GitHub portent le déclencheur (`CRM_URL`, `CRON_SECRET`).
+`CRON_SECRET` est le seul présent des deux côtés, avec la même valeur.
+
+Le jeton est un PAT **à portée fine**, restreint au seul dépôt de sauvegarde,
+avec `Contents: Read and write` (et `Metadata: Read`, ajouté d'office). Aucun
+jeton classique à portée `repo` n'est nécessaire — le pilote n'appelle que
+`/repos/{owner}/{repo}/contents/…`.
+
+Le dépôt doit être créé **avec un README** : chaque écriture envoie
+`branch: "main"`, et un dépôt sans commit n'a pas de `main`. Le dossier
+`snapshots/` n'a pas à préexister : un 404 sur le dossier vaut « rien encore »,
+et l'API crée les répertoires intermédiaires à l'écriture.
+
+## Jalon 20 — le tableau de bord devient un cockpit
+
+### Ce qui n'allait pas
+
+Dix cartes quasi identiques, trois boutons chacune, empilées. Sarah l'avait dit
+elle-même dans un fil : « ce n'est pas dix décisions, c'en est une » — et
+l'écran forçait à décider dix fois. Aucun chiffre ne récompensait le travail
+fait ; aucune forme ne montrait où le portefeuille fuit.
+
+### Une action groupée n'est offerte que si elle s'applique à tout
+
+`batchActions()` ne retient une action que si **chaque** ligne sélectionnée la
+supporte. Proposer « Marquer perdu » sur six lignes dont deux sont des affaires,
+puis n'en traiter que quatre, produit un écran qui ment sur ce qu'il vient de
+faire. Ce qui manque est expliqué (« ne s'applique pas à toute la sélection »)
+plutôt que retiré sans un mot : un bouton absent sans raison se lit comme une
+panne.
+
+### L'annulation est une donnée, pas du code
+
+Chaque écriture du lot calcule son inverse **avant** d'écrire, à partir de
+l'état lu, et le renvoie au client. Le déduire après coup reviendrait à
+restaurer une valeur plausible plutôt que la vraie. Le client garde ce document
+le temps du bandeau et le repose tel quel sur la même route ; il ne l'inspecte
+jamais, sinon il existerait deux définitions de l'annulation.
+
+Rien n'est gardé côté serveur : une pile d'annulation devrait être attribuée à
+une session, expirée, nettoyée — de l'état à gérer pour cinq secondes de
+bandeau. Le lancement de séquence s'annule en supprimant les tâches qu'il vient
+de créer, et elles seules.
+
+### Le dénominateur de l'anneau ne recule jamais
+
+La file rétrécit quand on travaille. Mesurer « traité sur ce qui reste » ferait
+un anneau immobile toute la journée. La taille du jour est donc figée au premier
+affichage (`queue_days`), et seulement **relevée** si de nouvelles échéances
+tombent — jamais abaissée. Les lignes traitées sont comptées comme des lignes
+distinctes (`queue_marks`, unique sur `(jour, ligne)`) : reporter deux fois la
+même relance est une seule ligne traitée, et un compteur incrémenté l'aurait
+comptée deux fois.
+
+Zéro sur zéro ne vaut pas cent pour cent : une journée sans rien à faire n'est
+pas une journée accomplie, et l'écran le dit autrement.
+
+### Un taux sur zéro n'existe pas
+
+`conversionRate(0, n)` rend `null`, pas `0 %`. Zéro pour cent affirme un échec de
+conversion ; sur une bande vide il n'y a rien à convertir. Même règle pour le
+taux de réponse, déjà en place, et pour les comparaisons de période : sans
+période précédente connue, aucune tendance n'est affichée. La carte « Jamais
+contactés » n'a donc **pas** de comparaison — rien en base ne dit combien de
+fiches n'avaient jamais été approchées la semaine dernière, et inventer une
+tendance serait pire qu'un chiffre nu.
+
+### La couleur suit le sens, pas le signe
+
+`describeDelta` reçoit la direction souhaitable et refuse de la deviner : un
+« + » sur « Jamais contactés » est une mauvaise nouvelle.
+
+### Le mouvement est réglé en un seul endroit
+
+`app/globals.css` neutralise animations et transitions sous
+`prefers-reduced-motion`. Aucun composant n'a besoin de s'en souvenir, et aucun
+ne peut l'oublier. Les durées sont ramenées à un instant plutôt qu'à zéro, pour
+que les gestionnaires de fin de transition se déclenchent tout de même.
+
+### Le bandeau de sauvegarde s'acquitte, sans se taire
+
+Une alerte qu'on ne peut pas acquitter est une alerte qu'on apprend à ne plus
+voir. L'acquittement porte sur **l'épisode** — la clé mémorisée est la date de la
+dernière réussite — et non sur le bandeau : une nouvelle sauvegarde qui réussit
+puis reprend du retard produit une clé différente, et le bandeau revient plein.
+
+Le bandeau est **plein tant que le stockage local n'est pas lu**. L'inverse — ne
+rien rendre en attendant — a été écrit, et le test de page l'a rejeté : l'alerte
+devenait invisible côté serveur, donc absente pour qui n'exécute pas le script.
+Une alerte qui dépend du navigateur pour apparaître n'est pas une alerte.
+
+### Trois défauts trouvés par la vérification, pas par la lecture
+
+1. **Le bandeau de sauvegarde rendu `null` côté serveur** — voir ci-dessus,
+   attrapé par `home-page.test.ts`.
+2. **La dernière bande de l'entonnoir sortait du cadre.** Une fiche peut porter
+   plusieurs affaires : avec 24 affaires pour 18 contacts, la largeur relative
+   dépassait 1 et le rectangle se dessinait hors de l'image (`x = -113`, largeur
+   906 pour un cadre de 680). `share` est maintenant bornée des deux côtés.
+3. **Les taux de passage étaient rognés.** Placés au bord droit de leur bande,
+   ils sortaient du `viewBox` dès qu'une bande occupait toute la largeur. Ils
+   forment désormais une colonne alignée à droite du cadre.
+
+Un quatrième défaut, préexistant, a été corrigé au passage : le test « base
+vide » mettait tous les compteurs du mock à zéro sans les rendre, si bien que
+tout test écrit après lui sortait par le retour anticipé de la page.
+
+### Jalon 20 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, migration `8_queue` appliquée :
+
+- **file lue** : 12 lignes — 3 relances dues, 5 tâches en retard, 4 affaires
+  bloquées ;
+- **lot réel** : 6 relances sélectionnées, actions offertes calculées
+  (`postpone-3`, `postpone-7`, `sequence`, `assign`, `lost`), report de 3 jours
+  appliqué → 3 échéances déplacées **en base**, 3 marques du jour posées,
+  avancement passé de 0/12 à 3/12 ;
+- **annulation** : 3 étapes rejouées, `nextReminder` de chaque contact
+  **identique à l'octet près** à sa valeur d'origine, marques du jour retombées
+  à 0 ;
+- **liens de l'entonnoir** : chaque bande ouvre exactement ce qu'elle annonce —
+  `followUp=contacted` → 18, `recent` → 9, `answered` → 0, égaux aux nombres
+  dessinés ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (529 tests) verts.
+
+### Jalon 20 — ce qui ne l'est pas
+
+**Le clavier et la sélection n'ont pas été exercés dans un navigateur.** `j`,
+`k`, `espace`, `↵` et `c` sont testés au niveau du domaine — l'ordre visible
+enjambe bien les groupes repliés, le curseur ne boucle pas, il retombe sur une
+extrémité quand la ligne pointée disparaît — mais aucun test ne presse une
+touche. Le rendu des composants est vérifié, leur interactivité non : il n'y a
+pas d'environnement DOM dans cette suite.
+
+**Le regroupement par société n'a pas été vu sur données réelles.** Le jeu de
+démonstration n'a aucune société portant deux lignes de file simultanément. La
+règle est couverte par cinq tests unitaires, y compris l'ordre d'apparition et
+le cas « seule de sa société » ; ce qui reste à voir est son allure à l'écran.
+
+**L'optimisme et le bandeau d'annulation n'ont été exercés que par le service.**
+Le retrait immédiat de la ligne, le rétablissement en cas de refus partiel et le
+compte à rebours de cinq secondes sont du code client sans test automatique. Le
+chemin serveur qu'ils appellent, lui, est vérifié de bout en bout ci-dessus.
+
+**Le lancement de séquence en lot n'a pas été exercé en base.** Son inverse
+(supprimer les tâches créées) est écrit et typé, jamais joué : le jeu de
+démonstration n'a pas de séquence active rattachable aux contacts de la file.

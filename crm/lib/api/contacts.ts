@@ -11,8 +11,9 @@ import {
   type FollowUpStatus,
 } from "../domain/follow-up";
 import { isLost, LOST_LIFECYCLE } from "../domain/lost";
-import { isStale, nameOverflow } from "../domain/status";
+import { ANSWERED_OUTCOMES, isStale, nameOverflow } from "../domain/status";
 import { searchText, searchTerm } from "../domain/text";
+import { addDays, startOfDay } from "../domain/dates";
 import type { FilterState } from "../domain/column-filters";
 import { facetsFor, matchesAll, type FacetValue } from "../domain/column-match";
 import { columnsWhere, derivedFilters } from "./column-filters";
@@ -277,6 +278,17 @@ function contactsWhere(
   if (query.companyId !== undefined) and.push({ companyId: query.companyId });
   if (query.tag !== undefined) {
     and.push(query.tag === "" ? { tag: "" } : { tag: query.tag });
+  }
+
+  // Les bandes de l'entonnoir : trois questions d'historique, une clause SQL
+  // chacune. En mémoire il faudrait charger les interactions de chaque fiche
+  // pour répondre à ce qu'un `EXISTS` tranche en base.
+  if (query.followUp === "contacted") and.push({ activities: { some: {} } });
+  if (query.followUp === "recent") {
+    and.push({ activities: { some: { date: { gte: addDays(startOfDay(now), -7) } } } });
+  }
+  if (query.followUp === "answered") {
+    and.push({ activities: { some: { outcome: { in: [...ANSWERED_OUTCOMES] } } } });
   }
 
   // Recherche insensible aux accents : elle porte sur le miroir normalisé, pas

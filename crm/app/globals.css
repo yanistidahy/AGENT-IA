@@ -84,6 +84,29 @@
   }
 }
 
+/* Apparition du bandeau d'annulation. Volontairement courte : elle signale
+   qu'un élément est arrivé, elle ne se fait pas admirer — et la règle
+   `prefers-reduced-motion` ci-dessous la réduit à rien pour qui la refuse. */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/**
+ * Le contrat de mouvement du produit, en un seul endroit.
+ *
+ * Chaque animation et chaque transition de l'application passe par cette règle :
+ * aucun composant n'a besoin de se souvenir de respecter la préférence système,
+ * et aucun ne peut l'oublier. Les durées sont ramenées à un instant plutôt qu'à
+ * zéro, pour que les gestionnaires de fin de transition se déclenchent tout de
+ * même.
+ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

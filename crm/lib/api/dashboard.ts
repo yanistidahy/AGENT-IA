@@ -13,6 +13,8 @@ import type {
   TaskPriority,
 } from "../domain/types";
 import { getPilotage, listStages } from "./reference";
+import { ANSWERED_OUTCOMES } from "../domain/status";
+import type { FunnelInput } from "../domain/funnel";
 
 /**
  * Données du centre de pilotage.
@@ -341,44 +343,129 @@ export function groupByDay(items: readonly UpcomingItem[]): Array<[string, Upcom
 export interface ProspectingMetrics {
   readonly byLifecycle: ReadonlyArray<{ label: string; value: number }>;
   readonly contactedThisWeek: number;
+  /** Même mesure sur les sept jours précédents. Sert à la comparaison des cartes. */
+  readonly contactedPreviousWeek: number;
   /** Interactions ayant reçu une réponse, sur celles dont l'issue est connue. */
   readonly responseRate: number | null;
+  /** Le même taux sur les trente jours d'avant ; `null` si rien n'était renseigné. */
+  readonly responseRatePrevious: number | null;
   readonly neverContacted: number;
   readonly total: number;
+  /** Fiches créées sur les sept derniers jours, et sur les sept d'avant. */
+  readonly createdThisWeek: number;
+  readonly createdPreviousWeek: number;
 }
 
-export async function readProspecting(now: Date = new Date()): Promise<ProspectingMetrics> {
-  const weekAgo = addDays(startOfDay(now), -7);
-
-  const [byLifecycle, total, contactedThisWeek, neverContacted, outcomes] = await Promise.all([
-    prisma.contact.groupBy({ by: ["lifecycle"], _count: { _all: true } }),
-    prisma.contact.count(),
-    prisma.contact.count({ where: { activities: { some: { date: { gte: weekAgo } } } } }),
-    prisma.contact.count({ where: { lastContact: null, activities: { none: {} } } }),
-    prisma.activity.groupBy({
-      by: ["outcome"],
-      where: { NOT: { outcome: "" }, date: { gte: addDays(startOfDay(now), -30) } },
-      _count: { _all: true },
-    }),
-  ]);
+/** Taux de réponse sur une fenêtre : réponses sur échanges dont l'issue est connue. */
+async function responseRateBetween(from: Date, to: Date): Promise<number | null> {
+  const outcomes = await prisma.activity.groupBy({
+    by: ["outcome"],
+    where: { NOT: { outcome: "" }, date: { gte: from, lt: to } },
+    _count: { _all: true },
+  });
 
   // Le taux ne porte que sur les échanges dont l'issue est **connue** : compter
   // les interactions sans issue comme des non-réponses gonflerait l'échec avec
   // de la donnée manquante.
   const known = outcomes.reduce((sum, row) => sum + row._count._all, 0);
+  if (known === 0) return null;
+
   const answered = outcomes
     .filter((row) => row.outcome !== "no-answer")
     .reduce((sum, row) => sum + row._count._all, 0);
+  return Math.round((answered / known) * 100);
+}
+
+export async function readProspecting(now: Date = new Date()): Promise<ProspectingMetrics> {
+  const today = startOfDay(now);
+  const weekAgo = addDays(today, -7);
+  const twoWeeksAgo = addDays(today, -14);
+  const monthAgo = addDays(today, -30);
+  const twoMonthsAgo = addDays(today, -60);
+  const soon = addDays(today, 1);
+
+  const [
+    byLifecycle,
+    total,
+    contactedThisWeek,
+    contactedPreviousWeek,
+    neverContacted,
+    createdThisWeek,
+    createdPreviousWeek,
+    responseRate,
+    responseRatePrevious,
+  ] = await Promise.all([
+    prisma.contact.groupBy({ by: ["lifecycle"], _count: { _all: true } }),
+    prisma.contact.count(),
+    prisma.contact.count({ where: { activities: { some: { date: { gte: weekAgo } } } } }),
+    prisma.contact.count({
+      where: { activities: { some: { date: { gte: twoWeeksAgo, lt: weekAgo } } } },
+    }),
+    prisma.contact.count({ where: { lastContact: null, activities: { none: {} } } }),
+    prisma.contact.count({ where: { createdAt: { gte: weekAgo } } }),
+    prisma.contact.count({ where: { createdAt: { gte: twoWeeksAgo, lt: weekAgo } } }),
+    responseRateBetween(monthAgo, soon),
+    responseRateBetween(twoMonthsAgo, monthAgo),
+  ]);
 
   return {
     byLifecycle: byLifecycle
       .map((row) => ({ label: row.lifecycle, value: row._count._all }))
       .sort((a, b) => b.value - a.value),
     contactedThisWeek,
-    responseRate: known === 0 ? null : Math.round((answered / known) * 100),
+    contactedPreviousWeek,
+    responseRate,
+    responseRatePrevious,
     neverContacted,
     total,
+    createdThisWeek,
+    createdPreviousWeek,
   };
+}
+
+/**
+ * Ce qui attend demain.
+ *
+ * Sert l'état de fin de journée : une file vidée doit dire ce qui vient, sinon
+ * elle ne dit rien de plus qu'un vide. Compté sur les deux sources de relance —
+ * tâches datées et relances programmées — comme le bloc « Relances à venir »,
+ * pour que les deux écrans ne donnent pas deux chiffres.
+ */
+export async function readTomorrow(now: Date = new Date()): Promise<number> {
+  const from = addDays(startOfDay(now), 1);
+  const to = addDays(from, 1);
+
+  const [tasks, reminders] = await Promise.all([
+    prisma.task.count({ where: { done: false, due: { gte: from, lt: to } } }),
+    prisma.contact.count({
+      where: { nextReminder: { gte: from, lt: to }, NOT: { lifecycle: LOST_LIFECYCLE } },
+    }),
+  ]);
+
+  return tasks + reminders;
+}
+
+/**
+ * Les cinq nombres de l'entonnoir.
+ *
+ * Comptés en base plutôt que dérivés d'une liste chargée en mémoire : la page
+ * n'a besoin que des totaux, et rapatrier cent trente-neuf fiches pour en
+ * compter cinq nombres serait payer une lecture pour un affichage.
+ */
+export async function readFunnel(now: Date = new Date()): Promise<FunnelInput> {
+  const weekAgo = addDays(startOfDay(now), -7);
+
+  const [total, contacted, thisWeek, answered, deals] = await Promise.all([
+    prisma.contact.count(),
+    prisma.contact.count({ where: { activities: { some: {} } } }),
+    prisma.contact.count({ where: { activities: { some: { date: { gte: weekAgo } } } } }),
+    prisma.contact.count({
+      where: { activities: { some: { outcome: { in: [...ANSWERED_OUTCOMES] } } } },
+    }),
+    prisma.deal.count(),
+  ]);
+
+  return { total, contacted, thisWeek, answered, deals };
 }
 
 /**

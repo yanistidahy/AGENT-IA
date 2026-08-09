@@ -40,3 +40,16 @@ export function startOfDay(date: Date): Date {
   copy.setHours(0, 0, 0, 0);
   return copy;
 }
+
+/**
+ * Clé de journée, `AAAA-MM-JJ`.
+ *
+ * Sur le fuseau local, comme `startOfDay` et comme le reste du projet : deux
+ * définitions de « aujourd'hui » dans la même base finiraient par se croiser à
+ * minuit, et le désaccord serait invisible en journée.
+ */
+export function dayKey(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}

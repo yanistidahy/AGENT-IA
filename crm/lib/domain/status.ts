@@ -40,6 +40,18 @@ export const OUTCOME_LABELS: Record<Outcome, string> = {
   "wrong-person": "Mauvais interlocuteur",
 };
 
+/**
+ * Les issues qui valent réponse.
+ *
+ * « Pas intéressé » en fait partie : la personne a répondu, elle a dit non. Les
+ * confondre avec un silence ferait passer un portefeuille qui répond mal pour un
+ * portefeuille qui ne répond pas — deux problèmes, deux remèdes. Défini ici pour
+ * que le taux de réponse et le filtre de l'entonnoir emploient la même règle.
+ */
+export const ANSWERED_OUTCOMES: readonly Outcome[] = OUTCOMES.filter(
+  (outcome) => outcome !== "no-answer",
+);
+
 export function isOutcome(value: string): value is Outcome {
   return OUTCOMES.some((candidate) => candidate === value);
 }

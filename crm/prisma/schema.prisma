@@ -471,3 +471,40 @@ model SnapshotRun {
   @@index([startedAt])
   @@map("snapshot_runs")
 }
+
+/// La file du jour, figée au premier affichage.
+///
+/// Sans cette ligne, le dénominateur de l'anneau d'avancement reculerait à
+/// chaque élément traité — la file rétrécit quand on travaille — et l'anneau
+/// resterait éternellement au même endroit. `planned` fixe la taille du matin ;
+/// il peut monter en cours de journée si de nouvelles échéances tombent, jamais
+/// descendre.
+model QueueDay {
+  /// AAAA-MM-JJ, calculé sur le fuseau du serveur comme le reste du projet.
+  day       String   @id
+  planned   Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@map("queue_days")
+}
+
+/// Un élément de la file traité aujourd'hui.
+///
+/// Le compte se fait sur des lignes distinctes plutôt que sur un compteur
+/// incrémenté : reporter deux fois la même relance est une seule ligne traitée,
+/// et un compteur l'aurait comptée deux fois. La contrainte d'unicité porte la
+/// règle, plutôt qu'un test applicatif qui perdrait aux écritures concurrentes.
+model QueueMark {
+  id String @id @default(cuid())
+  /// Même clé que `QueueDay.day`.
+  day String
+  /// Identifiant de ligne de file : `reminder-<contact>`, `task-<id>`, `deal-<id>`.
+  itemId String
+  /// L'action qui a retiré la ligne, pour le journal. Sans valeur de calcul.
+  action String   @default("")
+  at     DateTime @default(now())
+
+  @@unique([day, itemId])
+  @@index([day])
+  @@map("queue_marks")
+}
