@@ -2,7 +2,8 @@ import "server-only";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { anthropic, MODEL } from "@/lib/agents/runtime/client";
-import { findAgent, systemPromptFor } from "@/lib/agents/registry";
+import { findAgent } from "@/lib/agents/registry";
+import { promptForAgent } from "@/lib/api/agents";
 import { findTool } from "@/lib/agents/tools";
 import {
   dedupeKey as buildKey,
@@ -13,7 +14,7 @@ import {
   type ProposedAction,
   type RecommendationDraft,
 } from "@/lib/domain/recommendations";
-import { alfredBriefing, renderBriefing, sachaBriefing, type Briefing } from "./briefing";
+import { qualityBriefing, renderBriefing, followUpBriefing, type Briefing } from "./briefing";
 import { SHIFT_RULES } from "./prompt";
 
 /**
@@ -28,10 +29,16 @@ import { SHIFT_RULES } from "./prompt";
  * exactement la confusion qu'on veut éviter.
  */
 
-/** Les deux vacations câblées. Les six autres agents attendent la validation. */
+/**
+ * Les deux vacations câblées. Les six autres agents attendent la validation.
+ *
+ * Le briefing est nommé d'après ce qu'il collecte, pas d'après l'agent : c'est
+ * un périmètre, et le renommer chaque fois qu'on renomme un agent n'aurait
+ * aucun sens. Le lien entre les deux se fait ici, par le slug.
+ */
 export const SHIFTS = [
-  { agentId: "sacha", brief: sachaBriefing, order: 1 },
-  { agentId: "alfred", brief: alfredBriefing, order: 2 },
+  { agentId: "sarah", brief: followUpBriefing, order: 1 },
+  { agentId: "sabrina", brief: qualityBriefing, order: 2 },
 ] as const;
 
 export type ShiftOutcome = "ok" | "empty" | "skipped" | "error";
@@ -271,9 +278,13 @@ export async function runShift(
     const settings = await prisma.settings.findUnique({ where: { id: "singleton" } });
     const budget = settings?.shiftTokenBudget ?? 4000;
 
-    const prompt = `${systemPromptFor(agent)}\n\n${SHIFT_RULES}`;
+    const prompt = await promptForAgent(shift.agentId);
+    if (prompt === null) {
+      return finish({ ...nothing, outcome: "error", detail: "Prompt introuvable." });
+    }
+    const system = `${prompt}\n\n${SHIFT_RULES}`;
     const body = renderBriefing(briefing);
-    const estimated = estimateTokens(prompt + body);
+    const estimated = estimateTokens(system + body);
 
     // Le plafond s'applique **avant** l'appel : on n'interrompt pas une
     // complétion en cours, on refuse de la lancer.
@@ -289,7 +300,7 @@ export async function runShift(
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: budget,
-      system: prompt,
+      system,
       messages: [{ role: "user", content: body }],
     });
 

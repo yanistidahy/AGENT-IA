@@ -64,6 +64,10 @@ vi.mock("@/lib/db", () => ({
     sequence: { count: () => Promise.resolve(counts.sequence), findMany: empty },
     settingsList: { findMany: empty },
     recommendation: { findMany: empty },
+    // Le titre du bloc de recommandations porte le nom réglé de l'agent
+    // d'arbitrage : la page lit donc l'identité du conseil.
+    agent: { findMany: empty },
+    agentPhoto: { findMany: empty },
     settings: { findUnique: () => Promise.resolve(null) },
   },
 }));

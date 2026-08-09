@@ -264,6 +264,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 12 | Rattrapage `searchText`, corrections depuis `/reglages`, parité des filtres, `/clients` | **livré, à valider** |
 | 13 | Statut saisi à la consignation, accueil actionnable, noms débordés | **livré, à valider** |
 | 14 | **Le conseil en vacations** — recommandations prouvées, planificateur, budget | **livré, à valider** |
+| 15 | **Identité du conseil** — agents réglables, portraits en base, agent en pied | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -1798,3 +1799,159 @@ toujours pas fait.
 **Un seul planificateur, sans reprise sur échec.** Si le cron ne se déclenche pas
 du tout — service arrêté, Railway en panne — rien ne le signale : le journal ne
 peut montrer que les runs qui ont eu lieu. Une vacation manquée est invisible.
+
+## Jalon 15 — l'identité du conseil devient de la donnée
+
+### Le partage : ce qui décide du comportement, ce qui décide de l'apparence
+
+| | Où | Modifiable depuis l'écran |
+|---|---|---|
+| `slug`, personnalité, outils, verrou, périmètre | `lib/agents/registry.ts` + `lib/agents/prompts/<slug>.ts` | non |
+| nom, rôle affiché, photo, ordre, cadence, activation | table `agents` / `agent_photos` | oui |
+
+Les deux se rejoignent dans `lib/api/agents.ts`, et nulle part ailleurs. Comme
+le prompt est retrouvé **par le slug**, renommer un agent ne peut pas changer ce
+qu'il fait — c'était la condition posée, et c'est la seule chose que cette
+séparation achète vraiment.
+
+`slug` n'est pas éditable, et ce n'est pas un oubli : il indexe le prompt, les
+conversations, les recommandations et les vacations. Le rendre modifiable
+transformerait un renommage en migration de données.
+
+### Sacha devient Sarah, Alfred devient Sabrina
+
+Un renommage de slug, donc une reprise de données — c'est précisément ce qu'on
+s'interdit désormais, et la migration `6_agents` est là pour qu'il n'y ait à le
+faire qu'une fois. Elle réécrit `agentId` dans `conversations`,
+`recommendations` et `shift_runs`, **et** le préfixe des `dedupeKey` : sans ce
+dernier point, chaque constat de Sarah serait revenu une fois sous sa nouvelle
+clé, ce qui aurait ressemblé à une panne de déduplication.
+
+Les briefings sont renommés d'après ce qu'ils collectent — `followUpBriefing`,
+`qualityBriefing` — et non d'après l'agent. Un périmètre ne change pas de nom
+parce qu'une personne en change.
+
+### Les personnalités ne contiennent plus aucun nom
+
+Chaque prompt s'ouvrait sur « Tu es Sacha, responsable Sales & Closing ». Un
+nom réglable et un nom figé dans un fichier finissent toujours par se
+contredire : l'écran aurait affiché Sarah pendant que l'agent se serait présenté
+comme Sacha. L'identité est donc **injectée** par `buildSystemPrompt`, et la
+liste des collègues avec elle — un renvoi vers un nom écrit en dur désignerait
+tôt ou tard quelqu'un qui n'existe plus.
+
+Un test parcourt les huit personnalités et échoue si l'une d'elles contient
+encore « Tu es <un nom d'agent> ».
+
+Les initiales du repli sont **calculées** depuis le nom, jamais stockées : des
+initiales enregistrées à côté finiraient par le contredire — « Sabrina »
+affichée « AL ».
+
+### Les portraits vivent dans PostgreSQL
+
+Le disque du conteneur Railway est effacé à chaque déploiement : un fichier
+écrit à côté ne survivrait pas au prochain `git push`. PostgreSQL est le seul
+stockage durable du projet, et huit portraits n'y pèsent rien — 227 Ko pour le
+plus gros.
+
+**Table séparée, volontairement.** `agent_photos` n'est jamais lue par
+`listAgentProfiles()`, qui tourne à chaque rendu de `/conseil` et de
+`/reglages` : seules l'existence et la version remontent. Garder les octets dans
+`Agent` ferait voyager les portraits à chaque `findMany`, y compris là où
+personne ne les affiche.
+
+**L'image n'est jamais conservée telle quelle** — décodée, redimensionnée,
+réencodée par `sharp`. Trois effets, dans l'ordre où ils comptent : ce qu'on
+sert ne transporte plus de charge utile exotique ; les métadonnées EXIF
+disparaissent, dont la géolocalisation qu'un téléphone glisse dans chaque
+photo ; et le poids servi devient prévisible.
+
+Deux tailles × deux encodages : portrait 600×900 `fit: inside` (jamais agrandi,
+jamais déformé), vignette 128×128 `cover` cadrée sur l'attention, en WebP avec
+repli JPEG choisi sur l'en-tête `Accept`.
+
+**SVG est refusé**, et c'est le seul refus qui mérite une phrase : c'est une
+image pour un navigateur, mais un document capable de porter du script. Servi
+depuis notre propre domaine, il s'exécuterait dans la session. La liste des
+types acceptés est donc fermée, jamais un test sur le préfixe `image/`.
+
+**Le cache tient au jeton de version dans l'URL.** `?v=<empreinte>` désigne un
+contenu immuable : remplacer la photo change l'empreinte, donc l'URL. Un an de
+cache ne peut donc pas servir une photo périmée. Sans jeton, on retombe sur une
+revalidation systématique — seule façon honnête de rester frais. L'ETag inclut
+la taille *et* l'encodage : deux navigateurs qui reçoivent des octets différents
+ne doivent pas partager une empreinte.
+
+### L'agent en pied plutôt qu'en pastille
+
+`/conseil` gagne une colonne de gauche : portrait vertical, nom en grand, rôle,
+périmètre en une phrase, et les trois faits qui disent si l'agent travaille —
+dernière vacation, constats en attente, cadence. En dessous, ses recommandations
+avec accepter / écarter / plus tard, pour pouvoir travailler avec lui sans
+quitter la vue.
+
+Le roster passe du cercle de 32 px à une vignette 3/4 : un cercle rogne le front
+et le menton, c'est-à-dire ce qui rend un visage reconnaissable.
+
+Sous `lg`, la colonne devient un bandeau et le roster une bande défilante
+horizontalement — changer d'agent reste possible sur un téléphone, et la
+conversation garde la largeur.
+
+**Le repli est généré, pas téléchargé** : initiales sur le fond de couleur de
+l'agent, sans requête ni instant où la case reste vide. Un agent sans photo
+occupe exactement la même place qu'un agent qui en a une, ce qui est la seule
+façon d'empêcher la mise en page de sauter quand on ajoute un portrait.
+
+Chaque portrait porte un texte alternatif qui nomme la personne **et** son rôle,
+produit par une seule fonction — `portraitAlt()` — pour qu'aucune des trois
+surfaces ne puisse livrer une image muette.
+
+### Jalon 15 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** et le serveur standalone de production, la
+migration appliquée sur une base portant déjà des données au format précédent,
+puis `migrate diff` renvoyant une migration vide :
+
+- **reprise des identifiants** : 2 recommandations et 2 vacations en `sacha` /
+  `alfred` deviennent `sarah` / `sabrina`, **clés de déduplication comprises** ;
+- **huit agents semés**, dans l'ordre, avec leur cadence ;
+- **JPEG de 4,3 Mo** → accepté, servi en WebP 600×900 de 227 Ko et vignette
+  128×128 de 3,6 Ko ; **PDF** → refusé en le nommant ; **PDF renommé en
+  `image/jpeg`** → refusé au décodage, pas au type déclaré ; **7,9 Mo** →
+  refusé en donnant le poids et la limite ;
+- **cache** : `?v=…` → `max-age=31536000, immutable` ; sans jeton →
+  `no-cache, must-revalidate` ; `If-None-Match` → **304 sans corps** ; le même
+  ETag présenté pour un autre encodage → 200, pas 304 ;
+- **privé** : sans session, le portrait répond 401 ; sans photo, 404 ;
+- **renommage** : « Sarah Lemoine / Relance & Closing » apparaît dans le roster,
+  en pied, dans les réglages, **et en tête du prompt système** — vérifié : la
+  première ligne devient « Tu es Sarah Lemoine, Relance & Closing d'AuraFLOW
+  AI. », et ni « Sacha » ni « Alfred » n'y subsistent ;
+- **le bloc d'accueil suit** : renommer l'agent d'arbitrage fait passer le titre
+  de « Le point de Sabrina » à « Le point de Sabrina Roche » ;
+- **redémarrage conteneur** (disque neuf, même base) → portrait servi à
+  l'identique, 227 442 octets, nom conservé ;
+- **repli** : 8 blocs d'initiales rendus pour les agents sans photo, aucun
+  espace vide ; Étienne verrouillé rend son portrait désaturé avec le cadenas ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (448 tests) verts.
+
+### Jalon 15 — ce qui ne l'est pas
+
+**L'historique des conversations n'est pas atteignable sous `lg`.** La colonne
+est masquée sur mobile au profit de la conversation. Choisir un agent et lui
+parler fonctionne ; retrouver un échange d'avant-hier demande un écran large.
+
+**Le rendu visuel n'a pas été comparé à une référence.** Le recadrage `attention`
+de `sharp` choisit la zone la plus saillante, ce qui marche bien sur un portrait
+et moins bien sur une photo de groupe. Ce qui est vérifié, ce sont les
+dimensions, les formats et les poids — pas que le visage soit bien centré.
+
+**Aucune limite au nombre d'envois.** Rien n'empêche de remplacer un portrait
+mille fois de suite ; chaque envoi remplace le précédent, donc la base ne
+grossit pas, mais le temps processeur du redimensionnement n'est pas compté.
+
+**Les six autres agents n'ont toujours pas de vacation** — seules Sarah et
+Sabrina en portent une. Leur cadence est réglable dans l'écran, mais seule la
+valeur de ces deux-là est lue par `SHIFTS` ; changer la cadence de Victor
+n'aura aucun effet tant qu'il n'est pas câblé. C'est un réglage qui promet plus
+que ce que le code tient, et c'est la principale dette de ce jalon.

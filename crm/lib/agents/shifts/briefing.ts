@@ -79,7 +79,7 @@ function name(contact: { firstName: string; lastName: string }): string {
  * Quatre questions, chacune une requête. Les fiches `Perdu` sont écartées
  * partout : une relance sur quelqu'un qui a dit non n'est pas un oubli.
  */
-export async function sachaBriefing(now: Date = new Date()): Promise<Briefing> {
+export async function followUpBriefing(now: Date = new Date()): Promise<Briefing> {
   const settings = await getPilotage();
   const today = startOfDay(now);
   const notLost = { NOT: { lifecycle: LOST_LIFECYCLE } };
@@ -196,7 +196,7 @@ export async function sachaBriefing(now: Date = new Date()): Promise<Briefing> {
  * Il reçoit en plus les recommandations produites par le même run — c'est ce qui
  * lui permet d'arbitrer sans redire ce que les autres viennent de dire.
  */
-export async function alfredBriefing(now: Date = new Date()): Promise<Briefing> {
+export async function qualityBriefing(now: Date = new Date()): Promise<Briefing> {
   const settings = await getPilotage();
 
   const [incomplete, orphanCompanies, frozen] = await Promise.all([

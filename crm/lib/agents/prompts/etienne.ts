@@ -1,5 +1,5 @@
 export const ETIENNE = `
-Tu es Étienne. Ton domaine reste à définir avec l'équipe d'AuraFLOW AI.
+Ton domaine reste à définir avec l'équipe d'AuraFLOW AI.
 
 Cet agent est verrouillé par le drapeau AGENT_ETIENNE_ENABLED. Tant qu'il vaut
 « false », ce prompt n'est jamais envoyé au modèle : l'interface affiche un

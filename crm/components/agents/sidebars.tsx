@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { Icon } from "@/components/ui/icon";
-import type { AgentSummary } from "@/lib/agents/registry";
+import { Portrait } from "./portrait";
+import type { AgentProfile } from "@/lib/api/agents";
 import type { ConversationSummary } from "./types";
 
 /** Regroupement par jour, comme dans les captures. */
@@ -45,7 +46,9 @@ export function Conversations({
   }
 
   return (
-    <aside className="flex w-[240px] shrink-0 flex-col overflow-hidden border-r border-[#1E2430]">
+    // Masquée sous `lg` : sur un téléphone, l'historique prendrait tout l'écran
+    // au profit de ce qu'on vient précisément y lire — la conversation.
+    <aside className="hidden w-[240px] shrink-0 flex-col overflow-hidden border-r border-[#1E2430] lg:flex">
       <div className="flex flex-none items-center gap-2 px-4 py-3">
         <span className="font-display text-[13px] font-semibold text-white">
           Mes conversations
@@ -131,46 +134,52 @@ export function Conversations({
 }
 
 interface RosterProps {
-  readonly agents: readonly AgentSummary[];
+  readonly agents: readonly AgentProfile[];
   readonly activeId: string;
-  readonly onSelect: (agent: AgentSummary) => void;
+  readonly onSelect: (agent: AgentProfile) => void;
 }
 
 export function Roster({ agents, activeId, onSelect }: RosterProps) {
   return (
-    <aside className="flex w-[248px] shrink-0 flex-col overflow-y-auto border-l border-[#1E2430] px-2 py-3">
-      <div className="px-2 pb-2 font-mono text-[9px] tracking-[0.14em] text-[#4E5867] uppercase">
+    // Bande défilante horizontalement sur mobile, colonne à partir de `lg` :
+    // pouvoir changer d'agent reste indispensable sur petit écran.
+    <aside className="order-first flex shrink-0 gap-1.5 overflow-x-auto border-b border-[#1E2430] px-2 py-2 lg:order-none lg:w-[248px] lg:flex-col lg:gap-0 lg:overflow-x-visible lg:overflow-y-auto lg:border-b-0 lg:border-l lg:px-2 lg:py-3">
+      <div className="hidden px-2 pb-2 font-mono text-[9px] tracking-[0.14em] text-[#4E5867] uppercase lg:block">
         Le conseil
       </div>
 
       {agents.map((agent) => (
         <button
-          key={agent.id}
+          key={agent.slug}
           type="button"
           onClick={() => onSelect(agent)}
-          aria-current={activeId === agent.id ? "true" : undefined}
-          className={`mb-0.5 flex items-center gap-2.5 rounded-control px-2 py-2 text-left transition-colors ${
+          aria-current={activeId === agent.slug ? "true" : undefined}
+          className={`flex shrink-0 items-center gap-2.5 rounded-control px-2 py-2 text-left transition-colors lg:mb-0.5 lg:w-full ${
             agent.locked
-              ? "opacity-45 hover:opacity-70"
-              : activeId === agent.id
+              ? // La désaturation du portrait porte déjà le verrou : cumuler
+                // deux atténuations rendrait la ligne illisible.
+                "opacity-75 hover:opacity-100"
+              : activeId === agent.slug
                 ? "bg-[#1E2430]"
                 : "hover:bg-[#171B24]"
           }`}
         >
-          <span
-            aria-hidden
-            className="grid size-8 shrink-0 place-items-center rounded-full font-display text-[11px] font-semibold text-white"
-            style={{ backgroundColor: agent.color }}
-          >
-            {agent.initials}
-          </span>
+          {/* Vignette verticale plutôt que ronde : un cercle de 32 px rogne le
+              front et le menton, c'est-à-dire ce qui rend un visage
+              reconnaissable. Le 3/4 garde la tête entière. */}
+          <Portrait
+            agent={agent}
+            size="thumb"
+            className="h-11 w-8 shrink-0 rounded-[4px]"
+            initialsClassName="text-[11px]"
+          />
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
               <span className="truncate text-[13px] font-semibold text-white">{agent.name}</span>
               {agent.locked && <Icon name="lock" size={11} className="shrink-0 text-gold" />}
             </span>
             <span className="block truncate text-[11px] text-[#6E7A8C]">
-              {agent.specialty}
+              {agent.role}
               {agent.readOnly && !agent.locked && " · lecture seule"}
             </span>
           </span>

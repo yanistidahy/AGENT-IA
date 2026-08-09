@@ -43,7 +43,7 @@ export async function POST(request: Request) {
   try {
     const conversation = await prisma.conversation.create({
       data: {
-        agentId: agent.id,
+        agentId: agent.slug,
         title: parsed.data.title ?? "Nouvelle conversation",
         deep: parsed.data.deep,
         dealId: parsed.data.dealId ?? null,

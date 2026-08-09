@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/ui/icon";
-import type { AgentSummary } from "@/lib/agents/registry";
+import type { AgentProfile } from "@/lib/api/agents";
 import type { ThreadItem } from "./types";
 
 interface ThreadProps {
   readonly items: readonly ThreadItem[];
-  readonly agent: AgentSummary | undefined;
+  readonly agent: AgentProfile | undefined;
   readonly streaming: boolean;
   readonly error: string | null;
   readonly onDecide: (toolUseId: string, decision: "confirm" | "refuse") => void;
@@ -30,7 +30,7 @@ export function Thread({ items, agent, streaming, error, onDecide }: ThreadProps
           <p className="mt-2 text-[13px] leading-relaxed text-[#7F8B9C]">
             {agent === undefined
               ? "Sélectionnez un membre du conseil dans la colonne de droite."
-              : `${agent.specialty}. Il lit vos données réelles avant de répondre.`}
+              : `${agent.role}. Il lit vos données réelles avant de répondre.`}
           </p>
         </div>
       </div>
@@ -71,7 +71,7 @@ function AgentTurn({
   onDecide,
 }: {
   item: Extract<ThreadItem, { kind: "agent" }>;
-  agent: AgentSummary | undefined;
+  agent: AgentProfile | undefined;
   onDecide: (toolUseId: string, decision: "confirm" | "refuse") => void;
 }) {
   const [openThinking, setOpenThinking] = useState(false);

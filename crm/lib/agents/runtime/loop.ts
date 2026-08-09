@@ -7,7 +7,8 @@ import {
   toAnthropicMessages,
   type StoredMessage,
 } from "../messages";
-import { findAgent, isUnlocked, systemPromptFor, type AgentDefinition } from "../registry";
+import { findAgent, isUnlocked, type AgentDefinition } from "../registry";
+import { findAgentProfile, promptForAgent } from "@/lib/api/agents";
 import { findTool, toolsFor } from "../tools";
 import {
   MAX_TOKENS,
@@ -43,6 +44,16 @@ interface RunOptions {
   readonly agent: AgentDefinition;
   readonly deep: boolean;
   readonly emit: Emit;
+  /**
+   * Prompt système déjà composé, sous l'identité réglée de l'agent.
+   *
+   * Résolu une fois à l'ouverture du flux plutôt qu'à chaque tour : c'est une
+   * lecture en base, et la relire à chaque tour ferait courir le risque qu'un
+   * agent change de nom au milieu de sa propre réponse.
+   */
+  readonly systemPrompt: string;
+  /** Nom affiché, pour les messages destinés à l'utilisateur. */
+  readonly agentName: string;
 }
 
 function toolUseBlocks(blocks: readonly Anthropic.ContentBlockParam[]) {
@@ -138,7 +149,7 @@ async function settleTurn(
       action: {
         toolUseId: pendingWrite.id,
         toolName: pendingWrite.name,
-        agentName: options.agent.name,
+        agentName: options.agentName,
         headline: summary.headline,
         details: summary.details,
       },
@@ -178,7 +189,7 @@ async function runTurn(options: RunOptions): Promise<"continue" | "stop"> {
   const stream = anthropic().messages.stream({
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    system: systemPromptFor(options.agent),
+    system: options.systemPrompt,
     thinking: thinkingFor(options.deep),
     output_config: { effort: effortFor(options.deep) },
     messages: toAnthropicMessages(await loadMessages(options.conversationId)),
@@ -226,12 +237,26 @@ export function streamConversation(
       try {
         const agent = findAgent(agentId);
         if (agent === undefined) throw new Error(`Agent inconnu : ${agentId}`);
+
+        const profile = await findAgentProfile(agentId);
+        const agentName = profile?.name ?? agent.name;
+
         if (!isUnlocked(agent)) {
-          emit({ type: "error", message: `${agent.name} est verrouillé.` });
+          emit({ type: "error", message: `${agentName} est verrouillé.` });
           return;
         }
 
-        const options: RunOptions = { conversationId, agent, deep, emit };
+        const systemPrompt = await promptForAgent(agentId);
+        if (systemPrompt === null) throw new Error(`Prompt introuvable : ${agentId}`);
+
+        const options: RunOptions = {
+          conversationId,
+          agent,
+          deep,
+          emit,
+          systemPrompt,
+          agentName,
+        };
         for (let turn = 0; turn < MAX_TURNS; turn += 1) {
           const outcome = await runTurn(options);
           if (outcome === "stop") break;

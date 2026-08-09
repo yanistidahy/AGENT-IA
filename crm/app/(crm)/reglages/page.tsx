@@ -12,6 +12,7 @@ import { listTags } from "@/lib/api/contacts";
 import { prisma as db } from "@/lib/db";
 import { stageDealCounts } from "@/lib/api/settings";
 import { prisma } from "@/lib/db";
+import { listAgentProfiles } from "@/lib/api/agents";
 import { LIFECYCLES } from "@/lib/domain/types";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,7 @@ export default async function ReglagesPage() {
     lifecycleRows,
     tags,
     settingsRow,
+    agents,
   ] = await Promise.all([
       listSequences(),
       listStagesWithActions(),
@@ -45,6 +47,7 @@ export default async function ReglagesPage() {
       }),
       listTags(),
       db.settings.findUnique({ where: { id: "singleton" } }),
+      listAgentProfiles(),
     ]);
 
   const lifecycles = lifecycleRows.map((row) => row.value);
@@ -62,6 +65,7 @@ export default async function ReglagesPage() {
           label: step.label,
         })),
       }))}
+      agents={agents}
       stages={stages}
       dealCounts={dealCounts}
       settings={settings}

@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import type { AgentSummary } from "@/lib/agents/registry";
+import { useCallback, useEffect, useState } from "react";
+import type { AgentProfile } from "@/lib/api/agents";
 import { confirmAction, readChatStream, startChat } from "@/lib/client/chat-stream";
+import { RecommendationCard, type RecommendationView } from "@/components/recommendations/recommendation-card";
+import { AgentStage, type StageStats } from "./agent-stage";
 import { Composer } from "./composer";
 import { LockedModal } from "./locked-modal";
 import { Conversations, Roster } from "./sidebars";
@@ -10,12 +12,14 @@ import { Thread } from "./thread";
 import { EMPTY_TURN, itemsFromMessages, type ConversationSummary, type ThreadItem } from "./types";
 
 interface ConsoleProps {
-  readonly agents: readonly AgentSummary[];
+  readonly agents: readonly AgentProfile[];
   readonly initialConversations: readonly ConversationSummary[];
   readonly defaultAgentId: string;
+  /** Statistiques par slug, calculées au rendu serveur. */
+  readonly stats: Readonly<Record<string, StageStats>>;
 }
 
-export function Console({ agents, initialConversations, defaultAgentId }: ConsoleProps) {
+export function Console({ agents, initialConversations, defaultAgentId, stats }: ConsoleProps) {
   const [conversations, setConversations] = useState<ConversationSummary[]>([
     ...initialConversations,
   ]);
@@ -25,9 +29,44 @@ export function Console({ agents, initialConversations, defaultAgentId }: Consol
   const [streaming, setStreaming] = useState(false);
   const [deep, setDeep] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [locked, setLocked] = useState<AgentSummary | null>(null);
+  const [locked, setLocked] = useState<AgentProfile | null>(null);
+  const [pending, setPending] = useState<readonly RecommendationView[]>([]);
 
-  const agent = agents.find((candidate) => candidate.id === agentId);
+  const agent = agents.find((candidate) => candidate.slug === agentId);
+
+  /**
+   * Les constats de l'agent affiché.
+   *
+   * Chargés à la sélection plutôt que tous d'avance : huit agents feraient huit
+   * listes dont sept ne seraient jamais lues. Un échec est silencieux — le bloc
+   * disparaît, la conversation reste utilisable.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/recommendations?agentId=${encodeURIComponent(agentId)}&scope=open`,
+        );
+        if (!response.ok) return;
+        const payload: unknown = await response.json();
+        if (
+          !cancelled &&
+          typeof payload === "object" &&
+          payload !== null &&
+          "recommendations" in payload &&
+          Array.isArray(payload.recommendations)
+        ) {
+          setPending(payload.recommendations as RecommendationView[]);
+        }
+      } catch {
+        if (!cancelled) setPending([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [agentId]);
 
   /** Applique une mise à jour au dernier tour d'agent du fil. */
   const patchLast = useCallback(
@@ -188,7 +227,9 @@ export function Console({ agents, initialConversations, defaultAgentId }: Consol
   }, []);
 
   return (
-    <div className="flex h-full">
+    // Colonne sur mobile, rails latéraux à partir de `lg`. L'ordre vertical est
+    // celui de l'usage : on choisit un agent, on le voit, on lui parle.
+    <div className="flex h-full flex-col lg:flex-row">
       <Conversations
         conversations={conversations}
         activeId={activeId}
@@ -217,6 +258,23 @@ export function Console({ agents, initialConversations, defaultAgentId }: Consol
           void fetch(`/api/conversations/${id}`, { method: "DELETE" });
         }}
       />
+
+      {agent !== undefined && (
+        <AgentStage agent={agent} stats={stats[agent.slug]}>
+          {pending.length > 0 && (
+            <div>
+              <div className="pb-1.5 font-mono text-[9px] tracking-[0.12em] text-[#4E5867] uppercase">
+                À décider
+              </div>
+              <ul className="grid gap-1.5">
+                {pending.map((item) => (
+                  <RecommendationCard key={item.id} item={item} />
+                ))}
+              </ul>
+            </div>
+          )}
+        </AgentStage>
+      )}
 
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -255,7 +313,7 @@ export function Console({ agents, initialConversations, defaultAgentId }: Consol
             setLocked(selected);
             return;
           }
-          setAgentId(selected.id);
+          setAgentId(selected.slug);
           setActiveId(null);
           setItems([]);
           setError(null);

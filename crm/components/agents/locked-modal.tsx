@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { Icon } from "@/components/ui/icon";
-import type { AgentSummary } from "@/lib/agents/registry";
+import type { AgentProfile } from "@/lib/api/agents";
 
 /**
  * Modale d'explication d'un agent verrouillé.
@@ -14,7 +14,7 @@ export function LockedModal({
   agent,
   onClose,
 }: {
-  agent: AgentSummary | null;
+  agent: AgentProfile | null;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -54,7 +54,7 @@ export function LockedModal({
               {agent.name}
               <Icon name="lock" size={14} className="text-gold" />
             </h2>
-            <p className="text-[12px] text-[#6E7A8C]">{agent.specialty}</p>
+            <p className="text-[12px] text-[#6E7A8C]">{agent.role}</p>
           </div>
         </div>
 

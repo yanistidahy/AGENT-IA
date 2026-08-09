@@ -6,6 +6,7 @@ import { StaleContacts, toStaleSort } from "@/components/dashboard/stale-contact
 import { Upcoming } from "@/components/dashboard/upcoming";
 import { readAlerts } from "@/lib/api/alerts";
 import { listRecommendations } from "@/lib/api/recommendations";
+import { findAgentProfile } from "@/lib/api/agents";
 import { RecommendationCard } from "@/components/recommendations/recommendation-card";
 import { readActionQueue, readProspecting, readWeek } from "@/lib/api/dashboard";
 import { ActionQueue } from "@/components/dashboard/action-queue";
@@ -103,6 +104,10 @@ export default async function HomePage({
 
   // Affaires en sommeil qui n'ont pas encore de tâche de réveil ouverte. Rien
   // n'est écrit ici : on ne fait que compter ce que l'action groupée créerait.
+  // Le titre du bloc porte le nom réglé de l'agent d'arbitrage, jamais un nom
+  // écrit en dur : renommer Sabrina dans les réglages doit renommer le bloc.
+  const arbiter = await findAgentProfile("sabrina");
+
   const wakeable = await staleDealsWithoutTask(
     alerts.filter((alert) => alert.kind === "deal-stale").map((alert) => alert.targetId),
   );
@@ -111,7 +116,7 @@ export default async function HomePage({
     <Shell deploy={deploy} renderedAt={renderedAt}>
       {recommendations.length > 0 && (
         <Block
-          title="Le point d'Alfred"
+          title={`Le point de ${arbiter?.name ?? "l'arbitre"}`}
           count={recommendations.length}
           hint="les trois plus importantes — la suite dans /conseil/suggestions"
         >

@@ -183,12 +183,12 @@ model Conversation {
 /// tool_result). Stocké en `String` plutôt qu'en `Json` pour la même raison de
 /// portabilité que le reste du schéma ; relu via Zod dans lib/agents/messages.ts.
 model Message {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   role           String
   content        String
-  createdAt      DateTime @default(now())
+  createdAt      DateTime     @default(now())
 
   @@index([conversationId, createdAt])
   @@map("messages")
@@ -264,12 +264,12 @@ model Task {
 
 /// Réglages scalaires. Ligne unique, `id = "singleton"`.
 model Settings {
-  id               String   @id @default("singleton")
-  staleDays        Int      @default(7)
-  coldDays         Int      @default(14)
-  objectifMensuel  Int      @default(15000)
-  notifs           Boolean  @default(true)
-  updatedAt        DateTime @updatedAt
+  id              String   @id @default("singleton")
+  staleDays       Int      @default(7)
+  coldDays        Int      @default(14)
+  objectifMensuel Int      @default(15000)
+  notifs          Boolean  @default(true)
+  updatedAt       DateTime @updatedAt
 
   /// Délais de relance proposés après une interaction, par type. Ce sont des
   /// propositions pré-remplies dans le formulaire, jamais des écritures muettes.
@@ -351,11 +351,11 @@ model Recommendation {
   /// chaque run — c'est la contrainte de base qui protège, pas une vérification.
   dedupeKey String @unique
 
-  snoozedUntil DateTime?
+  snoozedUntil  DateTime?
   /// Fenêtre pendant laquelle un constat écarté ne revient pas.
-  mutedUntil   DateTime?
+  mutedUntil    DateTime?
   /// Pas pertinent | Déjà traité | Plus tard — sert à améliorer les prompts.
-  dismissReason String   @default("")
+  dismissReason String    @default("")
   decidedAt     DateTime?
 
   runId String?
@@ -368,23 +368,78 @@ model Recommendation {
 
 /// Trace d'une vacation. Écrite même — surtout — quand elle échoue.
 model ShiftRun {
-  id        String   @id @default(cuid())
-  agentId   String
-  startedAt DateTime @default(now())
+  id           String   @id @default(cuid())
+  agentId      String
+  startedAt    DateTime @default(now())
   /// Durée en millisecondes. `null` tant que le run n'est pas terminé.
-  durationMs Int?
+  durationMs   Int?
   /// ok | empty | skipped | error
-  outcome   String   @default("ok")
+  outcome      String   @default("ok")
   /// Message d'échec ou raison du saut, en français, sans trace d'exécution.
-  detail    String   @default("")
-  inputTokens  Int @default(0)
-  outputTokens Int @default(0)
-  produced     Int @default(0)
+  detail       String   @default("")
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  produced     Int      @default(0)
   /// Déclenché à la main depuis /reglages plutôt que par le cron.
-  manual    Boolean @default(false)
+  manual       Boolean  @default(false)
 
   recommendations Recommendation[]
 
   @@index([startedAt])
   @@map("shift_runs")
+}
+
+/// Identité d'un agent du conseil.
+///
+/// L'identité est de la **donnée réglable** ; la personnalité, les outils et le
+/// verrou restent du code, indexés par `slug`. Renommer un agent ne peut donc
+/// pas changer son comportement : le prompt est retrouvé par le slug, jamais
+/// par le nom affiché.
+model Agent {
+  /// Stable, jamais modifiable depuis l'écran : c'est la clé du prompt.
+  slug         String  @id
+  name         String
+  /// La ligne affichée sous le nom — « Sales & Closing ».
+  role         String  @default("")
+  enabled      Boolean @default(true)
+  /// Ordre d'affichage dans le conseil.
+  order        Int     @default(0)
+  /// none | daily | weekly — cadence de vacation.
+  shiftCadence String  @default("none")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  photo AgentPhoto?
+
+  @@map("agents")
+}
+
+/// Portrait d'un agent, stocké en base.
+///
+/// Table séparée **volontairement** : les octets pèsent des centaines de
+/// kilo-octets et le conseil se liste à chaque rendu de `/conseil`. Les garder
+/// dans `Agent` ferait remonter les portraits à chaque `findMany`, y compris
+/// là où personne ne les affiche. Ici, seule la route qui sert l'image les lit.
+///
+/// Le disque du conteneur Railway est effacé à chaque déploiement : un fichier
+/// écrit à côté ne survivrait pas. PostgreSQL est le seul stockage durable dont
+/// dispose ce projet, et huit portraits n'y pèsent rien.
+model AgentPhoto {
+  slug  String @id
+  agent Agent  @relation(fields: [slug], references: [slug], onDelete: Cascade)
+
+  /// Type MIME du fichier d'origine, conservé pour la traçabilité.
+  sourceMime   String
+  /// Deux tailles, deux encodages : WebP d'abord, JPEG en repli.
+  portraitWebp Bytes
+  portraitJpeg Bytes
+  thumbWebp    Bytes
+  thumbJpeg    Bytes
+
+  /// Empreinte du fichier d'origine. Sert d'ETag et de jeton de cache.
+  version   String
+  updatedAt DateTime @updatedAt
+
+  @@map("agent_photos")
 }

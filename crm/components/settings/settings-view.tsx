@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import type { StageWithAction } from "@/lib/api/reference";
 import type { ReminderDelays } from "@/lib/domain/automation";
 import type { PilotageSettings, SettingsListKind } from "@/lib/domain/types";
+import type { AgentProfile } from "@/lib/api/agents";
 import { BackupPanel } from "./backup-panel";
 import { ListEditor } from "./list-editor";
 import { PilotageForm } from "./pilotage-form";
@@ -11,6 +12,7 @@ import { RelancesForm } from "./relances-form";
 import { SequenceEditor, type SequenceEditable } from "./sequence-editor";
 import { TagsEditor } from "./tags-editor";
 import { MaintenancePanel } from "./maintenance-panel";
+import { CouncilPanel } from "./council-panel";
 import { ShiftsPanel } from "./shifts-panel";
 import { StagesEditor } from "./stages-editor";
 
@@ -23,6 +25,7 @@ interface SettingsViewProps {
   readonly delays: ReminderDelays;
   readonly lists: Record<SettingsListKind, readonly string[]>;
   readonly tags: ReadonlyArray<{ value: string; count: number }>;
+  readonly agents: readonly AgentProfile[];
 }
 
 const LIST_LABELS: Array<{ kind: SettingsListKind; label: string }> = [
@@ -41,6 +44,7 @@ export function SettingsView({
   delays,
   lists,
   tags,
+  agents,
 }: SettingsViewProps) {
   const router = useRouter();
   const refresh = () => router.refresh();
@@ -54,6 +58,13 @@ export function SettingsView({
           Kanban, menus déroulants.
         </p>
       </header>
+
+      <Section
+        title="Conseil"
+        hint="nom, rôle, photo et cadence de chaque agent — l'identifiant technique ne bouge pas"
+      >
+        <CouncilPanel agents={agents} />
+      </Section>
 
       <Section
         title="Seuils et objectif"

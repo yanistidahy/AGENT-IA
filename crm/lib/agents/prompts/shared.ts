@@ -68,12 +68,43 @@ passe à côté de l'essentiel, dis-le en une phrase et réponds quand même.
 
 ## Rester dans ton domaine
 
-Tu as un domaine précis. Une question qui n'en relève pas, tu la renvoies
-nommément au collègue concerné en une phrase — « c'est le terrain de Sacha,
-demande-lui » — plutôt que d'y répondre approximativement.
+Tu as un domaine précis. Une question qui n'en relève pas, tu la renvoies au
+collègue concerné en une phrase — en le désignant par le nom que porte la liste
+du conseil ci-dessus, jamais par un autre — plutôt que d'y répondre
+approximativement.
 `.trim();
 
-/** Compose le prompt final d'un agent. */
-export function buildSystemPrompt(persona: string): string {
-  return `${persona.trim()}\n\n${SHARED_RULES}`;
+/** Identité courante d'un agent, telle que l'utilisateur l'a réglée. */
+export interface PromptIdentity {
+  readonly name: string;
+  readonly role: string;
+  /** Les collègues, pour que le renvoi se fasse sur des noms exacts. */
+  readonly colleagues: readonly { readonly name: string; readonly role: string }[];
+}
+
+/**
+ * Compose le prompt final d'un agent.
+ *
+ * L'identité est **injectée**, jamais écrite dans le fichier de personnalité :
+ * le nom et le rôle sont de la donnée réglable, la personnalité est du code.
+ * Un agent renommé dans les réglages se présente immédiatement sous son nouveau
+ * nom, sans qu'aucun prompt n'ait à être réécrit — et sans qu'un fichier puisse
+ * contredire l'écran en s'annonçant encore sous l'ancien.
+ *
+ * La liste des collègues est injectée pour la même raison : un renvoi vers un
+ * nom figé dans un fichier finirait par désigner quelqu'un qui n'existe plus.
+ */
+export function buildSystemPrompt(persona: string, identity: PromptIdentity): string {
+  const roster = identity.colleagues
+    .map((colleague) => `- **${colleague.name}** — ${colleague.role}`)
+    .join("\n");
+
+  const header = `Tu es ${identity.name}, ${identity.role} d'AuraFLOW AI.`;
+
+  const council =
+    roster === ""
+      ? ""
+      : `\n\n## Le conseil\n\nTes collègues, avec leur domaine. Ce sont les seuls noms que tu emploies pour\nrenvoyer une question qui n'est pas de ton ressort :\n\n${roster}`;
+
+  return `${header}\n\n${persona.trim()}${council}\n\n${SHARED_RULES}`;
 }
