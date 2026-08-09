@@ -8,6 +8,7 @@ import { SARAH } from "./prompts/sarah";
 import { VICTOR } from "./prompts/victor";
 import { buildSystemPrompt, type PromptIdentity } from "./prompts/shared";
 import { READ_TOOL_NAMES, WRITE_TOOL_NAMES } from "./tools";
+import { startersFor, type Starter } from "./starters";
 
 /**
  * Le conseil.
@@ -26,6 +27,8 @@ export interface AgentDefinition {
   readonly color: string;
   /** Ce que l'agent surveille, en une phrase. Décrit un comportement : c'est du code. */
   readonly scope: string;
+  /** Amorces de conversation, spécifiques au périmètre. Voir `starters.ts`. */
+  readonly starters: readonly Starter[];
   readonly persona: string;
   /** Noms d'outils autorisés. L'ordre est celui du registre, pas celui-ci. */
   readonly tools: readonly string[];
@@ -39,6 +42,7 @@ const ALL_TOOLS = [...READ_TOOL_NAMES, ...WRITE_TOOL_NAMES];
 export const AGENTS: readonly AgentDefinition[] = [
   {
     slug: "sabrina",
+    starters: startersFor("sabrina"),
     name: "Sabrina",
     specialty: "Directrice des Opérations",
     color: "#0FA88F",
@@ -49,6 +53,7 @@ export const AGENTS: readonly AgentDefinition[] = [
   },
   {
     slug: "victor",
+    starters: startersFor("victor"),
     name: "Victor",
     specialty: "Vision & Positionnement",
     color: "#6D5AE6",
@@ -58,6 +63,7 @@ export const AGENTS: readonly AgentDefinition[] = [
   },
   {
     slug: "oxana",
+    starters: startersFor("oxana"),
     name: "Oxana",
     specialty: "Offre & Pricing",
     color: "#D99323",
@@ -67,6 +73,7 @@ export const AGENTS: readonly AgentDefinition[] = [
   },
   {
     slug: "noah",
+    starters: startersFor("noah"),
     name: "Noah",
     specialty: "Acquisition & Marketing",
     color: "#2C7BE5",
@@ -77,6 +84,7 @@ export const AGENTS: readonly AgentDefinition[] = [
   },
   {
     slug: "sarah",
+    starters: startersFor("sarah"),
     name: "Sarah",
     specialty: "Sales & Closing",
     color: "#E8503F",
@@ -97,6 +105,7 @@ export const AGENTS: readonly AgentDefinition[] = [
   },
   {
     slug: "heloise",
+    starters: startersFor("heloise"),
     name: "Héloïse",
     specialty: "Recrutement & Management",
     color: "#0B7A68",
@@ -106,6 +115,7 @@ export const AGENTS: readonly AgentDefinition[] = [
   },
   {
     slug: "etienne",
+    starters: startersFor("etienne"),
     name: "Étienne",
     specialty: "À définir",
     color: "#63807A",
@@ -116,6 +126,7 @@ export const AGENTS: readonly AgentDefinition[] = [
   },
   {
     slug: "brutus",
+    starters: startersFor("brutus"),
     name: "Brutus",
     specialty: "Franc-parlé & Scale",
     color: "#8B5CF6",

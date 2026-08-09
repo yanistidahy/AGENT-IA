@@ -5,6 +5,7 @@ import type { AgentProfile } from "@/lib/api/agents";
 import { confirmAction, readChatStream, startChat } from "@/lib/client/chat-stream";
 import { RecommendationCard, type RecommendationView } from "@/components/recommendations/recommendation-card";
 import { AgentStage, type StageStats } from "./agent-stage";
+import { AgentSwitcher } from "./agent-switcher";
 import { Composer } from "./composer";
 import { LockedModal } from "./locked-modal";
 import { Conversations, Roster } from "./sidebars";
@@ -226,6 +227,24 @@ export function Console({ agents, initialConversations, defaultAgentId, stats }:
     }
   }, []);
 
+  /**
+   * Changer d'agent ouvre un fil neuf.
+   *
+   * Un même fil ne peut pas changer d'interlocuteur : la conversation porte
+   * `agentId` en base, et rejouer l'historique d'un agent sous un autre prompt
+   * produirait une réponse qui contredit ce qui est affiché au-dessus.
+   */
+  const selectAgent = useCallback((selected: AgentProfile) => {
+    if (selected.locked) {
+      setLocked(selected);
+      return;
+    }
+    setAgentId(selected.slug);
+    setActiveId(null);
+    setItems([]);
+    setError(null);
+  }, []);
+
   return (
     // Colonne sur mobile, rails latéraux à partir de `lg`. L'ordre vertical est
     // celui de l'usage : on choisit un agent, on le voit, on lui parle.
@@ -277,6 +296,8 @@ export function Console({ agents, initialConversations, defaultAgentId, stats }:
       )}
 
       <main className="flex min-w-0 flex-1 flex-col">
+        <AgentSwitcher agents={agents} activeSlug={agentId} onSelect={selectAgent} />
+
         <div className="min-h-0 flex-1 overflow-y-auto">
           <Thread
             items={items}
@@ -284,6 +305,7 @@ export function Console({ agents, initialConversations, defaultAgentId, stats }:
             streaming={streaming}
             error={error}
             onDecide={(toolUseId, decision) => void decide(toolUseId, decision)}
+            onAsk={(question) => void send(question)}
           />
         </div>
         <Composer
@@ -308,16 +330,7 @@ export function Console({ agents, initialConversations, defaultAgentId, stats }:
       <Roster
         agents={agents}
         activeId={agentId}
-        onSelect={(selected) => {
-          if (selected.locked) {
-            setLocked(selected);
-            return;
-          }
-          setAgentId(selected.slug);
-          setActiveId(null);
-          setItems([]);
-          setError(null);
-        }}
+        onSelect={selectAgent}
       />
 
       <LockedModal agent={locked} onClose={() => setLocked(null)} />

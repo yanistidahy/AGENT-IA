@@ -4,7 +4,12 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["lib/**/*.test.ts", "app/**/*.test.ts", "tests/**/*.test.ts"],
+    include: [
+      "lib/**/*.test.ts",
+      "app/**/*.test.ts",
+      "components/**/*.test.ts",
+      "tests/**/*.test.ts",
+    ],
   },
   /**
    * `tsconfig.json` fixe `jsx: "preserve"` — c'est Next qui compile le JSX en

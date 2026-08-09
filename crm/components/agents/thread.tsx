@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/ui/icon";
+import { Portrait } from "./portrait";
+import { Welcome } from "./welcome";
 import type { AgentProfile } from "@/lib/api/agents";
 import type { ThreadItem } from "./types";
 
@@ -11,9 +13,11 @@ interface ThreadProps {
   readonly streaming: boolean;
   readonly error: string | null;
   readonly onDecide: (toolUseId: string, decision: "confirm" | "refuse") => void;
+  /** Envoie une amorce depuis l'écran d'ouverture. */
+  readonly onAsk: (question: string) => void;
 }
 
-export function Thread({ items, agent, streaming, error, onDecide }: ThreadProps) {
+export function Thread({ items, agent, streaming, error, onDecide, onAsk }: ThreadProps) {
   const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -21,20 +25,16 @@ export function Thread({ items, agent, streaming, error, onDecide }: ThreadProps
   }, [items, streaming]);
 
   if (items.length === 0 && error === null) {
-    return (
-      <div className="flex h-full items-center justify-center px-8 text-center">
-        <div className="max-w-sm">
-          <p className="font-display text-[17px] font-semibold text-white">
-            {agent === undefined ? "Choisissez un agent" : `${agent.name} vous écoute`}
-          </p>
-          <p className="mt-2 text-[13px] leading-relaxed text-[#7F8B9C]">
-            {agent === undefined
-              ? "Sélectionnez un membre du conseil dans la colonne de droite."
-              : `${agent.role}. Il lit vos données réelles avant de répondre.`}
+    if (agent === undefined) {
+      return (
+        <div className="flex h-full items-center justify-center px-8 text-center">
+          <p className="max-w-sm text-[13px] leading-relaxed text-[#7F8B9C]">
+            Choisissez un agent dans la bande du haut.
           </p>
         </div>
-      </div>
-    );
+      );
+    }
+    return <Welcome agent={agent} onAsk={onAsk} disabled={streaming} />;
   }
 
   return (
@@ -47,7 +47,16 @@ export function Thread({ items, agent, streaming, error, onDecide }: ThreadProps
             </p>
           </div>
         ) : (
-          <AgentTurn key={index} item={item} agent={agent} onDecide={onDecide} />
+          <AgentTurn
+            key={index}
+            item={item}
+            agent={agent}
+            onDecide={onDecide}
+            // Deux tours d'agent qui se suivent n'affichent le portrait qu'une
+            // fois : le répéter hacherait une réponse longue en tranches sans
+            // rien apprendre. La place reste réservée pour garder l'alignement.
+            showPortrait={items[index - 1]?.kind !== "agent"}
+          />
         ),
       )}
 
@@ -69,22 +78,29 @@ function AgentTurn({
   item,
   agent,
   onDecide,
+  showPortrait,
 }: {
   item: Extract<ThreadItem, { kind: "agent" }>;
   agent: AgentProfile | undefined;
   onDecide: (toolUseId: string, decision: "confirm" | "refuse") => void;
+  showPortrait: boolean;
 }) {
   const [openThinking, setOpenThinking] = useState(false);
 
   return (
     <div className="flex gap-3">
-      <span
-        aria-hidden
-        className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full font-display text-[10px] font-semibold text-white"
-        style={{ backgroundColor: agent?.color ?? "#63807A" }}
-      >
-        {agent?.initials ?? "??"}
-      </span>
+      {agent !== undefined && showPortrait ? (
+        <Portrait
+          agent={agent}
+          size="thumb"
+          className="mt-0.5 size-7 shrink-0 rounded-full"
+          initialsClassName="text-[10px]"
+        />
+      ) : (
+        // Gouttière vide : sans elle, un tour sans portrait se recalerait à
+        // gauche et la colonne de texte danserait d'un message à l'autre.
+        <span aria-hidden className="mt-0.5 size-7 shrink-0" />
+      )}
 
       <div className="min-w-0 flex-1">
         {item.thinking !== "" && (

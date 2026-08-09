@@ -11,6 +11,7 @@ import {
   type AgentDefinition,
 } from "../agents/registry";
 import { SHIFT_CADENCES, type ShiftCadence } from "../domain/agent-identity";
+import type { Starter } from "../agents/starters";
 
 /**
  * Identité du conseil : la moitié réglable des agents.
@@ -34,6 +35,8 @@ export interface AgentProfile {
   readonly initials: string;
   readonly color: string;
   readonly scope: string;
+  /** Amorces de conversation, pour l'écran d'accueil d'un fil vide. */
+  readonly starters: readonly Starter[];
   readonly enabled: boolean;
   readonly order: number;
   readonly cadence: ShiftCadence;
@@ -82,6 +85,7 @@ function merge(
     initials: initialsOf(name),
     color: definition.color,
     scope: definition.scope,
+    starters: definition.starters,
     enabled: stored?.enabled ?? true,
     order: stored?.order ?? index,
     cadence: cadenceOf(stored?.shiftCadence ?? "none"),

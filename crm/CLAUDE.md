@@ -267,6 +267,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 15 | **Identité du conseil** — agents réglables, portraits en base, agent en pied | **livré, à valider** |
 | 16 | **Diagnostic API** — corps d'erreur remonté, bissection du champ refusé, chemins unifiés | **livré, à valider** |
 | 17 | **Clés de schéma en ASCII** — cause nommée, garde vitest, substitut qui valide | **livré, à valider** |
+| 18 | **Le fil comme une conversation** — bande de portraits, écran d'ouverture, amorces | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -2156,3 +2157,100 @@ applique désormais les contraintes connues — celles que la production nous a
 apprises — mais il ne peut pas connaître celles qu'elle ne nous a pas encore
 opposées. Il rattrape ce qui a été payé une fois ; il ne prédit pas le reste.
 Le bouton de `/reglages` reste le seul juge.
+
+## Jalon 18 — le fil s'ouvre comme une conversation, pas comme un outil
+
+### Ce qui manquait
+
+Une conversation vide affichait une phrase et un champ de saisie. Il fallait
+inventer sa première question, et changer d'agent demandait de traverser
+l'écran jusqu'au roster de droite. Rien n'était cassé — c'était simplement un
+outil, là où le produit promet une équipe.
+
+```
+components/agents/agent-switcher.tsx  bande de portraits en tête du fil
+components/agents/welcome.tsx         écran d'ouverture d'un fil vide
+lib/agents/starters.ts                quatre amorces par agent, par slug
+```
+
+### Les amorces viennent du périmètre, pas d'un gabarit
+
+Quatre par agent, dans sa voix. « Que peux-tu faire ? » se répond par une liste
+et n'engage à rien ; « Qui ai-je oublié ? » désigne un travail réel et produit
+une réponse exécutable dans la minute. Le sous-titre dit **ce qu'on obtient**,
+pas ce que la question veut dire.
+
+Elles vivent avec la personnalité — code indexé par slug — et non en base :
+ce sont des amorces vers ce que l'agent *sait lire*. Les changer demande de
+savoir quels outils lui sont ouverts, donc c'est une décision de développement,
+pas un réglage.
+
+Un test ferme le piège du gabarit : **aucune question n'appartient à deux
+agents**, et quatre formules creuses (« Que peux-tu faire », « Bonjour »,
+« Présente-toi », « Aide-moi ») sont refusées. Recopier les mêmes quatre
+questions partout ferait tomber la suite.
+
+### Deux tailles, pas trois
+
+La bande et les bulles utilisent `thumb` ; l'écran d'ouverture utilise
+`portrait`. Ce sont les deux tailles déjà en base — le cadrage rond est une
+affaire de CSS, pas de stockage. Vérifié à l'octet : la page de `/conseil` ne
+demande que `size=thumb`, et l'accueil `size=portrait`.
+
+Le repli initiales devient rond ici et reste rectangulaire dans le roster : le
+même composant, deux cadrages. Un agent sans photo occupe exactement la même
+place — c'est ce qui empêche la bande de sauter quand on en charge une.
+
+### Le portrait ne se répète pas
+
+Deux réponses consécutives du même agent n'affichent le portrait qu'une fois :
+le répéter hacherait une réponse longue en tranches sans rien apprendre. La
+gouttière reste réservée, sinon la colonne de texte danserait d'un message à
+l'autre.
+
+**Éprouvé en cassant le groupement** (`showPortrait={true}`) : le test tombe en
+annonçant trois portraits là où il en faut un.
+
+### Changer d'agent ouvre un fil neuf
+
+Ce n'est pas une commodité, c'est une contrainte : la conversation porte
+`agentId` en base, et rejouer un historique sous un autre prompt produirait une
+réponse qui contredit le nom affiché au-dessus. La bande et le roster partagent
+donc le même gestionnaire — deux chemins vers un seul comportement.
+
+### Jalon 18 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 et le serveur standalone, sur une base où **seule
+Sarah a une photo** — les sept autres exercent le repli :
+
+- **accueil de Sarah** : « Sarah Lemoine, à votre service. », portrait
+  `size=portrait` rond de 200 px, `alt="Portrait de Sarah Lemoine, Relance &
+  Closing"`, et ses quatre amorces avec leurs sous-titres exacts ;
+- **amorce cliquée** → envoyée comme message, l'écran cède la place au fil, et
+  le titre de la conversation en est déduit (« Qui ai-je oublié ? ») ;
+- **groupement** : trois réponses consécutives → un portrait ; l'utilisateur
+  reprend la parole → il réapparaît ; aucun portrait sur ses propres messages ;
+- **bande** : les huit agents dans l'ordre, l'actif `aria-selected="true"`, les
+  autres à 45 % d'opacité ; désactiver un agent le retire de la bande ;
+- **Étienne verrouillé** : `grayscale opacity-55` et le cadenas ;
+- **sans photo** : sept replis initiales, `alt` nommant agent et rôle, rien de
+  cassé ;
+- **deux tailles seulement** : `/conseil` ne demande que `size=thumb`, l'accueil
+  `size=portrait` — aucune troisième taille ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (481 tests) verts.
+
+### Jalon 18 — ce qui ne l'est pas
+
+**Le comportement au clavier n'est pas vérifié par un navigateur piloté.** La
+bande porte `role="tablist"` et `aria-selected`, mais la navigation aux flèches
+entre onglets — ce qu'un vrai `tablist` implique — n'est pas implémentée : on
+tabule d'un portrait à l'autre. C'est utilisable, ce n'est pas conforme au
+motif ARIA complet.
+
+**Le rendu visuel n'a pas été comparé à une référence** : ce qui est vérifié,
+ce sont les classes, les tailles demandées et les textes, pas l'aspect.
+
+**Les amorces ne s'adaptent pas à l'état de la base.** « Qui ai-je oublié ? »
+s'affiche même si personne n'est oublié ; c'est l'agent qui le dira. Les rendre
+conditionnelles demanderait de calculer quatre briefings avant d'afficher un
+écran vide — le coût dépasse le gain.
