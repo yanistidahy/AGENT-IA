@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "../db";
 import { DEFAULT_REMINDER_DELAYS } from "../domain/automation";
 import { SETTINGS_LIST_KINDS, type SettingsListKind } from "../domain/types";
+import { MIN_OUTPUT_TOKENS } from "../domain/model-budget";
 
 /** Réglages : seuils de pilotage, listes éditables, étapes du pipeline. */
 
@@ -24,8 +25,14 @@ export const updateSettingsSchema = z
     relanceApresDemo: delayField,
     relanceApresReunion: delayField,
     relanceApresNote: delayField,
-    /** Plafond de jetons de sortie par vacation. Bas par défaut, voir CLAUDE.md. */
-    shiftTokenBudget: z.number().int().min(500).max(32000).optional(),
+    /**
+     * Plafond de jetons de sortie par vacation.
+     *
+     * Le minimum est le plancher de `shiftRequest()` : en dessous, la réflexion
+     * consomme tout le plafond et la réponse arrive tronquée. Proposer un
+     * réglage que le runtime relèverait en silence serait mentir à l'écran.
+     */
+    shiftTokenBudget: z.number().int().min(MIN_OUTPUT_TOKENS).max(32000).optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: "Aucun champ à mettre à jour" })
   .refine(

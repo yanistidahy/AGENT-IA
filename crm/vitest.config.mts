@@ -15,6 +15,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(),
+      // Voir tests/stubs/server-only.ts : le vrai paquet lève à l'import et
+      // rendrait intestable tout module serveur.
+      "server-only": path.resolve("tests/stubs/server-only.ts"),
     },
   },
 });

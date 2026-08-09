@@ -12,6 +12,7 @@ import { RelancesForm } from "./relances-form";
 import { SequenceEditor, type SequenceEditable } from "./sequence-editor";
 import { TagsEditor } from "./tags-editor";
 import { MaintenancePanel } from "./maintenance-panel";
+import { ApiDiagnostic } from "./api-diagnostic";
 import { CouncilPanel } from "./council-panel";
 import { ShiftsPanel } from "./shifts-panel";
 import { StagesEditor } from "./stages-editor";
@@ -64,6 +65,13 @@ export function SettingsView({
         hint="nom, rôle, photo et cadence de chaque agent — l'identifiant technique ne bouge pas"
       >
         <CouncilPanel agents={agents} />
+      </Section>
+
+      <Section
+        title="Connexion à l'API"
+        hint="diagnostique un refus de l'API en nommant le champ en cause"
+      >
+        <ApiDiagnostic />
       </Section>
 
       <Section

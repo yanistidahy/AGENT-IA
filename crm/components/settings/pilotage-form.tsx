@@ -1,4 +1,5 @@
 "use client";
+import { MIN_OUTPUT_TOKENS } from "@/lib/domain/model-budget";
 
 import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
@@ -92,7 +93,7 @@ export function PilotageForm({
         <Field label="Jetons max par vacation">
           <input
             type="number"
-            min={500}
+            min={MIN_OUTPUT_TOKENS}
             max={32000}
             step={500}
             value={budget}

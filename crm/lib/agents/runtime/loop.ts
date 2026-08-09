@@ -10,14 +10,9 @@ import {
 import { findAgent, isUnlocked, type AgentDefinition } from "../registry";
 import { findAgentProfile, promptForAgent } from "@/lib/api/agents";
 import { findTool, toolsFor } from "../tools";
-import {
-  MAX_TOKENS,
-  MODEL,
-  anthropic,
-  describeAnthropicError,
-  effortFor,
-  thinkingFor,
-} from "./client";
+import { anthropic, describeAnthropicError, logAnthropicError } from "./client";
+import { conversationRequest } from "./request";
+
 import { encodeEvent, toolLabel, type ChatEvent } from "./events";
 
 /**
@@ -187,12 +182,9 @@ async function runTurn(options: RunOptions): Promise<"continue" | "stop"> {
   }));
 
   const stream = anthropic().messages.stream({
-    model: MODEL,
-    max_tokens: MAX_TOKENS,
+    ...conversationRequest(options.deep),
     system: options.systemPrompt,
-    thinking: thinkingFor(options.deep),
-    output_config: { effort: effortFor(options.deep) },
-    messages: toAnthropicMessages(await loadMessages(options.conversationId)),
+    messages: toAnthropicMessages(stored),
     ...(tools.length > 0 ? { tools } : {}),
   });
 
@@ -263,7 +255,7 @@ export function streamConversation(
         }
         emit({ type: "done" });
       } catch (error) {
-        console.error("[chat]", error);
+        logAnthropicError("chat", error);
         emit({ type: "error", message: describeAnthropicError(error) });
       } finally {
         controller.close();

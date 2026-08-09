@@ -265,6 +265,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 13 | Statut saisi à la consignation, accueil actionnable, noms débordés | **livré, à valider** |
 | 14 | **Le conseil en vacations** — recommandations prouvées, planificateur, budget | **livré, à valider** |
 | 15 | **Identité du conseil** — agents réglables, portraits en base, agent en pied | **livré, à valider** |
+| 16 | **Diagnostic API** — corps d'erreur remonté, bissection du champ refusé, chemins unifiés | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -1955,3 +1956,114 @@ Sabrina en portent une. Leur cadence est réglable dans l'écran, mais seule la
 valeur de ces deux-là est lue par `SHIFTS` ; changer la cadence de Victor
 n'aura aucun effet tant qu'il n'est pas câblé. C'est un réglage qui promet plus
 que ce que le code tient, et c'est la principale dette de ce jalon.
+
+## Incident — le premier appel Anthropic réel, et un 400 muet
+
+**Signalé** : la clé posée dans Railway, l'erreur passe de « clé non configurée »
+à « L'API Anthropic a renvoyé une erreur (400) ». La clé est donc lue et la
+requête atteint Anthropic ; c'est le corps qui est refusé.
+
+### Le vrai défaut : le corps d'erreur était jeté
+
+L'API renvoie un JSON qui **nomme le champ fautif**. `describeAnthropicError`
+n'en gardait que le code HTTP. Un aller-retour de débogage entier a été perdu
+pour une information que le serveur avait déjà reçue et jetée.
+
+Corrigé : `anthropicFailure()` extrait statut, `type`, `message` et
+`request_id` ; `logAnthropicError()` les journalise côté serveur — sans la clé,
+qui n'est jamais lue à cet endroit ; `describeAnthropicError()` remonte le
+message de l'API dans la carte française. Les deux chemins d'appel passent par
+là, et le journal des vacations porte désormais le même message, pas seulement
+« error ».
+
+**Un message reste volontairement générique** : une clé refusée (401). Elle se
+corrige dans les variables du service, le corps de l'API n'ajoute rien et
+citer « invalid x-api-key » ressemble à une fuite. Un test fixe cet écart.
+
+### Ce que j'ai pu établir sur la cause, et ce que je n'ai pas pu
+
+J'ai vérifié la requête champ par champ contre la référence de l'API **et**
+contre les types du SDK installé, en capturant ce qui part réellement sur le
+fil (serveur local en lieu et place d'`api.anthropic.com`) :
+
+```json
+{ "model": "claude-opus-5", "max_tokens": 4096,
+  "thinking": { "type": "adaptive", "display": "omitted" },
+  "output_config": { "effort": "medium" }, "stream": true }
+```
+
+`claude-opus-5` est un identifiant valide ; `thinking.display` est typé
+`'summarized' | 'omitted' | null` dans le SDK ; `output_config.effort` accepte
+`medium` ; aucun paramètre retiré sur Opus 5 (`budget_tokens`, `temperature`,
+`top_p`, `top_k`) n'est envoyé nulle part dans le dépôt ; les 20 schémas
+d'outils sont du JSON Schema valide, aux noms conformes ; les messages font
+l'aller-retour en base sans être modifiés.
+
+**Je n'ai donc pas pu nommer le champ depuis cet environnement** : par le
+contrat publié, ce corps est valide, et aucune clé n'est disponible ici pour
+interroger le validateur réel. Ce que je peux affirmer, c'est ce qui *n'est pas*
+en cause — la liste ci-dessus — et que la réponse tient dans un corps HTTP que
+le code jetait. D'où le diagnostic ci-dessous plutôt qu'une liste d'hypothèses.
+
+### Le diagnostic nomme le champ, par bissection
+
+`/reglages` → « Connexion à l'API » → **Tester la connexion à l'API**. La route
+envoie cinq requêtes de 16 jetons, chacune ajoutant **un** paramètre à la
+précédente : minimale → `thinking` → `output_config` → `system` → `tools`. La
+première qui échoue désigne le champ ajouté à cette étape et affiche le message
+de l'API et le `request_id`. Les suivantes sont marquées « non exécutée » :
+après une rupture, une forme plus riche échouerait aussi et n'apprendrait rien.
+
+`POST` et non `GET` : la route dépense des jetons, et une route qui coûte de
+l'argent ne doit pas répondre à un préchargement de navigateur.
+
+### Deux défauts trouvés en chemin
+
+**Les deux chemins d'appel avaient divergé.** La conversation posait `thinking`
+et `output_config` ; la vacation ne posait ni l'un ni l'autre et héritait donc
+en silence des défauts du modèle — réflexion active et **effort `high`**. Une
+seule des deux formes était réellement exercée, et l'autre payait tous les
+matins un raisonnement approfondi que personne n'avait demandé.
+`lib/agents/runtime/request.ts` est désormais le seul endroit où le modèle, le
+plafond, la réflexion et l'effort se décident ; une vacation tourne à effort
+`low` **explicitement** — elle juge un briefing déjà calculé.
+
+**Le plafond de sortie était celui d'un modèle sans réflexion.** Sur Opus 5 la
+réflexion partage `max_tokens` avec le texte : 4096 ne produisait pas une
+réponse courte mais une réponse *tronquée*. Porté à 32000 pour la conversation,
+et planchérisé à 2000 pour les vacations — dont le budget réglable descendait à
+500, soit un plafond que le modèle aurait épuisé en réfléchissant. Le minimum du
+réglage est maintenant ce plancher : proposer à l'écran une valeur que le
+runtime relèverait en silence serait mentir.
+
+### Ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, le serveur standalone de production, et un
+serveur local substitué à l'API pour rejouer un refus sur un champ choisi :
+
+- refus sur `tools` → la bissection s'arrête à l'étape 5 et cite
+  « tools.3.input_schema: maximum is not permitted » ;
+- refus sur `thinking` → s'arrête à l'étape 2, les trois suivantes « non
+  exécutée », `request_id` affiché ;
+- API injoignable → « Même la requête minimale est refusée », rien de deviné ;
+- tout accepté → cinq étapes vertes, verdict explicite ;
+- carte de `/conseil` : « L'API Anthropic a refusé la requête (400) :
+  thinking: unexpected value at thinking.display (requête req_mock01) » ;
+- journal serveur : `status=400 type=invalid_request_error request_id=…
+  message=…`, **sans la clé** ;
+- journal des vacations : le même message, à la place de « error » ;
+- budget 500 → 400 nommant le champ ; 4000 → accepté ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (459 tests) verts.
+
+### Ce qui ne l'est pas
+
+**Aucun appel Anthropic réel, encore une fois** : il n'y a pas de clé dans cet
+environnement, et le proxy sortant n'en fournit pas. Les refus ont été rejoués
+par un serveur substitué. Ce que cela vérifie : l'extraction du corps, la
+bissection, l'affichage, le journal. Ce que cela ne vérifie pas : **quel** champ
+la vraie API refuse — c'est précisément ce que le bouton dira au premier clic.
+
+**`vitest` neutralise `server-only`** (`tests/stubs/server-only.ts`) pour
+pouvoir tester les modules serveur. La garde réelle est celle du build Next, et
+`no-key-in-bundle.test.ts` continue de vérifier la sortie de build — le
+résultat, pas l'intention.

@@ -1,7 +1,8 @@
 import "server-only";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { anthropic, MODEL } from "@/lib/agents/runtime/client";
+import { anthropic, describeAnthropicError, logAnthropicError } from "@/lib/agents/runtime/client";
+import { shiftRequest } from "@/lib/agents/runtime/request";
 import { findAgent } from "@/lib/agents/registry";
 import { promptForAgent } from "@/lib/api/agents";
 import { findTool } from "@/lib/agents/tools";
@@ -298,8 +299,7 @@ export async function runShift(
 
     const client = anthropic();
     const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: budget,
+      ...shiftRequest(budget),
       system,
       messages: [{ role: "user", content: body }],
     });
@@ -352,12 +352,14 @@ export async function runShift(
           : "",
     });
   } catch (error) {
-    // Un échec est journalisé et la vacation suivante a quand même lieu.
-    console.error(`[vacation ${shift.agentId}]`, error);
+    // Un échec est journalisé et la vacation suivante a quand même lieu. Le
+    // journal porte le message de l'API, pas seulement le code : une vacation
+    // qui échoue tous les matins doit dire pourquoi dès la première lecture.
+    logAnthropicError(`vacation ${shift.agentId}`, error);
     return finish({
       ...nothing,
       outcome: "error",
-      detail: error instanceof Error ? error.message.slice(0, 200) : "Échec inattendu.",
+      detail: describeAnthropicError(error).slice(0, 300),
     });
   }
 }
