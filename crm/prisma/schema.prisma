@@ -443,3 +443,31 @@ model AgentPhoto {
 
   @@map("agent_photos")
 }
+
+/// Trace d'une sauvegarde. Écrite même — surtout — quand elle échoue.
+///
+/// Le bandeau d'alerte de `/accueil` lit cette table et non le magasin
+/// distant : une lecture réseau à chaque rendu de la page d'accueil serait
+/// payée par l'utilisateur à chaque visite, pour une information qui change
+/// une fois par jour. Le magasin reste la source de vérité pour *restaurer* ;
+/// cette table dit seulement « la dernière a-t-elle réussi, et quand ».
+model SnapshotRun {
+  id         String   @id @default(cuid())
+  startedAt  DateTime @default(now())
+  /// ok | error
+  outcome    String   @default("ok")
+  /// Clé écrite dans le magasin, vide en cas d'échec.
+  key        String   @default("")
+  /// Poids de l'instantané, en octets.
+  bytes      Int      @default(0)
+  /// Nombre d'instantanés supprimés par la rétention lors de ce passage.
+  pruned     Int      @default(0)
+  /// Message d'échec en français, sans trace d'exécution ni secret.
+  detail     String   @default("")
+  durationMs Int?
+  /// Déclenché à la main depuis /reglages plutôt que par le planificateur.
+  manual     Boolean  @default(false)
+
+  @@index([startedAt])
+  @@map("snapshot_runs")
+}

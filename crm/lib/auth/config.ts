@@ -37,6 +37,7 @@ export const PUBLIC_PATHS: readonly string[] = [
    * middleware, fermé au sens de l'accès.
    */
   "/api/cron/shifts",
+  "/api/cron/daily",
 ];
 
 /** Ressources servies par Next lui-même, jamais porteuses de données métier. */

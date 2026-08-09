@@ -268,6 +268,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 16 | **Diagnostic API** — corps d'erreur remonté, bissection du champ refusé, chemins unifiés | **livré, à valider** |
 | 17 | **Clés de schéma en ASCII** — cause nommée, garde vitest, substitut qui valide | **livré, à valider** |
 | 18 | **Le fil comme une conversation** — bande de portraits, écran d'ouverture, amorces | **livré, à valider** |
+| 19 | **Le filet** — fusion vers `main`, sauvegardes automatiques, planificateur | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -2254,3 +2255,151 @@ ce sont les classes, les tailles demandées et les textes, pas l'aspect.
 s'affiche même si personne n'est oublié ; c'est l'agent qui le dira. Les rendre
 conditionnelles demanderait de calculer quatre briefings avant d'afficher un
 écran vide — le coût dépasse le gain.
+
+## Jalon 19 — le filet : fusion, sauvegardes, planificateur
+
+Aucune fonctionnalité. Les deux choses qui pouvaient coûter le projet — un
+travail jamais fusionné, une base sans sauvegarde — et le planificateur qui
+manquait aux vacations.
+
+### Ce que coûte la fusion vers `main`
+
+La branche touche **17 fichiers hors de `crm/`**, tous datant du début de la
+session — l'intégration Pipedream et les correctifs du crash Railway du
+backend, demandés avant que la règle « aucun fichier hors de `crm/` » n'existe.
+Ce ne sont pas des débordements de jalon, c'est du travail commandé.
+
+Deux conséquences réelles, à connaître avant de cliquer :
+
+**1. La configuration de déploiement de l'app Vite disparaît de la racine.**
+La branche supprime `railway.json`, `nixpacks.toml`, `server.js` et `Procfile`
+(commit `6121b41`, « retirer la configuration de déploiement de l'app Vite
+retirée »). Si le service Railway `AGENT-IA` à Root Directory vide est **encore
+déployé**, il perdra sa commande de démarrage au prochain déploiement depuis
+`main`. Le code de l'app Vite (`src/`, `index.html`, `vite.config.js`) reste,
+seule la configuration de déploiement part. À vérifier avant de fusionner : ce
+service tourne-t-il encore ? S'il est déjà supprimé côté Railway, il n'y a rien
+à craindre.
+
+**2. Le service `backend/` change de commande de démarrage.**
+`uvicorn main:app` devient `python main.py`, `backend/Procfile` est supprimé et
+les dépendances sont réduites. Ce sont les correctifs du 502 — donc si le
+service backend déploie depuis `main`, la fusion le **répare** ; s'il déploie
+déjà depuis cette branche, elle ne change rien pour lui. Dans aucun cas elle ne
+le casse : `backend/railway.json` et `backend/nixpacks.toml` restent cohérents
+entre eux.
+
+**Rien dans le code ne dépend du nom de branche.** La bannière de démarrage et
+le pied de page lisent `RAILWAY_GIT_BRANCH`, que Railway renseigne seul :
+repointer le service sur `main` change ce qui s'affiche, pas ce qui s'exécute.
+
+### Où vivent les sauvegardes, et pourquoi
+
+Le job compte moins que la destination. Le conteneur Railway n'a pas de disque
+durable, et écrire les instantanés dans le PostgreSQL qu'ils sauvegardent ne
+protège de rien : la panne assurée emporterait les deux.
+
+| Destination | Pour | Contre |
+|---|---|---|
+| **Dépôt GitHub privé** *(retenu)* | Gratuit, hors de Railway, consultable et téléchargeable dans un navigateur, aucun fournisseur nouveau | Git conserve l'historique : une sauvegarde « élaguée » reste dans les commits passés |
+| Objet S3 (R2, B2) | Suppression réelle, donc rétention réellement effective | Un compte de plus ; **non implémenté** — je n'ai pas de quoi l'exercer ici |
+| Second volume Railway | Simple | Même compte, même projet : la panne qu'on assure peut l'emporter |
+| Le PostgreSQL du CRM | — | Ne protège de rien. Écarté d'emblée |
+
+**Retenu : dépôt GitHub privé**, via l'API Contents. La réserve sur
+l'historique est réelle et mérite d'être dite : pour 147 personnes réelles, une
+demande d'effacement se réglerait en supprimant le dépôt entier, pas en
+élaguant un fichier. Si cela devient gênant, S3 est la migration — le pilote
+s'ajoute derrière l'interface `SnapshotStore` sans toucher au reste.
+
+**Aucun pilote S3 écrit à l'aveugle.** Un pilote de sauvegarde non testé est
+pire qu'une absence de pilote : il rassure. Le pilote `local` existe pour la
+vérification et **annonce à l'écran** qu'il ne protège de rien.
+
+**Aucun repli silencieux non plus** : mal configuré, on le dit et on journalise
+l'échec. Une sauvegarde qu'on croit partie chez GitHub et qui atterrit sur un
+disque effacé au déploiement suivant est exactement le faux filet à éviter.
+
+### Le format est celui de l'export manuel
+
+`exportBackup()` produit, `backupSchema` valide, `restoreBackup()` remet en
+place — le chemin transactionnel du jalon 5, refus sur fichier corrompu
+compris. Un second format aurait fini par diverger, et on s'en apercevrait en
+essayant de restaurer, c'est-à-dire le jour où l'on ne peut plus se le
+permettre.
+
+### Rétention : union, pas intersection
+
+14 quotidiennes **et** 8 hebdomadaires (les lundis), l'**union** étant
+conservée. Avec l'intersection, une semaine sans sauvegarde quotidienne
+effacerait aussi l'hebdomadaire, et le filet se refermerait au pire moment.
+Un test fixe ce cas précis.
+
+### Le planificateur : GitHub Actions
+
+Le cron de Railway relance la **commande de démarrage** d'un service ; il
+n'émet pas de requête HTTP et ne peut donc pas appeler `POST /api/cron/daily`.
+Il aurait fallu un second service dont la seule raison d'être est un `curl`,
+avec sa facture et ses journaux à aller chercher.
+
+`.github/workflows/auraflow-daily.yml` : gratuit, tracé, un échec visible dans
+l'onglet Actions. `permissions: {}` — le workflow ne fait qu'un appel sortant
+et n'a aucun droit sur le dépôt. Deux secrets de dépôt : `CRM_URL` et
+`CRON_SECRET`.
+
+**La sauvegarde passe avant les vacations**, et l'ordre est le sujet : elle
+capture l'état d'avant tout ce que la journée écrira, et elle a lieu même si
+les vacations échouent. L'inverse ferait dépendre le filet de sécurité d'un
+appel à un modèle.
+
+`0 5 * * *` en UTC — 07:00 à Paris en été, 06:00 en hiver. GitHub ne connaît
+que l'UTC ; l'heure locale dérive d'une heure au changement d'heure, sans
+conséquence pour un passage quotidien.
+
+### Un défaut trouvé par le test, pas par l'écran
+
+Le bandeau d'alerte était rendu dans le corps de la page d'accueil — **après**
+les retours anticipés « base vide » et « base injoignable ». Autrement dit il
+disparaissait exactement dans les deux situations où une sauvegarde périmée est
+le plus grave. Il vit maintenant dans la coquille `Shell`, que toutes les
+branches traversent, et `snapshotHealth()` est calculé avant elles.
+
+### Jalon 19 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, la migration `7_snapshots` appliquée puis
+`migrate diff` renvoyant une migration vide :
+
+- **sauvegarde** → `crm-2026-08-09.json`, 45 002 octets, listé avec sa date et
+  son poids ;
+- **restauration réelle** : 18 contacts, 24 affaires et 32 interactions
+  supprimés, puis intégralement rétablis depuis l'instantané ;
+- **fichier corrompu** → « ce n'est pas du JSON valide » ; **version 99** →
+  « non conforme au format » ; **base intacte** dans les deux cas ;
+- **rétention** : 40 instantanés → 23 élagués, 17 conservés — les 14 derniers
+  jours plus les 3 lundis antérieurs, exactement l'union attendue ;
+- **bandeau** : absent à J+0 ; présent avec « il y a 3 jours » après avoir
+  vieilli le journal ; présent aussi sur base fraîchement migrée ; le cas
+  « base vide » est couvert par le test unitaire, qui rend précisément cette
+  branche ;
+- **passage quotidien** : sans en-tête et avec un mauvais secret → 401 ; avec
+  le bon → instantané écrit **et** deux vacations, `manual=false` dans les deux
+  journaux ;
+- **magasin non configuré** → refus nommant les variables manquantes, échec
+  journalisé, aucun repli silencieux ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (498 tests) verts.
+
+### Jalon 19 — ce qui ne l'est pas
+
+**Le pilote GitHub n'a pas été exercé contre l'API réelle** : il n'y a pas de
+jeton de sauvegarde dans cet environnement. Ce qui est vérifié de bout en bout
+— prise, listage, rétention, restauration, refus de fichier corrompu — l'a été
+avec le pilote `local`, qui partage toute l'orchestration. Ce qui reste à
+prouver au premier passage réel : les appels HTTP à l'API Contents.
+
+**Le workflow n'a pas tourné sur GitHub** : il ne peut s'exécuter qu'une fois la
+branche fusionnée et les deux secrets posés. L'appel qu'il émet, lui, a été
+rejoué à l'identique en local (`curl --fail-with-body`, même en-tête, même
+route) et répond correctement.
+
+**La rétention n'efface pas l'historique git.** Voir plus haut : c'est le prix
+du dépôt GitHub, et il est assumé tant que S3 n'est pas branché.

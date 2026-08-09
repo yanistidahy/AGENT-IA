@@ -43,6 +43,9 @@ vi.mock("next/navigation", () => ({
 }));
 
 const empty = () => Promise.resolve([]);
+
+/** Ancienneté de la dernière sauvegarde réussie, en heures. `null` = aucune. */
+let backupAgeHours: number | null = null;
 const aggregate = () => Promise.resolve({ _sum: { amount: null } });
 
 vi.mock("@/lib/db", () => ({
@@ -68,6 +71,16 @@ vi.mock("@/lib/db", () => ({
     // d'arbitrage : la page lit donc l'identité du conseil.
     agent: { findMany: empty },
     agentPhoto: { findMany: empty },
+    // Le bandeau de sauvegarde lit ce journal. `backupAgeHours` pilote son
+    // état : `null` = jamais sauvegardé, donc bandeau visible.
+    snapshotRun: {
+      findFirst: () =>
+        Promise.resolve(
+          backupAgeHours === null
+            ? null
+            : { startedAt: new Date(Date.now() - backupAgeHours * 3_600_000) },
+        ),
+    },
     settings: { findUnique: () => Promise.resolve(null) },
   },
 }));
@@ -180,5 +193,37 @@ describe("centre de pilotage", () => {
     expect(html).toContain("Base de données connectée");
     expect(html).toMatch(/elle est vide/);
     expect(html).toMatch(/db:seed/);
+  });
+});
+
+/**
+ * Le bandeau de sauvegarde périmée.
+ *
+ * Il existe parce qu'une sauvegarde qui échoue en silence ne vaut rien : le
+ * seul moment où l'on s'en aperçoit est celui où l'on en a besoin.
+ */
+describe("bandeau de sauvegarde", () => {
+  it("alerte quand aucune sauvegarde n'a jamais réussi", async () => {
+    backupAgeHours = null;
+    vi.resetModules();
+    const html = await renderHome();
+    expect(html).toContain("Sauvegarde en retard");
+    expect(html).toContain("aucune sauvegarde");
+  });
+
+  it("alerte au-delà de 48 h, en disant depuis quand", async () => {
+    backupAgeHours = 72;
+    vi.resetModules();
+    const html = await renderHome();
+    expect(html).toContain("Sauvegarde en retard");
+    expect(html).toContain("il y a 3 jours");
+  });
+
+  it("se tait quand la sauvegarde de la nuit est passée", async () => {
+    backupAgeHours = 10;
+    vi.resetModules();
+    const html = await renderHome();
+    expect(html).not.toContain("Sauvegarde en retard");
+    backupAgeHours = null;
   });
 });

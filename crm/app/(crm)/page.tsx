@@ -7,6 +7,8 @@ import { Upcoming } from "@/components/dashboard/upcoming";
 import { readAlerts } from "@/lib/api/alerts";
 import { listRecommendations } from "@/lib/api/recommendations";
 import { findAgentProfile } from "@/lib/api/agents";
+import { snapshotHealth, type SnapshotHealth } from "@/lib/api/snapshots";
+import { describeAge, STALE_AFTER_HOURS } from "@/lib/domain/snapshots";
 import { RecommendationCard } from "@/components/recommendations/recommendation-card";
 import { readActionQueue, readProspecting, readWeek } from "@/lib/api/dashboard";
 import { ActionQueue } from "@/components/dashboard/action-queue";
@@ -50,9 +52,16 @@ export default async function HomePage({
   const deploy = readDeployInfo();
   const renderedAt = new Date();
 
+  // Calculé **avant** les retours anticipés : une base vide ou injoignable est
+  // exactement le moment où l'état des sauvegardes doit rester visible. Lu dans
+  // le journal local et non dans le magasin distant — la page d'accueil se rend
+  // à chaque visite, un aller-retour réseau y serait payé pour une information
+  // qui change une fois par jour.
+  const backup = await snapshotHealth(renderedAt);
+
   if (!status.ok) {
     return (
-      <Shell deploy={deploy} renderedAt={renderedAt}>
+      <Shell deploy={deploy} renderedAt={renderedAt} backup={backup}>
         <section className="rounded-card border border-line bg-surface p-5 shadow-card">
           <div className="flex items-center gap-2.5">
             <span aria-hidden className="size-2 rounded-full bg-pulse" />
@@ -68,7 +77,7 @@ export default async function HomePage({
 
   if (status.total === 0) {
     return (
-      <Shell deploy={deploy} renderedAt={renderedAt}>
+      <Shell deploy={deploy} renderedAt={renderedAt} backup={backup}>
         <section className="rounded-card border border-line bg-surface p-5 shadow-card">
           <div className="flex items-center gap-2.5">
             <span aria-hidden className="size-2 rounded-full bg-flux" />
@@ -113,7 +122,7 @@ export default async function HomePage({
   );
 
   return (
-    <Shell deploy={deploy} renderedAt={renderedAt}>
+    <Shell deploy={deploy} renderedAt={renderedAt} backup={backup}>
       {recommendations.length > 0 && (
         <Block
           title={`Le point de ${arbiter?.name ?? "l'arbitre"}`}
@@ -193,14 +202,32 @@ export default async function HomePage({
 function Shell({
   deploy,
   renderedAt,
+  backup,
   children,
 }: {
   deploy: ReturnType<typeof readDeployInfo>;
   renderedAt: Date;
+  backup: SnapshotHealth;
   children: React.ReactNode;
 }) {
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
+      {/* Le bandeau vit dans la coquille, pas dans le corps : la page sort tôt
+          quand la base est vide ou injoignable, et c'est précisément là qu'une
+          sauvegarde périmée doit se voir. */}
+      {backup.stale && (
+        <div className="mb-4 rounded-card border border-[#F0C9C2] bg-pulse-l px-4 py-3">
+          <p className="text-[13px] font-semibold">Sauvegarde en retard</p>
+          <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted">
+            Dernière sauvegarde réussie : {describeAge(backup.lastSuccessAt, renderedAt)}. Au-delà
+            de {STALE_AFTER_HOURS} h sans instantané, une perte de base ne serait plus
+            rattrapable.{" "}
+            <Link href="/reglages" className="underline hover:text-flux-d">
+              Vérifier les sauvegardes
+            </Link>
+          </p>
+        </div>
+      )}
       {children}
       <p className="mt-8 border-t border-line pt-3 font-mono text-[10.5px] text-muted">
         {deploy.commit !== null && (

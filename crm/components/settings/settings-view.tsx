@@ -13,6 +13,7 @@ import { SequenceEditor, type SequenceEditable } from "./sequence-editor";
 import { TagsEditor } from "./tags-editor";
 import { MaintenancePanel } from "./maintenance-panel";
 import { ApiDiagnostic } from "./api-diagnostic";
+import { SnapshotsPanel } from "./snapshots-panel";
 import { CouncilPanel } from "./council-panel";
 import { ShiftsPanel } from "./shifts-panel";
 import { StagesEditor } from "./stages-editor";
@@ -136,6 +137,13 @@ export function SettingsView({
         hint="simulez d'abord — rien ne s'écrit sans confirmation, et le détail s'affiche avant"
       >
         <MaintenancePanel />
+      </Section>
+
+      <Section
+        title="Sauvegardes automatiques"
+        hint="un instantané par jour, 14 quotidiennes et 8 hebdomadaires conservées"
+      >
+        <SnapshotsPanel />
       </Section>
 
       <Section title="Sauvegarde" hint="exportez avant toute manipulation risquée">
