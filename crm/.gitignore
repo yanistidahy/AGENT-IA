@@ -1,0 +1,23 @@
+node_modules/
+.next/
+out/
+build/
+
+# Bases locales SQLite éventuelles
+*.db
+*.db-journal
+prisma/dev.db*
+
+# Variables d'environnement — jamais commitées
+.env
+.env.local
+.env.*.local
+
+# Divers
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+coverage/
+
+# Sauvegardes écrites par scripts/fix-lifecycles.ts
+backups/

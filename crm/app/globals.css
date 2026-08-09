@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+/**
+ * Jetons de conception repris à l'identique du prototype `auraflow-crm.html`.
+ * Le prototype fait foi : ces valeurs ne sont pas celles du brief initial
+ * (voir CLAUDE.md § Divergences). La menthe `flux` est la couleur d'action
+ * primaire ; l'encre est un vert-noir, pas un bleu-noir.
+ */
+@theme {
+  /* Encre — rail de navigation, fluxbar, boutons primaires */
+  --color-ink: #0c1614;
+  --color-ink-2: #13211e;
+  --color-ink-3: #1d2f2b;
+
+  /* Fonds */
+  --color-paper: #edf1ef;
+  --color-surface: #ffffff;
+  --color-surface-2: #f7faf9;
+
+  /* Menthe — action primaire, succès, affaire active */
+  --color-flux: #0fa88f;
+  --color-flux-d: #0b7a68;
+  --color-flux-l: #dff3ef;
+
+  /* Rouge — alerte haute, affaire froide, perdue */
+  --color-pulse: #e8503f;
+  --color-pulse-l: #fdeae7;
+
+  /* Ambre — alerte moyenne, affaire tiède */
+  --color-gold: #d99323;
+  --color-gold-l: #fbf0dc;
+
+  /* Violet — étape « Démo planifiée », avatars, panneau agents */
+  --color-violet: #6d5ae6;
+  --color-violet-l: #eae7fc;
+
+  /* Bleu — étape « Contacté » */
+  --color-sky: #2c7be5;
+  --color-sky-l: #e4eefc;
+
+  /* Neutres */
+  --color-muted: #63807a;
+  --color-line: #dce5e2;
+  --color-line-2: #ebf0ee;
+
+  /* Typographie — variables injectées par next/font dans app/layout.tsx */
+  --font-sans: var(--font-public-sans), system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-space-grotesk), var(--font-public-sans), sans-serif;
+  --font-mono: var(--font-ibm-plex-mono), ui-monospace, monospace;
+
+  /* Rayons */
+  --radius-card: 10px;
+  --radius-control: 7px;
+
+  /* Ombres */
+  --shadow-card: 0 1px 2px rgba(12, 22, 20, 0.05), 0 8px 24px -12px rgba(12, 22, 20, 0.18);
+  --shadow-float: 0 24px 60px -20px rgba(12, 22, 20, 0.35);
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: var(--color-flux);
+    color: #fff;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-flux);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

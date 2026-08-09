@@ -1,0 +1,220 @@
+"use client";
+
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useState, useTransition } from "react";
+import { Drawer } from "@/components/ui/drawer";
+import { Icon } from "@/components/ui/icon";
+import type { ContactRecord } from "@/lib/api/contacts";
+import { isContactFilter } from "@/lib/domain/follow-up";
+import type { PilotageSettings } from "@/lib/domain/types";
+import type { FacetValue } from "@/lib/domain/column-match";
+import { CONTACT_FILTER_COLUMNS } from "@/lib/api/contact-columns";
+import { FilterSummary, useColumnFilters } from "@/components/table/filter-state";
+import { ContactsFilters } from "./contacts-filters";
+import { ContactDrawer } from "./contact-drawer";
+import { ContactForm, type ContactFormOptions } from "./contact-form";
+import { ContactsTable, type ContactSortKey } from "./contacts-table";
+import { ImportDialog } from "./import-dialog";
+import type { SequenceOption } from "@/components/activities/run-sequence";
+import type { Alert } from "@/lib/domain/types";
+import type { LinkableDeal } from "./link-deal";
+
+interface ContactsViewProps extends ContactFormOptions {
+  readonly contacts: readonly ContactRecord[];
+  readonly settings: PilotageSettings;
+  readonly linkableDeals: readonly LinkableDeal[];
+  readonly sequences: readonly SequenceOption[];
+  readonly alerts: readonly Alert[];
+  /** Compteurs de la puce « À relancer », calculés sur l'ensemble des contacts. */
+  readonly reminderCounts: { readonly total: number; readonly late: number };
+  /** Fiche désignée par `?fiche=` mais absente de la liste filtrée. */
+  readonly focused: ContactRecord | null;
+  /** Valeurs distinctes par colonne, calculées côté serveur. */
+  readonly facets: Readonly<Record<string, readonly FacetValue[]>>;
+  /** Total avant filtres de colonne, pour le « 54 sur 138 ». */
+  readonly totalRows: number;
+  readonly incompleteCount: number;
+  readonly companyOptions: ReadonlyArray<{ id: string; name: string; count: number }>;
+  readonly tagCounts: ReadonlyArray<{ value: string; count: number }>;
+}
+
+export function ContactsView({
+  contacts,
+  settings,
+  linkableDeals,
+  sequences,
+  alerts,
+  focused,
+  reminderCounts,
+  facets,
+  totalRows,
+  incompleteCount,
+  companyOptions,
+  tagCounts,
+  ...options
+}: ContactsViewProps) {
+  const router = useRouter();
+  const params = useSearchParams();
+  const [, startTransition] = useTransition();
+  const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
+
+  const {
+    state: filters,
+    setFilter,
+    reset,
+  } = useColumnFilters("/contacts", CONTACT_FILTER_COLUMNS);
+
+  const lifecycle = params.get("lifecycle") ?? "all";
+  const followUp = params.get("followUp");
+  const incomplete = params.get("incomplete") === "1";
+  const sortParam = params.get("sort");
+  const dir = params.get("dir") === "desc" ? "desc" : "asc";
+
+  const setParam = useCallback(
+    (updates: Record<string, string | null>) => {
+      const next = new URLSearchParams(params.toString());
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === null || value === "") next.delete(key);
+        else next.set(key, value);
+      }
+      startTransition(() => router.replace(`/contacts?${next.toString()}`, { scroll: false }));
+    },
+    [params, router],
+  );
+
+  // Le tiroir ouvert est un état d'URL, pas un état de composant : une alerte
+  // du centre de pilotage peut donc ouvrir directement la bonne fiche, le lien
+  // est partageable, et le bouton « précédent » referme le tiroir.
+  const fiche = params.get("fiche");
+  const selected =
+    fiche === null ? null : (contacts.find((c) => c.id === fiche) ?? focused);
+
+  const closeDrawer = () => setParam({ fiche: null });
+
+  const refresh = () => {
+    setCreating(false);
+    router.refresh();
+  };
+
+  const clients = contacts.filter((contact) => contact.lifecycle === "Client").length;
+
+  return (
+    <div className="px-6 py-6">
+      <header className="mb-5 flex flex-wrap items-end gap-4">
+        <div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Contacts</h1>
+          <p className="mt-0.5 text-[13px] text-muted">
+            {contacts.length} contacts · {clients} clients
+          </p>
+        </div>
+        <div className="ml-auto flex flex-wrap gap-2">
+          <a
+            href={`/api/contacts/export?${params.toString()}`}
+            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-3.5 py-2 text-[13px] font-semibold transition-colors hover:bg-surface-2"
+          >
+            Exporter en CSV
+          </a>
+          <button
+            type="button"
+            onClick={() => setImporting(true)}
+            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-3.5 py-2 text-[13px] font-semibold transition-colors hover:bg-surface-2"
+          >
+            Importer
+          </button>
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="inline-flex items-center gap-1.5 rounded-control bg-flux px-3.5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-flux-d"
+          >
+            <Icon name="plus" size={15} />
+            Nouveau contact
+          </button>
+        </div>
+      </header>
+
+      <ContactsFilters
+        lifecycle={lifecycle}
+        followUp={followUp}
+        incomplete={incomplete}
+        incompleteCount={incompleteCount}
+        reminderCounts={reminderCounts}
+        owners={options.owners}
+        sources={options.sources}
+        companies={companyOptions}
+        tags={tagCounts}
+        current={Object.fromEntries(params.entries())}
+        onChange={setParam}
+      />
+
+      <FilterSummary
+        shown={contacts.length}
+        total={totalRows}
+        active={Object.keys(filters).length}
+        onReset={reset}
+      />
+
+      <ContactsTable
+        contacts={contacts}
+        settings={settings}
+        sort={isSortKey(sortParam) ? sortParam : undefined}
+        dir={dir}
+        onSort={(key) =>
+          setParam({ sort: key, dir: sortParam === key && dir === "asc" ? "desc" : "asc" })
+        }
+        onSelect={(contact) => setParam({ fiche: contact.id })}
+        filter={followUp !== null && isContactFilter(followUp) ? followUp : null}
+        facets={facets}
+        filters={filters}
+        onFilter={setFilter}
+      />
+
+      <ContactDrawer
+        {...options}
+        contact={selected ?? null}
+        linkableDeals={linkableDeals}
+        sequences={sequences}
+        alerts={
+          selected === null || selected === undefined
+            ? []
+            : alerts.filter(
+                (alert) => alert.targetType === "contact" && alert.targetId === selected.id,
+              )
+        }
+        onClose={closeDrawer}
+        onChanged={refresh}
+      />
+
+      <Drawer open={creating} title="Nouveau contact" onClose={() => setCreating(false)}>
+        <ContactForm
+          {...options}
+          contact={null}
+          onCancel={() => setCreating(false)}
+          onSaved={refresh}
+        />
+      </Drawer>
+
+      <ImportDialog
+        open={importing}
+        onClose={() => setImporting(false)}
+        onImported={() => router.refresh()}
+      />
+    </div>
+  );
+}
+
+const SORT_KEYS: readonly ContactSortKey[] = [
+  "lastName",
+  "firstName",
+  "company",
+  "lifecycle",
+  "owner",
+  "lastContact",
+  "tag",
+  "followUp",
+  "nextReminder",
+];
+
+function isSortKey(value: string | null): value is ContactSortKey {
+  return value !== null && SORT_KEYS.some((key) => key === value);
+}

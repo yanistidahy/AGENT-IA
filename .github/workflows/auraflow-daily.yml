@@ -1,0 +1,61 @@
+name: AuraFLOW — passage quotidien
+
+# Sauvegarde puis vacations des agents.
+#
+# GitHub Actions plutôt qu'un cron Railway : le cron de Railway relance la
+# commande de démarrage d'un service, il n'émet pas de requête HTTP — il ne peut
+# donc pas appeler `POST /api/cron/daily`. Il aurait fallu un second service
+# dont la seule raison d'être est de lancer un `curl`, avec sa propre facture et
+# ses propres journaux à aller chercher. Ici, l'exécution est gratuite, tracée,
+# et un échec est visible dans l'onglet Actions sans fouiller.
+on:
+  schedule:
+    # 05:00 UTC = 07:00 à Paris en été, 06:00 en hiver. GitHub ne connaît que
+    # l'UTC : l'heure locale dérive donc d'une heure au changement d'heure, ce
+    # qui est sans conséquence pour un passage quotidien.
+    - cron: "0 5 * * *"
+  # Permet de déclencher à la main depuis l'onglet Actions, pour vérifier.
+  workflow_dispatch:
+
+# Aucune permission sur le dépôt : ce workflow ne fait qu'un appel sortant.
+permissions: {}
+
+concurrency:
+  # Deux passages simultanés écriraient deux fois le même instantané.
+  group: auraflow-daily
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Sauvegarde + vacations
+        env:
+          CRM_URL: ${{ secrets.CRM_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRM_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::Secrets CRM_URL et CRON_SECRET requis sur le dépôt."
+            exit 1
+          fi
+
+          # --fail-with-body : sans lui, curl masque le corps sur une erreur
+          # HTTP, et le message qui nomme la cause serait perdu.
+          # --max-time : une vacation peut être longue, mais pas infinie.
+          http_code=$(curl --silent --show-error --fail-with-body \
+            --max-time 540 \
+            --retry 2 --retry-delay 30 --retry-all-errors \
+            --output response.json --write-out '%{http_code}' \
+            --request POST "${CRM_URL%/}/api/cron/daily" \
+            --header "Authorization: Bearer ${CRON_SECRET}" \
+            --header "Content-Type: application/json") || {
+              echo "::error::Le passage quotidien a échoué (HTTP ${http_code:-?})."
+              cat response.json || true
+              exit 1
+            }
+
+          echo "HTTP $http_code"
+          cat response.json
