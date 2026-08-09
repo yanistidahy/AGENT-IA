@@ -88,21 +88,27 @@ export const listNeglectedContacts = defineTool({
     "Contacts oubliés : « sans nouvelles » (dernier contact au-delà du seuil froid des réglages, sans relance programmée) ou « jamais contacté » (aucune interaction). Utiliser pour « qui ai-je oublié », « qui n'ai-je pas relancé ».",
   mode: "read",
   schema: z.object({
-    catégorie: z
+    // Clé en ASCII : l'API contraint les clés de `properties` au motif
+    // `^[a-zA-Z0-9_.-]{1,64}$`. Le sens français vit dans `describe()`, qui
+    // n'a pas cette contrainte — c'est le texte que le modèle lit de toute
+    // façon, l'identifiant ne lui apprend rien.
+    category: z
       .enum(["silent", "never"])
-      .describe("silent = sans nouvelles, never = jamais contacté"),
+      .describe(
+        "Catégorie de contacts oubliés : silent = sans nouvelles, never = jamais contacté.",
+      ),
     limit: z.number().int().min(1).max(100).default(25),
   }),
   run: async (input) => {
     const now = new Date();
     const settings = await getPilotage();
-    const contacts = await listContacts({ followUp: input.catégorie }, settings, now);
+    const contacts = await listContacts({ followUp: input.category }, settings, now);
 
     if (contacts.length === 0) {
       return {
         vide: true,
         message:
-          input.catégorie === "silent"
+          input.category === "silent"
             ? `Aucun contact sans nouvelles : tous ont été touchés il y a moins de ${settings.coldDays} jours, ou portent une relance programmée.`
             : "Aucun contact « jamais contacté » : tous ont au moins une interaction ou une date de dernier contact.",
       };

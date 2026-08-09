@@ -266,6 +266,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 14 | **Le conseil en vacations** — recommandations prouvées, planificateur, budget | **livré, à valider** |
 | 15 | **Identité du conseil** — agents réglables, portraits en base, agent en pied | **livré, à valider** |
 | 16 | **Diagnostic API** — corps d'erreur remonté, bissection du champ refusé, chemins unifiés | **livré, à valider** |
+| 17 | **Clés de schéma en ASCII** — cause nommée, garde vitest, substitut qui valide | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -2067,3 +2068,91 @@ la vraie API refuse — c'est précisément ce que le bouton dira au premier cli
 pouvoir tester les modules serveur. La garde réelle est celle du build Next, et
 `no-key-in-bundle.test.ts` continue de vérifier la sortie de build — le
 résultat, pas l'intention.
+
+## Incident (suite) — la cause nommée : une clé de propriété accentuée
+
+Le diagnostic du jalon 16 a désigné le champ au premier clic, en production :
+
+```
+tools.8.custom.input_schema.properties:
+  Property keys should match pattern '^[a-zA-Z0-9_.-]{1,64}$'
+request_id req_011CdsMXremN2hD6UBeHU9p2
+```
+
+Les étapes 1 à 4 passaient — modèle, `thinking`, `output_config`, `system` sont
+donc hors de cause, et la question du modèle et du crédit est réglée. Seul
+`tools` échouait.
+
+### Un seul outil, une seule clé
+
+Audit des vingt outils, **à tous les niveaux de `properties`** et sur les noms
+d'outils : une seule violation. `list_neglected_contacts` — l'indice 8, celui
+que l'API nommait — déclarait une propriété **`catégorie`**. L'accent la met
+hors du motif, et une seule clé fautive fait rejeter la requête entière : ce
+n'était pas cet outil qui était cassé, c'était le conseil au complet.
+
+Les dix-neuf autres étaient conformes. Le français y était déjà là où il ne
+gêne pas : dans les `description`, et dans les **valeurs de retour** des outils
+(`société`, `propriétaire`, `cycleDeVie`), qui sont du contenu et non des
+identifiants — la contrainte ne porte que sur les clés de `properties` du
+schéma d'entrée. Elles restent en français.
+
+`catégorie` devient `category`, et le sens part dans `describe()` : « Catégorie
+de contacts oubliés : silent = sans nouvelles, never = jamais contacté. » Le
+modèle lit la description, pas l'identifiant — on ne perd rien.
+
+### La garde, et pourquoi elle appartient à vitest
+
+`lib/domain/tool-schema.ts` porte la règle, pure : `inspectTool(nom, schéma)`
+rend toutes les violations, en descendant dans `anyOf`, `items` et les objets
+imbriqués. `tool-schema-guard.test.ts` la passe sur les vingt outils.
+
+**Éprouvée en réintroduisant le défaut exact** : le test tombe en nommant
+`list_neglected_contacts → .properties.catégorie`. Six autres cas fixent ce
+qu'elle doit attraper — accent imbriqué, clé dans un `anyOf`, espace,
+apostrophe, clé de 65 caractères, nom d'outil fautif.
+
+C'est la leçon du test de parité SQL/mémoire : **une contrainte qu'on ne peut
+vérifier qu'en production n'est pas vérifiée.** Celle-ci est purement
+syntaxique, elle n'avait aucune raison d'attendre un appel réel.
+
+### Le substitut mentait deux fois
+
+Il vivait dans un dossier temporaire, non versionné, et acceptait tout : il a
+validé quatre jalons durant une requête que l'API refusait. Il est maintenant
+`scripts/mock-anthropic.ts`, versionné, et il **tire sa validation de
+`lib/domain/tool-schema.ts`** — le module du test de garde. Deux copies de la
+règle divergeraient, et c'est ainsi que le défaut a survécu. Il reproduit le
+format réel, index de l'outil compris.
+
+**Second mensonge, découvert en vérifiant** : il ne répondait qu'en JSON. Le
+chemin de conversation appelle `messages.stream()` et échouait sur « request
+ended without sending any chunks ». Autrement dit, **le chemin de conversation
+n'avait jamais été exercé localement** — seules les vacations, qui sont
+non-streamées, l'étaient. Le substitut émet désormais du SSE.
+
+### Ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, le serveur standalone de production, et le
+substitut qui valide comme l'API :
+
+- audit des 20 outils → **une seule** violation, `list_neglected_contacts.catégorie`,
+  exactement l'indice 8 signalé par l'API ; zéro après correction ;
+- garde éprouvée en réintroduisant `catégorie` → échec nommant outil, clé et motif ;
+- substitut : l'ancien corps → `tools.1.custom.input_schema.properties: Property
+  keys should match…` ; `temperature` → refusé ; `messages: []` → refusé ;
+- **diagnostic : les cinq étapes en 200**, `tools` comprise ;
+- **conversation avec Sarah** : flux SSE, texte reçu, `done`, réponse persistée ;
+- **vacation manuelle** : Sarah `ok`, 1 recommandation, 2 preuves réelles
+  cliquables, la preuve inventée écartée, l'action mal formée retirée (1 sur 2) ;
+- outil renommé exercé contre la base : `silent` → 4 contacts, `never` → état
+  vide nommant sa règle, ancienne clé `catégorie` → refusée ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (468 tests) verts.
+
+### Ce qui ne l'est pas
+
+**Toujours aucun appel Anthropic réel depuis cet environnement.** Le substitut
+applique désormais les contraintes connues — celles que la production nous a
+apprises — mais il ne peut pas connaître celles qu'elle ne nous a pas encore
+opposées. Il rattrape ce qui a été payé une fois ; il ne prédit pas le reste.
+Le bouton de `/reglages` reste le seul juge.
