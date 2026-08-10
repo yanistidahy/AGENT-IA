@@ -19,6 +19,8 @@ export interface ContactFacetRow {
   readonly source: string;
   readonly tag: string;
   readonly lostReason: string;
+  /** Statut **saisi**. Vide = le calcul fait foi ; voir lib/domain/status.ts. */
+  readonly status: string;
   readonly companyName: string | null;
   readonly lastContact: Date | null;
   readonly nextReminder: Date | null;
@@ -31,6 +33,13 @@ export const CONTACT_FILTER_COLUMNS: readonly ColumnSpec[] = [
   { key: "owner", label: "Propriétaire", kind: "text" },
   { key: "source", label: "Source", kind: "text" },
   { key: "lostReason", label: "Motif de perte", kind: "text" },
+  /**
+   * Le statut **saisi**, filtrable en SQL parce qu'il est stocké — à la
+   * différence du statut calculé, qui n'existe qu'après lecture. C'est ce qui
+   * permet d'isoler « Contacté — en attente » pour organiser des relances.
+   * Les fiches au statut vide se retrouvent sous « (vide) ».
+   */
+  { key: "status", label: "Statut saisi", kind: "text" },
   { key: "lastContact", label: "Dernier contact", kind: "date" },
   { key: "nextReminder", label: "Prochaine relance", kind: "date" },
 ];
@@ -42,6 +51,7 @@ export const CONTACT_DB_COLUMNS: readonly DbColumn[] = [
   { key: "owner", source: { kind: "scalar", field: "owner" } },
   { key: "source", source: { kind: "scalar", field: "source" } },
   { key: "lostReason", source: { kind: "scalar", field: "lostReason" } },
+  { key: "status", source: { kind: "scalar", field: "status" } },
   { key: "lastContact", source: { kind: "scalar", field: "lastContact" } },
   { key: "nextReminder", source: { kind: "scalar", field: "nextReminder" } },
 ];
@@ -53,6 +63,7 @@ export const CONTACT_FACET_COLUMNS: readonly FacetColumn<ContactFacetRow>[] = [
   { key: "owner", label: "Propriétaire", value: (row) => row.owner },
   { key: "source", label: "Source", value: (row) => row.source },
   { key: "lostReason", label: "Motif de perte", value: (row) => row.lostReason },
+  { key: "status", label: "Statut saisi", value: (row) => row.status },
   { key: "lastContact", label: "Dernier contact", value: (row) => row.lastContact },
   { key: "nextReminder", label: "Prochaine relance", value: (row) => row.nextReminder },
 ];

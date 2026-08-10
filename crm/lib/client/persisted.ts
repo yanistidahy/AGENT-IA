@@ -66,8 +66,9 @@ export function usePersistedFlag(
  */
 export function usePersistedSet(
   key: string,
-): readonly [ReadonlySet<string>, (member: string) => void] {
-  const [value, setValue] = useState<ReadonlySet<string>>(() => new Set());
+  fallback: readonly string[] = [],
+): readonly [ReadonlySet<string>, (member: string) => void, () => void] {
+  const [value, setValue] = useState<ReadonlySet<string>>(() => new Set(fallback));
 
   useEffect(() => {
     const stored = read(key);
@@ -95,7 +96,13 @@ export function usePersistedSet(
     [key],
   );
 
-  return [value, toggle];
+  /** Retour au défaut, et oubli de ce qui était conservé. */
+  const reset = useCallback(() => {
+    setValue(new Set(fallback));
+    write(key, JSON.stringify([...fallback]));
+  }, [fallback, key]);
+
+  return [value, toggle, reset];
 }
 
 /**

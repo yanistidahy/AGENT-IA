@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
+import { MaintenanceBlock as Block } from "./maintenance-block";
+import { StatusesBlock, type StatusPlan } from "./statuses-block";
 
 /**
  * Corrections de données, simulées à l'écran puis confirmées.
@@ -46,6 +48,7 @@ interface Plans {
   search: SearchPlan;
   lifecycles: LifecyclePlan;
   names: NamePlan;
+  statuses: StatusPlan;
 }
 
 function isPlans(value: unknown): value is Plans {
@@ -76,7 +79,7 @@ export function MaintenancePanel() {
   };
 
   const apply = async (
-    operation: "search" | "lifecycles" | "names",
+    operation: "search" | "lifecycles" | "names" | "statuses",
     expected: number,
     what: string,
   ) => {
@@ -177,6 +180,8 @@ export function MaintenancePanel() {
             ))}
           </Block>
 
+          <StatusesBlock plan={plans.statuses} busy={busy} onApply={apply} />
+
           <Block
             title="Cycles de vie"
             summary={`${plans.lifecycles.total} fiche(s) à modifier, ${plans.lifecycles.unchanged} déjà à jour, ${plans.lifecycles.uncertain} rapprochement(s) incertain(s).`}
@@ -206,40 +211,5 @@ export function MaintenancePanel() {
         </div>
       )}
     </section>
-  );
-}
-
-function Block({
-  title,
-  summary,
-  hint,
-  disabled,
-  onApply,
-  children,
-}: {
-  title: string;
-  summary: string;
-  hint: string;
-  disabled: boolean;
-  onApply: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-card border border-line bg-surface-2 px-3.5 py-3">
-      <div className="flex flex-wrap items-baseline gap-2">
-        <b className="font-display text-[13.5px] font-semibold">{title}</b>
-        <span className="text-[12.5px] text-muted">{summary}</span>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={onApply}
-          className={`${BUTTON} ml-auto bg-flux text-white hover:bg-flux-d`}
-        >
-          Appliquer
-        </button>
-      </div>
-      <p className="mt-1 text-[11.5px] leading-relaxed text-muted">{hint}</p>
-      <ul className="mt-2 grid max-h-[240px] gap-0.5 overflow-y-auto text-[12px]">{children}</ul>
-    </div>
   );
 }

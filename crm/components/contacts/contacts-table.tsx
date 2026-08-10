@@ -1,32 +1,26 @@
 "use client";
 
-import { ContactStatusTag, EmptyState, LifecycleTag } from "@/components/ui/primitives";
+import { EmptyState } from "@/components/ui/primitives";
 import type { ContactRecord } from "@/lib/api/contacts";
-import { daysSince } from "@/lib/domain/dates";
-import {
-  describeReminder,
-  emptyFilterMessage,
-  type ContactFilter,
-} from "@/lib/domain/follow-up";
-import { resolveStatus } from "@/lib/domain/status";
+import { emptyFilterMessage, type ContactFilter } from "@/lib/domain/follow-up";
 import type { PilotageSettings } from "@/lib/domain/types";
 import type { ColumnFilter, ColumnSpec, FilterState } from "@/lib/domain/column-filters";
 import type { FacetValue } from "@/lib/domain/column-match";
 import { CONTACT_FILTER_COLUMNS } from "@/lib/api/contact-columns";
 import { ColumnFilterMenu } from "@/components/table/column-filter";
-import { formatDate } from "@/lib/format";
+import { CONTACT_COLUMNS, type ContactSortKey } from "./contact-table-columns";
 
-export type ContactSortKey =
-  | "lastName"
-  | "firstName"
-  | "company"
-  | "lifecycle"
-  | "owner"
-  | "lastContact"
-  | "tag"
-  | "followUp"
-  | "nextReminder";
+export type { ContactSortKey };
 
+/**
+ * Le tableau des contacts.
+ *
+ * Il ne décide plus de ses colonnes : il reçoit celles à rendre et les tire de
+ * `CONTACT_COLUMNS`, où chacune porte son libellé, son tri, son filtre et sa
+ * cellule. L'ancienne version écrivait les en-têtes dans une liste et les
+ * cellules en dur dans le corps — deux endroits qu'il fallait garder alignés à
+ * la main, et un obstacle à tout choix de colonnes.
+ */
 interface ContactsTableProps {
   readonly contacts: readonly ContactRecord[];
   readonly settings: PilotageSettings;
@@ -39,39 +33,14 @@ interface ContactsTableProps {
   readonly facets: Readonly<Record<string, readonly FacetValue[]>>;
   readonly filters: FilterState;
   readonly onFilter: (key: string, filter: ColumnFilter | null) => void;
+  /** Clés des colonnes à rendre, dans l'ordre de `CONTACT_COLUMNS`. */
+  readonly visible: ReadonlySet<string>;
 }
 
-/**
- * Colonne de filtrage associée à chaque en-tête. `null` quand la colonne n'est
- * pas filtrable — « Affaires » est un décompte calculé, il n'a pas de liste de
- * valeurs à cocher.
- */
-const FILTER_KEYS: Readonly<Record<string, string>> = {
-  Société: "company",
-  "Cycle de vie": "lifecycle",
-  Étiquette: "tag",
-  "Prochaine relance": "nextReminder",
-  "Dernier contact": "lastContact",
-  Propriétaire: "owner",
-};
-
-function specFor(label: string): ColumnSpec | null {
-  const key = FILTER_KEYS[label];
-  if (key === undefined) return null;
+function specFor(key: string | null): ColumnSpec | null {
+  if (key === null) return null;
   return CONTACT_FILTER_COLUMNS.find((column) => column.key === key) ?? null;
 }
-
-const COLUMNS: ReadonlyArray<{ key: ContactSortKey | null; label: string }> = [
-  { key: "lastName", label: "Contact" },
-  { key: "company", label: "Société" },
-  { key: "lifecycle", label: "Cycle de vie" },
-  { key: "tag", label: "Étiquette" },
-  { key: "followUp", label: "Statut" },
-  { key: "nextReminder", label: "Prochaine relance" },
-  { key: "lastContact", label: "Dernier contact" },
-  { key: null, label: "Affaires" },
-  { key: "owner", label: "Propriétaire" },
-];
 
 export function ContactsTable({
   contacts,
@@ -84,8 +53,10 @@ export function ContactsTable({
   facets,
   filters,
   onFilter,
+  visible,
 }: ContactsTableProps) {
   const now = new Date();
+  const columns = CONTACT_COLUMNS.filter((column) => visible.has(column.key));
 
   if (contacts.length === 0) {
     return (
@@ -106,150 +77,65 @@ export function ContactsTable({
       <table className="w-full border-collapse">
         <thead>
           <tr>
-            {COLUMNS.map(({ key, label }) => (
-              <th
-                key={label}
-                scope="col"
-                className="border-b border-line bg-surface-2 px-3.5 py-2.5 text-left font-mono text-[9.5px] font-medium tracking-[0.12em] whitespace-nowrap text-muted uppercase"
-              >
-                <span className="inline-flex items-center">
-                  {key === null ? (
-                    label
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => onSort(key)}
-                      className="uppercase transition-colors hover:text-ink"
-                    >
-                      {label}
-                      {sort === key && (dir === "desc" ? " ↓" : " ↑")}
-                    </button>
-                  )}
-                  {(() => {
-                    const spec = specFor(label);
-                    if (spec === null) return null;
-                    return (
+            {columns.map((column) => {
+              const spec = specFor(column.filterKey);
+              return (
+                <th
+                  key={column.key}
+                  scope="col"
+                  className="border-b border-line bg-surface-2 px-3.5 py-2.5 text-left font-mono text-[9.5px] font-medium tracking-[0.12em] whitespace-nowrap text-muted uppercase"
+                >
+                  <span className="inline-flex items-center">
+                    {column.sort === null ? (
+                      column.label
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onSort(column.sort as ContactSortKey)}
+                        className="uppercase transition-colors hover:text-ink"
+                      >
+                        {column.label}
+                        {sort === column.sort && (dir === "desc" ? " ↓" : " ↑")}
+                      </button>
+                    )}
+                    {spec !== null && (
                       <ColumnFilterMenu
                         column={spec}
                         facets={facets[spec.key] ?? []}
                         value={filters[spec.key] ?? null}
                         onChange={(next) => onFilter(spec.key, next)}
                       />
-                    );
-                  })()}
-                </span>
-              </th>
-            ))}
+                    )}
+                  </span>
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
-          {contacts.map((contact) => {
-            const idle = contact.idleDays;
-            // Couleur pilotée par le statut, pas par un seuil recalculé ici :
-            // une relance déjà programmée n'est pas une alerte. Voir needsAttention().
-            const stale = resolveStatus(contact).attention;
-            const openDeals = contact.deals.filter((deal) => deal.status === "open").length;
-            // Hiérarchie de la colonne « Prochaine relance » : le retard et le
-            // jour même en rouge, l'à-venir en poids normal avec son délai.
-            const reminder =
-              contact.nextReminder === null
-                ? null
-                : describeReminder(contact.nextReminder, now);
-
-            return (
-              <tr
-                key={contact.id}
-                onClick={() => onSelect(contact)}
-                tabIndex={0}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    onSelect(contact);
-                  }
-                }}
-                className="cursor-pointer transition-colors hover:bg-surface-2 focus-visible:bg-surface-2"
-              >
-                <td className="border-b border-line-2 px-3.5 py-3">
-                  <span className="font-semibold">
-                    {contact.firstName} {contact.lastName}
-                  </span>
-                  <br />
-                  <span className="text-[12.5px] text-muted">{contact.title || "—"}</span>
+          {contacts.map((contact) => (
+            <tr
+              key={contact.id}
+              onClick={() => onSelect(contact)}
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onSelect(contact);
+                }
+              }}
+              className="cursor-pointer transition-colors hover:bg-surface-2 focus-visible:bg-surface-2"
+            >
+              {columns.map((column) => (
+                <td
+                  key={column.key}
+                  className="border-b border-line-2 px-3.5 py-3 text-[12.5px] first:text-[14px]"
+                >
+                  {column.cell(contact, now)}
                 </td>
-                <td className="border-b border-line-2 px-3.5 py-3">
-                  {contact.company?.name ?? "—"}
-                </td>
-                <td className="border-b border-line-2 px-3.5 py-3">
-                  <LifecycleTag lifecycle={contact.lifecycle} />
-                  {contact.lostReason !== "" && (
-                    <span className="mt-0.5 block text-[11.5px] text-muted">
-                      {contact.lostReason}
-                    </span>
-                  )}
-                </td>
-                <td className="border-b border-line-2 px-3.5 py-3 text-[12.5px]">
-                  {contact.tag === "" ? (
-                    <span className="text-muted">—</span>
-                  ) : (
-                    <span className="rounded-control border border-line bg-surface-2 px-1.5 py-0.5">
-                      {contact.tag}
-                    </span>
-                  )}
-                </td>
-                <td className="border-b border-line-2 px-3.5 py-3">
-                  <ContactStatusTag
-                    status={contact.status}
-                    followUp={contact.followUp}
-                    suffix={
-                      contact.followUp === "silent" && idle !== null ? `${idle} j` : undefined
-                    }
-                  />
-                </td>
-                <td className="border-b border-line-2 px-3.5 py-3 font-mono text-[12.5px]">
-                  {reminder === null || contact.nextReminder === null ? (
-                    <span className="text-muted">—</span>
-                  ) : (
-                    <>
-                      <span
-                        className={
-                          reminder.urgency === "future"
-                            ? "text-ink"
-                            : "font-semibold text-[#B2311F]"
-                        }
-                      >
-                        {formatDate(contact.nextReminder)}
-                      </span>
-                      <span
-                        className={`block text-[11.5px] ${
-                          reminder.urgency === "future"
-                            ? "text-muted"
-                            : "font-semibold text-[#B2311F]"
-                        }`}
-                      >
-                        {reminder.label}
-                      </span>
-                    </>
-                  )}
-                </td>
-                <td className="border-b border-line-2 px-3.5 py-3 font-mono text-[12.5px]">
-                  <span className={stale ? "font-semibold text-[#B2311F]" : "text-muted"}>
-                    {contact.lastContact === null ? "jamais" : formatDate(contact.lastContact)}
-                  </span>
-                  {idle !== null && (
-                    <span className="block text-[11.5px] text-muted">{idle} j</span>
-                  )}
-                </td>
-                <td className="border-b border-line-2 px-3.5 py-3 text-[12.5px] text-muted">
-                  {contact.deals.length === 0
-                    ? "—"
-                    : `${contact.deals.length} · ${openDeals} en cours`}
-                </td>
-                <td className="border-b border-line-2 px-3.5 py-3 text-[12.5px] text-muted">
-                  {contact.owner || "—"}
-                </td>
-              </tr>
-            );
-          })}
+              ))}
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

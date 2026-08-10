@@ -11,6 +11,9 @@ import type { FacetValue } from "@/lib/domain/column-match";
 import { CONTACT_FILTER_COLUMNS } from "@/lib/api/contact-columns";
 import { FilterSummary, useColumnFilters } from "@/components/table/filter-state";
 import { ContactsFilters } from "./contacts-filters";
+import { ColumnPicker } from "@/components/table/column-picker";
+import { CONTACT_COLUMNS, DEFAULT_COLUMNS, LOCKED_COLUMN } from "./contact-table-columns";
+import { usePersistedSet } from "@/lib/client/persisted";
 import { ContactDrawer } from "./contact-drawer";
 import { ContactForm, type ContactFormOptions } from "./contact-form";
 import { ContactsTable, type ContactSortKey } from "./contacts-table";
@@ -56,6 +59,12 @@ export function ContactsView({
   const router = useRouter();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
+  // Le choix de colonnes vit dans le poste, pas dans l'URL : ce n'est pas un
+  // filtre qu'on partage, c'est une préférence d'affichage.
+  const [visibleColumns, toggleColumn, resetColumns] = usePersistedSet(
+    "contacts.columns",
+    DEFAULT_COLUMNS,
+  );
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
 
@@ -147,12 +156,23 @@ export function ContactsView({
         onChange={setParam}
       />
 
-      <FilterSummary
-        shown={contacts.length}
-        total={totalRows}
-        active={Object.keys(filters).length}
-        onReset={reset}
-      />
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div className="flex-1">
+          <FilterSummary
+            shown={contacts.length}
+            total={totalRows}
+            active={Object.keys(filters).length}
+            onReset={reset}
+          />
+        </div>
+        <ColumnPicker
+          columns={CONTACT_COLUMNS.map((column) => ({ key: column.key, label: column.label }))}
+          visible={visibleColumns}
+          locked={LOCKED_COLUMN}
+          onToggle={toggleColumn}
+          onReset={resetColumns}
+        />
+      </div>
 
       <ContactsTable
         contacts={contacts}
@@ -167,6 +187,7 @@ export function ContactsView({
         facets={facets}
         filters={filters}
         onFilter={setFilter}
+        visible={visibleColumns}
       />
 
       <ContactDrawer

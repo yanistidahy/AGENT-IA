@@ -36,9 +36,23 @@ export interface RecordPanelProps {
   readonly statusSuggestions?: readonly string[];
   /** Prévient le parent qu'une écriture a eu lieu, pour rafraîchir la vue. */
   readonly onChanged: () => void;
+  /**
+   * Quelle moitié rendre. `all` reste le défaut — c'est ce dont les tiroirs
+   * société et affaire ont besoin. La fiche contact, elle, répartit ces deux
+   * moitiés entre ses onglets « Historique » et « Suivi », et monte **un seul**
+   * `RecordPanel` : deux montages feraient deux fois les mêmes lectures.
+   */
+  readonly section?: "all" | "history" | "followup";
+  /**
+   * Panneau ouvert, piloté de l'extérieur. Sans ces deux propriétés, l'état
+   * reste interne — c'est ce qui permet à l'en-tête fixe de la fiche contact
+   * d'ouvrir « Consigner un échange » sans dupliquer le formulaire.
+   */
+  readonly panel?: Panel;
+  readonly onPanelChange?: (panel: Panel) => void;
 }
 
-type Panel = "none" | "log" | "task" | "sequence";
+export type Panel = "none" | "log" | "task" | "sequence";
 
 export function RecordPanel({
   link,
@@ -50,10 +64,22 @@ export function RecordPanel({
   currentStatus = "",
   statusSuggestions = [],
   onChanged,
+  section = "all",
+  panel: controlledPanel,
+  onPanelChange,
 }: RecordPanelProps) {
   const [activities, setActivities] = useState<readonly ActivityView[]>([]);
   const [tasks, setTasks] = useState<readonly TaskView[]>([]);
-  const [panel, setPanel] = useState<Panel>("none");
+  const [internalPanel, setInternalPanel] = useState<Panel>("none");
+
+  const panel = controlledPanel ?? internalPanel;
+  const setPanel = useCallback(
+    (next: Panel) => {
+      if (onPanelChange !== undefined) onPanelChange(next);
+      else setInternalPanel(next);
+    },
+    [onPanelChange],
+  );
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -82,21 +108,28 @@ export function RecordPanel({
     onChanged();
   };
 
+  const showHistory = section === "all" || section === "history";
+  const showFollowUp = section === "all" || section === "followup";
+
   return (
-    <section className="mt-6">
+    <section className={section === "all" ? "mt-6" : ""}>
       <AlertNotice alerts={alerts} />
 
       <div className="mb-3 flex flex-wrap gap-2">
+        {showHistory && (
         <Action active={panel === "log"} onClick={() => setPanel(panel === "log" ? "none" : "log")}>
           Consigner une interaction
         </Action>
+        )}
+        {showFollowUp && (
         <Action
           active={panel === "task"}
           onClick={() => setPanel(panel === "task" ? "none" : "task")}
         >
           Nouvelle tâche
         </Action>
-        {sequences.length > 0 && (
+        )}
+        {showFollowUp && sequences.length > 0 && (
           <Action
             active={panel === "sequence"}
             onClick={() => setPanel(panel === "sequence" ? "none" : "sequence")}
@@ -146,15 +179,23 @@ export function RecordPanel({
         />
       )}
 
-      <h3 className="mt-5 mb-2.5 font-display text-sm font-semibold">
-        Tâches ouvertes ({tasks.length})
-      </h3>
-      <TaskList tasks={tasks} onChanged={() => void load()} showTarget={false} />
+      {showFollowUp && (
+        <>
+          <h3 className="mt-5 mb-2.5 font-display text-sm font-semibold">
+            Tâches ouvertes ({tasks.length})
+          </h3>
+          <TaskList tasks={tasks} onChanged={() => void load()} showTarget={false} />
+        </>
+      )}
 
-      <h3 className="mt-5 mb-2.5 font-display text-sm font-semibold">
-        Historique des interactions {loading ? "…" : `(${activities.length})`}
-      </h3>
-      <Timeline activities={activities} />
+      {showHistory && (
+        <>
+          <h3 className="mt-5 mb-2.5 font-display text-sm font-semibold">
+            Historique des interactions {loading ? "…" : `(${activities.length})`}
+          </h3>
+          <Timeline activities={activities} />
+        </>
+      )}
     </section>
   );
 }

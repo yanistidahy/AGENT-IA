@@ -270,6 +270,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 18 | **Le fil comme une conversation** — bande de portraits, écran d'ouverture, amorces | **livré, à valider** |
 | 19 | **Le filet** — fusion vers `main`, sauvegardes automatiques, planificateur | **livré, à valider** |
 | 20 | **Le cockpit** — file dense et groupable, anneau du jour, entonnoir, annulation | **livré, à valider** |
+| 21 | **Statuts de la feuille + fiche en onglets** — report contrôlé, tiroir à en-tête fixe, six colonnes | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -2581,3 +2582,175 @@ chemin serveur qu'ils appellent, lui, est vérifié de bout en bout ci-dessus.
 **Le lancement de séquence en lot n'a pas été exercé en base.** Son inverse
 (supprimer les tâches créées) est écrit et typé, jamais joué : le jeu de
 démonstration n'a pas de séquence active rattachable aux contacts de la file.
+
+## Jalon 21 — les statuts de la feuille, et la fiche qui se lit
+
+### La feuille ne dit pas ce que la demande supposait
+
+Relecture en **lecture seule** de « CRM AURA FLOW AI », onglet « Liste de
+prospection », 152 lignes de données. Trois écarts avec l'énoncé, tous
+matériels :
+
+| | Demandé | Ce que la feuille porte |
+|---|---|---|
+| « À contacter » | 62 | **81**, plus 3 « À contacter - Tél » |
+| « Contacté » | — | **67** |
+| « Pas intéressé » | valeur de `Statut Contact` | valeur de **`Réponse ?`** — elle ne figure pas dans `Statut Contact` |
+
+Le 62 de la demande ne correspond à aucune des deux colonnes. Et lire le seul
+`Statut Contact`, comme le tableau de la demande l'indiquait, aurait laissé
+**vingt-sept refus explicites** dans le vivier à prospecter — la moitié d'entre
+eux marqués « À contacter » par ailleurs.
+
+Le report lit donc **deux colonnes**, et un refus l'emporte sur un statut de
+contact : on ne redémarche pas quelqu'un qui a dit non. Neuf lignes portent les
+deux à la fois ; la contradiction est signalée à la simulation, pas tranchée en
+silence.
+
+Après rapprochement contre une base à l'image de la production : **73** « Jamais
+contacté », **47** « Contacté — en attente », **27** passages en `Perdu`.
+
+### Une transcription, encore, pas une règle
+
+`scripts/statuts-2026-08.ts` est engendré depuis la lecture de la feuille et
+porte, ligne par ligne, son numéro de source et la preuve. Il porte aussi
+`SHEET_MODIFIED_AT` — la date de dernière modification rapportée par Drive.
+
+C'est la coupure qui départage : ce que la feuille sait est antérieur à cet
+instant, donc **tout travail consigné après l'emporte sur elle**. Une fiche
+portant un statut posé ou une interaction plus récente est laissée intacte et
+listée à part. Une transcription vieille de trois jours n'écrase pas un appel
+d'hier.
+
+**Les interactions de correction ne comptent pas comme du travail.** Les
+passages précédents en ont consigné une par fiche ; les compter ferait passer
+chaque fiche déjà corrigée pour une fiche travaillée à la main, et le report ne
+reprendrait plus jamais rien. Le filtre exclut `owner: "Correction"`.
+
+### Ce que le report ne fait pas, et le dit
+
+« Jamais contacté » est un **statut**. Il ne retire pas une relance programmée —
+ce serait un cinquième champ, hors du périmètre demandé. La simulation compte
+donc les fiches concernées et l'annonce en toutes lettres : elles continueront
+d'apparaître dans les listes de relance. Sur la base vérifiée, ce nombre est
+zéro ; en production il peut ne pas l'être, et c'est la simulation qui le dira.
+
+Une fiche déjà `Perdu` n'est pas retouchée : le passage précédent avait tranché
+avec les mêmes preuves, et repasser dessus réécrirait un motif choisi.
+
+`statusSetAt` prend la date de la **feuille**, pas celle du jour. L'horodater
+d'aujourd'hui ferait passer une transcription pour une observation fraîche, et
+la puce « Statut figé » cesserait de repérer ces fiches — alors qu'elles sont
+précisément celles à rafraîchir.
+
+### « Statut saisi » devient une colonne filtrable
+
+Le statut **calculé** ne se filtre pas en SQL : il n'existe qu'après lecture.
+Le statut **saisi**, lui, est stocké — il devient donc une colonne de filtre
+comme les autres, et c'est ce qui permet d'isoler « Contacté — en attente » pour
+organiser des relances. Les fiches au statut vide se retrouvent sous « (vide) ».
+
+### La fiche contact : en-tête fixe, trois onglets
+
+Le défaut n'était pas le contenu mais la hiérarchie. Tout était présent, dans
+une colonne unique, et la seule chose dont on a besoin avant un appel — le
+numéro et ce qui s'est dit — se trouvait tout en bas.
+
+L'en-tête vit **hors du conteneur défilant** du tiroir : sinon « sans défiler »
+ne serait vrai qu'au chargement. Il porte l'état, l'échéance, le numéro
+cliquable et l'action primaire, et rien d'autre.
+
+**L'onglet d'arrivée suit la fiche** : historique s'il y a quelque chose à lire,
+champs sinon. Deux défauts trouvés en écrivant le test plutôt qu'à l'écran :
+
+1. le choix se faisait dans un effet, donc pas au rendu serveur — l'onglet
+   correct n'apparaissait qu'après hydratation. Il est maintenant décidé à
+   l'initialisation de l'état ;
+2. l'effet dépendait de « la fiche a-t-elle un historique ». Consigner le
+   premier échange depuis l'onglet Fiche faisait basculer l'écran ailleurs au
+   moment précis où l'on venait d'agir. Il ne se recalcule plus qu'au
+   **changement de fiche**, gardé par une référence.
+
+**Un seul `RecordPanel`**, monté en permanence, dont la moitié rendue suit
+l'onglet. Deux instances — une par onglet — rechargeraient la chronologie et les
+tâches à chaque va-et-vient pour afficher les mêmes lignes.
+
+`Tabs` implémente le motif ARIA **complet**, flèches comprises. La bande de
+portraits du jalon 18 portait `role="tablist"` sans la navigation qu'il promet ;
+c'est le genre d'à-peu-près qui rend une aide technique inutilisable.
+
+### Le tableau : six colonnes, et un choix conservé
+
+Les colonnes étaient écrites deux fois — les `<th>` dans une liste, les `<td>`
+en dur dans le corps — sans rien pour garantir l'alignement des deux. Une
+colonne est maintenant **une** entrée de `CONTACT_COLUMNS` : libellé, tri,
+filtre, cellule.
+
+Six par défaut (contact, société, statut, prochaine relance, dernier contact,
+**téléphone** — qui n'existait pas), le reste derrière « Colonnes », le choix
+conservé dans le stockage local. « Contact » ne se masque pas : un tableau dont
+on peut retirer le nom des gens n'est plus un tableau de contacts.
+
+La seconde rangée de puces se replie derrière un bouton « Filtres » qui **dit
+s'il en cache une active** — un filtre invisible et actif est un écran qui ment.
+
+### Un test de composant était ignoré en silence
+
+Les globs de vitest ne couvraient que `*.test.ts`. Rendre un composant demande
+du JSX, que TypeScript refuse dans un `.ts` : un test de fiche écrit en `.tsx`
+n'aurait jamais été exécuté, tout en ayant l'air d'exister. Les quatre globs
+acceptent désormais `.test.ts?(x)`.
+
+### Jalon 21 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, sur une base rechargée depuis la feuille elle-même
+(151 contacts, 135 sociétés — l'ordre de grandeur de la production) :
+
+- **simulation** : 147 fiches à modifier, **0 écriture** — 73 « Jamais
+  contacté », 47 « Contacté — en attente », 27 `Perdu` ; 25 rapprochements
+  incertains et 9 contradictions de la feuille signalés ;
+- **cinq lignes non rapprochées, nommées** : ligne 45 (statut vide), lignes 6 et
+  25 (sans nom dans la feuille), lignes 89 et 147 (« Elena andrikian » y figure
+  deux fois, sous deux orthographes de société) — avec société et adresse, pour
+  pouvoir les traiter à la main ;
+- **application** : 147 fiches, 147 interactions consignées, sauvegarde rendue,
+  et **0 fiche dont le téléphone, les notes, l'étiquette ou la relance ont
+  bougé** ;
+- `statusSetAt` porte la date de la feuille sur les 120 fiches concernées ;
+- **idempotence** : second passage → 0 à modifier, 147 déjà à jour ;
+- **le travail plus récent gagne** : une interaction consignée le 8 août sur une
+  fiche la fait passer en « laissée de côté » avec son motif ; sa voisine est
+  bien reprise. Une note écrite par une correction ne compte pas comme du
+  travail — vérifié en en ajoutant une ;
+- **le vivier ne relance pas** : 0 des 73 « Jamais contacté » n'apparaît dans la
+  puce « À relancer » ni dans la file d'accueil ;
+- **filtre de colonne « Statut saisi »** : 47 lignes, exactement le compte des
+  « Contacté — en attente » ; les facettes du menu affichent 47 / 73 / 31 ;
+- **fiche contact** : le `tel:` est rendu **avant** le conteneur défilant, donc
+  visible sans défiler ; onglet Historique sélectionné avec 3 interactions,
+  onglet Fiche avec 0 ; « Pas de téléphone » et « Aucune relance programmée »
+  dits en toutes lettres ; les champs rares repliés ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (541 tests) verts.
+
+### Jalon 21 — ce qui ne l'est pas
+
+**Les chiffres ci-dessus viennent d'une base rechargée depuis la feuille, pas de
+la vôtre.** Les 139 contacts de production ont une histoire que ce jeu n'a pas :
+des fiches créées à la main, des relances posées, des statuts déjà saisis. Le
+nombre réellement modifié, celui des fiches laissées de côté, et surtout celui
+des « Jamais contacté » **portant encore une relance** ne se connaîtront qu'à la
+simulation sur la vraie base. C'est à cela qu'elle sert.
+
+**« Elena andrikian » est un doublon de la feuille**, pas du CRM : deux lignes,
+deux orthographes de société, la même adresse. Le report la refuse des deux
+côtés plutôt que de choisir. À trancher à la main.
+
+**Le choix de colonnes n'a pas été vérifié dans un navigateur.** Sa persistance
+passe par `localStorage` ; ce qui est testé, c'est la liste par défaut, l'unicité
+des clés, la validité des filtres référencés et le verrou sur la colonne
+« Contact ». Le fait qu'un ajout survive à un rechargement n'est pas couvert par
+cette suite, qui n'a pas de DOM.
+
+**Le clavier des onglets n'est pas exercé.** Le motif ARIA est écrit — `tablist`,
+`aria-selected`, `aria-controls`, `tabIndex` roulant, flèches, `Home`/`Fin` — et
+le rendu est vérifié, mais aucun test ne presse une touche.

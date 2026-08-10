@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { fold, searchText } from "../domain/text";
 import { nameOverflow, splitOverflow } from "../domain/status";
+import { LOST_LIFECYCLE } from "../domain/lost";
 
 /**
  * Opérations de maintenance sur les données.
@@ -384,4 +385,278 @@ export async function applyNameFix(plan: readonly NameFixRow[]): Promise<number>
   });
 
   return plan.length;
+}
+
+// ------------------------------------------- statuts saisis, depuis la feuille
+
+/**
+ * Report du `Statut Contact` de la feuille dans le statut **saisi**.
+ *
+ * Les corrections du jalon 11 n'avaient touché que `lifecycle` : le champ
+ * `status`, qui l'emporte désormais sur le calcul, est resté vide sur toutes
+ * les fiches. Chaque ligne affiche donc un statut déduit des dates plutôt que
+ * ce que la feuille a réellement enregistré.
+ *
+ * Deux règles gouvernent ce qui suit, et elles sont ce que le reste du module
+ * n'a pas :
+ *
+ * 1. **La feuille ne gagne pas contre le travail plus récent.** Une fiche
+ *    portant un statut posé ou une interaction consignée après la dernière
+ *    modification de la feuille est laissée intacte et listée à part. Une
+ *    transcription vieille de trois jours n'écrase pas un appel d'hier.
+ * 2. **Quatre champs, jamais plus** — `status`, `statusSetAt`, `lifecycle`,
+ *    `lostReason`. Le téléphone, les notes, l'étiquette et la relance ne sont
+ *    pas touchés.
+ */
+export interface SheetStatusInput {
+  readonly row: number;
+  readonly firstName: string;
+  readonly lastName: string;
+  readonly email: string;
+  readonly company: string;
+  readonly kind: "never" | "waiting" | "lost";
+  readonly status: string;
+  readonly lifecycle: string;
+  readonly lostReason: string;
+  readonly evidence: string;
+}
+
+export interface StatusChange {
+  readonly id: string;
+  readonly label: string;
+  readonly kind: "never" | "waiting" | "lost";
+  readonly fromStatus: string;
+  readonly toStatus: string;
+  readonly fromLifecycle: string;
+  readonly toLifecycle: string;
+  readonly fromReason: string;
+  readonly toReason: string;
+  readonly evidence: string;
+  /** Rapproché sans adresse électronique : à relire. */
+  readonly uncertain: boolean;
+  /**
+   * La feuille dit « À contacter » **et** « Pas intéressé ». Contradiction de
+   * la source, tranchée en faveur du refus — on ne redémarche pas quelqu'un qui
+   * a dit non — mais signalée plutôt que passée sous silence.
+   */
+  readonly conflicting: boolean;
+  /**
+   * Cette fiche porte encore une relance programmée. Le report de statut ne la
+   * touche pas — c'est un cinquième champ, hors du périmètre — donc elle
+   * continuera d'apparaître dans les listes de relance malgré « Jamais
+   * contacté ».
+   */
+  readonly keepsReminder: boolean;
+}
+
+export interface TouchedRow {
+  readonly label: string;
+  readonly reason: string;
+}
+
+export interface StatusPlan {
+  readonly changes: readonly StatusChange[];
+  /** Fiches travaillées depuis la feuille : laissées intactes, listées à part. */
+  readonly touched: readonly TouchedRow[];
+  /** Lignes introuvables, ambiguës, ou sans statut exploitable. */
+  readonly warnings: readonly string[];
+  readonly unchanged: number;
+}
+
+const STATUS_FIELDS = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  lifecycle: true,
+  lostReason: true,
+  status: true,
+  statusSetAt: true,
+  nextReminder: true,
+  company: { select: { name: true } },
+  activities: {
+    // La dernière interaction **qui ne vient pas d'une correction** : les
+    // passages précédents en ont consigné une par fiche, et les compter ferait
+    // passer chaque fiche déjà corrigée pour une fiche travaillée à la main.
+    where: { NOT: { owner: "Correction" } },
+    select: { date: true },
+    orderBy: { date: "desc" },
+    take: 1,
+  },
+} satisfies Prisma.ContactSelect;
+
+type StatusCandidate = Prisma.ContactGetPayload<{ select: typeof STATUS_FIELDS }>;
+
+/** Même rapprochement que les corrections de cycle de vie : adresse, sinon nom + société. */
+function matchesSheet(contact: StatusCandidate, sheet: SheetStatusInput): boolean {
+  const email = contact.email.trim().toLowerCase();
+  if (sheet.email !== "" && email !== "") return email === sheet.email;
+
+  return (
+    fold(`${contact.firstName} ${contact.lastName}`) ===
+      fold(`${sheet.firstName} ${sheet.lastName}`) &&
+    fold(contact.company?.name ?? "") === fold(sheet.company)
+  );
+}
+
+/** La fiche a-t-elle été travaillée depuis que la feuille a été enregistrée ? */
+function workedSince(contact: StatusCandidate, cutoff: Date): string | null {
+  if (contact.statusSetAt !== null && contact.statusSetAt > cutoff) {
+    return `statut « ${contact.status} » posé le ${contact.statusSetAt.toLocaleDateString("fr-FR")}`;
+  }
+  const last = contact.activities[0]?.date;
+  if (last !== undefined && last > cutoff) {
+    return `interaction consignée le ${last.toLocaleDateString("fr-FR")}`;
+  }
+  return null;
+}
+
+/**
+ * De quoi retrouver une ligne à la main.
+ *
+ * Le nom seul ne suffit pas : les lignes qui échouent au rapprochement sont
+ * précisément celles où la feuille n'en porte pas. « introuvable : (Canopée) »
+ * n'aide personne ; l'adresse et la société, si.
+ */
+function describeLine(line: SheetStatusInput): string {
+  const name = `${line.firstName} ${line.lastName}`.trim();
+  const parts = [
+    name === "" ? "sans nom" : name,
+    line.company === "" ? null : line.company,
+    line.email === "" ? null : line.email,
+  ].filter((part): part is string => part !== null);
+  return parts.join(" · ");
+}
+
+export async function planStatusFix(
+  sheet: readonly SheetStatusInput[],
+  cutoff: Date,
+  unreadable: readonly string[] = [],
+): Promise<StatusPlan> {
+  const candidates = await prisma.contact.findMany({ select: STATUS_FIELDS });
+  const warnings: string[] = [...unreadable];
+  const touched: TouchedRow[] = [];
+  const drafts: StatusChange[] = [];
+
+  for (const line of sheet) {
+    const found = candidates.filter((contact) => matchesSheet(contact, line));
+
+    if (found.length === 0) {
+      warnings.push(`ligne ${line.row} — introuvable : ${describeLine(line)}`);
+      continue;
+    }
+    if (found.length > 1) {
+      warnings.push(
+        `ligne ${line.row} — ${found.length} fiches correspondent, ignorée : ${describeLine(line)}`,
+      );
+      continue;
+    }
+
+    const contact = found[0];
+    if (contact === undefined) continue;
+
+    const label = `${contact.firstName} ${contact.lastName} (${contact.company?.name ?? "sans société"})`;
+
+    const recent = workedSince(contact, cutoff);
+    if (recent !== null) {
+      touched.push({ label: `${label} — ${recent}`, reason: recent });
+      continue;
+    }
+
+    // Une fiche déjà `Perdu` reste `Perdu` : le passage précédent avait tranché
+    // avec les mêmes preuves, et repasser dessus réécrirait un motif choisi.
+    const alreadyLost = contact.lifecycle === LOST_LIFECYCLE;
+    const toLifecycle = line.lifecycle === "" || alreadyLost ? contact.lifecycle : line.lifecycle;
+    const toReason =
+      line.lostReason === "" || alreadyLost ? contact.lostReason : line.lostReason;
+
+    drafts.push({
+      id: contact.id,
+      label,
+      kind: line.kind,
+      fromStatus: contact.status,
+      toStatus: line.status === "" ? contact.status : line.status,
+      fromLifecycle: contact.lifecycle,
+      toLifecycle,
+      fromReason: contact.lostReason,
+      toReason,
+      evidence: line.evidence,
+      uncertain: line.email === "" || contact.email.trim() === "",
+      conflicting: line.kind === "lost" && line.evidence.includes("À contacter"),
+      keepsReminder: line.kind === "never" && contact.nextReminder !== null,
+    });
+  }
+
+  const changes = drafts.filter(
+    (change) =>
+      change.fromStatus !== change.toStatus ||
+      change.fromLifecycle !== change.toLifecycle ||
+      change.fromReason !== change.toReason,
+  );
+
+  return { changes, touched, warnings, unchanged: drafts.length - changes.length };
+}
+
+/** État des fiches avant report, à conserver hors base avant d'écrire. */
+export function statusSnapshot(plan: StatusPlan): unknown {
+  return {
+    takenAt: new Date().toISOString(),
+    note: "État AVANT report des statuts. Restaurer en réappliquant status, statusSetAt, lifecycle et lostReason.",
+    contacts: plan.changes.map((change) => ({
+      id: change.id,
+      label: change.label,
+      status: change.fromStatus,
+      lifecycle: change.fromLifecycle,
+      lostReason: change.fromReason,
+    })),
+  };
+}
+
+/**
+ * Applique le report. Quatre champs, une interaction par fiche, une transaction.
+ *
+ * `statusSetAt` prend la date de la **feuille**, pas celle du jour : le statut
+ * dit ce qui était su au 7 août, et l'horodater d'aujourd'hui ferait passer une
+ * transcription pour une observation fraîche — la puce « Statut figé » cesserait
+ * de repérer ces fiches, alors qu'elles sont précisément celles à rafraîchir.
+ */
+export async function applyStatusFix(plan: StatusPlan, stampedAt: Date): Promise<number> {
+  if (plan.changes.length === 0) return 0;
+
+  await prisma.$transaction(async (tx) => {
+    for (const change of plan.changes) {
+      await tx.contact.update({
+        where: { id: change.id },
+        data: {
+          status: change.toStatus,
+          statusSetAt: change.toStatus === "" ? null : stampedAt,
+          lifecycle: change.toLifecycle,
+          lostReason: change.toReason,
+        },
+      });
+
+      const parts: string[] = [];
+      if (change.fromStatus !== change.toStatus) {
+        parts.push(`statut « ${change.fromStatus || "(vide)"} » → « ${change.toStatus} »`);
+      }
+      if (change.fromLifecycle !== change.toLifecycle) {
+        parts.push(`cycle de vie ${change.fromLifecycle} → ${change.toLifecycle}`);
+      }
+      if (change.fromReason !== change.toReason) {
+        parts.push(`motif « ${change.toReason} »`);
+      }
+
+      await tx.activity.create({
+        data: {
+          type: "note",
+          date: new Date(),
+          owner: "Correction",
+          notes: `Report depuis la feuille de prospection : ${parts.join(", ")}. ${change.evidence}`,
+          contactId: change.id,
+        },
+      });
+    }
+  });
+
+  return plan.changes.length;
 }

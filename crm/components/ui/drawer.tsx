@@ -16,10 +16,24 @@ interface DrawerProps {
   readonly subtitle?: ReactNode;
   readonly onClose: () => void;
   readonly footer?: ReactNode;
+  /**
+   * Bandeau fixe sous l'en-tête : ce qui doit rester visible quel que soit le
+   * défilement — l'état de la fiche, le numéro, l'action primaire, les onglets.
+   * Hors du corps défilant, sinon « sans défiler » n'est vrai qu'au chargement.
+   */
+  readonly banner?: ReactNode;
   readonly children: ReactNode;
 }
 
-export function Drawer({ open, title, subtitle, onClose, footer, children }: DrawerProps) {
+export function Drawer({
+  open,
+  title,
+  subtitle,
+  onClose,
+  footer,
+  banner,
+  children,
+}: DrawerProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -72,6 +86,8 @@ export function Drawer({ open, title, subtitle, onClose, footer, children }: Dra
             <Icon name="x" size={18} />
           </button>
         </header>
+
+        {banner !== undefined && <div className="flex-none">{banner}</div>}
 
         <div className="flex-1 overflow-y-auto px-[22px] py-5">{children}</div>
 
