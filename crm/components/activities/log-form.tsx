@@ -40,7 +40,12 @@ interface LogFormProps {
   readonly statusSuggestions?: readonly string[];
   readonly onCancel: () => void;
   /** Reçoit le résumé de ce qui a été créé, pour que rien ne soit muet. */
-  readonly onLogged: (summary: string) => void;
+  /**
+   * `outcome` accompagne le résumé : certaines issues valent qualification, et
+   * c'est l'appelant — la fiche contact — qui décide d'ouvrir la modale. Le
+   * formulaire ne connaît pas les affaires et n'a pas à les connaître.
+   */
+  readonly onLogged: (summary: string, outcome: string) => void;
 }
 
 const CONTROL =
@@ -192,6 +197,7 @@ export function LogForm({
         created.length === 0
           ? "Interaction consignée."
           : `Interaction consignée, avec ${created.join(" et ")} — visible dans /taches.`,
+        outcome,
       );
       return;
     }

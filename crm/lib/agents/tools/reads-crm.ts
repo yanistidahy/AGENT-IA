@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { readProspectingReport } from "@/lib/api/prospecting";
 import { listActivities, listCompanyTimeline } from "@/lib/api/activities";
 import { readAlerts } from "@/lib/api/alerts";
 import { readClients } from "@/lib/api/clients";
@@ -6,6 +7,7 @@ import { listContacts } from "@/lib/api/contacts";
 import { getPilotage } from "@/lib/api/reference";
 import { listSequences } from "@/lib/api/sequences";
 import { FOLLOW_UP_LABELS } from "@/lib/domain/follow-up";
+import { ACTIVITY_LABELS } from "@/lib/domain/types";
 import { defineTool } from "./types";
 
 /**
@@ -284,6 +286,84 @@ export const listClients = defineTool({
         joursDepuisDernierContact: client.idleDays,
         statut: FOLLOW_UP_LABELS[client.followUp],
       })),
+    };
+  },
+});
+
+/**
+ * Les mesures de la prospection, ouvertes au conseil.
+ *
+ * Sans cet outil, les agents ne savaient lire que le closing — c'est-à-dire des
+ * zéros, sur un portefeuille qui n'a pas encore d'affaire. Un agent qui ne voit
+ * que des zéros n'a rien à dire de vrai sur une journée passée à téléphoner.
+ *
+ * Il rend les mêmes nombres que `/rapports` en appelant le même service : un
+ * agent et un écran qui regardent la même semaine ne peuvent pas la décrire
+ * différemment.
+ */
+export const getProspectingMetrics = defineTool({
+  name: "get_prospecting_metrics",
+  description:
+    "Mesures de prospection sur les 12 dernières semaines : rythme hebdomadaire d'interactions par canal, taux de réponse par canal (téléphone, email, LinkedIn), délai médian avant le premier contact, arriéré de contacts jamais approchés et son ancienneté, discipline de relance (tenues à l'échéance contre manquées), et taux de qualification par source. À utiliser pour juger l'activité commerciale quand il n'y a pas encore d'affaires, ou pour comparer l'efficacité des canaux.",
+  mode: "read",
+  schema: z.object({}),
+  run: async () => {
+    const now = new Date();
+    const report = await readProspectingReport(now);
+
+    if (report.totals.activities === 0 && report.totals.contacts === 0) {
+      return {
+        vide: true,
+        message: "Aucun contact et aucune interaction : rien à mesurer.",
+      };
+    }
+
+    return {
+      fenêtre: "12 dernières semaines",
+      rythmeHebdomadaire: report.rhythm.map((week) => ({
+        semaineDu: week.label,
+        interactions: week.total,
+        parType: week.byType,
+      })),
+      // Le taux vaut `null` quand aucune issue n'est renseignée sur le canal :
+      // l'agent doit pouvoir dire « on ne sait pas » plutôt que « 0 % ».
+      tauxDeRéponseParCanal: report.channels.map((row) => ({
+        canal: ACTIVITY_LABELS[row.channel],
+        échangesConsignés: row.total,
+        issueRenseignée: row.known,
+        réponses: row.answered,
+        tauxPourcent: row.rate,
+      })),
+      délaiAvantPremierContact: {
+        médianeJours: report.firstTouch.medianDays,
+        fichesTouchées: report.firstTouch.touched,
+        jamaisApprochés: report.firstTouch.untouched,
+        ancienneteMédianeDeLArriéréJours: report.firstTouch.untouchedMedianAgeDays,
+      },
+      disciplineDeRelance: {
+        tenues: report.discipline.reduce((sum, week) => sum + week.honoured, 0),
+        manquées: report.discipline.reduce((sum, week) => sum + week.missed, 0),
+        parSemaine: report.discipline.map((week) => ({
+          semaineDu: week.label,
+          tenues: week.honoured,
+          manquées: week.missed,
+        })),
+      },
+      vieillissementDuVivier: report.aging.map((bracket) => ({
+        tranche: bracket.label,
+        contacts: bracket.count,
+      })),
+      qualificationParSource: report.sources.map((row) => ({
+        source: row.source,
+        contacts: row.contacts,
+        qualifiés: row.qualified,
+        tauxPourcent: row.rate,
+      })),
+      totaux: {
+        contacts: report.totals.contacts,
+        interactions: report.totals.activities,
+        qualifiés: report.totals.qualified,
+      },
     };
   },
 });

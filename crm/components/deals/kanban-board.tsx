@@ -107,7 +107,23 @@ export function KanbanBoard({ deals, stages, settings, onSelect }: KanbanBoardPr
                 style={{ backgroundColor: stage.color }}
               />
               <header className="flex items-center gap-1.5 px-1">
-                <b className="font-display text-[13px] font-semibold">{stage.name}</b>
+                {/*
+                  Le critère de sortie au survol, et dans `title` plutôt que
+                  dans une info-bulle maison : il doit rester lisible au clavier
+                  et par une aide technique, ce qu'un `div` positionné en CSS ne
+                  garantit pas. Il est écrit du point de vue de l'engagement de
+                  l'acheteur — voir la migration `9_qualification`.
+                */}
+                <b
+                  className="font-display text-[13px] font-semibold"
+                  title={
+                    stage.exitCriterion !== undefined && stage.exitCriterion !== ""
+                      ? `Sortie : ${stage.exitCriterion}`
+                      : undefined
+                  }
+                >
+                  {stage.name}
+                </b>
                 <span className="rounded-full bg-surface px-1.5 font-mono text-[10.5px] text-muted">
                   {column.length}
                 </span>

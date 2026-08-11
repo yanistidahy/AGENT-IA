@@ -4,6 +4,8 @@ import { ContactStatusTag, LifecycleTag } from "@/components/ui/primitives";
 import type { ContactRecord } from "@/lib/api/contacts";
 import { formatDate } from "@/lib/format";
 import { describeReminder } from "@/lib/domain/follow-up";
+import { ACTIVITY_LABELS } from "@/lib/domain/types";
+import { isOutcome, OUTCOME_LABELS } from "@/lib/domain/status";
 
 /**
  * L'en-tête fixe de la fiche contact.
@@ -19,9 +21,12 @@ import { describeReminder } from "@/lib/domain/follow-up";
 export function ContactHeader({
   contact,
   onLog,
+  onQualify,
 }: {
   contact: ContactRecord;
   onLog: () => void;
+  /** Absent quand la fiche est déjà qualifiée : il n'y a plus rien à proposer. */
+  onQualify?: () => void;
 }) {
   const phone = contact.phone.trim();
   const reminder =
@@ -70,11 +75,63 @@ export function ContactHeader({
           Consigner un échange
         </button>
 
+        {onQualify !== undefined && (
+          <button
+            type="button"
+            onClick={onQualify}
+            title="Le prospect a exprimé le désir de l'offre — une affaire sera ouverte."
+            className="rounded-control border border-[#F0DFB8] bg-gold-l px-3 py-1.5 text-[12.5px] font-semibold text-[#9A6410] transition-colors hover:bg-gold-l/70"
+          >
+            Qualifier
+          </button>
+        )}
+
         <span className="ml-auto text-[11.5px] text-muted">
           {contact.lastContact === null
             ? "jamais contacté"
             : `dernier contact ${formatDate(contact.lastContact)}`}
         </span>
+      </div>
+
+      {/*
+        L'effort fourni, et à qui l'on parle. Ces cinq faits répondent aux
+        questions qu'on se pose la main sur le combiné : ai-je déjà essayé,
+        combien de fois, par quel canal, est-ce une grosse maison, et depuis
+        quand cette fiche dort-elle. Aucun ne demandait d'ouvrir un autre
+        écran — ils demandaient seulement d'être calculés.
+      */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted">
+        <span>
+          <b className="font-mono font-semibold text-ink tabular-nums">{contact.attempts}</b>{" "}
+          tentative(s) ·{" "}
+          <b
+            className={`font-mono font-semibold tabular-nums ${
+              contact.attempts > 0 && contact.unanswered === contact.attempts
+                ? "text-[#B2311F]"
+                : "text-ink"
+            }`}
+          >
+            {contact.attempts - contact.unanswered}
+          </b>{" "}
+          réponse(s)
+        </span>
+
+        {contact.lastChannel !== null && (
+          <span>
+            dernier échange : {ACTIVITY_LABELS[contact.lastChannel]}
+            {contact.lastOutcome !== "" && isOutcome(contact.lastOutcome)
+              ? ` — ${OUTCOME_LABELS[contact.lastOutcome]}`
+              : ""}
+          </span>
+        )}
+
+        {(contact.companySize !== "" || contact.companyIndustry !== "") && (
+          <span>
+            {[contact.companyIndustry, contact.companySize].filter((v) => v !== "").join(" · ")}
+          </span>
+        )}
+
+        <span>dans le vivier depuis {contact.ageDays} j</span>
       </div>
     </div>
   );

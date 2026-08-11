@@ -32,19 +32,30 @@ function slug(value: string): string {
 
 // `nextActionLabel` vide sur l'étape terminale : « Gagné » n'a pas de suite dans
 // le pipeline, et proposer une tâche à ce moment serait du bruit.
+// Le pipeline suit l'engagement de l'acheteur, pas notre activité : chaque
+// critère de sortie décrit ce que l'autre a accordé. Identique à ce que la
+// migration `9_qualification` installe — un seed qui poserait l'ancien jeu
+// ferait diverger une base fraîche d'une base migrée, et personne ne saurait
+// laquelle fait foi.
 const STAGES = [
-  { id: "s1", name: "Nouveau lead", color: "#94A9A4", prob: 10, position: 0,
-    nextActionLabel: "Qualifier le besoin", nextActionDays: 2 },
-  { id: "s2", name: "Contacté", color: "#2C7BE5", prob: 25, position: 1,
-    nextActionLabel: "Relancer pour un rendez-vous", nextActionDays: 3 },
-  { id: "s3", name: "Démo planifiée", color: "#6D5AE6", prob: 45, position: 2,
-    nextActionLabel: "Préparer la démo", nextActionDays: 1 },
+  { id: "s1", name: "Qualifié", color: "#D99323", prob: 15, position: 0,
+    nextActionLabel: "Planifier la démo", nextActionDays: 2,
+    exitCriterion: "A accepté une date de démo." },
+  { id: "s3", name: "Démo planifiée", color: "#6D5AE6", prob: 30, position: 1,
+    nextActionLabel: "Confirmer la veille", nextActionDays: 1,
+    exitCriterion: "S'est connecté à la démo." },
+  { id: "s7", name: "Démo réalisée", color: "#2C7BE5", prob: 50, position: 2,
+    nextActionLabel: "Envoyer la proposition", nextActionDays: 2,
+    exitCriterion: "A demandé une proposition chiffrée." },
   { id: "s4", name: "Proposition envoyée", color: "#D99323", prob: 65, position: 3,
-    nextActionLabel: "Relancer sur la proposition", nextActionDays: 4 },
+    nextActionLabel: "Relancer sur la proposition", nextActionDays: 4,
+    exitCriterion: "A discuté le prix ou le périmètre." },
   { id: "s5", name: "Négociation", color: "#E8503F", prob: 85, position: 4,
-    nextActionLabel: "Relancer la négociation", nextActionDays: 3 },
+    nextActionLabel: "Relancer la négociation", nextActionDays: 3,
+    exitCriterion: "A donné son accord verbal." },
   { id: "s6", name: "Gagné", color: "#0FA88F", prob: 100, position: 5,
-    nextActionLabel: "", nextActionDays: 0 },
+    nextActionLabel: "", nextActionDays: 0,
+    exitCriterion: "A signé." },
 ] as const;
 
 // -------------------------------------------------------------- sociétés
@@ -149,9 +160,9 @@ const DEALS: DealSeed[] = [
   { id: "d1", name: "Assistant IA — Pousse Nature", companyId: "c1", contactId: "p1", amount: 6480, stageId: "s4", owner: "Yanis", offer: OFFERS.pro, createdAgo: 34, expectedCloseAgo: -9, lastActivityAgo: 3, status: "open", notes: "Proposition envoyée le 3. Relance prévue." },
   { id: "d2", name: "Assistant IA — Maison Vertu", companyId: "c2", contactId: "p2", amount: 3480, stageId: "s3", owner: "Associé", offer: OFFERS.starter, createdAgo: 21, expectedCloseAgo: -15, lastActivityAgo: 9, status: "open", notes: "Démo à reprogrammer, absente la 1re fois." },
   { id: "d3", name: "Extension API — Nutrivia", companyId: "c3", contactId: "p9", amount: 5400, stageId: "s5", owner: "Associé", offer: OFFERS.surMesure, createdAgo: 40, expectedCloseAgo: -6, lastActivityAgo: 1, status: "open", notes: "Négociation sur le volume de tokens inclus." },
-  { id: "d4", name: "Assistant IA — Kotto Sport", companyId: "c5", contactId: "p5", amount: 9180, stageId: "s3", owner: "Associé", offer: OFFERS.surMesure, createdAgo: 17, expectedCloseAgo: -24, lastActivityAgo: 1, status: "open", notes: "Gros potentiel, intégration marketplace à chiffrer." },
+  { id: "d4", name: "Assistant IA — Kotto Sport", companyId: "c5", contactId: "p5", amount: 9180, stageId: "s7", owner: "Associé", offer: OFFERS.surMesure, createdAgo: 17, expectedCloseAgo: -24, lastActivityAgo: 1, status: "open", notes: "Gros potentiel, intégration marketplace à chiffrer." },
   { id: "d5", name: "Assistant IA — Bébé Cocon", companyId: "c6", contactId: "p6", amount: 6480, stageId: "s5", owner: "Yanis", offer: OFFERS.pro, createdAgo: 52, expectedCloseAgo: -3, lastActivityAgo: 14, status: "open", notes: "Budget validé. Attente signature DG." },
-  { id: "d6", name: "Assistant IA — Hydra Studio", companyId: "c8", contactId: "p8", amount: 3480, stageId: "s2", owner: "Yanis", offer: OFFERS.starter, createdAgo: 6, expectedCloseAgo: -40, lastActivityAgo: 2, status: "open", notes: "Lancement septembre." },
+  { id: "d6", name: "Assistant IA — Hydra Studio", companyId: "c8", contactId: "p8", amount: 3480, stageId: "s1", owner: "Yanis", offer: OFFERS.starter, createdAgo: 6, expectedCloseAgo: -40, lastActivityAgo: 2, status: "open", notes: "Lancement septembre." },
   { id: "d7", name: "Assistant IA — Atelier Solen", companyId: "c4", contactId: "p4", amount: 3480, stageId: "s1", owner: "Yanis", offer: OFFERS.starter, createdAgo: 26, expectedCloseAgo: -30, lastActivityAgo: 22, status: "open", notes: "Silence radio depuis 3 semaines." },
   { id: "d8", name: "Assistant IA — Nutrivia", companyId: "c3", contactId: "p3", amount: 6480, stageId: "s6", owner: "Yanis", offer: OFFERS.pro, createdAgo: 88, expectedCloseAgo: 58, lastActivityAgo: 58, status: "won", closedAgo: 58, notes: "Signé. Déploiement terminé." },
   { id: "d9", name: "Assistant IA — Le Comptoir Brut", companyId: "c7", contactId: "p7", amount: 3480, stageId: "s4", owner: "Associé", offer: OFFERS.starter, createdAgo: 120, expectedCloseAgo: 70, lastActivityAgo: 70, status: "lost", closedAgo: 70, notes: "Perdu sur le prix. À recontacter en septembre." },
@@ -159,7 +170,7 @@ const DEALS: DealSeed[] = [
   { id: "d11", name: "Assistant IA — Kotto Sport (pilote)", companyId: "c5", contactId: "p10", amount: 2400, stageId: "s6", owner: "Associé", offer: OFFERS.pilote, createdAgo: 75, expectedCloseAgo: 45, lastActivityAgo: 45, status: "won", closedAgo: 45, notes: "Pilote signé puis étendu." },
   // --- extension ---
   { id: "d12", name: "Assistant IA — Fibre & Laine", companyId: "c9", contactId: "p13", amount: 6480, stageId: "s4", owner: "Yanis", offer: OFFERS.pro, createdAgo: 19, expectedCloseAgo: -12, lastActivityAgo: 4, status: "open", notes: "Extension du pilote au préachat. Proposition envoyée." },
-  { id: "d13", name: "Assistant IA — Terra Cave", companyId: "c10", contactId: "p14", amount: 3480, stageId: "s2", owner: "Associé", offer: OFFERS.starter, createdAgo: 9, expectedCloseAgo: -35, lastActivityAgo: 3, status: "open", notes: "Recommandation entrante. Premier échange positif." },
+  { id: "d13", name: "Assistant IA — Terra Cave", companyId: "c10", contactId: "p14", amount: 3480, stageId: "s1", owner: "Associé", offer: OFFERS.starter, createdAgo: 9, expectedCloseAgo: -35, lastActivityAgo: 3, status: "open", notes: "Recommandation entrante. Premier échange positif." },
   { id: "d14", name: "Assistant IA — Papillon Papeterie", companyId: "c11", contactId: "p15", amount: 6480, stageId: "s3", owner: "Yanis", offer: OFFERS.pro, createdAgo: 28, expectedCloseAgo: -18, lastActivityAgo: 10, status: "open", notes: "Démo faite. Attend l'accord de la fondatrice." },
   { id: "d15", name: "Assistant IA — Nordik Home", companyId: "c12", contactId: "p16", amount: 9180, stageId: "s5", owner: "Associé", offer: OFFERS.surMesure, createdAgo: 44, expectedCloseAgo: -7, lastActivityAgo: 2, status: "open", notes: "Juridique en cours. Plus grosse affaire du pipeline." },
   { id: "d16", name: "Module SAV logistique — Nordik Home", companyId: "c12", contactId: "p17", amount: 5400, stageId: "s1", owner: "Yanis", offer: OFFERS.surMesure, createdAgo: 5, expectedCloseAgo: -55, lastActivityAgo: 5, status: "open", notes: "Demande entrante depuis le site, à qualifier." },
@@ -170,7 +181,7 @@ const DEALS: DealSeed[] = [
   { id: "d21", name: "Pilote — Maison Vertu", companyId: "c2", contactId: "p12", amount: 2400, stageId: "s6", owner: "Associé", offer: OFFERS.pilote, createdAgo: 180, expectedCloseAgo: 160, lastActivityAgo: 160, status: "won", closedAgo: 160, notes: "Pilote non reconduit à l'époque. Nouvelle affaire ouverte depuis." },
   { id: "d22", name: "Assistant IA — Papillon (starter)", companyId: "c11", contactId: "p15", amount: 3480, stageId: "s4", owner: "Yanis", offer: OFFERS.starter, createdAgo: 70, expectedCloseAgo: 15, lastActivityAgo: 15, status: "lost", closedAgo: 15, notes: "Perdu au profit d'un concurrent moins cher. Retour possible." },
   { id: "d23", name: "Pilote — Hydra Studio", companyId: "c8", contactId: "p8", amount: 2400, stageId: "s6", owner: "Yanis", offer: OFFERS.pilote, createdAgo: 44, expectedCloseAgo: 20, lastActivityAgo: 20, status: "won", closedAgo: 20, notes: "Signé avant le lancement produit." },
-  { id: "d24", name: "Renouvellement — Kotto Sport", companyId: "c5", contactId: "p5", amount: 6480, stageId: "s2", owner: "Associé", offer: OFFERS.pro, createdAgo: 3, expectedCloseAgo: -60, lastActivityAgo: 1, status: "open", notes: "Passage du pilote au Pro. Discussion ouverte." },
+  { id: "d24", name: "Renouvellement — Kotto Sport", companyId: "c5", contactId: "p5", amount: 6480, stageId: "s1", owner: "Associé", offer: OFFERS.pro, createdAgo: 3, expectedCloseAgo: -60, lastActivityAgo: 1, status: "open", notes: "Passage du pilote au Pro. Discussion ouverte." },
 ];
 
 // ------------------------------------------------------------ activités
@@ -297,7 +308,7 @@ const SETTINGS_LISTS: Record<string, string[]> = {
   owners: ["Yanis", "Associé"],
   offers: [OFFERS.starter, OFFERS.pro, OFFERS.surMesure, OFFERS.pilote],
   sources: ["Cold Call", "Cold Email", "LinkedIn", "Instagram", "Scraping", "Recommandation", "Salon", "Site web"],
-  lifecycles: ["Lead", "Prospect", "Client", "Ancien Client"],
+  lifecycles: ["Lead", "Prospect", "Qualifié", "Client", "Ancien Client"],
 };
 
 // ----------------------------------------------------------------- main
@@ -351,6 +362,9 @@ async function seedAll(prisma: Tx): Promise<void> {
   // Ordre de suppression contraint par les clés étrangères.
   await prisma.activity.deleteMany();
   await prisma.task.deleteMany();
+  // Les visites partent avant les affaires : la cascade s'en chargerait, mais
+  // l'ordre explicite dit ce qui dépend de quoi.
+  await prisma.dealStageVisit.deleteMany();
   await prisma.deal.deleteMany();
   await prisma.contact.deleteMany();
   await prisma.company.deleteMany();
@@ -448,7 +462,20 @@ async function seedAll(prisma: Tx): Promise<void> {
       expectedClose: daysAgo(deal.expectedCloseAgo),
       lastActivityAt: daysAgo(deal.lastActivityAgo),
       closedAt: deal.closedAgo === undefined ? null : daysAgo(deal.closedAgo),
+      stageSince: daysAgo(deal.lastActivityAgo),
       searchText: searchText([deal.name, deal.offer]),
+    })),
+  });
+
+  // Une visite d'entrée par affaire : sans elle, le jeu de démonstration
+  // afficherait un parcours de vente vide alors qu'il porte onze affaires, et
+  // l'écran passerait pour cassé.
+  await prisma.dealStageVisit.createMany({
+    data: DEALS.map((deal) => ({
+      id: `visit-${deal.id}`,
+      dealId: deal.id,
+      stageId: deal.stageId,
+      enteredAt: daysAgo(deal.lastActivityAgo),
     })),
   });
 

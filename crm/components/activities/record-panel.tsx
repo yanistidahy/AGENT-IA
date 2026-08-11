@@ -50,6 +50,12 @@ export interface RecordPanelProps {
    */
   readonly panel?: Panel;
   readonly onPanelChange?: (panel: Panel) => void;
+  /**
+   * L'issue de l'interaction qui vient d'être consignée. La fiche contact s'en
+   * sert pour proposer une qualification ; les tiroirs société et affaire
+   * l'ignorent, et c'est pour cela que la propriété est facultative.
+   */
+  readonly onOutcome?: (outcome: string) => void;
 }
 
 export type Panel = "none" | "log" | "task" | "sequence";
@@ -67,6 +73,7 @@ export function RecordPanel({
   section = "all",
   panel: controlledPanel,
   onPanelChange,
+  onOutcome,
 }: RecordPanelProps) {
   const [activities, setActivities] = useState<readonly ActivityView[]>([]);
   const [tasks, setTasks] = useState<readonly TaskView[]>([]);
@@ -154,7 +161,10 @@ export function RecordPanel({
           currentStatus={currentStatus}
           statusSuggestions={statusSuggestions}
           onCancel={() => setPanel("none")}
-          onLogged={(summary) => afterWrite(summary)}
+          onLogged={(summary, outcome) => {
+            afterWrite(summary);
+            if (onOutcome !== undefined) onOutcome(outcome);
+          }}
         />
       )}
 

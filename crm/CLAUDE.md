@@ -271,6 +271,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 19 | **Le filet** — fusion vers `main`, sauvegardes automatiques, planificateur | **livré, à valider** |
 | 20 | **Le cockpit** — file dense et groupable, anneau du jour, entonnoir, annulation | **livré, à valider** |
 | 21 | **Statuts de la feuille + fiche en onglets** — report contrôlé, tiroir à en-tête fixe, six colonnes | **livré, à valider** |
+| 22 | **Qualification → affaire** — pipeline refondu, fiche étoffée, rapports de prospection | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -2754,3 +2755,223 @@ cette suite, qui n'a pas de DOM.
 **Le clavier des onglets n'est pas exercé.** Le motif ARIA est écrit — `tablist`,
 `aria-selected`, `aria-controls`, `tabIndex` roulant, flèches, `Home`/`Fin` — et
 le rendu est vérifié, mais aucun test ne presse une touche.
+
+## Jalon 22 — la qualification crée l'affaire, et les rapports mesurent la prospection
+
+### `Qualifié` est l'engagement de l'acheteur, pas notre activité
+
+Nouveau cycle de vie entre `Prospect` et `Client`, et sa définition tient en une
+phrase, écrite **contre le champ** dans le formulaire : *le prospect a exprimé
+le désir de l'offre.* Avoir fait une démo ne qualifie personne ; avoir demandé
+un prix, si.
+
+C'est ce qui justifie qu'y passer ouvre une affaire : à partir de là, il y a
+quelque chose à suivre, à chiffrer et à perdre.
+
+**Un seul geste, une seule transaction.** Le cycle de vie, l'affaire, la visite
+d'étape et l'interaction de qualification partent ensemble. Les séparer
+laisserait, à la moindre coupure, un contact qualifié sans rien à suivre —
+exactement le demi-état que ce jalon supprime. La modale ne demande que le
+montant et l'offre ; le reste se déduit de la fiche. **Annuler la modale
+n'écrit rien du tout.**
+
+**Le montant est obligatoire et strictement positif.** Une affaire à zéro pèse
+zéro dans le pipeline pondéré et dans la prévision : elle serait invisible
+partout où elle compte tout en existant. Mieux vaut refuser la qualification que
+fabriquer une affaire fantôme.
+
+**Rejouer ne crée rien.** Un contact portant déjà une affaire ouverte est
+qualifié sans seconde affaire, et le bandeau dit laquelle existe avec son lien.
+Qualifier deux fois n'est pas une erreur de l'utilisateur — c'est ce qui arrive
+quand un prospect confirme son intérêt une seconde fois.
+
+**L'annulation réutilise le mécanisme de la file d'accueil**, sans le
+réimplémenter : le serveur rend les étapes inverses, le client les repose sur
+`POST /api/queue` en mode `undo`. Une étape `deal-delete` a été ajoutée au
+vocabulaire — jamais fabriquée par le client, seulement rendue par le serveur
+qui vient de créer cette affaire-là. Dix secondes plutôt que cinq : supprimer
+une affaire qu'on vient de créer se décide moins vite que défaire un report.
+
+Trois chemins déclenchent la modale, et un seul endroit décide : la fiche.
+Le bouton « Qualifier » de l'en-tête, le formulaire qui rend le cycle de vie
+enregistré, et l'issue d'une interaction (`RDV obtenu`, `Répondu — intéressé`)
+que `RecordPanel` remonte. Le formulaire et le formulaire d'interaction ne
+connaissent pas les affaires, et n'ont pas à les connaître.
+
+### Le pipeline suit l'acheteur, lui aussi
+
+| Avant | Après |
+|---|---|
+| Nouveau lead (10) | **Qualifié** (15) — renommée |
+| Contacté (25) | fusionnée dans Qualifié |
+| Démo planifiée (45) | **Démo planifiée** (30) |
+| — | **Démo réalisée** (50) — nouvelle |
+| Proposition envoyée (65) | inchangée |
+| Négociation (85) | inchangée |
+| Gagné (100) | inchangée |
+
+`Nouveau lead` et `Contacté` décrivent l'avant-qualification : dans le nouveau
+modèle, une affaire n'existe qu'à partir du moment où le prospect a exprimé un
+désir. Leurs affaires atterrissent donc en première étape.
+
+La migration n'agit que sur les **six étapes semées** (`s1`–`s6`), reconnues à
+leur identifiant : une étape ajoutée à la main n'est pas touchée. Le renommage
+se fait en place pour préserver les clés étrangères, positions décalées de 100
+d'abord — sinon le moindre échange violerait la contrainte d'unicité.
+
+Chaque étape porte un **critère de sortie**, affiché au survol de la colonne et
+écrit du point de vue de l'engagement : « a demandé une proposition chiffrée »
+plutôt que « proposition envoyée ». Une étape définie par ce qu'on a fait se
+franchit toute seule ; définie par ce que l'autre a accordé, elle mesure quelque
+chose.
+
+**Le seed a été mis au même jeu.** Un seed posant l'ancien pipeline ferait
+diverger une base fraîche d'une base migrée, et personne ne saurait laquelle
+fait foi.
+
+### Les durées par étape demandaient une table
+
+`Deal.stageSince` ne dit que depuis quand l'affaire est dans son étape
+**actuelle** : il ne peut pas répondre à « où mes affaires stagnent-elles ? »,
+qui demande la durée des étapes **quittées**. `deal_stage_visits` enregistre une
+ligne à chaque entrée, création comprise.
+
+Réserve honnête : les affaires antérieures n'ont qu'une visite, reconstituée
+depuis `stageSince`. Leurs passages précédents n'ont jamais été enregistrés, et
+les moyennes ne deviennent vraies qu'à mesure que de nouveaux passages
+s'accumulent. L'écran affiche donc une colonne « passages mesurés » à côté de
+chaque durée : une médiane calculée sur deux passages n'est pas une mesure, et
+l'afficher comme les autres la ferait lire comme telle.
+
+**Seuls les passages terminés comptent.** Le passage en cours mesurerait
+« depuis quand » et non « combien de temps », et tirerait toutes les durées vers
+le bas au fil des jours.
+
+**Un aller-retour compte une entrée**, et « avancé » se juge sur l'étape la plus
+avancée **atteinte**, pas sur l'étape actuelle : une affaire revenue en arrière
+est bien passée par la suivante, et l'oublier sous-estimerait la conversion à
+chaque recul.
+
+### La fiche dit enfin combien on a essayé
+
+Cinq faits calculés, aucun à saisir : tentatives et réponses (« 3 tentatives ·
+0 réponse » tranche entre insister et abandonner), canal et issue du dernier
+échange, taille et secteur de la société lus sur la fiche liée, et ancienneté
+dans le vivier en jours. Plus `website`, qui retombe **à l'affichage** sur le
+domaine de la société — le recopier en base ferait diverger les deux le jour où
+la société change de domaine.
+
+« Sans réponse » se compte par un `groupBy` pour toute la liste : Prisma ne sait
+pas rendre deux compteurs de la même relation dans un seul `_count`, et cent
+quarante requêtes pour cent quarante lignes seraient un prix absurde pour un
+second nombre.
+
+Les six nouvelles colonnes rejoignent le sélecteur « Colonnes », **non affichées
+par défaut**. Aucune n'est triable ni filtrable : ce sont des agrégats calculés
+à la lecture, et promettre un tri qui ne trierait rien serait pire que ne rien
+promettre.
+
+### `/rapports` mesure ce qu'on fait, pas seulement ce qu'on signe
+
+Deux blocs. **Prospection** passe devant et reste seul tant qu'aucune affaire
+n'existe : rythme hebdomadaire sur douze semaines, taux de réponse par canal,
+délai médian avant premier contact, discipline de relance, vieillissement du
+vivier, taux de qualification par source.
+
+**Médiane et non moyenne** pour le délai avant premier contact : trois fiches
+touchées le jour même et une oubliée depuis huit mois donneraient une moyenne de
+deux mois, qui ne décrit aucune des quatre.
+
+**« Tenue » veut dire terminée au plus tard le jour de l'échéance.** Compter
+comme tenue une relance faite trois semaines après reviendrait à mesurer qu'on
+finit par tout faire, ce qui est vrai de tout le monde.
+
+**Aucun taux n'est inventé.** Partout où le dénominateur est nul, `null` plutôt
+que zéro — et l'écran écrit « issue non renseignée » là où il aurait affiché
+« 0 % ». C'est la règle de l'entonnoir du jalon 20, reprise sans exception.
+
+**Chaque graphique vide dit pourquoi et quoi faire**, avec sa raison propre :
+« Aucune interaction consignée sur les douze dernières semaines. Consignez un
+appel depuis une fiche contact. » Un message générique serait la même absence
+d'information sous une autre forme.
+
+### Un défaut trouvé contre la vraie base
+
+Sur la base chargée depuis la feuille, le rythme annonçait **149 interactions**
+— dont **148 notes écrites par les corrections de données** des jalons 11, 12 et
+21. Ce sont nos écritures à nous, pas de la prospection : les compter aurait
+présenté au premier coup d'œil une semaine de travail que personne n'a faite.
+Toutes les mesures d'activité excluent désormais `owner: "Correction"`, la même
+exclusion que « la fiche a-t-elle été travaillée » du jalon 21. Après
+correction : **1 interaction réelle**.
+
+### Le conseil lit la prospection
+
+`get_prospecting_metrics` rend les mêmes nombres que `/rapports` en appelant le
+même service — un agent et un écran qui regardent la même semaine ne peuvent pas
+la décrire différemment.
+
+Les mesures entrent aussi dans les **briefings**, dans un champ `context`
+distinct des sections. La distinction n'est pas cosmétique : une section porte
+des enregistrements dont chaque identifiant devient une preuve cliquable, alors
+qu'un taux de réponse ne désigne aucune fiche. Les glisser parmi les sections
+aurait produit des preuves qui ne résolvent pas, donc des constats rejetés par
+la double résolution du jalon 14. Elles ne comptent pas dans `empty` : un CRM
+sans rien à signaler doit rester silencieux et gratuit.
+
+### Jalon 22 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, migration `9_qualification` appliquée sur une base
+portant déjà des données :
+
+- **restructuration du pipeline** : les six étapes lues en base après migration
+  sont exactement Qualifié 15 / Démo planifiée 30 / Démo réalisée 50 /
+  Proposition envoyée 65 / Négociation 85 / Gagné 100, positions 0 à 5, chacune
+  avec son critère de sortie ;
+- **qualification** : contact `Prospect` → affaire « Assistant IA Pro — Kotto
+  Sport » créée, `contactId` et `companyId` repris de la fiche, montant 6480,
+  étape d'entrée en position 0, clôture prévue à +30 j, **1 visite d'étape**
+  écrite, cycle de vie passé à `Qualifié` ;
+- **idempotence** : second appel → `created: false`, même `dealId`, message
+  nommant l'affaire existante, **24 affaires avant et après** ;
+- **annulation** : 2 étapes rejouées → l'affaire disparaît (24 → 25 → 24) et le
+  cycle de vie redevient `Prospect` ;
+- **offre par défaut** : « Pilote 3 mois », la dernière **vendue** ;
+- **prospection** : 18 contacts, 25 interactions sur 12 semaines, ventilées
+  `call:9 | email:6 | meeting:5 | demo:3 | note:2` ; délai médian avant premier
+  contact 19 j ; qualification par source `LinkedIn 3/5 | Scraping 2/2` ;
+- **exclusion des notes de correction** : sur la base issue de la feuille, 149
+  interactions deviennent **1** ;
+- **parcours de vente** : taux de lapin 50 % (1 démo tenue sur 2 planifiées),
+  vélocité médiane 28 j sur 7 affaires gagnées ;
+- **outil du conseil** : `get_prospecting_metrics` répond `ok` et rend le taux
+  par canal, les douze semaines de rythme comprises ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (568 tests) verts.
+
+### Jalon 22 — ce qui ne l'est pas
+
+**La modale n'a pas été ouverte dans un navigateur.** Le service qu'elle appelle
+est vérifié de bout en bout ci-dessus — création, idempotence, annulation — mais
+la saisie du montant, le clic sur « Annuler » et le compte à rebours de dix
+secondes sont du code client sans test automatique, cette suite n'ayant pas de
+DOM.
+
+**Créer un contact directement en `Qualifié` depuis « Nouveau contact » n'ouvre
+pas la modale.** Le formulaire de création ne rend pas l'identifiant de la fiche
+qu'il vient d'écrire, et la modale en a besoin. La fiche s'ouvre ensuite et son
+bouton « Qualifier » fait le travail — mais c'est un geste de plus, et il n'est
+pas dit à l'écran.
+
+**Les durées par étape reposent sur peu de passages.** Le jeu de démonstration
+n'a qu'une visite par affaire, reconstituée : la colonne « passages mesurés »
+affiche donc 0 partout sauf là où de vrais mouvements ont eu lieu. La mesure est
+juste, elle est simplement encore pauvre — et l'écran le dit.
+
+**La vélocité mélange deux définitions pour les affaires anciennes.** Depuis ce
+jalon, `createdAt` est la date de qualification ; pour les affaires antérieures,
+c'est la date de saisie. Les 28 jours mesurés portent donc sur des affaires du
+jeu de démonstration, pas sur des qualifications réelles.
+
+**`components/contacts/contact-form.tsx` reste à 276 lignes**, au-dessus de la
+limite de 250. Il en faisait 300 avant ce jalon : trois extractions l'ont réduit
+sans le ramener sous la barre. C'est de la dette reconnue, pas un oubli.

@@ -35,6 +35,9 @@ export function ContactFields({ contact }: { contact: ContactRecord }) {
         <Field label="Téléphone">{contact.phone || "—"}</Field>
         <Field label="Société">{contact.company?.name ?? "—"}</Field>
         <Field label="Fonction">{contact.title || "—"}</Field>
+        <Field label="Site">
+          <ExternalLink value={contact.website} />
+        </Field>
         <Field label="Étiquette">{contact.tag || "—"}</Field>
         <Field label="Dernier contact">
           {contact.lastContact === null
@@ -64,7 +67,9 @@ export function ContactFields({ contact }: { contact: ContactRecord }) {
           </Field>
           <Field label="Source">{contact.source || "—"}</Field>
           <Field label="Propriétaire">{contact.owner || "—"}</Field>
-          <Field label="Créé le">{formatDate(contact.createdAt)}</Field>
+          <Field label="Créé le">
+            {formatDate(contact.createdAt)} · {contact.ageDays} j
+          </Field>
           <Field label="Statut saisi le">
             {contact.statusSetAt === null ? "—" : formatDate(contact.statusSetAt)}
           </Field>

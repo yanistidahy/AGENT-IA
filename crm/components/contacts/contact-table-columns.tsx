@@ -6,6 +6,7 @@ import type { ContactRecord } from "@/lib/api/contacts";
 import { describeReminder } from "@/lib/domain/follow-up";
 import { resolveStatus } from "@/lib/domain/status";
 import { formatDate } from "@/lib/format";
+import { EXTRA_COLUMNS } from "./contact-table-extra-columns";
 
 /**
  * Les colonnes de `/contacts`, définies une fois.
@@ -29,7 +30,8 @@ export type ContactSortKey =
   | "lastContact"
   | "tag"
   | "followUp"
-  | "nextReminder";
+  | "nextReminder"
+  | "createdAt";
 
 export interface ContactColumn {
   /** Clé stable : elle est conservée dans le stockage local. */
@@ -190,6 +192,7 @@ export const CONTACT_COLUMNS: readonly ContactColumn[] = [
     filterKey: "owner",
     cell: (contact) => contact.owner || "—",
   },
+  ...EXTRA_COLUMNS,
 ];
 
 /** Les six du quotidien. Le reste s'ajoute depuis le sélecteur « Colonnes ». */

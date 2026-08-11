@@ -28,6 +28,7 @@ function contact(overrides: Partial<ContactRecord> = {}): ContactRecord {
     email: "nadia@nutrivia.fr",
     phone: "06 11 22 33 44",
     linkedin: "linkedin.com/in/nadia",
+    website: "nutrivia.fr",
     lifecycle: "Prospect",
     source: "Salon",
     owner: "Yanis",
@@ -46,6 +47,13 @@ function contact(overrides: Partial<ContactRecord> = {}): ContactRecord {
     activityCount: 3,
     followUp: "planned",
     idleDays: 5,
+    attempts: 3,
+    unanswered: 1,
+    lastChannel: "call",
+    lastOutcome: "later",
+    companySize: "20-50",
+    companyIndustry: "Cosmétique",
+    ageDays: 217,
     ...overrides,
   };
 }

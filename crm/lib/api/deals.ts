@@ -228,7 +228,7 @@ export async function createDeal(input: CreateDealInput): Promise<DealRecord> {
   const now = new Date();
   const row = await prisma.$transaction(async (tx) => {
     const companyId = await resolveCompanyLink(tx, input);
-    return tx.deal.create({
+    const created = await tx.deal.create({
     data: {
       searchText: searchText([input.name, input.offer]),
       name: input.name,
@@ -243,9 +243,18 @@ export async function createDeal(input: CreateDealInput): Promise<DealRecord> {
       prob: input.prob ?? null,
       status: "open",
       lastActivityAt: now,
+      stageSince: now,
     },
     include: dealInclude,
     });
+
+    // Première visite, écrite dans la même transaction que l'affaire : une
+    // affaire sans visite d'entrée serait invisible des durées par étape, et
+    // l'oubli ne se verrait qu'au moment de lire le rapport.
+    await tx.dealStageVisit.create({
+      data: { dealId: created.id, stageId: created.stageId, enteredAt: now },
+    });
+    return created;
   });
   return toRecord(row);
 }
@@ -346,6 +355,12 @@ export async function moveDealStage(id: string, stageId: string): Promise<MoveSt
       },
       include: dealInclude,
     });
+
+    if (changed) {
+      await tx.dealStageVisit.create({
+        data: { dealId: id, stageId: plan.stageId, enteredAt: plan.lastActivityAt },
+      });
+    }
 
     await tx.activity.create({
       data: {

@@ -39,11 +39,16 @@ interface ContactsViewProps extends ContactFormOptions {
   readonly incompleteCount: number;
   readonly companyOptions: ReadonlyArray<{ id: string; name: string; count: number }>;
   readonly tagCounts: ReadonlyArray<{ value: string; count: number }>;
+  /** Offres proposées à la qualification, et celle vendue en dernier. */
+  readonly offers: readonly string[];
+  readonly defaultOffer: string;
 }
 
 export function ContactsView({
   contacts,
   settings,
+  offers,
+  defaultOffer,
   linkableDeals,
   sequences,
   alerts,
@@ -203,6 +208,8 @@ export function ContactsView({
               )
         }
         onClose={closeDrawer}
+        offers={offers}
+        defaultOffer={defaultOffer}
         onChanged={refresh}
       />
 

@@ -62,6 +62,19 @@ export const undoStepSchema = z.discriminatedUnion("kind", [
     kind: z.literal("task-delete"),
     id: z.string().trim().min(1),
   }),
+  /**
+   * L'inverse d'une qualification : l'affaire qu'elle vient d'ouvrir disparaît.
+   *
+   * Supprimer une affaire est violent, et c'est pourquoi cette étape n'est
+   * jamais fabriquée par le client : elle ne peut venir que d'une réponse du
+   * serveur, qui vient de créer cette affaire-là dans la seconde précédente.
+   * Les visites d'étape partent en cascade, l'interaction de qualification est
+   * retirée avec elle.
+   */
+  z.object({
+    kind: z.literal("deal-delete"),
+    id: z.string().trim().min(1),
+  }),
 ]);
 
 export type UndoStep = z.infer<typeof undoStepSchema>;
@@ -270,6 +283,16 @@ export async function undoQueueBatch(
     try {
       if (step.kind === "task-delete") {
         await prisma.task.delete({ where: { id: step.id } });
+        restored += 1;
+        continue;
+      }
+
+      if (step.kind === "deal-delete") {
+        // Les interactions survivent à la suppression d'une affaire
+        // (`SetNull`) : celle qui annonce la qualification n'aurait plus de
+        // sens sans elle, on la retire explicitement.
+        await prisma.activity.deleteMany({ where: { dealId: step.id } });
+        await prisma.deal.delete({ where: { id: step.id } });
         restored += 1;
         continue;
       }

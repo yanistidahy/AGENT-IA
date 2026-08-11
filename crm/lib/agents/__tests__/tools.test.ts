@@ -8,7 +8,7 @@ import { ALL_TOOLS, READ_TOOL_NAMES, WRITE_TOOL_NAMES, findTool, toolsFor } from
  */
 
 describe("registre d'outils", () => {
-  it("expose les treize lectures et les sept écritures attendues", () => {
+  it("expose les quatorze lectures et les sept écritures attendues", () => {
     expect(READ_TOOL_NAMES).toEqual([
       // Jalon 2 : affaires, sociétés, tâches, indicateurs.
       "search_contacts",
@@ -26,6 +26,7 @@ describe("registre d'outils", () => {
       "get_timeline",
       "list_sequences",
       "list_clients",
+      "get_prospecting_metrics",
     ]);
     expect(WRITE_TOOL_NAMES).toEqual([
       "create_task",
@@ -51,6 +52,7 @@ describe("registre d'outils", () => {
       "get_timeline",
       "list_sequences",
       "list_clients",
+      "get_prospecting_metrics",
     ]) {
       expect(findTool(capability), capability).toBeDefined();
     }

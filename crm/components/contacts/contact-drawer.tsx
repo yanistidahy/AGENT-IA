@@ -2,18 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Drawer } from "@/components/ui/drawer";
-import { Eyebrow, StatusTag } from "@/components/ui/primitives";
+
 import { Tabs, TabPanel, type TabDefinition } from "@/components/ui/tabs";
 import type { ContactRecord } from "@/lib/api/contacts";
 import { deleteContact } from "@/lib/client/crm-api";
-import { money } from "@/lib/format";
+
 import { RecordPanel, type Panel } from "@/components/activities/record-panel";
 import type { SequenceOption } from "@/components/activities/run-sequence";
 import type { Alert } from "@/lib/domain/types";
 import { ContactForm, type ContactFormOptions } from "./contact-form";
 import { ContactFields } from "./contact-fields";
 import { ContactHeader } from "./contact-header";
-import { LinkDeal, type LinkableDeal } from "./link-deal";
+import type { LinkableDeal } from "./link-deal";
+import { FollowUpTab } from "./contact-followup-tab";
+import { Notices } from "./drawer-notices";
+import { QualifyFlow, type QualifyTarget } from "./qualify-flow";
+import { entersQualified, outcomeQualifies, QUALIFIED } from "@/lib/domain/qualification";
+import { toLifecycle } from "@/lib/domain/guards";
 
 /**
  * La fiche contact : en-tête fixe, puis trois onglets.
@@ -36,6 +41,9 @@ interface ContactDrawerProps extends ContactFormOptions {
   readonly alerts: readonly Alert[];
   /** Statuts déjà employés ailleurs, proposés avant la liste de départ. */
   readonly statusSuggestions?: readonly string[];
+  /** Offres proposées à la qualification, et celle vendue en dernier. */
+  readonly offers?: readonly string[];
+  readonly defaultOffer?: string;
   readonly onClose: () => void;
   readonly onChanged: () => void;
 }
@@ -46,6 +54,8 @@ export function ContactDrawer({
   sequences,
   alerts,
   statusSuggestions = [],
+  offers = [],
+  defaultOffer = "",
   onClose,
   onChanged,
   ...options
@@ -61,6 +71,7 @@ export function ContactDrawer({
   // rendu serveur, et l'onglet correct n'apparaîtrait qu'après hydratation.
   const [tab, setTab] = useState<TabKey>(() => (hasHistory ? "historique" : "fiche"));
   const [panel, setPanel] = useState<Panel>("none");
+  const [qualifying, setQualifying] = useState<QualifyTarget | null>(null);
 
   /**
    * L'onglet ne se recalcule qu'au **changement de fiche**.
@@ -119,6 +130,15 @@ export function ContactDrawer({
                 setTab("historique");
                 setPanel("log");
               }}
+              onQualify={
+                contact.lifecycle === QUALIFIED
+                  ? undefined
+                  : () =>
+                      setQualifying({
+                        id: contact.id,
+                        name: `${contact.firstName} ${contact.lastName}`.trim(),
+                      })
+              }
             />
             <div className="px-[22px]">
               <Tabs tabs={tabs} active={tab} onSelect={setTab} idPrefix="contact" />
@@ -153,66 +173,34 @@ export function ContactDrawer({
           {...options}
           contact={contact}
           onCancel={() => setEditing(false)}
-          onSaved={() => {
+          onSaved={(saved) => {
             setEditing(false);
             onChanged();
+            // Le formulaire ne connaît pas les affaires : c'est la fiche qui
+            // reconnaît l'entrée dans « Qualifié » et ouvre la modale.
+            if (entersQualified(contact.lifecycle, toLifecycle(saved))) {
+              setQualifying({
+                id: contact.id,
+                name: `${contact.firstName} ${contact.lastName}`.trim(),
+              });
+            }
           }}
         />
       ) : (
         <>
-          {confirming && (
-            <p className="mb-4 rounded-control border border-[#F0C9C2] bg-pulse-l px-3 py-2 text-[12.5px] text-[#B2311F]">
-              Les affaires et interactions liées seront conservées, mais détachées. Les tâches de
-              ce contact seront supprimées. Cliquez à nouveau sur « Supprimer » pour confirmer.
-            </p>
-          )}
-          {error !== null && (
-            <p className="mb-3 rounded-control border border-[#F5D5CF] bg-pulse-l px-3 py-2 text-[12.5px] text-[#B2311F]">
-              {error}
-            </p>
-          )}
+          <Notices confirming={confirming} error={error} />
 
           <TabPanel tabKey="fiche" active={tab} idPrefix="contact">
             <ContactFields contact={contact} />
           </TabPanel>
 
           <TabPanel tabKey="suivi" active={tab} idPrefix="contact">
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <Figure label="Pipeline ouvert" value={money(openValue)} />
-              <Figure label="CA signé" value={money(wonValue)} />
-            </div>
-
-            <h3 className="mt-5 mb-2.5 font-display text-sm font-semibold">
-              Affaires liées ({contact.deals.length})
-            </h3>
-            {contact.deals.length === 0 ? (
-              <p className="rounded-card border border-dashed border-line px-3.5 py-4 text-[12.5px] text-muted">
-                Aucune affaire rattachée à ce contact.
-              </p>
-            ) : (
-              <ul className="grid gap-1.5">
-                {contact.deals.map((deal) => (
-                  <li
-                    key={deal.id}
-                    className="flex flex-wrap items-center gap-2 rounded-card border border-line px-3 py-2 text-[13px]"
-                  >
-                    <span className="font-semibold">{deal.name}</span>
-                    <span
-                      className="rounded-full px-2 py-[2px] text-[11px] font-semibold"
-                      style={{ backgroundColor: `${deal.stage.color}1f`, color: deal.stage.color }}
-                    >
-                      {deal.stage.name}
-                    </span>
-                    {deal.status !== "open" && <StatusTag status={deal.status} />}
-                    <span className="ml-auto font-mono font-semibold tabular-nums">
-                      {money(deal.amount)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <LinkDeal contactId={contact.id} deals={linkableDeals} onChanged={onChanged} />
+            <FollowUpTab
+              deals={contact.deals}
+              contactId={contact.id}
+              linkableDeals={linkableDeals}
+              onChanged={onChanged}
+            />
           </TabPanel>
 
           {/*
@@ -234,20 +222,27 @@ export function ContactDrawer({
               section={tab === "historique" ? "history" : "followup"}
               panel={panel}
               onPanelChange={setPanel}
+              onOutcome={(outcome) => {
+                if (contact.lifecycle !== QUALIFIED && outcomeQualifies(outcome)) {
+                  setQualifying({
+                    id: contact.id,
+                    name: `${contact.firstName} ${contact.lastName}`.trim(),
+                  });
+                }
+              }}
               onChanged={onChanged}
             />
           </div>
         </>
       )}
-    </Drawer>
-  );
-}
 
-function Figure({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-card border border-line bg-surface-2 px-4 py-3">
-      <Eyebrow>{label}</Eyebrow>
-      <div className="mt-1.5 font-display text-2xl font-semibold tabular-nums">{value}</div>
-    </div>
+      <QualifyFlow
+        target={qualifying}
+        offers={offers}
+        defaultOffer={defaultOffer}
+        onClose={() => setQualifying(null)}
+        onChanged={onChanged}
+      />
+    </Drawer>
   );
 }

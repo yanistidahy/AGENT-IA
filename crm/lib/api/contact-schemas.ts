@@ -50,6 +50,8 @@ export const createContactSchema = z.object({
   email: emailValue.optional(),
   phone: z.string().trim().optional(),
   linkedin: z.string().trim().optional(),
+  /** Site du contact. Stocké tel qu'il est saisi — voir lib/domain/links.ts. */
+  website: z.string().trim().optional(),
   source: z.string().trim().optional(),
   owner: z.string().trim().optional(),
   /** Étiquette libre. Vide = sans étiquette. */
@@ -79,6 +81,7 @@ export const updateContactSchema = z
     email: emailValue.optional(),
     phone: z.string().trim().optional(),
     linkedin: z.string().trim().optional(),
+    website: z.string().trim().optional(),
     source: z.string().trim().optional(),
     owner: z.string().trim().optional(),
     tag: z.string().trim().max(60, "Étiquette trop longue").optional(),

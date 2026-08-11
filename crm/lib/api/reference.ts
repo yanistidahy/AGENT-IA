@@ -12,6 +12,7 @@ export async function listStages(): Promise<StageLike[]> {
     color: row.color,
     prob: row.prob,
     position: row.position,
+    exitCriterion: row.exitCriterion,
   }));
 }
 

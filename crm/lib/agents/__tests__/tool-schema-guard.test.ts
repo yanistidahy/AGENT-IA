@@ -40,10 +40,10 @@ describe("forme des outils exposés à l'API", () => {
     }
   });
 
-  it("couvre bien les vingt outils du registre", () => {
+  it("couvre bien les vingt-et-un outils du registre", () => {
     // Sans ce compte, un registre vidé par erreur ferait passer le test
     // ci-dessus pour un succès.
-    expect(ALL_TOOLS.length).toBe(20);
+    expect(ALL_TOOLS.length).toBe(21);
     for (const tool of ALL_TOOLS) {
       expect(tool.inputSchema, tool.name).toHaveProperty("type", "object");
     }

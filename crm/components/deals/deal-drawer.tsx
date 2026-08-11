@@ -120,9 +120,20 @@ export function DealDrawer({
 
           <dl className="grid grid-cols-[130px_1fr] gap-x-3.5 gap-y-2.5 text-[13.5px]">
             <Row label="Contact">
-              {deal.contact === null
-                ? "—"
-                : `${deal.contact.firstName} ${deal.contact.lastName}`}
+              {/* Lien dans les deux sens : la fiche contact liste ses affaires,
+                  l'affaire renvoie à sa fiche. Sans cela, une affaire créée à la
+                  qualification est un cul-de-sac — on sait qu'elle vient de
+                  quelqu'un sans pouvoir y retourner. */}
+              {deal.contact === null ? (
+                "—"
+              ) : (
+                <Link
+                  href={`/contacts?lifecycle=all&fiche=${encodeURIComponent(deal.contact.id)}`}
+                  className="text-flux-d hover:underline"
+                >
+                  {deal.contact.firstName} {deal.contact.lastName}
+                </Link>
+              )}
             </Row>
             <Row label="Offre">{deal.offer === "" ? "—" : deal.offer}</Row>
             <Row label="Créée le">{formatDate(deal.createdAt)}</Row>

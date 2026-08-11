@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 /**
  * Le filet de sécurité de cinq secondes.
@@ -23,14 +23,23 @@ export interface ToastState {
   readonly tone: "ok" | "error";
   /** Absent quand l'action n'est pas réversible — un échec, typiquement. */
   readonly onUndo?: () => void | Promise<void>;
+  /** Complément cliquable — un lien vers ce qui vient d'être créé, par exemple. */
+  readonly detail?: ReactNode;
 }
 
 export function UndoToast({
   state,
   onDismiss,
+  millis = UNDO_MS,
 }: {
   state: ToastState | null;
   onDismiss: () => void;
+  /**
+   * Durée du sursis. Dix secondes pour une création d'affaire, cinq pour un
+   * report : plus l'écriture est lourde à défaire, plus on laisse de temps
+   * pour s'en apercevoir.
+   */
+  millis?: number;
 }) {
   const [busy, setBusy] = useState(false);
   const dismiss = useRef(onDismiss);
@@ -39,9 +48,9 @@ export function UndoToast({
   useEffect(() => {
     if (state === null) return;
     setBusy(false);
-    const timer = window.setTimeout(() => dismiss.current(), UNDO_MS);
+    const timer = window.setTimeout(() => dismiss.current(), millis);
     return () => window.clearTimeout(timer);
-  }, [state]);
+  }, [state, millis]);
 
   if (state === null) return null;
 
@@ -61,6 +70,7 @@ export function UndoToast({
       }`}
     >
       <span className="text-[12.5px]">{state.message}</span>
+      {state.detail !== undefined && <span className="text-[12.5px]">{state.detail}</span>}
 
       {undo !== undefined && (
         <button

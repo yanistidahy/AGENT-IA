@@ -6,6 +6,7 @@ import {
   listNeglectedContacts,
   listReminders,
   listSequencesTool,
+  getProspectingMetrics,
 } from "./reads-crm";
 import { WRITE_TOOLS } from "./writes";
 import type { ToolDefinition } from "./types";
@@ -24,6 +25,7 @@ const CRM_READ_TOOLS: readonly ToolDefinition[] = [
   getTimeline,
   listSequencesTool,
   listClients,
+  getProspectingMetrics,
 ];
 
 const ALL_READS: readonly ToolDefinition[] = [...READ_TOOLS, ...CRM_READ_TOOLS];
