@@ -36,7 +36,7 @@ export function ProgressRing({ progress }: { progress: DayProgress }) {
             cy={SIZE / 2}
             r={RADIUS}
             fill="none"
-            stroke={complete ? "var(--color-flux)" : "var(--color-flux-d)"}
+            stroke={complete ? "var(--color-win)" : "var(--color-brand)"}
             strokeWidth={6}
             strokeLinecap="round"
             strokeDasharray={dash.circumference}
@@ -50,7 +50,7 @@ export function ProgressRing({ progress }: { progress: DayProgress }) {
           className="absolute inset-0 flex flex-col items-center justify-center leading-none"
         >
           {complete ? (
-            <span className="text-[17px] text-flux-d">✓</span>
+            <span className="text-[17px] text-win-d">✓</span>
           ) : (
             <>
               <b className="font-display text-[15px] font-semibold tabular-nums">{progress.done}</b>

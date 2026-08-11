@@ -81,7 +81,7 @@ export function WeekCard({ week }: { week: WeekReview }) {
         )}
       </p>
       <p className="mt-1 text-[13px]">
-        <b className="font-mono text-[15px] font-semibold text-flux-d">
+        <b className="font-mono text-[15px] font-semibold text-brand-d">
           {week.remindersHonoured}
         </b>{" "}
         relance(s) honorée(s) ·{" "}

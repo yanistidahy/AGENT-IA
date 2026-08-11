@@ -26,7 +26,7 @@ interface KanbanBoardProps {
 }
 
 const HEAT_BORDER: Record<DealHeat, string> = {
-  hot: "var(--color-flux)",
+  hot: "var(--color-win)",
   warm: "var(--color-gold)",
   cold: "var(--color-pulse)",
 };
@@ -70,7 +70,7 @@ export function KanbanBoard({ deals, stages, settings, onSelect }: KanbanBoardPr
       )}
 
       {notice !== null && (
-        <p className="mb-3 flex flex-wrap items-center gap-2 rounded-control border border-[#B9E7DC] bg-flux-l px-3 py-2 text-[12.5px] text-flux-d">
+        <p className="mb-3 flex flex-wrap items-center gap-2 rounded-control border border-[#D3CEFA] bg-brand-l px-3 py-2 text-[12.5px] text-brand-d">
           {notice}
           <Link href="/taches" className="font-semibold underline">
             Ouvrir /taches
@@ -98,7 +98,7 @@ export function KanbanBoard({ deals, stages, settings, onSelect }: KanbanBoardPr
                 if (id !== "") void drop(id, stage.id);
               }}
               className={`flex max-h-[calc(100vh-300px)] w-[268px] shrink-0 flex-col gap-2 rounded-card p-2.5 transition-colors ${
-                over === stage.id ? "bg-flux-l ring-2 ring-flux ring-inset" : "bg-[#E5EBE9]"
+                over === stage.id ? "bg-brand-l ring-2 ring-brand ring-inset" : "bg-[#E4E6EF]"
               }`}
             >
               <div
@@ -134,7 +134,7 @@ export function KanbanBoard({ deals, stages, settings, onSelect }: KanbanBoardPr
 
               <div className="flex min-h-[60px] flex-col gap-2 overflow-y-auto p-0.5">
                 {column.length === 0 ? (
-                  <p className="px-2 py-4 text-center text-[12px] text-[#8DA39E]">
+                  <p className="px-2 py-4 text-center text-[12px] text-muted">
                     Déposez une affaire ici
                   </p>
                 ) : (

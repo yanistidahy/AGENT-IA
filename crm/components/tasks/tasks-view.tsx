@@ -38,7 +38,7 @@ const BUCKETS: readonly TaskBucket[] = [
 ];
 
 const CONTROL =
-  "rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-flux";
+  "rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-brand";
 
 export function TasksView({ tasks, owners, targets }: TasksViewProps) {
   const router = useRouter();
@@ -87,7 +87,7 @@ export function TasksView({ tasks, owners, targets }: TasksViewProps) {
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-control bg-flux px-3.5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-flux-d"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-control bg-brand px-3.5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-d"
         >
           <Icon name="plus" size={15} />
           Nouvelle tâche
@@ -106,7 +106,7 @@ export function TasksView({ tasks, owners, targets }: TasksViewProps) {
               type="button"
               onClick={() => setParam({ scope: filter.value })}
               className={`border-r border-line px-3 py-1.5 text-[12.5px] font-semibold transition-colors last:border-r-0 ${
-                scope === filter.value ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
+                scope === filter.value ? "bg-brand text-white" : "text-muted hover:bg-surface-2"
               }`}
             >
               {filter.label}

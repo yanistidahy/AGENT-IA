@@ -70,7 +70,7 @@ export function ColumnPicker({
                   checked={visible.has(column.key)}
                   disabled={isLocked}
                   onChange={() => onToggle(column.key)}
-                  className="size-3.5 accent-[#0b7a68]"
+                  className="size-3.5 accent-brand-d"
                 />
                 {column.label}
               </label>

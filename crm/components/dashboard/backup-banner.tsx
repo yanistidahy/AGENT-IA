@@ -39,7 +39,7 @@ export function BackupBanner({
       <p className="mb-3 flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted">
         <span aria-hidden className="size-1.5 rounded-full bg-pulse" />
         Sauvegarde en retard — dernière réussie {age}.{" "}
-        <Link href="/reglages" className="underline hover:text-flux-d">
+        <Link href="/reglages" className="underline hover:text-brand-d">
           Vérifier
         </Link>
       </p>
@@ -61,7 +61,7 @@ export function BackupBanner({
       <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted">
         Dernière sauvegarde réussie : {age}. Au-delà de {STALE_AFTER_HOURS} h sans instantané, une
         perte de base ne serait plus rattrapable.{" "}
-        <Link href="/reglages" className="underline hover:text-flux-d">
+        <Link href="/reglages" className="underline hover:text-brand-d">
           Vérifier les sauvegardes
         </Link>
       </p>

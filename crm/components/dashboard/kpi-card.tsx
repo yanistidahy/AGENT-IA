@@ -15,7 +15,7 @@ import type { Delta } from "@/lib/domain/kpi-delta";
  *    La vraie information est qu'il manque une saisie, et laquelle.
  */
 const TONES = {
-  good: "text-flux-d",
+  good: "text-win-d",
   bad: "text-[#B2311F]",
   flat: "text-muted",
 } as const;
@@ -42,7 +42,7 @@ export function KpiCard({
   return (
     <Link
       href={href}
-      className="block rounded-card border border-line bg-surface px-3.5 py-3 shadow-card transition-colors hover:border-flux hover:bg-surface-2"
+      className="block rounded-card border border-line bg-surface px-3.5 py-3 shadow-card transition-colors hover:border-brand hover:bg-surface-2"
     >
       <span className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase">{label}</span>
 

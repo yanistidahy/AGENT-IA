@@ -11,7 +11,7 @@ import { formatDate } from "@/lib/format";
  */
 
 const TYPE_TONES: Record<ActivityType, Tone> = {
-  call: "flux",
+  call: "brand",
   email: "sky",
   meeting: "violet",
   demo: "gold",
@@ -33,7 +33,7 @@ export function Timeline({ activities }: { activities: readonly ActivityView[] }
         <li key={activity.id} className="relative">
           <span
             aria-hidden
-            className="absolute top-2 -left-[21px] size-2 rounded-full bg-flux ring-4 ring-surface"
+            className="absolute top-2 -left-[21px] size-2 rounded-full bg-brand ring-4 ring-surface"
           />
           <div className="rounded-card border border-line bg-surface px-3.5 py-2.5">
             <div className="flex flex-wrap items-center gap-2">

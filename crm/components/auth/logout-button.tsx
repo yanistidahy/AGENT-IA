@@ -17,7 +17,7 @@ export function LogoutButton() {
     <button
       type="button"
       onClick={() => void logout()}
-      className="mt-2 block text-[11.5px] text-[#5E7A74] underline transition-colors hover:text-[#B7CCC7]"
+      className="mt-2 block text-rail-dim hover:text-rail-text text-[11.5px] underline transition-colors"
     >
       Fermer la session
     </button>

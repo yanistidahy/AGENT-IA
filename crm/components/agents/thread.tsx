@@ -130,7 +130,7 @@ function AgentTurn({
                 <i
                   aria-hidden
                   className={`size-1.5 rounded-full ${
-                    chip.running ? "animate-pulse bg-violet" : chip.empty ? "bg-gold" : "bg-flux"
+                    chip.running ? "animate-pulse bg-violet" : chip.empty ? "bg-gold" : "bg-brand-lift"
                   }`}
                 />
                 {chip.label}
@@ -194,7 +194,7 @@ function ActionCard({
           <button
             type="button"
             onClick={() => onDecide(action.toolUseId, "confirm")}
-            className="inline-flex items-center gap-1.5 rounded-control bg-flux px-3 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-flux-d"
+            className="inline-flex items-center gap-1.5 rounded-control bg-brand px-3 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-brand-d"
           >
             <Icon name="check" size={13} />
             Confirmer

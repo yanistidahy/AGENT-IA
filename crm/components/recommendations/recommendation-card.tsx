@@ -103,14 +103,14 @@ export function RecommendationCard({ item }: { item: RecommendationView }) {
           <Link
             key={`${evidence.type}-${evidence.id}`}
             href={hrefFor(evidence)}
-            className="rounded-control border border-line bg-surface px-2 py-0.5 text-[11.5px] hover:border-flux"
+            className="rounded-control border border-line bg-surface px-2 py-0.5 text-[11.5px] hover:border-brand"
           >
             {evidence.label}
           </Link>
         ))}
       </div>
 
-      {notice !== null && <p className="mt-1.5 text-[12px] text-flux-d">{notice}</p>}
+      {notice !== null && <p className="mt-1.5 text-[12px] text-win-d">{notice}</p>}
       {error !== null && <p className="mt-1.5 text-[12px] text-[#B2311F]">{error}</p>}
 
       {status === "new" && !asking && (

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Mark } from "@/components/brand/logo";
 import { Icon } from "@/components/ui/icon";
 
 export const dynamic = "force-dynamic";
@@ -14,9 +15,11 @@ export default function ConseilLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#0F1117] text-[#CFDEDA]">
+    <div className="flex h-screen flex-col overflow-hidden bg-[#0B0E1A] text-[#CBD2E8]">
       <header className="flex flex-none items-center gap-3 border-b border-[#1E2430] px-5 py-3">
-        <span className="size-[26px] shrink-0 rounded-lg bg-gradient-to-br from-flux to-violet" />
+        <span className="text-white">
+          <Mark size={26} />
+        </span>
         <div>
           <div className="font-display text-[14px] font-bold tracking-tight text-white">
             Alfred &amp; Associés
@@ -27,7 +30,7 @@ export default function ConseilLayout({
         </div>
         <Link
           href="/"
-          className="ml-auto inline-flex items-center gap-1.5 rounded-control border border-[#2A3240] px-2.5 py-1.5 text-[12.5px] text-[#8FA3AE] transition-colors hover:border-[#3D4759] hover:text-white"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-control border border-[#2A3240] px-2.5 py-1.5 text-[12.5px] text-[#9AA4CE] transition-colors hover:border-[#3D4759] hover:text-white"
         >
           <Icon name="dash" size={14} />
           Retour au CRM

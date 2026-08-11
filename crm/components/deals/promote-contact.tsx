@@ -42,8 +42,8 @@ export function PromoteContact({ deal, onChanged }: PromoteContactProps) {
   };
 
   return (
-    <div className="mt-5 rounded-card border border-[#B9E7DC] bg-flux-l px-3.5 py-3">
-      <p className="text-[13px] leading-relaxed text-flux-d">
+    <div className="mt-5 rounded-card border border-[#B9E7DC] bg-win-l px-3.5 py-3">
+      <p className="text-[13px] leading-relaxed text-win-d">
         Affaire gagnée. <b>{contact.firstName} {contact.lastName}</b> est encore
         « {contact.lifecycle} » — le passer en « Client » ?
       </p>
@@ -52,7 +52,7 @@ export function PromoteContact({ deal, onChanged }: PromoteContactProps) {
           type="button"
           disabled={busy}
           onClick={() => void promote()}
-          className="rounded-control bg-flux px-3 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-flux-d disabled:opacity-50"
+          className="rounded-control bg-brand px-3 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-brand-d disabled:opacity-50"
         >
           {busy ? "…" : "Promouvoir en Client"}
         </button>

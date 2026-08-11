@@ -85,7 +85,7 @@ export function QualifyDialog({
               // Vide plutôt qu'à zéro : un montant pré-rempli est un montant
               // qu'on oublie de corriger, et zéro pèse zéro dans la prévision.
               placeholder="6480"
-              className="rounded-control border border-line bg-surface px-2.5 py-2 text-[14px] outline-none focus:border-flux"
+              className="rounded-control border border-line bg-surface px-2.5 py-2 text-[14px] outline-none focus:border-brand"
             />
           </label>
 
@@ -98,13 +98,13 @@ export function QualifyDialog({
                 value={offer}
                 onChange={(event) => setOffer(event.target.value)}
                 placeholder="Nom de l'offre"
-                className="rounded-control border border-line bg-surface px-2.5 py-2 text-[14px] outline-none focus:border-flux"
+                className="rounded-control border border-line bg-surface px-2.5 py-2 text-[14px] outline-none focus:border-brand"
               />
             ) : (
               <select
                 value={offer}
                 onChange={(event) => setOffer(event.target.value)}
-                className="rounded-control border border-line bg-surface px-2.5 py-2 text-[14px] outline-none focus:border-flux"
+                className="rounded-control border border-line bg-surface px-2.5 py-2 text-[14px] outline-none focus:border-brand"
               >
                 {offers.map((value) => (
                   <option key={value}>{value}</option>
@@ -122,7 +122,7 @@ export function QualifyDialog({
             <button
               type="submit"
               disabled={busy}
-              className="rounded-control bg-flux px-3.5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-flux-d disabled:opacity-50"
+              className="rounded-control bg-brand px-3.5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-d disabled:opacity-50"
             >
               {busy ? "Création…" : "Qualifier et créer l'affaire"}
             </button>

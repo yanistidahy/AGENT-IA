@@ -64,7 +64,7 @@ export function QueueRow({
       ref={node}
       onMouseDown={onFocus}
       className={`relative flex h-12 items-center gap-2.5 border-b border-line-2 px-2.5 last:border-b-0 ${
-        focused ? "bg-flux-l" : selected ? "bg-surface-2" : "bg-surface hover:bg-surface-2"
+        focused ? "bg-brand-l" : selected ? "bg-surface-2" : "bg-surface hover:bg-surface-2"
       }`}
     >
       <input
@@ -72,7 +72,7 @@ export function QueueRow({
         checked={selected}
         onChange={onSelect}
         aria-label={`Sélectionner ${row.title}`}
-        className="size-3.5 shrink-0 accent-[#0b7a68]"
+        className="size-3.5 shrink-0 accent-brand-d"
       />
 
       <span className={`${CELL} min-w-0 flex-[2] font-semibold`}>{row.title}</span>
@@ -87,7 +87,7 @@ export function QueueRow({
         <a
           href={`tel:${row.phone.replace(/\s/g, "")}`}
           onClick={(event) => event.stopPropagation()}
-          className="hidden w-28 shrink-0 truncate font-mono text-[11.5px] text-flux-d hover:underline md:block"
+          className="hidden w-28 shrink-0 truncate font-mono text-[11.5px] text-brand-d hover:underline md:block"
         >
           {row.phone}
         </a>

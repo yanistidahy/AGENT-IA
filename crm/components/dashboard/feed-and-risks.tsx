@@ -13,7 +13,7 @@ const TYPE_LABELS: Record<ActivityType, string> = {
 };
 
 const TYPE_TONES: Record<ActivityType, Tone> = {
-  call: "flux",
+  call: "brand",
   email: "sky",
   meeting: "violet",
   demo: "gold",
@@ -69,7 +69,7 @@ export function RiskDeals({ deals }: { deals: readonly RiskDeal[] }) {
         <li key={deal.id}>
           <Link
             href={`/affaires?status=all&fiche=${deal.id}`}
-            className="flex flex-wrap items-center gap-2 rounded-card border border-line bg-surface px-3.5 py-2.5 text-[13px] transition-colors hover:border-flux"
+            className="flex flex-wrap items-center gap-2 rounded-card border border-line bg-surface px-3.5 py-2.5 text-[13px] transition-colors hover:border-brand"
           >
             <span className="font-semibold">{deal.name}</span>
             <span

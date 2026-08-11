@@ -136,7 +136,7 @@ export function MaintenancePanel() {
           {error}
         </p>
       )}
-      {done !== null && <p className="mt-2 text-[12.5px] text-flux-d">{done}</p>}
+      {done !== null && <p className="mt-2 text-[12.5px] text-win-d">{done}</p>}
 
       {plans !== null && (
         <div className="mt-3 grid gap-3">

@@ -129,7 +129,7 @@ export function DealDrawer({
               ) : (
                 <Link
                   href={`/contacts?lifecycle=all&fiche=${encodeURIComponent(deal.contact.id)}`}
-                  className="text-flux-d hover:underline"
+                  className="text-brand-d hover:underline"
                 >
                   {deal.contact.firstName} {deal.contact.lastName}
                 </Link>
@@ -174,7 +174,7 @@ export function DealDrawer({
           )}
 
           {autoNotice !== null && (
-            <p className="mt-3 flex flex-wrap items-center gap-2 rounded-control border border-[#B9E7DC] bg-flux-l px-3 py-2 text-[12.5px] text-flux-d">
+            <p className="mt-3 flex flex-wrap items-center gap-2 rounded-control border border-[#D3CEFA] bg-brand-l px-3 py-2 text-[12.5px] text-brand-d">
               {autoNotice}
               <Link href="/taches" className="font-semibold underline">
                 Ouvrir /taches

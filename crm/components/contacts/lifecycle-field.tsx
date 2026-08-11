@@ -12,7 +12,7 @@ import { LIFECYCLES, type Lifecycle } from "@/lib/domain/types";
  * seule et ne mesure rien.
  */
 const CONTROL =
-  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[14px] outline-none focus:border-flux";
+  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[14px] outline-none focus:border-brand";
 
 export function LifecycleField({
   value,

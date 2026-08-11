@@ -61,7 +61,7 @@ export function ContactHeader({
           // appel, sur poste fixe c'est au moins un numéro qu'on ne retape pas.
           <a
             href={`tel:${phone.replace(/\s/g, "")}`}
-            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 py-1.5 font-mono text-[12.5px] font-semibold text-flux-d transition-colors hover:bg-paper"
+            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 py-1.5 font-mono text-[12.5px] font-semibold text-brand-d transition-colors hover:bg-paper"
           >
             {phone}
           </a>
@@ -70,7 +70,7 @@ export function ContactHeader({
         <button
           type="button"
           onClick={onLog}
-          className="rounded-control bg-flux px-3 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-flux-d"
+          className="rounded-control bg-brand px-3 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-brand-d"
         >
           Consigner un échange
         </button>

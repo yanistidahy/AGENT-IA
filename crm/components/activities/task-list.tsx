@@ -81,7 +81,7 @@ export function TaskList({ tasks, onChanged, showTarget = true }: TaskListProps)
                 checked={done}
                 onChange={() => void toggle(task)}
                 aria-label={`Terminer « ${task.title} »`}
-                className="size-4 shrink-0 accent-[#0FA88F]"
+                className="size-4 shrink-0 accent-brand"
               />
               <span
                 aria-hidden

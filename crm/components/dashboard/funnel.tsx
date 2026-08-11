@@ -23,6 +23,22 @@ const WIDTH = 680;
 const BAND = 46;
 const GAP = 12;
 
+/**
+ * Le dégradé des bandes, du haut vers le bas de l'entonnoir.
+ *
+ * Il s'éclaircit à mesure que les prospects se raréfient, mais **par teintes
+ * opaques, pas par opacité**. L'ancienne version réduisait l'alpha jusqu'à
+ * 0.44 : la dernière bande finissait à un lavande pâle sur lequel le libellé
+ * n'était plus lisible ni en blanc ni en foncé. Chacune de ces cinq teintes
+ * tient au moins 4.6:1 avec du texte blanc — la plus claire, la plus juste,
+ * est mesurée à 4.65:1.
+ */
+const SHADES = ["#3a2fc7", "#443ad8", "#4b3fe4", "#5c51e7", "#6c61ea"] as const;
+
+function shade(index: number): string {
+  return SHADES[Math.min(index, SHADES.length - 1)] ?? "#4b3fe4";
+}
+
 export function ProspectingFunnel({ data }: { data: FunnelInput }) {
   const bands = buildFunnel(data);
   const never = neverApproached(data);
@@ -41,9 +57,7 @@ export function ProspectingFunnel({ data }: { data: FunnelInput }) {
             const y = index * (BAND + GAP);
             const width = Math.max(band.share * WIDTH, 96);
             const x = (WIDTH - width) / 2;
-            // Le dégradé du haut vers le bas de l'entonnoir : la menthe s'épuise
-            // à mesure que les prospects se raréfient.
-            const opacity = 1 - index * 0.14;
+            const empty = band.value === 0;
 
             return (
               <g key={band.key}>
@@ -53,15 +67,14 @@ export function ProspectingFunnel({ data }: { data: FunnelInput }) {
                   width={width}
                   height={BAND}
                   rx={7}
-                  fill="var(--color-flux)"
-                  fillOpacity={band.value === 0 ? 0.12 : opacity}
+                  fill={empty ? "var(--color-brand-l)" : shade(index)}
                 />
                 <text
                   x={WIDTH / 2}
                   y={y + BAND / 2 + 5}
                   textAnchor="middle"
                   className="font-display text-[15px] font-semibold"
-                  fill={band.value === 0 ? "var(--color-muted)" : "#08302a"}
+                  fill={empty ? "var(--color-ink)" : "#fff"}
                 >
                   {band.value} {band.label}
                 </text>
@@ -107,7 +120,7 @@ export function ProspectingFunnel({ data }: { data: FunnelInput }) {
         <p className="mt-2 rounded-control border border-[#F0DFB8] bg-gold-l px-3 py-2 text-[12.5px] leading-relaxed text-[#9A6410]">
           <b className="font-semibold">{never} contacts n'ont jamais été approchés.</b> C'est la
           fuite du haut de l'entonnoir : rien de ce qui suit ne peut grandir tant qu'ils y restent.{" "}
-          <Link href={NEVER_APPROACHED_HREF} className="underline hover:text-flux-d">
+          <Link href={NEVER_APPROACHED_HREF} className="underline hover:text-brand-d">
             Les ouvrir
           </Link>
         </p>

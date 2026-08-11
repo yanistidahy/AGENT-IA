@@ -6,7 +6,10 @@ import type { DealHeat, DealStatus, Lifecycle, StageLike } from "@/lib/domain/ty
 /** Petites briques d'affichage partagées par les vues CRM. */
 
 const TONES = {
-  flux: "bg-flux-l text-flux-d",
+  /** Action et marque. Ce n'est pas un état : c'est « ceci vous concerne ». */
+  brand: "bg-brand-l text-brand-d",
+  /** Réussite, et seulement elle : gagné, sain, à jour. */
+  win: "bg-win-l text-win-d",
   gold: "bg-gold-l text-[#9A6410]",
   pulse: "bg-pulse-l text-[#B2311F]",
   violet: "bg-violet-l text-[#4B37C0]",
@@ -48,7 +51,7 @@ export function StageTag({ stage }: { stage: StageLike }) {
 }
 
 const HEAT_LABELS: Record<DealHeat, { tone: Tone; label: string }> = {
-  hot: { tone: "flux", label: "Active" },
+  hot: { tone: "win", label: "Active" },
   warm: { tone: "gold", label: "Tiède" },
   cold: { tone: "pulse", label: "Froide" },
 };
@@ -64,7 +67,7 @@ export function HeatTag({ heat, days }: { heat: DealHeat; days: number }) {
 
 const STATUS_TONES: Record<DealStatus, Tone> = {
   open: "sky",
-  won: "flux",
+  won: "win",
   lost: "pulse",
 };
 
@@ -84,7 +87,7 @@ const LIFECYCLE_TONES: Record<Lifecycle, Tone> = {
   // L'or, comme le « tiède » des affaires : quelque chose est engagé et
   // attend une suite. C'est le seul cycle de vie qui porte une affaire.
   Qualifié: "gold",
-  Client: "flux",
+  Client: "win",
   "Ancien Client": "mute",
   // Gris : un prospect perdu n'est ni une alerte ni une réussite, il est classé.
   Perdu: "mute",
@@ -103,7 +106,7 @@ const FOLLOW_UP_TONES: Record<FollowUpStatus, Tone> = {
   never: "mute",
   due: "pulse",
   planned: "sky",
-  waiting: "flux",
+  waiting: "win",
   silent: "gold",
 };
 
@@ -142,7 +145,7 @@ function toneFor(label: string): Tone {
     if (FOLLOW_UP_LABELS[status] === label) return FOLLOW_UP_TONES[status];
   }
   if (label === "Ne répond plus") return "pulse";
-  if (label === "Intéressé" || label === "RDV pris") return "flux";
+  if (label === "Intéressé" || label === "RDV pris") return "win";
   if (label === "Perdu") return "mute";
   return "sky";
 }

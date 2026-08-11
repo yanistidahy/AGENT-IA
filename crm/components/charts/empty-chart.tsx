@@ -33,7 +33,7 @@ export function EmptyChart({
             {href === undefined ? (
               action
             ) : (
-              <Link href={href} className="underline hover:text-flux-d">
+              <Link href={href} className="underline hover:text-brand-d">
                 {action}
               </Link>
             )}

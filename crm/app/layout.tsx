@@ -24,7 +24,9 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AuraFLOW CRM",
+  // Le gabarit fait que chaque page garde la marque dans l'onglet : quinze
+  // onglets ouverts et « Contacts » tout seul ne dit pas de quel outil il vient.
+  title: { default: "AuraFLOW CRM", template: "%s · AuraFLOW CRM" },
   description: "CRM et conseil d'agents IA d'AuraFLOW AI.",
 };
 

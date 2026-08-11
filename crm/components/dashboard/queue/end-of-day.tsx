@@ -27,11 +27,11 @@ export function EndOfDay({
   }
 
   return (
-    <div className="rounded-card border border-[#B9E7DC] bg-flux-l px-4 py-4">
-      <p className="font-display text-[15px] font-semibold text-flux-d">
+    <div className="rounded-card border border-[#B9E7DC] bg-win-l px-4 py-4">
+      <p className="font-display text-[15px] font-semibold text-win-d">
         Journée terminée — {done} élément(s) traité(s).
       </p>
-      <p className="mt-0.5 text-[12.5px] leading-relaxed text-flux-d/80">
+      <p className="mt-0.5 text-[12.5px] leading-relaxed text-win-d/80">
         La file est vide. {tomorrowLabel(tomorrow)}
       </p>
     </div>

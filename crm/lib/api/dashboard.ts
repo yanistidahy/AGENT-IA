@@ -283,7 +283,7 @@ export async function readDashboard(now: Date = new Date()): Promise<DashboardDa
         amount: deal.amount,
         companyName: deal.company?.name ?? null,
         stageName: stage?.name ?? "—",
-        stageColor: stage?.color ?? "#6E8B86",
+        stageColor: stage?.color ?? "#6B7192",
         heat: dealHeat(deal, settings, now),
         idleDays: daysSince(deal.lastActivityAt ?? deal.createdAt, now),
       };

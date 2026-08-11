@@ -27,7 +27,7 @@ export function ContactFields({ contact }: { contact: ContactRecord }) {
           {contact.email === "" ? (
             "—"
           ) : (
-            <a href={`mailto:${contact.email}`} className="text-flux-d hover:underline">
+            <a href={`mailto:${contact.email}`} className="text-brand-d hover:underline">
               {contact.email}
             </a>
           )}

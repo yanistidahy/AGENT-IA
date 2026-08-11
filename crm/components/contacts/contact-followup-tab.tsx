@@ -56,7 +56,7 @@ export function FollowUpTab({
                   serait sinon un aller sans retour. */}
               <a
                 href={`/affaires?status=all&fiche=${encodeURIComponent(deal.id)}`}
-                className="font-semibold text-flux-d hover:underline"
+                className="font-semibold text-brand-d hover:underline"
               >
                 {deal.name}
               </a>

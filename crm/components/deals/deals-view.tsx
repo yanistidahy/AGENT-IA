@@ -30,7 +30,7 @@ interface DealsViewProps extends DealFormOptions {
 }
 
 const CONTROL =
-  "rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-flux";
+  "rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-brand";
 
 export function DealsView({
   deals,
@@ -92,7 +92,7 @@ export function DealsView({
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-control bg-flux px-3.5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-flux-d"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-control bg-brand px-3.5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-d"
         >
           <Icon name="plus" size={15} />
           Nouvelle affaire
@@ -107,7 +107,7 @@ export function DealsView({
               type="button"
               onClick={() => setParam({ status: filter.value })}
               className={`border-r border-line px-3 py-1.5 text-[12.5px] font-semibold last:border-r-0 transition-colors ${
-                status === filter.value ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
+                status === filter.value ? "bg-brand text-white" : "text-muted hover:bg-surface-2"
               }`}
             >
               {filter.label}

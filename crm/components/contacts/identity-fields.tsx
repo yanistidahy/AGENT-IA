@@ -10,7 +10,7 @@ import type { ContactRecord } from "@/lib/api/contacts";
  * création, et les seuls qu'un import renseigne.
  */
 const CONTROL =
-  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[14px] outline-none focus:border-flux";
+  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[14px] outline-none focus:border-brand";
 
 function Field({
   label,

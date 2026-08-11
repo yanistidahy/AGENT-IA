@@ -38,10 +38,71 @@ prototype divergeaient, le prototype a tranché :
 | Encre | `#16142B` | `#0C1614` — vert-noir, pas bleu-noir |
 | Titres | Bricolage Grotesque | **Space Grotesk** |
 
-Deux conséquences qui ne sont pas que des valeurs : la couleur d'action primaire
-est la **menthe**, pas le violet — le violet n'est qu'une étape de pipeline et une
-couleur d'avatar ; et l'encre vert-noir porte tout le contraste du rail de
-navigation et de la fluxbar.
+**Le prototype ne fait plus foi sur la couleur** depuis le jalon 23 : la marque
+l'a remplacé. Voir « Palette de marque » ci-dessous. Il reste la référence pour
+le modèle de données, les règles métier et la mise en page.
+
+---
+
+## Palette de marque
+
+Reprise du logo — un « A » traversé par une vague cyan → bleu → violet. Tous les
+jetons vivent dans `app/globals.css` sous `@theme` ; il n'y a pas de
+`tailwind.config.ts`. **On change la couleur à la source, jamais classe par
+classe.**
+
+| Rôle | Jeton | Valeur |
+|---|---|---|
+| Action primaire | `brand` | `#4B3FE4` |
+| Survol / lien | `brand-d` | `#3A2FC7` |
+| Teinte claire | `brand-l` | `#EFEDFF` |
+| Marque sur fond sombre | `brand-lift` | `#A9A2F5` |
+| Rail | `rail` / `rail-2` / `rail-3` | `#0B1030` / `#161C42` / `#232B5C` |
+| Texte du rail | `rail-text` / `rail-dim` | `#9AA4CE` / `#828CBC` |
+| Réussite | `win` / `win-d` / `win-l` | `#0FA88F` / `#0B7A68` / `#DFF3EF` |
+| Encre | `ink` / `ink-2` / `ink-3` | `#0D1220` / `#161C2E` / `#232B42` |
+| Neutres | `muted` / `line` / `line-2` | `#6B7192` / `#DEE0EA` / `#ECEEF4` |
+
+**`brand` porte l'action, `win` porte la réussite, et l'un ne remplace jamais
+l'autre.** Boutons, liens, entrée de navigation active, anneau de focus, états
+sélectionnés, série primaire des graphiques : `brand`. Affaire gagnée, statut
+sain, sauvegarde à jour, cycle `Client`, étape `Gagné` : `win`. Une menthe qui
+sert aussi de couleur d'action ne veut plus rien dire — c'était le défaut du
+prototype, où « Enregistrer » et « affaire gagnée » portaient le même vert.
+
+Ambre, rouge, violet et bleu ne bougent pas : ce sont des couleurs sémantiques,
+pas des couleurs de marque.
+
+### Contrastes mesurés
+
+| Paire | Ratio | Seuil |
+|---|---|---|
+| blanc sur `brand` | 6.7:1 | AA texte |
+| blanc sur `brand-d` | 8.7:1 | AA texte |
+| `brand` sur blanc (liens) | 6.7:1 | AA texte |
+| `brand-d` sur `brand-l` | 7.6:1 | AA texte |
+| blanc sur `rail` | 18.6:1 | AA texte |
+| `rail-text` sur `rail` | 7.6:1 | AA texte |
+| `rail-dim` sur `rail` | 5.7:1 | AA texte |
+| blanc sur `rail-3` (entrée active) | 14.2:1 | AA texte |
+| `brand-lift` sur `rail` | 8.1:1 | AA texte / icônes |
+| `brand-lift` sur `rail-3` | 6.2:1 | AA texte / icônes |
+| `win-d` sur `win-l` | 4.6:1 | AA texte |
+| `muted` sur blanc | 4.9:1 | AA texte |
+| bande la plus claire de l'entonnoir, texte blanc | 4.65:1 | AA texte |
+
+Deux pièges relevés et corrigés au passage : **le blanc sur menthe pleine ne
+donne que 3.0:1** — d'où l'interdiction du texte blanc sur `win` plein, la
+réussite s'affiche en `win-d` sur `win-l` ; et **le bleu-violet plein ne donne
+que 2.1:1 sur le rail actif** — d'où `brand-lift`, seule variante admise sur
+fond sombre. L'ancien `muted` vert-gris (`#63807A`) plafonnait à 4.3:1, sous le
+seuil, alors qu'il porte les libellés secondaires du tableau des contacts.
+
+Le logo vit dans `components/brand/logo.tsx` (`Mark`, `Wordmark`) et dans
+`app/icon.svg` pour la favicon. **Le tracé est une reconstruction, pas un
+calque** : le fichier source n'a jamais été lisible côté agent. Remplacer le
+corps de `Mark` et le contenu de `app/icon.svg` suffit à installer le vrai —
+aucun autre fichier ne connaît la forme.
 
 Le seed est en revanche étendu aux volumes du brief (12 sociétés, 18 contacts,
 24 affaires), en conservant les 8 sociétés du prototype comme noyau.
@@ -2975,3 +3036,10 @@ jeu de démonstration, pas sur des qualifications réelles.
 **`components/contacts/contact-form.tsx` reste à 276 lignes**, au-dessus de la
 limite de 250. Il en faisait 300 avant ce jalon : trois extractions l'ont réduit
 sans le ramener sous la barre. C'est de la dette reconnue, pas un oubli.
+
+**Le logo est un dessin, pas un calque du fichier fourni.** L'image existe dans
+la conversation, elle n'existe pas sur le disque : rien ne permettait de la lire
+octet par octet, et aucun vectoriseur (potrace, ImageMagick) n'est installé.
+Le tracé de `components/brand/logo.tsx` suit la description — « A » traversé par
+une vague cyan → bleu → violet, fond transparent — sans prétendre en reproduire
+les courbes. Il est isolé pour que la substitution coûte un fichier.

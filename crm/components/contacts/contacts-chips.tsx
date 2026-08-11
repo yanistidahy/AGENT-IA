@@ -47,7 +47,7 @@ export function ContactChips({
           type="button"
           onClick={() => onChange({ lifecycle: value })}
           className={`${CHIP} ${
-            lifecycle === value ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
+            lifecycle === value ? "bg-brand text-white" : "text-muted hover:bg-surface-2"
           }`}
         >
           {value === "all" ? "Tous" : value}
@@ -61,7 +61,7 @@ export function ContactChips({
       onClick={() => onExpand()}
       className={`rounded-control border px-2.5 py-1.5 text-[12.5px] font-semibold transition-colors ${
         followUpActive
-          ? "border-flux bg-flux-l text-flux-d"
+          ? "border-brand bg-brand-l text-brand-d"
           : "border-line bg-surface text-muted hover:bg-surface-2"
       }`}
     >
@@ -77,7 +77,7 @@ export function ContactChips({
         onClick={() => onChange({ followUp: null, incomplete: null })}
         className={`${CHIP} ${
           followUp === null && !incomplete
-            ? "bg-ink text-white"
+            ? "bg-brand text-white"
             : "text-muted hover:bg-surface-2"
         }`}
       >
@@ -89,7 +89,7 @@ export function ContactChips({
           type="button"
           onClick={() => onChange({ followUp: value, incomplete: null })}
           className={`${CHIP} ${
-            followUp === value ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
+            followUp === value ? "bg-brand text-white" : "text-muted hover:bg-surface-2"
           }`}
         >
           {CONTACT_FILTER_LABELS[value]}
@@ -110,7 +110,7 @@ export function ContactChips({
         type="button"
         onClick={() => onChange({ incomplete: incomplete ? null : "1", followUp: null })}
         className={`${CHIP} ${
-          incomplete ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
+          incomplete ? "bg-brand text-white" : "text-muted hover:bg-surface-2"
         }`}
       >
         Contacts incomplets

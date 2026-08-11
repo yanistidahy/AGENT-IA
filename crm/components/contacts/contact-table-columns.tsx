@@ -140,7 +140,7 @@ export const CONTACT_COLUMNS: readonly ContactColumn[] = [
         <a
           href={`tel:${contact.phone.replace(/\s/g, "")}`}
           onClick={(event) => event.stopPropagation()}
-          className="text-flux-d hover:underline"
+          className="text-brand-d hover:underline"
         >
           {contact.phone}
         </a>

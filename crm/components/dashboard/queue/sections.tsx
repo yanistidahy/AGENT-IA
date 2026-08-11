@@ -80,7 +80,7 @@ export function QueueSections({
                       checked={allSelected}
                       onChange={() => onSelectMany(ids)}
                       aria-label={`Sélectionner les ${ids.length} lignes de ${cluster.company ?? ""}`}
-                      className="size-3.5 shrink-0 accent-[#0b7a68]"
+                      className="size-3.5 shrink-0 accent-brand-d"
                     />
                     <button
                       type="button"

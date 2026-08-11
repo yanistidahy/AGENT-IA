@@ -27,7 +27,7 @@ interface ColumnFilterProps {
 }
 
 const INPUT =
-  "w-full rounded-control border border-line bg-surface px-2 py-1 text-[12.5px] outline-none focus:border-flux";
+  "w-full rounded-control border border-line bg-surface px-2 py-1 text-[12.5px] outline-none focus:border-brand";
 
 export function ColumnFilterMenu({ column, facets, value, onChange }: ColumnFilterProps) {
   const [open, setOpen] = useState(false);
@@ -79,7 +79,7 @@ export function ColumnFilterMenu({ column, facets, value, onChange }: ColumnFilt
         title={active ? `Filtre actif sur ${column.label}` : `Filtrer ${column.label}`}
         className={`ml-1 inline-flex size-[18px] items-center justify-center rounded-[4px] border text-[10px] transition-colors ${
           active
-            ? "border-flux bg-flux text-white"
+            ? "border-brand bg-brand text-white"
             : "border-transparent text-muted hover:border-line hover:bg-surface-2"
         }`}
       >
@@ -110,7 +110,7 @@ export function ColumnFilterMenu({ column, facets, value, onChange }: ColumnFilt
               <div className="mb-2 flex gap-2 text-[11.5px]">
                 <button
                   type="button"
-                  className="underline hover:text-flux-d"
+                  className="underline hover:text-brand-d"
                   onClick={() =>
                     onChange({ kind: "text", values: shown.map((facet) => facet.value) })
                   }
@@ -119,7 +119,7 @@ export function ColumnFilterMenu({ column, facets, value, onChange }: ColumnFilt
                 </button>
                 <button
                   type="button"
-                  className="underline hover:text-flux-d"
+                  className="underline hover:text-brand-d"
                   onClick={() => onChange(null)}
                 >
                   Tout effacer
@@ -185,7 +185,7 @@ function DateFilterBody({
                 )
               }
               className={`w-full rounded-control px-2 py-1 text-left text-[12.5px] transition-colors ${
-                current?.preset === preset ? "bg-flux-l text-flux-d" : "hover:bg-surface-2"
+                current?.preset === preset ? "bg-brand-l text-brand-d" : "hover:bg-surface-2"
               }`}
             >
               {DATE_PRESET_LABELS[preset]}
@@ -227,7 +227,7 @@ function DateFilterBody({
       <button
         type="button"
         onClick={() => onChange(null)}
-        className="mt-2 text-[11.5px] underline hover:text-flux-d"
+        className="mt-2 text-[11.5px] underline hover:text-brand-d"
       >
         Tout effacer
       </button>
@@ -277,7 +277,7 @@ function NumberFilterBody({
       <button
         type="button"
         onClick={() => onChange(null)}
-        className="mt-2 text-[11.5px] underline hover:text-flux-d"
+        className="mt-2 text-[11.5px] underline hover:text-brand-d"
       >
         Tout effacer
       </button>

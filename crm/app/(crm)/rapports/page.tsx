@@ -61,7 +61,7 @@ export default async function RapportsPage({
               key={option.value}
               href={`/rapports?periode=${option.value}`}
               className={`border-r border-line px-3 py-1.5 text-[12.5px] font-semibold transition-colors last:border-r-0 ${
-                current === option.value ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
+                current === option.value ? "bg-brand text-white" : "text-muted hover:bg-surface-2"
               }`}
             >
               {option.label}

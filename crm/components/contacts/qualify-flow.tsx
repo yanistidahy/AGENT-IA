@@ -77,7 +77,7 @@ export function QualifyFlow({
       detail: (
         <Link
           href={`/affaires?status=all&fiche=${encodeURIComponent(dealId)}`}
-          className="underline hover:text-flux-d"
+          className="underline hover:text-brand-d"
         >
           {created ? "Ouvrir l'affaire" : `Ouvrir « ${dealName} »`}
         </Link>

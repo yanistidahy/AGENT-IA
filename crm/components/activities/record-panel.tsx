@@ -147,7 +147,7 @@ export function RecordPanel({
       </div>
 
       {notice !== null && panel === "none" && (
-        <p className="mb-3 rounded-control border border-[#B9E7DC] bg-flux-l px-3 py-2 text-[12.5px] text-flux-d">
+        <p className="mb-3 rounded-control border border-[#D3CEFA] bg-brand-l px-3 py-2 text-[12.5px] text-brand-d">
           {notice}
         </p>
       )}
@@ -225,7 +225,7 @@ function Action({
       onClick={onClick}
       className={`rounded-control border px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${
         active
-          ? "border-flux bg-flux-l text-flux-d"
+          ? "border-brand bg-brand-l text-brand-d"
           : "border-line bg-surface hover:bg-surface-2"
       }`}
     >

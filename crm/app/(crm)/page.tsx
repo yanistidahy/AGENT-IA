@@ -91,7 +91,7 @@ export default async function HomePage({
       <Shell deploy={deploy} renderedAt={renderedAt} backup={backup}>
         <section className="rounded-card border border-line bg-surface p-5 shadow-card">
           <div className="flex items-center gap-2.5">
-            <span aria-hidden className="size-2 rounded-full bg-flux" />
+            <span aria-hidden className="size-2 rounded-full bg-brand" />
             <h2 className="font-display text-[15px] font-semibold">Base de données connectée</h2>
           </div>
           <Counters counts={status.counts} />
@@ -155,7 +155,7 @@ export default async function HomePage({
           </ul>
           {recommendations.length > 3 && (
             <p className="mt-2 text-[12.5px] text-muted">
-              <Link href="/conseil/suggestions" className="underline hover:text-flux-d">
+              <Link href="/conseil/suggestions" className="underline hover:text-brand-d">
                 Voir les {recommendations.length} recommandations
               </Link>
             </p>

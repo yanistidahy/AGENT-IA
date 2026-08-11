@@ -72,7 +72,7 @@ export function Fluxbar({ deals, stages }: FluxbarProps) {
         {segments.map((segment) => (
           <span
             key={segment.stage.id}
-            className="flex items-center gap-1.5 text-[11.5px] text-[#9DB5B0]"
+            className="flex items-center gap-1.5 text-[11.5px] text-[#9AA4CE]"
           >
             <i
               aria-hidden
@@ -98,12 +98,12 @@ function Metric({
 }) {
   return (
     <div>
-      <div className="font-mono text-[9.5px] tracking-[0.14em] text-[#7E9994] uppercase">
+      <div className="font-mono text-[9.5px] tracking-[0.14em] text-[#828CBC] uppercase">
         {label}
       </div>
       <div
         className={`font-display text-[26px] font-semibold tracking-tight tabular-nums ${
-          accent ? "text-flux" : ""
+          accent ? "text-brand" : ""
         }`}
       >
         {value}
@@ -113,7 +113,7 @@ function Metric({
 }
 
 function Separator() {
-  return <span aria-hidden className="h-[26px] w-px bg-[#263B37]" />;
+  return <span aria-hidden className="h-[26px] w-px bg-[#232B5C]" />;
 }
 
 /** Réexporté pour la fiche : même calcul, même arrondi. */

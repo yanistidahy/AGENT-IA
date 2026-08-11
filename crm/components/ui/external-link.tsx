@@ -15,7 +15,7 @@ import { externalLabel, externalUrl } from "@/lib/domain/links";
  */
 export function ExternalLink({
   value,
-  className = "text-flux-d hover:underline",
+  className = "text-brand-d hover:underline",
 }: {
   value: string;
   className?: string;

@@ -30,7 +30,7 @@ export function MaintenanceBlock({
           type="button"
           disabled={disabled}
           onClick={onApply}
-          className="ml-auto rounded-control bg-flux px-3.5 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-flux-d disabled:opacity-50"
+          className="ml-auto rounded-control bg-brand px-3.5 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-brand-d disabled:opacity-50"
         >
           Appliquer
         </button>

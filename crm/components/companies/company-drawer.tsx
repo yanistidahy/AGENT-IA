@@ -125,7 +125,7 @@ export function CompanyDrawer({
           {company.contacts.length === 0 ? (
             <p className="rounded-card border border-dashed border-line px-3.5 py-4 text-[12.5px] text-muted">
               Aucun contact rattaché.{" "}
-              <Link href="/contacts" className="text-flux-d hover:underline">
+              <Link href="/contacts" className="text-brand-d hover:underline">
                 Ajouter un contact
               </Link>
             </p>

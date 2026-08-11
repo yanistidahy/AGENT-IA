@@ -128,7 +128,7 @@ export function SnapshotsPanel() {
         {busy ? "En cours…" : "Sauvegarder maintenant"}
       </button>
 
-      {notice !== null && <p className="mt-2 text-[12.5px] text-flux-d">{notice}</p>}
+      {notice !== null && <p className="mt-2 text-[12.5px] text-win-d">{notice}</p>}
       {error !== null && <p className="mt-2 text-[12.5px] text-[#B2311F]">{error}</p>}
 
       {data !== null && data.snapshots.length === 0 && data.problem === null && (

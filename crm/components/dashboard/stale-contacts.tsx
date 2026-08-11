@@ -150,7 +150,7 @@ export function StaleContacts({ contacts, sort, limit = 12 }: StaleContactsProps
       {contacts.length > shown.length && (
         <p className="border-t border-line px-3.5 py-2 text-[12px] text-muted">
           {shown.length} sur {contacts.length} —{" "}
-          <Link href="/contacts?sort=lastContact&dir=asc" className="text-flux-d hover:underline">
+          <Link href="/contacts?sort=lastContact&dir=asc" className="text-brand-d hover:underline">
             voir tous les contacts
           </Link>
         </p>

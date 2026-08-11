@@ -80,7 +80,7 @@ export function ImportDialog({ open, onClose, onImported }: ImportDialogProps) {
         value={text}
         onChange={(event) => setText(event.target.value)}
         placeholder={"Prénom\tNom\tEmail\tSociété\nMarie\tDurand\tmarie@acme.fr\tACME"}
-        className="w-full rounded-control border border-line bg-surface px-2.5 py-2 font-mono text-[12.5px] outline-none focus:border-flux"
+        className="w-full rounded-control border border-line bg-surface px-2.5 py-2 font-mono text-[12.5px] outline-none focus:border-brand"
       />
 
       <label className="mt-3 flex items-start gap-2 text-[13px]">
@@ -139,7 +139,7 @@ export function ImportDialog({ open, onClose, onImported }: ImportDialogProps) {
           type="button"
           disabled={busy || preview === null}
           onClick={() => void run()}
-          className="rounded-control bg-flux px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-flux-d disabled:opacity-45"
+          className="rounded-control bg-brand px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-d disabled:opacity-45"
         >
           {busy ? "Import en cours…" : "Importer"}
         </button>
@@ -157,7 +157,7 @@ export function ImportDialog({ open, onClose, onImported }: ImportDialogProps) {
 
 function ReportCard({ report }: { report: ImportReport }) {
   return (
-    <div className="mt-3 rounded-card border border-line bg-flux-l px-3.5 py-3 text-[12.5px] text-flux-d">
+    <div className="mt-3 rounded-card border border-line bg-win-l px-3.5 py-3 text-[12.5px] text-win-d">
       <b className="font-display text-[14px]">
         {report.created} créé(s) · {report.updated} mis à jour · {report.duplicates} ignoré(s)
       </b>

@@ -57,7 +57,7 @@ export function AlertList({ alerts, limit = 8 }: { alerts: readonly Alert[]; lim
           <li key={`${alert.kind}-${alert.targetId}`}>
             <Link
               href={hrefFor(alert)}
-              className={`flex items-start gap-2.5 rounded-card border px-3.5 py-2.5 transition-colors hover:border-flux ${STYLES[alert.level]}`}
+              className={`flex items-start gap-2.5 rounded-card border px-3.5 py-2.5 transition-colors hover:border-brand ${STYLES[alert.level]}`}
             >
               <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${DOTS[alert.level]}`} />
               <span className="min-w-0">
