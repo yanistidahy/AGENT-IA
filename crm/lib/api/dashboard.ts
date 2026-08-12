@@ -13,6 +13,7 @@ import type {
   TaskPriority,
 } from "../domain/types";
 import { getPilotage, listStages } from "./reference";
+import { REAL_ACTIVITY } from "./real-activity";
 import { ANSWERED_OUTCOMES } from "../domain/status";
 import type { FunnelInput } from "../domain/funnel";
 
@@ -25,6 +26,8 @@ import type { FunnelInput } from "../domain/funnel";
  */
 
 export interface StaleContact {
+  /** Statut saisi, pour que la pastille résolve comme sur /contacts. */
+  readonly status: string;
   readonly id: string;
   readonly firstName: string;
   readonly lastName: string;
@@ -110,7 +113,8 @@ async function readStaleContacts(
       lastContact: true,
       nextReminder: true,
       company: { select: { name: true } },
-      _count: { select: { activities: true } },
+      status: true,
+      _count: { select: { activities: { where: REAL_ACTIVITY } } },
       tasks: {
         where: { done: false },
         select: { title: true, due: true },
@@ -129,6 +133,10 @@ async function readStaleContacts(
         activityCount: row._count.activities,
       };
       return {
+        // Le statut **saisi** voyage avec la ligne : sans lui, l'accueil
+        // affichait le calcul pendant que /contacts affichait la saisie — 110
+        // fiches en désaccord sur la base de vérification.
+        status: row.status,
         id: row.id,
         firstName: row.firstName,
         lastName: row.lastName,

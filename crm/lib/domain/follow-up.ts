@@ -187,18 +187,15 @@ export function appliedInSql(filter: ContactFilter): boolean {
   return SQL_ONLY_FILTERS.includes(filter);
 }
 
-/** Un contact passe-t-il le filtre ? Le statut n'intervient que pour deux d'entre eux. */
-export function matchesContactFilter(
-  contact: FollowUpLike,
-  filter: ContactFilter,
-  settings: PilotageSettings,
-  now: Date,
-): boolean {
-  if (filter === "reminder") return contact.nextReminder !== null;
-  // Déjà tranché ailleurs : répondre « faux » ici viderait la liste.
-  if (appliedInSql(filter)) return true;
-  return followUpStatus(contact, settings, now) === filter;
-}
+/**
+ * `matchesContactFilter` a déménagé dans `lib/domain/contact-status.ts`.
+ *
+ * Il décidait ici sur le seul statut **calculé**, en ignorant le statut saisi —
+ * si bien que 66 fiches portant « Jamais contacté » en base n'étaient pas
+ * renvoyées par la puce du même nom. Le filtre doit lire la même décision que
+ * la pastille, et cette décision a besoin des deux modules : elle vit donc
+ * au-dessus, pas ici.
+ */
 
 /**
  * Lecture d'une échéance de relance, pour la hiérarchie visuelle de la liste.

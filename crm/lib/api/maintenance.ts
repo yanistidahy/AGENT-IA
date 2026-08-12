@@ -4,6 +4,7 @@ import { fold, searchText } from "../domain/text";
 import { nameOverflow, splitOverflow } from "../domain/status";
 import { LOST_LIFECYCLE } from "../domain/lost";
 import { countOtherPatterns, findSiteLine, type OtherPatternCounts } from "../domain/notes-extract";
+import { REAL_ACTIVITY } from "./real-activity";
 import type { SheetSite } from "@/scripts/sites-2026-08";
 
 /**
@@ -179,7 +180,10 @@ const CANDIDATE_FIELDS = {
   lostReason: true,
   lastContact: true,
   company: { select: { name: true } },
-  _count: { select: { activities: true } },
+  // Nos propres notes de correction ne comptent pas comme une touche : sans ce
+  // filtre, un second passage promeut en « Prospect » des fiches que seule la
+  // correction précédente a « touchées ».
+  _count: { select: { activities: { where: REAL_ACTIVITY } } },
 } satisfies Prisma.ContactSelect;
 
 type Candidate = Prisma.ContactGetPayload<{ select: typeof CANDIDATE_FIELDS }>;

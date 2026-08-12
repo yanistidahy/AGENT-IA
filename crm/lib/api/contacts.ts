@@ -7,11 +7,13 @@ import {
   followUpRank,
   followUpStatus,
   idleDays,
-  matchesContactFilter,
+
   type FollowUpStatus,
 } from "../domain/follow-up";
 import { isLost, LOST_LIFECYCLE } from "../domain/lost";
 import { ANSWERED_OUTCOMES, isStale, nameOverflow } from "../domain/status";
+import { matchesContactFilter } from "../domain/contact-status";
+import { REAL_ACTIVITY } from "./real-activity";
 import { searchText, searchTerm } from "../domain/text";
 import { addDays, daysSince, startOfDay } from "../domain/dates";
 import type { FilterState } from "../domain/column-filters";
@@ -126,11 +128,17 @@ const contactInclude = {
   // de tentatives, combien sans réponse » se répond en SQL, et rapatrier
   // l'historique de cent quarante fiches pour en compter deux nombres serait
   // payer une lecture entière pour un affichage.
-  _count: { select: { activities: true } },
+  // `where` posé sur les deux : une note de correction n'est pas une prise de
+  // contact, et la compter fait mentir « jamais contacté ». Voir
+  // lib/api/real-activity.ts.
+  _count: { select: { activities: { where: REAL_ACTIVITY } } },
   // La dernière interaction seule : elle sert à repérer un statut figé et à
   // nommer le dernier canal, pas à afficher la chronologie — celle-ci est
-  // chargée à l'ouverture du tiroir.
+  // chargée à l'ouverture du tiroir. Une note de correction est plus récente
+  // que le statut qu'elle vient d'écrire : la compter figerait toutes les
+  // fiches corrigées.
   activities: {
+    where: REAL_ACTIVITY,
     select: { date: true, type: true, outcome: true },
     orderBy: { date: "desc" },
     take: 1,
@@ -151,7 +159,7 @@ async function unansweredByContact(ids: readonly string[]): Promise<Map<string, 
   if (ids.length === 0) return new Map();
   const rows = await prisma.activity.groupBy({
     by: ["contactId"],
-    where: { contactId: { in: [...ids] }, outcome: "no-answer" },
+    where: { contactId: { in: [...ids] }, outcome: "no-answer", ...REAL_ACTIVITY },
     _count: { _all: true },
   });
   const map = new Map<string, number>();
@@ -355,12 +363,16 @@ function contactsWhere(
   // Les bandes de l'entonnoir : trois questions d'historique, une clause SQL
   // chacune. En mémoire il faudrait charger les interactions de chaque fiche
   // pour répondre à ce qu'un `EXISTS` tranche en base.
-  if (query.followUp === "contacted") and.push({ activities: { some: {} } });
+  if (query.followUp === "contacted") and.push({ activities: { some: REAL_ACTIVITY } });
   if (query.followUp === "recent") {
-    and.push({ activities: { some: { date: { gte: addDays(startOfDay(now), -7) } } } });
+    and.push({
+      activities: { some: { ...REAL_ACTIVITY, date: { gte: addDays(startOfDay(now), -7) } } },
+    });
   }
   if (query.followUp === "answered") {
-    and.push({ activities: { some: { outcome: { in: [...ANSWERED_OUTCOMES] } } } });
+    and.push({
+      activities: { some: { ...REAL_ACTIVITY, outcome: { in: [...ANSWERED_OUTCOMES] } } },
+    });
   }
 
   // Recherche insensible aux accents : elle porte sur le miroir normalisé, pas
@@ -433,6 +445,9 @@ function applyDerived(
           lastContact: contact.lastContact,
           nextReminder: contact.nextReminder,
           activityCount: contact.activityCount,
+          // Le statut saisi entre dans la décision : sans lui, la puce
+          // « Jamais contacté » ignorait 66 fiches qui le portaient en base.
+          status: contact.status,
         },
         filter,
         settings,

@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "../db";
+import { CORRECTION_OWNER } from "./real-activity";
 import { toActivityType } from "../domain/guards";
 import { addDays, daysSince, startOfDay } from "../domain/dates";
 import { QUALIFIED } from "../domain/qualification";
@@ -32,12 +33,11 @@ import { listStages } from "./reference";
 export const RHYTHM_WEEKS = 12;
 
 /**
- * Propriétaire des interactions écrites par les corrections de données.
- *
- * Elles racontent ce que le CRM s'est fait à lui-même, pas ce que quelqu'un a
- * fait à un prospect. Toute mesure d'activité les exclut.
+ * Réexporté pour ne pas casser les appelants ; la définition vit désormais dans
+ * `lib/api/real-activity.ts`, partagée avec le statut de relance. Une règle
+ * écrite deux fois est une règle qui divergera — et elle avait divergé.
  */
-export const CORRECTION_OWNER = "Correction";
+export { CORRECTION_OWNER } from "./real-activity";
 
 export interface ProspectingReport {
   readonly rhythm: readonly WeekBucket[];

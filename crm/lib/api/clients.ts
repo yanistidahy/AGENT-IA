@@ -2,6 +2,7 @@ import type { FilterState } from "../domain/column-filters";
 import { facetsFor, matchesAll, type FacetValue } from "../domain/column-match";
 import { CLIENT_FACET_COLUMNS } from "./client-columns";
 import { prisma } from "../db";
+import { REAL_ACTIVITY } from "./real-activity";
 import {
   followUpRank,
   followUpStatus,
@@ -24,6 +25,8 @@ import { DEFAULT_PILOTAGE, type PilotageSettings } from "../domain/types";
  * société pèse. La fiche société porte l'autre lecture.
  */
 export interface ClientRow {
+  /** Statut saisi, pour que la pastille résolve comme sur /contacts. */
+  readonly status: string;
   readonly id: string;
   readonly firstName: string;
   readonly lastName: string;
@@ -79,7 +82,8 @@ export async function readClients(
       nextReminder: true,
       company: { select: { name: true } },
       deals: { select: { amount: true, status: true, closedAt: true } },
-      _count: { select: { activities: true } },
+      status: true,
+      _count: { select: { activities: { where: REAL_ACTIVITY } } },
     },
   });
 
@@ -98,6 +102,7 @@ export async function readClients(
     };
 
     return {
+      status: row.status,
       id: row.id,
       firstName: row.firstName,
       lastName: row.lastName,

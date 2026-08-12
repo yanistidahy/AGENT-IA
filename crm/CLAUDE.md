@@ -337,6 +337,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 24 | **Le site sort des Notes** — LinkedIn visible sans dépli, icônes d'en-tête, extraction contrôlée | **livré, à valider** |
 | 25 | **La question des domaines, tranchée** — relecture de la feuille, report des 15 adresses réelles, propositions relues une par une | **livré, à valider** |
 | 26 | **Acceptation groupée des seules déductions** — garde-fou serveur, tri par ressemblance, annulation de dix secondes | **livré, à valider** |
+| 27 | **Audit du statut de relance** — la correction se réfutait elle-même ; une seule décision, test de parité | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -3372,3 +3373,131 @@ file d'accueil, à un volume plus grand.
 transaction d'ensemble : une coupure au milieu laisse les lignes déjà écrites
 écrites — et sans bandeau pour les défaire. À 105 lignes c'est instantané ; à
 plusieurs milliers, il faudrait découper en lots.
+
+---
+
+## Jalon 27 — le statut de relance, audité puis unifié
+
+### Le symptôme, et ce qu'il cachait
+
+La puce « Jamais contacté » de `/contacts` renvoyait **2** contacts alors que la
+correction de feuille venait d'en écrire **67**. Audit mené sur une base
+reconstituée depuis la feuille (154 fiches), correction appliquée pour
+reproduire l'état signalé.
+
+**La cause n'est pas dans les filtres : c'est la correction qui se réfutait
+elle-même.** `applyStatusFix()` consigne une interaction par fiche pour
+expliquer ce qu'elle écrit — c'est ce qui rend l'historique lisible six mois
+plus tard. Mais `followUpStatus()` teste `activityCount === 0` pour dire
+« jamais contacté ». En écrivant le statut, la correction créait l'interaction
+qui le contredit : 135 notes de correction, 134 fiches n'ayant **que** cela,
+18 fiches portant une interaction réelle.
+
+Le jalon 22 avait déjà rencontré ce piège sur les rapports de prospection —
+149 interactions dont 148 étaient nos propres notes — et posé `CORRECTION_OWNER`
+dans `lib/api/prospecting.ts`. L'exclusion n'avait jamais atteint le statut de
+relance.
+
+### Les cinq divergences trouvées, et leur fichier
+
+| # | Divergence | Où |
+|---|---|---|
+| 1 | Les notes de correction comptaient comme prise de contact | `lib/api/contacts.ts` `_count: { activities: true }` |
+| 2 | Les puces filtraient sur le statut **calculé**, la pastille affichait le **saisi** | `lib/domain/follow-up.ts` `matchesContactFilter()` |
+| 3 | `/accueil` et `/clients` ne lisaient jamais le champ saisi | `lib/api/dashboard.ts` `readStaleContacts()`, `lib/api/clients.ts` |
+| 4 | Les outils du conseil non plus | `lib/agents/tools/reads.ts` `searchContacts` |
+| 5 | « Statut figé » comptait la note de la correction comme interaction postérieure | `lib/api/contacts.ts`, dernière `activities` |
+
+Mesures avant / après, mêmes 154 fiches :
+
+| Surface | Avant | Après |
+|---|---|---|
+| stocké « Jamais contacté » | 66 | 66 |
+| puce « Jamais contacté » | **2** | **68** |
+| puce « Sans nouvelles » | 39 | 4 |
+| puce « Déjà contactés » | 128 | 18 |
+| puce « Contactés cette semaine » | 119 | 9 |
+| puce « Statut figé » | 110 | 0 |
+| `/accueil` en désaccord avec `/contacts` | **110 fiches** | **0** |
+| `/clients` en désaccord | 0 | 0 |
+| outils du conseil en désaccord | (calcul seul) | 0 |
+
+Les 68 de la puce sont les 66 saisis plus 2 fiches sans statut saisi dont le
+calcul dit « jamais » — la puce montre le **statut résolu**, pas le champ.
+
+### Une seule décision, deux fonctions
+
+`lib/domain/contact-status.ts` est créé au-dessus de `follow-up.ts` (le calcul)
+et de `status.ts` (la saisie) — au-dessus et non entre les deux, pour que
+l'ordre des dépendances reste acyclique.
+
+- **`resolveContactStatus()`** décide du statut d'un contact. Toutes les
+  surfaces l'appellent, directement ou via `ContactStatusTag`.
+- **`matchesContactFilter()`** décide de ce que chaque puce sélectionne. Il a
+  déménagé de `follow-up.ts`, où il ne voyait que le calcul. Aucune vue ne
+  réimplémente ce prédicat.
+
+`resolveStatus()` rend désormais une **clé canonique** (`key`) en plus du
+libellé : c'est elle que les puces comparent. Un libellé saisi hors vocabulaire
+du domaine — « Contacté — en attente », « Intéressé » — rend `key: null` et
+n'est revendiqué par aucune puce. C'est un fait sur le vocabulaire, pas un
+oubli, et le test de parité l'impose.
+
+`lib/api/real-activity.ts` porte `CORRECTION_OWNER` et le fragment Prisma
+`REAL_ACTIVITY`, posé partout où l'on **mesure** l'activité — jamais où on
+l'**affiche** : la chronologie d'une fiche doit montrer les corrections.
+`prospecting.ts` réexporte la constante au lieu d'en garder une copie.
+
+### Le test de parité
+
+`lib/domain/__tests__/status-parity.test.ts`, dans la lignée de
+`column-filters-parity.test.ts` et `no-duplicate-thresholds.test.ts` : dix-huit
+fiches couvrant les cinq statuts calculés croisés avec les statuts saisis, et
+trois invariants — la pastille et les puces désignent le même statut ; un
+contact appartient à **au plus une** puce de statut ; un libellé libre n'est
+revendiqué par aucune.
+
+Éprouvé en écrivant d'abord une assertion trop forte : le test a signalé que
+`due`, `planned` et `waiting` n'ont **pas** de puce, ce qui est correct — `due`
+et `planned` sont couverts par la puce de date « À relancer », `waiting` est
+l'état par défaut. L'invariant a été resserré sur ce fait plutôt que l'inverse.
+
+### Jalon 27 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, 154 fiches issues de la feuille, correction des
+statuts appliquée :
+
+- **0 désaccord** entre `/contacts`, `/accueil`, `/clients` et les outils du
+  conseil, contact par contact, sur le libellé réellement affiché ;
+- **0 fiche** portant « Jamais contacté » en base et absente de la puce, contre
+  66 avant ; **0 fiche** dans la puce portant un autre statut saisi ;
+- `never ∩ contacted = 0`, `recent ⊆ contacted`, `answered ⊆ contacted` ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (608 tests) verts.
+
+### Jalon 27 — ce qui n'est pas fait, et vous attend
+
+**La seconde rangée de puces n'a pas été réduite** — c'est votre décision. Ce
+qu'elles sélectionnent, mesuré :
+
+| Puce | Sélectionne | Verdict |
+|---|---|---|
+| À relancer | toute relance programmée (date) | garder — c'est le pipeline de relances |
+| Sans nouvelles | statut résolu `silent` | garder |
+| Jamais contacté | statut résolu `never` | garder |
+| Statut figé | statut saisi antérieur à la dernière vraie interaction | garder — outil d'hygiène |
+| Déjà contactés | ≥ 1 interaction réelle | **redondant** : c'est le complément exact de « Jamais contacté » |
+| Contactés cette semaine | ≥ 1 interaction < 7 j | sous-ensemble de « Déjà contactés » |
+| Ont répondu | ≥ 1 interaction à issue ≠ « pas de réponse » | sous-ensemble de « Déjà contactés » |
+
+Les trois dernières viennent des bandes de l'entonnoir de l'accueil (jalon 20),
+où chaque bande devait mener quelque part. Recommandation : **retirer « Déjà
+contactés »** (strictement complémentaire de « Jamais contacté », donc du bruit)
+et **garder « Contactés cette semaine » et « Ont répondu »**, qui ne se
+déduisent d'aucune autre — au prix de conserver leur cible pour les liens de
+l'entonnoir. Cinq puces plutôt que sept.
+
+**Les chiffres viennent d'une base reconstituée**, pas de la vôtre. La
+répartition de production différera ; le mécanisme, lui, est celui-ci.
+
+**La puce « Ont répondu » renvoie 0** sur cette base — aucune interaction n'y
+porte d'issue renseignée. Le filtre est correct, la donnée manque.

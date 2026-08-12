@@ -5,17 +5,18 @@ import {
   followUpStatus,
   idleDays,
   isContactFilter,
-  matchesContactFilter,
   describeReminder,
-  type FollowUpLike,
 } from "../follow-up";
+import { matchesContactFilter, type ContactStatusLike } from "../contact-status";
 import { DEFAULT_PILOTAGE } from "../types";
 
 const now = new Date("2026-08-08T10:00:00Z");
 const settings = DEFAULT_PILOTAGE; // staleDays 7, coldDays 14
 
-function contact(overrides: Partial<FollowUpLike> = {}): FollowUpLike {
-  return { lastContact: null, nextReminder: null, activityCount: 0, ...overrides };
+function contact(overrides: Partial<ContactStatusLike> = {}): ContactStatusLike {
+  return {
+    // Statut saisi vide par défaut : ces cas exercent le **calcul**.
+    status: "", lastContact: null, nextReminder: null, activityCount: 0, ...overrides };
 }
 
 describe("followUpStatus", () => {
