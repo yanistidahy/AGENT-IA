@@ -3,14 +3,17 @@ import { readJson } from "@/lib/api/request";
 import {
   applyLifecycleFix,
   applySearchBackfill,
+  applyWebsiteFix,
   lifecycleSnapshot,
   planLifecycleFix,
   planNameFix,
   planSearchBackfill,
+  planWebsiteFix,
   applyNameFix,
   applyStatusFix,
   planStatusFix,
   statusSnapshot,
+  websiteSnapshot,
 } from "@/lib/api/maintenance";
 import { STATUS_CORRECTIONS } from "@/scripts/corrections-2026-08";
 import {
@@ -33,7 +36,7 @@ export const dynamic = "force-dynamic";
  * `GET` simule et n'écrit rien. `POST` écrit, et exige de nommer l'opération :
  * une requête vide ne peut pas déclencher une écriture par accident.
  */
-const OPERATIONS = ["search", "lifecycles", "names", "statuses"] as const;
+const OPERATIONS = ["search", "lifecycles", "names", "statuses", "websites"] as const;
 
 const applySchema = z.object({
   operation: z.enum(OPERATIONS, { error: "Opération inconnue" }),
@@ -43,11 +46,12 @@ const applySchema = z.object({
 
 export async function GET() {
   try {
-    const [search, lifecycles, names, statuses] = await Promise.all([
+    const [search, lifecycles, names, statuses, websites] = await Promise.all([
       planSearchBackfill(),
       planLifecycleFix(STATUS_CORRECTIONS),
       planNameFix(),
       planStatusFix(SHEET_STATUSES, SHEET_MODIFIED_AT, SHEET_UNREADABLE),
+      planWebsiteFix(),
     ]);
 
     return jsonOk({
@@ -113,6 +117,17 @@ export async function GET() {
           keepsReminder: change.keepsReminder,
         })),
       },
+      websites: {
+        total: websites.rows.length,
+        unresolved: websites.unresolved,
+        otherPatterns: websites.otherPatterns,
+        rows: websites.rows.map((row) => ({
+          label: row.label,
+          value: row.value,
+          sourceLine: row.sourceLine,
+          fillCompanyDomain: row.fillCompanyDomain,
+        })),
+      },
     });
   } catch (error) {
     return serverError("GET /api/maintenance", error);
@@ -148,6 +163,19 @@ export async function POST(request: Request) {
         );
       }
       return jsonOk({ applied: await applyNameFix(plan) });
+    }
+
+    if (parsed.data.operation === "websites") {
+      const plan = await planWebsiteFix();
+      if (plan.rows.length !== parsed.data.expected) {
+        return badRequest(
+          `La base a changé depuis la simulation (${plan.rows.length} fiches au lieu de ${parsed.data.expected}). Relancez la simulation.`,
+        );
+      }
+      return jsonOk({
+        applied: await applyWebsiteFix(plan),
+        snapshot: websiteSnapshot(plan),
+      });
     }
 
     if (parsed.data.operation === "statuses") {

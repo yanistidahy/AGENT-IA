@@ -3,6 +3,7 @@ import { prisma } from "../db";
 import { fold, searchText } from "../domain/text";
 import { nameOverflow, splitOverflow } from "../domain/status";
 import { LOST_LIFECYCLE } from "../domain/lost";
+import { countOtherPatterns, findSiteLine, type OtherPatternCounts } from "../domain/notes-extract";
 
 /**
  * Opérations de maintenance sur les données.
@@ -659,4 +660,120 @@ export async function applyStatusFix(plan: StatusPlan, stampedAt: Date): Promise
   });
 
   return plan.changes.length;
+}
+
+// ------------------------------------------------- « SITE : » dans les notes
+
+/**
+ * Le site est dans les notes, pas dans le champ prévu pour lui.
+ *
+ * L'import de la feuille versait toute colonne non reconnue dans `Notes` —
+ * `SITE :` en fait partie. Le site existe donc déjà dans la donnée, mais il
+ * n'est ni cliquable, ni filtrable, ni lisible par les outils du conseil.
+ *
+ * Deux garanties, dans l'ordre où elles comptent :
+ *
+ * 1. **On ne devine pas.** « SITE : Shopify » ou « SITE : Argalys Essentiels »
+ *    sont un nom de plateforme ou un titre, pas un domaine — `findSiteLine()`
+ *    les rend `null` plutôt que de proposer n'importe quoi, et la ligne est
+ *    listée à part. Vérifié sur la vraie feuille : 64 lignes « SITE : »
+ *    portent un titre, 8 portent un domaine exploitable.
+ * 2. **On ne remplace jamais.** `website` n'est rempli que s'il est vide, et
+ *    les Notes ne sont jamais modifiées — copie, pas déplacement.
+ */
+export interface WebsiteFixRow {
+  readonly id: string;
+  readonly label: string;
+  readonly value: string;
+  readonly sourceLine: string;
+  readonly companyId: string | null;
+  /** La société n'a pas encore de domaine : le remplir aussi. */
+  readonly fillCompanyDomain: boolean;
+}
+
+export interface WebsiteFixPlan {
+  readonly rows: readonly WebsiteFixRow[];
+  /** Une ligne « SITE : » existe mais ne contient rien d'extractible. */
+  readonly unresolved: readonly string[];
+  /** Autres motifs structurés vus dans les mêmes notes — signalés, pas traités. */
+  readonly otherPatterns: OtherPatternCounts;
+}
+
+export async function planWebsiteFix(): Promise<WebsiteFixPlan> {
+  const contacts = await prisma.contact.findMany({
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      notes: true,
+      website: true,
+      companyId: true,
+      company: { select: { domain: true } },
+    },
+  });
+
+  const rows: WebsiteFixRow[] = [];
+  const unresolved: string[] = [];
+
+  for (const contact of contacts) {
+    // Jamais sur une fiche où quelqu'un a déjà saisi le site — la correction
+    // n'écrit que du vide, elle ne corrige pas une valeur existante.
+    if (contact.website !== "") continue;
+
+    const found = findSiteLine(contact.notes);
+    if (found === undefined) continue;
+
+    const label = `${contact.firstName} ${contact.lastName}`.trim();
+
+    if (found.value === null) {
+      unresolved.push(`${label} — ${found.line}`);
+      continue;
+    }
+
+    rows.push({
+      id: contact.id,
+      label,
+      value: found.value,
+      sourceLine: found.line,
+      companyId: contact.companyId,
+      fillCompanyDomain: contact.companyId !== null && (contact.company?.domain ?? "") === "",
+    });
+  }
+
+  return {
+    rows,
+    unresolved,
+    otherPatterns: countOtherPatterns(contacts.map((contact) => contact.notes)),
+  };
+}
+
+/** État avant écriture — deux champs seulement, jamais les Notes. */
+export function websiteSnapshot(plan: WebsiteFixPlan): unknown {
+  return {
+    takenAt: new Date().toISOString(),
+    note: "État AVANT extraction des sites depuis les Notes. Restaurer en revidant website (et domain si listé).",
+    contacts: plan.rows.map((row) => ({ id: row.id, label: row.label })),
+  };
+}
+
+export async function applyWebsiteFix(plan: WebsiteFixPlan): Promise<number> {
+  if (plan.rows.length === 0) return 0;
+
+  await prisma.$transaction(async (tx) => {
+    for (const row of plan.rows) {
+      await tx.contact.update({ where: { id: row.id }, data: { website: row.value } });
+
+      if (row.fillCompanyDomain && row.companyId !== null) {
+        // Une deuxième fiche de la même société a pu déjà remplir le domaine
+        // pendant cette même transaction : `updateMany` avec la condition
+        // « toujours vide » évite d'écraser cette écriture-là.
+        await tx.company.updateMany({
+          where: { id: row.companyId, domain: "" },
+          data: { domain: row.value },
+        });
+      }
+    }
+  });
+
+  return plan.rows.length;
 }

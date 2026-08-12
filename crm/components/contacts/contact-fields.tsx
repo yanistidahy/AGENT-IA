@@ -11,10 +11,10 @@ import { formatDate } from "@/lib/format";
  * L'onglet « Fiche » : les champs, sur deux colonnes.
  *
  * Le partage entre ce qui est visible et ce qui est replié n'est pas
- * esthétique. Département, LinkedIn, source et propriétaire se consultent
- * quelques fois par mois ; adresse, société et dates se lisent à chaque
- * ouverture. Les premiers occupaient pourtant autant de place que les seconds,
- * et c'est ce qui noyait la fiche.
+ * esthétique. Département, source et propriétaire se consultent quelques fois
+ * par mois ; adresse, société, site et LinkedIn se consultent avant chaque
+ * appel — ce sont exactement les deux liens qu'on veut ouvrir sans avoir à
+ * déplier quoi que ce soit.
  */
 export function ContactFields({ contact }: { contact: ContactRecord }) {
   const [more, setMore] = useState(false);
@@ -37,6 +37,9 @@ export function ContactFields({ contact }: { contact: ContactRecord }) {
         <Field label="Fonction">{contact.title || "—"}</Field>
         <Field label="Site">
           <ExternalLink value={contact.website} />
+        </Field>
+        <Field label="LinkedIn">
+          <ExternalLink value={contact.linkedin} />
         </Field>
         <Field label="Étiquette">{contact.tag || "—"}</Field>
         <Field label="Dernier contact">
@@ -62,9 +65,6 @@ export function ContactFields({ contact }: { contact: ContactRecord }) {
       {more && (
         <dl className="mt-2 grid gap-x-5 gap-y-2.5 sm:grid-cols-2">
           <Field label="Département">{contact.dep || "—"}</Field>
-          <Field label="LinkedIn">
-            <ExternalLink value={contact.linkedin} />
-          </Field>
           <Field label="Source">{contact.source || "—"}</Field>
           <Field label="Propriétaire">{contact.owner || "—"}</Field>
           <Field label="Créé le">

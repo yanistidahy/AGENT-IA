@@ -16,6 +16,10 @@ const PATHS = {
   arrow: "M5 12h14M13 6l6 6-6 6",
   search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zm9 16-3.5-3.5",
   lock: "M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4",
+  globe:
+    "M2 12a10 10 0 1 0 20 0 10 10 0 1 0-20 0zM2 12h20M12 2c2.5 2.7 4 6.2 4 10s-1.5 7.3-4 10c-2.5-2.7-4-6.2-4-10s1.5-7.3 4-10z",
+  linkedin:
+    "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM7 10v6M7 7v.01M11 16v-3.5a2 2 0 0 1 4 0V16M11 12.5v0",
 } as const;
 
 export type IconName = keyof typeof PATHS;

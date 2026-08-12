@@ -4,6 +4,7 @@ import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import { MaintenanceBlock as Block } from "./maintenance-block";
 import { StatusesBlock, type StatusPlan } from "./statuses-block";
+import { WebsitesBlock, type WebsitePlan } from "./websites-block";
 
 /**
  * Corrections de données, simulées à l'écran puis confirmées.
@@ -49,6 +50,7 @@ interface Plans {
   lifecycles: LifecyclePlan;
   names: NamePlan;
   statuses: StatusPlan;
+  websites: WebsitePlan;
 }
 
 function isPlans(value: unknown): value is Plans {
@@ -79,7 +81,7 @@ export function MaintenancePanel() {
   };
 
   const apply = async (
-    operation: "search" | "lifecycles" | "names" | "statuses",
+    operation: "search" | "lifecycles" | "names" | "statuses" | "websites",
     expected: number,
     what: string,
   ) => {
@@ -181,6 +183,8 @@ export function MaintenancePanel() {
           </Block>
 
           <StatusesBlock plan={plans.statuses} busy={busy} onApply={apply} />
+
+          <WebsitesBlock plan={plans.websites} busy={busy} onApply={apply} />
 
           <Block
             title="Cycles de vie"

@@ -333,6 +333,8 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 20 | **Le cockpit** — file dense et groupable, anneau du jour, entonnoir, annulation | **livré, à valider** |
 | 21 | **Statuts de la feuille + fiche en onglets** — report contrôlé, tiroir à en-tête fixe, six colonnes | **livré, à valider** |
 | 22 | **Qualification → affaire** — pipeline refondu, fiche étoffée, rapports de prospection | **livré, à valider** |
+| 23 | **Identité de marque** — palette, rail, logo, favicon, `/login` | **livré, à valider** |
+| 24 | **Le site sort des Notes** — LinkedIn visible sans dépli, icônes d'en-tête, extraction contrôlée | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -3043,3 +3045,75 @@ octet par octet, et aucun vectoriseur (potrace, ImageMagick) n'est installé.
 Le tracé de `components/brand/logo.tsx` suit la description — « A » traversé par
 une vague cyan → bleu → violet, fond transparent — sans prétendre en reproduire
 les courbes. Il est isolé pour que la substitution coûte un fichier.
+
+---
+
+## Jalon 24 — le site sort des Notes, LinkedIn sort du dépli
+
+### Deux choses distinctes sur la fiche contact, l'une visuelle, l'autre de donnée
+
+**LinkedIn rejoint le site dans le bloc visible.** Les deux sont des liens
+qu'on ouvre avant un appel, pas des champs qu'on consulte une fois par mois —
+ils n'avaient rien à faire sous « Plus de détails ». Deux icônes rejoignent le
+téléphone dans l'en-tête (`globe`, `linkedin`, ajoutées à `components/ui/icon.tsx`) :
+un clic ouvre le site ou le profil sans passer par l'onglet Fiche, grisées
+plutôt qu'absentes quand la valeur manque — un bouton qui disparaît selon les
+fiches se cherche, un bouton désactivé se lit d'un coup d'œil. Le domaine de la
+société l'était déjà, sans dépli, dans le tiroir société : rien à y changer.
+
+**Le site était déjà dans la donnée, au mauvais endroit.** L'import versait
+toute colonne non reconnue dans `Notes` — `SITE :` en fait partie. Sur la
+vraie feuille (154 contacts, relue en lecture seule), **67 fiches** portent une
+ligne `SITE :` dans leurs notes et 0 dans le champ `website`.
+
+### On ne devine pas un domaine dans un titre
+
+`lib/domain/notes-extract.ts` cherche une ligne `SITE :` (et ses variantes
+`SITE:`, `Site :`), et n'en extrait un domaine ou une URL que s'il y en a un à
+extraire — un motif de domaine étroit, testé pour ne jamais confondre
+« 100% gourmand » avec un TLD. Vérifié contre les 67 lignes réelles : **8**
+portent un domaine exploitable (`cuure.com`, `numorning.com`…), **59**
+ne portent qu'un titre de page (« SITE : Shopify », « SITE : Argalys
+Essentiels ») et sont listées comme non résolues plutôt que devinées.
+
+Même contrat que les corrections précédentes : simulation d'abord, deux champs
+touchés (`website`, et `domain` de la société liée s'il est vide), jamais les
+Notes — **copie, pas déplacement**, la ligne source y reste intacte pour
+qu'on ne perde jamais le contexte autour du domaine. Idempotent : une fiche
+dont `website` est déjà rempli est ignorée, saisi ou extrait indifféremment.
+
+### Ce qui est signalé, pas traité
+
+Les mêmes Notes portent d'autres colonnes échouées à l'import — `N° :`,
+`Réponse ? :`, parfois `Canal :`. Le bloc de réglages les compte
+(`countOtherPatterns()`) et les affiche en avertissement, sans les extraire :
+ce n'est pas ce qui a été demandé, et décider où chacune devrait aller (un
+`N°` de ligne de feuille n'a pas d'équivalent dans le schéma) est une décision
+produit, pas une extraction évidente. Sur la base vérifiée : 136 lignes
+`N° :`, 50 lignes `Réponse ? :`, 0 `Canal :`.
+
+### Jalon 24 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, base rechargée depuis la vraie feuille (154
+contacts, import réel via `importContacts()`) :
+
+- **simulation** : 8 fiches à corriger, 59 lignes non résolues nommées, 0
+  écriture ; le rapport « autres motifs » cite 136 `N°`, 50 `Réponse ?`, 0
+  `Canal` ;
+- **application** : 8 `website` remplis, notes des 8 fiches **inchangées à
+  l'octet près** (comparées avant/après), 20 sociétés au total avec un domaine
+  non vide ;
+- **idempotence** : second passage → 0 fiche à corriger ;
+- **fiche Hugo Fachin** (capture) : Site et LinkedIn visibles sans dépli,
+  icônes globe et LinkedIn dans l'en-tête à côté du téléphone, toutes deux
+  cliquables, `SITE : https://cuure.com/` toujours présent dans le bloc Notes ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (578 tests) verts.
+
+### Jalon 24 — ce qui ne l'est pas
+
+Le choix de traiter `N° :`, `Réponse ? :` et `Canal :` reste ouvert — ce jalon
+les compte et les nomme, il ne décide pas où ils devraient aller.
+
+L'icône LinkedIn du jeu d'icônes est une approximation dessinée dans le même
+style que les autres (traits, pas de remplissage) : ce n'est pas le logo
+officiel, et ça n'a pas besoin de l'être — c'est un repère, pas une marque.

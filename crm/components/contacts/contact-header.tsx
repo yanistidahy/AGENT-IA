@@ -1,9 +1,11 @@
 "use client";
 
 import { ContactStatusTag, LifecycleTag } from "@/components/ui/primitives";
+import { Icon } from "@/components/ui/icon";
 import type { ContactRecord } from "@/lib/api/contacts";
 import { formatDate } from "@/lib/format";
 import { describeReminder } from "@/lib/domain/follow-up";
+import { externalUrl } from "@/lib/domain/links";
 import { ACTIVITY_LABELS } from "@/lib/domain/types";
 import { isOutcome, OUTCOME_LABELS } from "@/lib/domain/status";
 
@@ -29,6 +31,8 @@ export function ContactHeader({
   onQualify?: () => void;
 }) {
   const phone = contact.phone.trim();
+  const websiteHref = externalUrl(contact.website);
+  const linkedinHref = externalUrl(contact.linkedin);
   const reminder =
     contact.nextReminder === null ? null : describeReminder(contact.nextReminder, new Date());
 
@@ -66,6 +70,16 @@ export function ContactHeader({
             {phone}
           </a>
         )}
+
+        {/*
+          Ouvrir le site ou le profil LinkedIn en un clic, sans passer par
+          l'onglet Fiche : c'est le geste d'avant-appel, au même endroit que le
+          numéro. Grisés plutôt qu'absents quand la valeur manque — un bouton
+          qui disparaît selon les fiches se cherche, un bouton désactivé se lit
+          d'un coup d'œil.
+        */}
+        <HeaderLink href={websiteHref} icon="globe" label="Ouvrir le site" />
+        <HeaderLink href={linkedinHref} icon="linkedin" label="Ouvrir le profil LinkedIn" />
 
         <button
           type="button"
@@ -134,5 +148,40 @@ export function ContactHeader({
         <span>dans le vivier depuis {contact.ageDays} j</span>
       </div>
     </div>
+  );
+}
+
+function HeaderLink({
+  href,
+  icon,
+  label,
+}: {
+  href: string | null;
+  icon: "globe" | "linkedin";
+  label: string;
+}) {
+  if (href === null) {
+    return (
+      <span
+        aria-hidden
+        title={`${label} — valeur manquante`}
+        className="inline-flex items-center rounded-control border border-dashed border-line p-1.5 text-muted"
+      >
+        <Icon name={icon} size={15} />
+      </span>
+    );
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={label}
+      aria-label={label}
+      className="inline-flex items-center rounded-control border border-line bg-surface p-1.5 text-muted transition-colors hover:border-brand hover:text-brand-d"
+    >
+      <Icon name={icon} size={15} />
+    </a>
   );
 }
