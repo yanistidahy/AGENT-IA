@@ -4,6 +4,7 @@ import { fold, searchText } from "../domain/text";
 import { nameOverflow, splitOverflow } from "../domain/status";
 import { LOST_LIFECYCLE } from "../domain/lost";
 import { countOtherPatterns, findSiteLine, type OtherPatternCounts } from "../domain/notes-extract";
+import type { SheetSite } from "@/scripts/sites-2026-08";
 
 /**
  * Opérations de maintenance sur les données.
@@ -776,4 +777,169 @@ export async function applyWebsiteFix(plan: WebsiteFixPlan): Promise<number> {
   });
 
   return plan.rows.length;
+}
+
+// ------------------------------------------ « SITE » de la feuille, transcrit
+
+/**
+ * Les adresses réellement présentes dans la feuille, reportées sur les fiches.
+ *
+ * Distinct de `planWebsiteFix()`, et pour une raison de fond : celle-là lit les
+ * **Notes** du CRM, qui sont une copie de la feuille faite à l'import. Une ligne
+ * que l'import a refusée — nom manquant, doublon — n'a laissé aucune note, et
+ * son adresse est donc invisible à l'extraction. Sur les 15 adresses de la
+ * feuille, six appartiennent à des lignes dans ce cas.
+ *
+ * Cette correction-ci part de la **source**, transcrite dans
+ * `scripts/sites-2026-08.ts`, et se rapproche des fiches comme les autres
+ * reports de feuille : par adresse électronique, à défaut par nom + société.
+ *
+ * Deux champs, jamais plus : `website` du contact et `domain` de sa société,
+ * **et seulement s'ils sont vides**. Les Notes ne sont pas touchées.
+ */
+export interface SiteChange {
+  readonly id: string;
+  readonly label: string;
+  readonly row: string;
+  readonly url: string;
+  readonly source: string;
+  readonly companyId: string | null;
+  readonly companyName: string;
+  /** La société n'a pas de domaine : il sera rempli avec la même valeur. */
+  readonly fillCompanyDomain: boolean;
+}
+
+export interface SitePlan {
+  readonly changes: readonly SiteChange[];
+  /** Lignes de la feuille sans correspondance, ou en correspondant à plusieurs. */
+  readonly warnings: readonly string[];
+  /** Fiches déjà pourvues d'un site : laissées intactes. */
+  readonly unchanged: number;
+}
+
+const SITE_FIELDS = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  website: true,
+  companyId: true,
+  company: { select: { name: true, domain: true } },
+} satisfies Prisma.ContactSelect;
+
+type SiteCandidate = Prisma.ContactGetPayload<{ select: typeof SITE_FIELDS }>;
+
+function matchesSite(contact: SiteCandidate, line: SheetSite): boolean {
+  const email = contact.email.trim().toLowerCase();
+  if (line.email !== "" && email !== "") return email === line.email;
+
+  return (
+    fold(`${contact.firstName} ${contact.lastName}`) ===
+      fold(`${line.firstName} ${line.lastName}`) &&
+    fold(contact.company?.name ?? "") === fold(line.company)
+  );
+}
+
+export async function planSiteFix(sheet: readonly SheetSite[]): Promise<SitePlan> {
+  const candidates = await prisma.contact.findMany({ select: SITE_FIELDS });
+  const warnings: string[] = [];
+  const changes: SiteChange[] = [];
+  let unchanged = 0;
+
+  // Les domaines déjà promis à une société dans ce même plan : sans ce suivi,
+  // deux fiches de la même société annonceraient toutes deux « + domaine ».
+  const promised = new Set<string>();
+
+  for (const line of sheet) {
+    const found = candidates.filter((contact) => matchesSite(contact, line));
+    const who = `${line.firstName} ${line.lastName}`.trim() || "sans nom";
+
+    if (found.length === 0) {
+      warnings.push(
+        `ligne ${line.row} — introuvable : ${who}${line.company === "" ? "" : ` · ${line.company}`}${line.email === "" ? "" : ` · ${line.email}`} (${line.url})`,
+      );
+      continue;
+    }
+    if (found.length > 1) {
+      warnings.push(`ligne ${line.row} — ${found.length} fiches correspondent, ignorée : ${who}`);
+      continue;
+    }
+
+    const contact = found[0];
+    if (contact === undefined) continue;
+
+    const companyHasDomain = (contact.company?.domain ?? "") !== "";
+    const fillCompanyDomain =
+      contact.companyId !== null && !companyHasDomain && !promised.has(contact.companyId);
+
+    // Rien à écrire : le site est déjà là et la société a déjà son domaine.
+    if (contact.website !== "" && !fillCompanyDomain) {
+      unchanged += 1;
+      continue;
+    }
+
+    if (fillCompanyDomain && contact.companyId !== null) promised.add(contact.companyId);
+
+    changes.push({
+      id: contact.id,
+      label: `${contact.firstName} ${contact.lastName}`.trim(),
+      row: line.row,
+      url: line.url,
+      source: line.source,
+      companyId: contact.companyId,
+      companyName: contact.company?.name ?? "sans société",
+      fillCompanyDomain,
+    });
+  }
+
+  return { changes, warnings, unchanged };
+}
+
+/** État avant report — de quoi revenir en arrière champ par champ. */
+export function siteSnapshot(plan: SitePlan): unknown {
+  return {
+    takenAt: new Date().toISOString(),
+    note: "État AVANT report des sites depuis la feuille. Restaurer en revidant website (et domain des sociétés listées).",
+    contacts: plan.changes.map((change) => ({
+      id: change.id,
+      label: change.label,
+      company: change.companyName,
+      companyId: change.companyId,
+      wroteCompanyDomain: change.fillCompanyDomain,
+    })),
+  };
+}
+
+export async function applySiteFix(plan: SitePlan): Promise<number> {
+  if (plan.changes.length === 0) return 0;
+
+  await prisma.$transaction(async (tx) => {
+    for (const change of plan.changes) {
+      // `updateMany` avec la condition « encore vide » plutôt qu'`update` : la
+      // garantie « on ne remplace jamais » est portée par la requête, pas par
+      // la lecture faite plus tôt.
+      await tx.contact.updateMany({
+        where: { id: change.id, website: "" },
+        data: { website: change.url },
+      });
+
+      if (change.fillCompanyDomain && change.companyId !== null) {
+        const company = await tx.company.findUnique({
+          where: { id: change.companyId },
+          select: { name: true, industry: true, loc: true },
+        });
+        if (company === null) continue;
+
+        await tx.company.updateMany({
+          where: { id: change.companyId, domain: "" },
+          data: {
+            domain: change.url,
+            searchText: companyMirror({ ...company, domain: change.url }),
+          },
+        });
+      }
+    }
+  });
+
+  return plan.changes.length;
 }

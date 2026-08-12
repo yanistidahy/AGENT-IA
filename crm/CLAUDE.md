@@ -335,6 +335,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 22 | **Qualification → affaire** — pipeline refondu, fiche étoffée, rapports de prospection | **livré, à valider** |
 | 23 | **Identité de marque** — palette, rail, logo, favicon, `/login` | **livré, à valider** |
 | 24 | **Le site sort des Notes** — LinkedIn visible sans dépli, icônes d'en-tête, extraction contrôlée | **livré, à valider** |
+| 25 | **La question des domaines, tranchée** — relecture de la feuille, report des 15 adresses réelles, propositions relues une par une | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -3117,3 +3118,144 @@ les compte et les nomme, il ne décide pas où ils devraient aller.
 L'icône LinkedIn du jeu d'icônes est une approximation dessinée dans le même
 style que les autres (traits, pas de remplissage) : ce n'est pas le logo
 officiel, et ça n'a pas besoin de l'être — c'est un repère, pas une marque.
+
+---
+
+## Jalon 25 — la question des domaines, tranchée
+
+### Ce que la feuille contient réellement
+
+Relecture en **lecture seule** de « CRM AURA FLOW AI », les **six onglets**, le
+12 août 2026. La réponse est décevante et il valait mieux la connaître :
+
+| Onglet | Colonne susceptible de porter une adresse | Ce qu'elle contient |
+|---|---|---|
+| Liste de prospection | `SITE` | 71 valeurs sur 152 lignes — **14 sont des adresses**, 57 sont des titres de page |
+| Prospects chauds | `Boutique / URL` | 2 lignes, **1 adresse** ; sa colonne `SITE` dit « Shopify » — la plateforme |
+| Suivi mensuel par canal | — | aucune adresse |
+| Tableau de bord | — | aucune adresse |
+| Clients signés & suivi | — | table vide |
+| Grille tarifaire | — | aucune adresse |
+
+**Rien n'a été perdu à l'import.** La colonne `SITE` a bien été versée dans les
+Notes ; elle était simplement, à 80 %, autre chose qu'une adresse — le titre de
+l'onglet du navigateur (« Vitamines et Compléments alimentaires | Argalys
+Essentiels ») plutôt que son adresse. Le total exploitable dans tout le
+classeur est de **15 adresses**.
+
+### Deux corrections, deux sources
+
+`planWebsiteFix()` (jalon 24) lit les **Notes** du CRM. `planSiteFix()` lit la
+**feuille**, transcrite dans `scripts/sites-2026-08.ts`. Elles ne trouvent pas
+la même chose, et c'est la raison d'être de la seconde : une ligne que l'import
+a refusée — nom manquant — n'a laissé aucune note, donc aucune adresse à
+extraire. **Six des quinze adresses sont dans ce cas** ; elles sont signalées
+« introuvable » avec leur nom, leur société et leur adresse électronique, pour
+être traitées à la main.
+
+Mêmes garanties que les autres reports de feuille : simulation d'abord,
+`website` du contact et `domain` de la société **seulement s'ils sont vides**
+(la condition est portée par le `updateMany`, pas par une lecture antérieure),
+Notes intactes, sauvegarde JSON avant écriture, idempotent.
+
+### Les domaines proposés ne s'appliquent jamais en masse
+
+Pour les sociétés sans domaine, `lib/domain/domain-guess.ts` propose — **et ne
+vérifie rien, par construction**. Aucun appel réseau n'est émis vers une
+adresse proposée, et c'est le point dur de ce jalon : un domaine deviné qui
+*répond* peut appartenir à n'importe qui. Le vérifier depuis le serveur
+donnerait à une supposition l'apparence d'un fait, et l'erreur se découvrirait
+devant un client, sur un lien menant chez un tiers.
+
+Deux règles, dans l'ordre de fiabilité :
+
+| Règle | D'où vient la valeur | Couverture (base vérifiée) |
+|---|---|---|
+| `email` | domaine d'une adresse **professionnelle déjà saisie** sur une fiche de la société — une déduction, pas une invention | 96 sociétés sur 125 |
+| `name` | nom de la société transformé en domaine — **pure supposition** | 29 sociétés |
+
+Les messageries grand public (Gmail, Orange, Yahoo…) sont exclues : elles ne
+disent rien de la société. Deux domaines différents parmi les contacts font
+tomber la confiance et le disent (« 2 domaines différents… »).
+
+**Même la règle `email` se trompe.** « Absolution » et « Spring » portent des
+contacts en `@teledyne.com` — une adresse manifestement erronée dans la
+feuille. « Agence ads » donne `ads.com`. C'est exactement pourquoi il n'existe
+aucune fonction qui écrive plusieurs domaines d'un coup : le bloc « Domaines
+proposés » se relit **ligne à ligne**, chaque proposition portant sa règle, sa
+confiance et la phrase qui l'explique.
+
+Accepter écrit **une** société (et recalcule son miroir de recherche, sans quoi
+elle resterait introuvable par son adresse). Écarter n'écrit rien sur la
+société : le refus est mémorisé dans `domain_rejections` pour que la ligne ne
+revienne pas — mais **le refus porte sur la valeur**, pas sur la société : si
+la règle propose autre chose plus tard, la ligne revient.
+
+### Jalon 25 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, base chargée depuis la feuille par l'import réel
+(154 contacts, 135 sociétés), migration `10_domain_review` appliquée puis
+`migrate diff` renvoyant une migration vide :
+
+- **report des sites** : 8 fiches renseignées sur les 15 adresses de la
+  feuille, 7 lignes « introuvable » nommées (six refusées à l'import, plus
+  « Aurélie » de l'onglet Prospects chauds) ; **notes identiques à l'octet
+  près** avant/après ; second passage → 0 à écrire, 8 déjà pourvues ;
+- **propositions** : 125 sociétés sans domaine → 96 déduites d'une adresse,
+  29 supposées du nom, 0 sans proposition ;
+- **accepter** écrit une seule société et recalcule son `searchText` ;
+  **écarter** laisse `domain` vide en base ; la ligne acceptée et la ligne
+  écartée sortent toutes deux de la liste ;
+- **un refus ne vaut que pour sa valeur** : changer la valeur mémorisée fait
+  revenir la ligne ;
+- **écriture concurrente** : domaine renseigné à la main entre l'affichage et
+  le clic → l'acceptation refuse en le nommant, la valeur saisie est conservée ;
+- **collision de clés React corrigée** au passage : deux fiches homonymes
+  (« Elena andrikian », doublon de la feuille) partageaient une clé dans quatre
+  listes du panneau — React pouvait en omettre une, dans l'écran qui sert
+  précisément à relire ce qui va être écrit. Vérifié : plus aucun message en
+  console ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (590 tests) verts.
+
+### Jalon 25 — ce que je recommande pour les sociétés restantes
+
+**Ne pas généraliser la règle `name`.** Elle produit du plausible, pas du vrai :
+`ads.com` pour « Agence ads », `bacha.com` pour « Bacha » (le site réel est
+*bachca.com*, visible dans les Notes). Un champ rempli de domaines plausibles
+est pire qu'un champ vide, parce qu'on cesse de se méfier.
+
+Dans l'ordre de ce que je ferais :
+
+1. **Accepter les propositions `email` après relecture** — 96 sociétés, une
+   déduction à partir d'une donnée réellement saisie. Compter quelques minutes
+   de relecture, en écartant les cas manifestes (`teledyne.com`).
+2. **Récolter le reste au fil des appels.** Le site se demande en trente
+   secondes pendant la conversation, et il arrive alors vérifié par la personne
+   même. C'est le seul canal qui produit une donnée sûre sans rien payer.
+3. **Pour un rattrapage en masse, un service d'enrichissement**, pas une
+   supposition. Un connecteur d'enrichissement B2B est disponible dans
+   l'environnement de travail (`Vibe_Prospecting`) et sait rendre le domaine
+   d'une entreprise à partir de son nom ; il est payant à l'appel et n'a pas
+   été utilisé ici, faute d'accord préalable. C'est la réponse honnête à
+   « comment obtenir cette donnée » : l'acheter à quelqu'un dont c'est le
+   métier, ou la demander au prospect.
+4. **Ce qu'il ne faut pas faire** : vérifier les domaines devinés en les
+   appelant depuis le serveur. Une page qui s'affiche ne prouve pas qu'elle
+   appartient au prospect — seulement que le nom est déposé.
+
+### Jalon 25 — ce qui n'est pas vérifié
+
+**Les chiffres viennent d'une base reconstituée depuis la feuille, pas de la
+vôtre.** 135 sociétés ici, 133 annoncées en production : la répartition entre
+`email` et `name` y sera proche mais pas identique. La simulation sur la vraie
+base est le seul chiffre qui fasse foi.
+
+**Aucun domaine proposé n'a été vérifié, et c'est voulu.** Ni par le serveur,
+ni par moi. `nailmatic.com` et `typology.com` sont probablement justes ;
+`ads.com` est probablement faux ; la liste ne fait pas la différence et ne
+prétend pas la faire.
+
+**Le bloc de relecture n'a pas été exercé au clavier dans un navigateur.** Les
+deux boutons de chaque ligne appellent une route vérifiée de bout en bout, et
+le rendu du bloc est vérifié par capture ; la navigation au clavier entre cent
+lignes ne l'est pas.

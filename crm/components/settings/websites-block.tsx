@@ -59,8 +59,8 @@ export function WebsitesBlock({
           ⏸ non résolu — {row}
         </li>
       ))}
-      {plan.rows.map((row) => (
-        <li key={row.label} className="truncate">
+      {plan.rows.map((row, index) => (
+        <li key={`${index}-${row.label}`} className="truncate">
           <b className="font-semibold">{row.label}</b> — « {row.value} »
           {row.fillCompanyDomain && <span className="text-muted"> (+ domaine société)</span>}
           <span className="text-muted"> — {row.sourceLine}</span>

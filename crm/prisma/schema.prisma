@@ -63,8 +63,28 @@ model Company {
   activities Activity[]
   tasks      Task[]
 
+  domainRejection DomainRejection?
+
   @@index([name])
   @@map("companies")
+}
+
+/// Proposition de domaine écartée à la main.
+///
+/// Seuls les **refus** sont stockés : une proposition acceptée écrit le domaine
+/// de la société, et disparaît d'elle-même de la liste — celle-ci ne montre que
+/// les sociétés au domaine vide. Sans cette table, une proposition rejetée
+/// reviendrait à chaque relecture, et la liste ne se viderait jamais.
+model DomainRejection {
+  id         String   @id @default(cuid())
+  companyId  String   @unique
+  /// La valeur refusée, conservée pour ne pas la reproposer à l'identique.
+  proposed   String
+  rejectedAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("domain_rejections")
 }
 
 /// `lifecycle` : Lead | Prospect | Client | Ancien Client | Perdu

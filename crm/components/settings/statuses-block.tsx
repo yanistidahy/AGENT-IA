@@ -77,8 +77,8 @@ export function StatusesBlock({
           ⚠ {warning}
         </li>
       ))}
-      {plan.changes.map((change) => (
-        <li key={change.label}>
+      {plan.changes.map((change, index) => (
+        <li key={`${index}-${change.label}`}>
           <b className="font-semibold">{change.label}</b> — statut «{" "}
           {change.fromStatus === "" ? "vide" : change.fromStatus} » → «{" "}
           {change.toStatus === "" ? "vide" : change.toStatus} »
