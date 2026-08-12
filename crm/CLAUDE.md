@@ -336,6 +336,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 23 | **Identité de marque** — palette, rail, logo, favicon, `/login` | **livré, à valider** |
 | 24 | **Le site sort des Notes** — LinkedIn visible sans dépli, icônes d'en-tête, extraction contrôlée | **livré, à valider** |
 | 25 | **La question des domaines, tranchée** — relecture de la feuille, report des 15 adresses réelles, propositions relues une par une | **livré, à valider** |
+| 26 | **Acceptation groupée des seules déductions** — garde-fou serveur, tri par ressemblance, annulation de dix secondes | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -3259,3 +3260,115 @@ prétend pas la faire.
 deux boutons de chaque ligne appellent une route vérifiée de bout en bout, et
 le rendu du bloc est vérifié par capture ; la navigation au clavier entre cent
 lignes ne l'est pas.
+
+---
+
+## Jalon 26 — accepter en bloc, mais seulement ce qui est déduit
+
+### La distinction que le bouton ne doit pas pouvoir effacer
+
+Les propositions de domaine se partagent en deux populations qui n'ont pas la
+même valeur : celles **déduites** d'une adresse professionnelle déjà saisie, et
+celles **supposées** à partir du nom de la société. Relire les premières une par
+une est une corvée ; relire les secondes est le seul moyen de ne pas remplir la
+base de plausible.
+
+« Tout accepter » n'existe donc que pour les déductions, et la règle est portée
+à deux endroits, dont un seul compte vraiment :
+
+- **À l'écran**, le bouton n'apparaît que sous le filtre « Déduites d'une
+  adresse ». **Absent, pas désactivé** : un bouton grisé invite à chercher
+  comment l'activer, un bouton absent ne pose pas la question. Il nomme son
+  compte — « Accepter les 105 domaines déduits ».
+- **Au serveur**, `acceptManyDomains()` **recalcule la proposition de chaque
+  société** et écarte tout ce qui n'est pas de règle `email`. C'est ce qui rend
+  la règle vraie : un appel fabriqué à la main qui listerait des sociétés
+  « supposées du nom » écrit zéro ligne. Vérifié en passant trois suppositions
+  en force → `0 domaines écrits · 3 ignorés (ne sont plus des déductions)`.
+
+L'acceptation et le rejet à l'unité ne bougent pas : le bouton groupé est un
+raccourci sur un sous-ensemble filtré, pas un remplacement.
+
+### Ce que le groupé garantit, et ce qu'il refuse
+
+- **Confirmation qui montre**, pas qui résume : la liste complète de ce qui sera
+  écrit, les lignes douteuses en tête, et le rappel — mot pour mot celui du
+  panneau — qu'aucune de ces adresses n'a été appelée. Deux formulations pour
+  la même garantie finiraient par diverger.
+- **Ne touche que ce qui est encore en attente** dans la vue filtrée : une ligne
+  déjà acceptée ou écartée n'y est plus.
+- **Ignore sans échouer** une société dont le domaine a été renseigné entre
+  l'affichage et le clic — même garde que l'acceptation à l'unité, portée par la
+  condition du `updateMany` et non par une lecture antérieure. Idem si la
+  proposition a changé de valeur : ce qui serait écrit ne serait plus ce qui a
+  été relu.
+- **Dit exactement ce qui s'est passé** : `describeBulkOutcome()` (pur, testé)
+  rend « 84 domaines écrits · 4 ignorés (déjà renseignés) », chaque raison
+  accordée sur son propre compte.
+- **Annulation de dix secondes**, par le mécanisme de la file d'accueil : les
+  étapes inverses sont calculées **avant** d'écrire, à partir de l'état lu, et
+  reposées telles quelles sur `POST /api/queue` en mode `undo`. Une étape
+  `company-domain` rejoint le vocabulaire — elle transporte l'ancien domaine
+  **et** l'ancien miroir de recherche plutôt que de le recalculer : recalculer
+  supposerait de relire le nom tel qu'il est *maintenant*, et une modification
+  faite entre-temps se retrouverait défaite par une annulation qui n'a rien à
+  voir avec elle.
+
+### La ressemblance nom ↔ domaine, ou l'art de se méfier au bon endroit
+
+`nameSimilarity()` compare le nom de la société à l'étiquette du domaine —
+inclusion valant 1, sinon coefficient de Dice sur les bigrammes. Les
+correspondances les plus faibles remontent en tête de la vue « Déduites » avec
+un repère discret.
+
+**Ce n'est pas une mesure de justesse, c'est une mesure d'étonnement.** Un score
+bas ne dit pas que le domaine est faux : « AGENCE INCARE Marketing » chez
+`oomylab.com` peut très bien être exact. Ce que le score attrape réellement,
+c'est **l'adresse erronée dans la feuille source**. Sur la base vérifiée, 11 des
+105 déductions passent sous le seuil de 0,34 — et l'on y trouve les deux
+sociétés de cosmétique rattachées à `teledyne.com`, un électronicien américain,
+ainsi que « Sisi la paillette » rattachée à `u-paris.fr`, une université. Les 75
+correspondances exactes (`numorning.com` pour Numorning) ne sont pas signalées.
+
+Le seuil est calé sur cette base : juste au-dessus se trouvent
+`Laboratoire mademoiselle → mademoisellecosmetique.com` (0,51) et
+`Omnie → omie.fr` (0,57) — une faute de frappe dans le nom, pas une erreur de
+domaine. Les signaler aurait dilué les onze qui comptent.
+
+### Jalon 26 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, base chargée depuis la feuille (154 contacts, 135
+sociétés) :
+
+- **tri** : les 105 déductions passent toutes avant les 30 suppositions, et à
+  l'intérieur la ressemblance la plus faible d'abord — les six premières lignes
+  sont à 0,00, `teledyne.com` en tête ;
+- **garde-fou serveur** : 3 suppositions passées en force → `0 domaines écrits ·
+  3 ignorés (ne sont plus des déductions)` ;
+- **groupé** : 104 écrits, 1 ignoré, `104 domaines écrits · 1 ignoré (déjà
+  renseigné)` ; la société renseignée à la main entre-temps **a gardé sa
+  valeur** ;
+- **annulation** : 104 étapes rejouées, domaine **et** miroir de recherche
+  revenus à vide, 0 société avec domaine en base après le tour complet ;
+- **à l'écran** : le bouton est **absent** sous « Toutes » et sous « Supposées
+  du nom » (compté à 0 dans le DOM, pas seulement désactivé), présent sous
+  « Déduites » ; le parcours complet clic → confirmation → écriture → bandeau →
+  « Annuler » rejoué dans un navigateur, sans une erreur en console ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (601 tests) verts.
+
+### Jalon 26 — ce qui ne l'est pas
+
+**La ressemblance ne dit toujours rien de la justesse.** Elle trie, elle
+n'arbitre pas. Une déduction à 1,00 peut être fausse — une société qui a changé
+de nom — et une à 0,00 peut être juste. Aucun domaine n'est vérifié, et
+toujours pas depuis le serveur.
+
+**Le bandeau d'annulation n'a qu'une vie de page.** Recharger `/reglages` dans
+les dix secondes le fait disparaître avec les étapes inverses qu'il portait ;
+il faut alors revider les domaines à la main. C'est le même compromis que la
+file d'accueil, à un volume plus grand.
+
+**Le groupé écrit dans la requête HTTP**, une société après l'autre, sans
+transaction d'ensemble : une coupure au milieu laisse les lignes déjà écrites
+écrites — et sans bandeau pour les défaire. À 105 lignes c'est instantané ; à
+plusieurs milliers, il faudrait découper en lots.

@@ -75,6 +75,22 @@ export const undoStepSchema = z.discriminatedUnion("kind", [
     kind: z.literal("deal-delete"),
     id: z.string().trim().min(1),
   }),
+  /**
+   * L'inverse d'un domaine accepté : la société retrouve la valeur qu'elle
+   * portait, miroir de recherche compris.
+   *
+   * Le miroir voyage avec la valeur plutôt que d'être recalculé à
+   * l'annulation : le recalculer supposerait de relire le nom, le secteur et
+   * la localisation tels qu'ils sont **maintenant**, et une modification faite
+   * entre-temps se retrouverait défaite par une annulation qui n'a rien à voir
+   * avec elle.
+   */
+  z.object({
+    kind: z.literal("company-domain"),
+    id: z.string().trim().min(1),
+    domain: z.string(),
+    searchText: z.string(),
+  }),
 ]);
 
 export type UndoStep = z.infer<typeof undoStepSchema>;
@@ -293,6 +309,15 @@ export async function undoQueueBatch(
         // sens sans elle, on la retire explicitement.
         await prisma.activity.deleteMany({ where: { dealId: step.id } });
         await prisma.deal.delete({ where: { id: step.id } });
+        restored += 1;
+        continue;
+      }
+
+      if (step.kind === "company-domain") {
+        await prisma.company.update({
+          where: { id: step.id },
+          data: { domain: step.domain, searchText: step.searchText },
+        });
         restored += 1;
         continue;
       }

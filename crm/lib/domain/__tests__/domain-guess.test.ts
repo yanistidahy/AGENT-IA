@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  describeBulkOutcome,
+  domainLabel,
   emailDomain,
   isFreeProvider,
+  isSuspicious,
+  nameSimilarity,
   nameSlug,
   proposeDomain,
+  SUSPICIOUS_BELOW,
+  type SkipReason,
 } from "../domain-guess";
 
 describe("emailDomain", () => {
@@ -90,5 +96,80 @@ describe("proposeDomain", () => {
   it("rend null quand il n'y a ni adresse ni nom exploitable", () => {
     expect(proposeDomain("", [])).toBeNull();
     expect(proposeDomain("", ["x@gmail.com"])).toBeNull();
+  });
+});
+
+describe("domainLabel", () => {
+  it("garde la marque, retire www, extension et ponctuation", () => {
+    expect(domainLabel("www.nubiance.fr")).toBe("nubiance");
+    expect(domainLabel("march-lab.com")).toBe("marchlab");
+    expect(domainLabel("https://cuure.com/")).toBe("cuure");
+    expect(domainLabel("pomad.paris")).toBe("pomad");
+  });
+});
+
+describe("nameSimilarity", () => {
+  it("vaut 1 quand l'un contient l'autre", () => {
+    expect(nameSimilarity("Numorning", "numorning.com")).toBe(1);
+    expect(nameSimilarity("Agence nateev", "nateev.fr")).toBe(1);
+    expect(nameSimilarity("23 beauty paris", "23beauty.paris")).toBe(1);
+    // Le nom ne porte que des chiffres : la normalisation les garde.
+    expect(nameSimilarity("66-30", "https://66-30.com/fr/")).toBe(1);
+  });
+
+  it("tombe à zéro sur les adresses manifestement erronées de la feuille", () => {
+    expect(nameSimilarity("Absolution", "teledyne.com")).toBe(0);
+    expect(nameSimilarity("Spring", "teledyne.com")).toBe(0);
+  });
+
+  it("reste élevée sur une faute de frappe dans le nom", () => {
+    expect(nameSimilarity("Omnie", "omie.fr")).toBeGreaterThan(SUSPICIOUS_BELOW);
+    expect(nameSimilarity("Roseaparis", "rosaeparis.com")).toBeGreaterThan(SUSPICIOUS_BELOW);
+  });
+
+  it("est symétrique et bornée", () => {
+    const a = nameSimilarity("Glamelina", "glamellinacosmetics.com");
+    expect(a).toBeGreaterThan(0);
+    expect(a).toBeLessThanOrEqual(1);
+    expect(nameSimilarity("", "x.com")).toBe(0);
+    expect(nameSimilarity("X", "")).toBe(0);
+  });
+});
+
+describe("isSuspicious", () => {
+  it("signale ce qui ne ressemble pas au nom, et rien d'autre", () => {
+    expect(isSuspicious("Absolution", "teledyne.com")).toBe(true);
+    expect(isSuspicious("Sisi la paillette", "u-paris.fr")).toBe(true);
+    expect(isSuspicious("Capiplante", "capiplante.fr")).toBe(false);
+    expect(isSuspicious("Laboratoire mademoiselle", "mademoisellecosmetique.com")).toBe(false);
+  });
+});
+
+describe("describeBulkOutcome", () => {
+  it("dit exactement ce qui s'est passé", () => {
+    expect(describeBulkOutcome(84, Array<SkipReason>(4).fill("filled"))).toBe(
+      "84 domaines écrits · 4 ignorés (déjà renseignés)",
+    );
+  });
+
+  it("accorde le singulier", () => {
+    expect(describeBulkOutcome(1, ["filled"])).toBe("1 domaine écrit · 1 ignoré (déjà renseigné)");
+  });
+
+  it("omet la partie « ignorés » quand il n'y en a aucun", () => {
+    expect(describeBulkOutcome(88, [])).toBe("88 domaines écrits");
+    expect(describeBulkOutcome(0, [])).toBe("0 domaines écrits");
+  });
+
+  it("accorde chaque raison sur son propre compte", () => {
+    expect(describeBulkOutcome(2, ["filled", "filled", "changed"])).toBe(
+      "2 domaines écrits · 3 ignorés (déjà renseignés, la proposition a changé)",
+    );
+  });
+
+  it("nomme le refus des suppositions", () => {
+    expect(describeBulkOutcome(0, ["notDeduced", "notDeduced"])).toBe(
+      "0 domaines écrits · 2 ignorés (ne sont plus des déductions)",
+    );
   });
 });

@@ -181,3 +181,134 @@ export function proposeDomain(
     because: "supposition à partir du nom de la société — aucune adresse professionnelle sur ses fiches",
   };
 }
+
+/* ------------------------------------------------- ressemblance nom ↔ domaine */
+
+/** Forme comparable d'une chaîne : sans accents, sans ponctuation, minuscule. */
+function normalize(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * L'étiquette d'un domaine : ce qui identifie la marque, sans `www.` ni
+ * extension. `www.nubiance.fr` → `nubiance`, `march-lab.com` → `marchlab`.
+ */
+export function domainLabel(domain: string): string {
+  const host = domain
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0];
+  return normalize((host ?? "").split(".")[0] ?? "");
+}
+
+/** Coefficient de Dice sur les bigrammes — 0 pour rien en commun, 1 pour identique. */
+function diceCoefficient(left: string, right: string): number {
+  if (left.length < 2 || right.length < 2) return left === right ? 1 : 0;
+
+  const bigrams = new Map<string, number>();
+  for (let i = 0; i < left.length - 1; i += 1) {
+    const pair = left.slice(i, i + 2);
+    bigrams.set(pair, (bigrams.get(pair) ?? 0) + 1);
+  }
+
+  let shared = 0;
+  for (let i = 0; i < right.length - 1; i += 1) {
+    const pair = right.slice(i, i + 2);
+    const left_ = bigrams.get(pair) ?? 0;
+    if (left_ > 0) {
+      bigrams.set(pair, left_ - 1);
+      shared += 1;
+    }
+  }
+
+  return (2 * shared) / (left.length - 1 + (right.length - 1));
+}
+
+/**
+ * À quel point le domaine proposé ressemble-t-il au nom de la société ?
+ *
+ * **Ce n'est pas une mesure de justesse, c'est une mesure d'étonnement.** Un
+ * score bas ne dit pas que le domaine est faux : « AGENCE INCARE Marketing »
+ * chez `oomylab.com` peut très bien être exact, une agence n'ayant pas
+ * l'obligation de porter le nom de son domaine. Il dit seulement que la valeur
+ * mérite un regard avant d'être écrite.
+ *
+ * Ce que le score attrape réellement, et c'est pour cela qu'il existe :
+ * l'adresse **erronée** dans la feuille source. « Absolution » et « Spring »
+ * portent toutes deux un contact en `@teledyne.com` — deux sociétés françaises
+ * de cosmétique rattachées à un électronicien américain. La ressemblance y est
+ * nulle, et c'est le signal.
+ *
+ * L'inclusion vaut 1 : « nateev » dans « agencenateev », « 23beauty » dans
+ * « 23beautyparis ». Le reste passe par Dice sur les bigrammes.
+ */
+export function nameSimilarity(companyName: string, domain: string): number {
+  const name = normalize(companyName);
+  const label = domainLabel(domain);
+  if (name === "" || label === "") return 0;
+  if (name === label) return 1;
+  if (name.includes(label) || label.includes(name)) return 1;
+  return diceCoefficient(name, label);
+}
+
+/**
+ * En dessous de ce score, la ligne est remontée en tête et porte un repère.
+ *
+ * Calé sur la base vérifiée : au-dessus, on trouve les correspondances
+ * évidentes (`numorning.com` pour Numorning) ; en dessous, les domaines qui
+ * n'ont rien à voir avec le nom — dont les deux `teledyne.com`.
+ */
+export const SUSPICIOUS_BELOW = 0.34;
+
+export function isSuspicious(companyName: string, domain: string): boolean {
+  return nameSimilarity(companyName, domain) < SUSPICIOUS_BELOW;
+}
+
+/* --------------------------------------------- compte rendu d'une acceptation */
+
+/**
+ * Pourquoi une ligne a été ignorée, au singulier et au pluriel.
+ *
+ * Deux formes plutôt qu'un « (s) » collé : le compte rendu d'une action qui
+ * vient d'écrire quatre-vingts lignes se lit une fois et doit être limpide du
+ * premier coup. « 4 ignorés (déjà renseignés) » se lit ; « 4 ignoré(s) (déjà
+ * renseigné) » se déchiffre.
+ */
+export const SKIP_REASONS = {
+  filled: { one: "déjà renseigné", many: "déjà renseignés" },
+  notDeduced: { one: "n'est plus une déduction", many: "ne sont plus des déductions" },
+  changed: { one: "la proposition a changé", many: "les propositions ont changé" },
+  missing: { one: "société introuvable", many: "sociétés introuvables" },
+} as const;
+
+export type SkipReason = keyof typeof SKIP_REASONS;
+
+/**
+ * « 84 domaines écrits · 4 ignorés (déjà renseignés) » — ce qui s'est passé,
+ * exactement, sans avoir à ouvrir le détail.
+ */
+export function describeBulkOutcome(
+  written: number,
+  skipped: readonly SkipReason[],
+): string {
+  const wrote = written === 1 ? "1 domaine écrit" : `${written} domaines écrits`;
+  if (skipped.length === 0) return wrote;
+
+  // Une raison par catégorie présente, accordée sur le nombre de lignes
+  // qu'elle a fait écarter — pas sur le total ignoré.
+  const counts = new Map<SkipReason, number>();
+  for (const reason of skipped) counts.set(reason, (counts.get(reason) ?? 0) + 1);
+
+  const parts = [...counts.entries()].map(([reason, count]) =>
+    count === 1 ? SKIP_REASONS[reason].one : SKIP_REASONS[reason].many,
+  );
+
+  const ignored = skipped.length === 1 ? "1 ignoré" : `${skipped.length} ignorés`;
+  return `${wrote} · ${ignored} (${parts.join(", ")})`;
+}

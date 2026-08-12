@@ -1,6 +1,6 @@
 import { badRequest, invalidPayload, jsonOk, serverError } from "@/lib/api/errors";
 import { readJson } from "@/lib/api/request";
-import { acceptDomain, rejectDomain } from "@/lib/api/domain-review";
+import { acceptDomain, acceptManyDomains, rejectDomain } from "@/lib/api/domain-review";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -10,11 +10,19 @@ export const dynamic = "force-dynamic";
  *
  * Route distincte de `/api/maintenance` parce que le contrat est différent :
  * les autres corrections s'appliquent en bloc après simulation, celle-ci se
- * décide ligne par ligne. Il n'existe volontairement aucun point d'entrée qui
- * accepterait plusieurs propositions d'un coup — un domaine proposé n'est pas
- * un fait vérifié, et rien dans cette route ne le vérifie : aucune requête
- * sortante n'est émise vers l'adresse proposée.
+ * décide ligne par ligne.
+ *
+ * `accept-many` existe, mais **uniquement pour les déductions** : le service
+ * recalcule la proposition de chaque société et refuse tout ce qui vient du
+ * nom plutôt que d'une adresse. Le bouton n'apparaît que sous le filtre
+ * « Déduites d'une adresse » ; cette vérification-ci est ce qui rend la règle
+ * vraie, l'affichage n'étant qu'une commodité.
+ *
+ * Rien dans cette route n'appelle l'adresse proposée : aucune requête sortante
+ * n'est émise, ni pour vérifier, ni pour prévisualiser.
  */
+const DOMAIN = /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i;
+
 const decisionSchema = z.object({
   companyId: z.string().min(1, "Société manquante"),
   action: z.enum(["accept", "reject"], { error: "Action inconnue" }),
@@ -25,12 +33,47 @@ const decisionSchema = z.object({
     .min(3, "Domaine trop court")
     .max(253, "Domaine trop long")
     // Un domaine, pas une URL : rien qui puisse porter un schéma ou un chemin.
-    .regex(/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i, "Ce n'est pas un domaine."),
+    .regex(DOMAIN, "Ce n'est pas un domaine."),
+});
+
+/** Acceptation groupée. Le plafond borne la requête, pas la règle. */
+const bulkSchema = z.object({
+  action: z.literal("accept-many"),
+  entries: z
+    .array(
+      z.object({
+        companyId: z.string().trim().min(1),
+        value: z.string().trim().regex(DOMAIN, "Ce n'est pas un domaine."),
+      }),
+    )
+    .min(1, "Aucune ligne à accepter")
+    .max(500),
 });
 
 export async function POST(request: Request) {
   const body = await readJson(request);
   if (body.ok === false) return badRequest("Corps de requête JSON illisible.");
+
+  const bulk = bulkSchema.safeParse(body.value);
+  if (bulk.success) {
+    try {
+      const result = await acceptManyDomains(
+        bulk.data.entries.map((entry) => ({
+          companyId: entry.companyId,
+          value: entry.value.toLowerCase(),
+        })),
+      );
+      return jsonOk({
+        message: result.message,
+        written: result.written,
+        skipped: result.skipped,
+        skippedRows: result.skippedRows,
+        undo: result.undo,
+      });
+    } catch (error) {
+      return serverError("POST /api/maintenance/domains (accept-many)", error);
+    }
+  }
 
   const parsed = decisionSchema.safeParse(body.value);
   if (!parsed.success) return invalidPayload(parsed.error);
