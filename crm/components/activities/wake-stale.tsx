@@ -45,7 +45,7 @@ export function WakeStaleDeals({ dealIds }: { dealIds: readonly string[] }) {
 
   if (done !== null) {
     return (
-      <p className="mb-2 flex flex-wrap items-center gap-2 rounded-control border border-[#B9E7DC] bg-flux-l px-3 py-2 text-[12.5px] text-flux-d">
+      <p className="mb-2 flex flex-wrap items-center gap-2 rounded-control border border-[#D3CEFA] bg-brand-l px-3 py-2 text-[12.5px] text-brand-d">
         {done} tâche(s) de réveil créée(s), une par affaire.
         <Link href="/taches" className="font-semibold underline">
           Ouvrir /taches

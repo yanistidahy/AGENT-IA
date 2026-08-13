@@ -32,7 +32,23 @@ export type TaskPriority = (typeof TASK_PRIORITIES)[number];
  * `Perdu` est en dernier : c'est la fin du parcours, pas une étape. Il est exclu
  * par défaut des vues du quotidien — voir lib/domain/lost.ts.
  */
-export const LIFECYCLES = ["Lead", "Prospect", "Client", "Ancien Client", "Perdu"] as const;
+/**
+ * Cycles de vie, dans l'ordre du parcours.
+ *
+ * `Qualifié` s'intercale entre `Prospect` et `Client`, et sa définition tient
+ * en une phrase : **le prospect a exprimé le désir de l'offre.** C'est son
+ * engagement à lui, pas notre activité à nous — avoir fait une démo ne qualifie
+ * personne, avoir demandé un prix si. C'est pour cela qu'y passer crée une
+ * affaire : à partir de là, il y a quelque chose à suivre.
+ */
+export const LIFECYCLES = [
+  "Lead",
+  "Prospect",
+  "Qualifié",
+  "Client",
+  "Ancien Client",
+  "Perdu",
+] as const;
 export type Lifecycle = (typeof LIFECYCLES)[number];
 
 export const SEQUENCE_CHANNELS = ["email", "call", "linkedin"] as const;
@@ -61,6 +77,11 @@ export interface StageLike {
   readonly color: string;
   readonly prob: number;
   readonly position: number;
+  /**
+   * Ce que l'acheteur doit avoir accordé pour sortir de l'étape. Facultatif :
+   * une étape ajoutée à la main n'en porte pas tant que personne ne l'a écrit.
+   */
+  readonly exitCriterion?: string;
 }
 
 export interface DealLike {

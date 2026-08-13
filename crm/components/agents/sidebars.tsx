@@ -57,7 +57,7 @@ export function Conversations({
           type="button"
           onClick={onCreate}
           aria-label="Nouvelle conversation"
-          className="ml-auto rounded-control border border-[#2A3240] p-1 text-[#8FA3AE] transition-colors hover:border-flux hover:text-flux"
+          className="ml-auto rounded-control border border-[#2A3240] p-1 text-[#9AA4CE] transition-colors hover:border-brand-lift hover:text-brand-lift"
         >
           <Icon name="plus" size={14} />
         </button>

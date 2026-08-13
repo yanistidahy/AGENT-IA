@@ -62,14 +62,14 @@ export function BarChart({
               width={barWidth}
               height={Math.max(barHeight, point.value > 0 ? 2 : 0)}
               rx={4}
-              fill="#0FA88F"
+              fill="var(--color-brand)"
             />
             <text
               x={x + barWidth / 2}
               y={height - barHeight - 5}
               textAnchor="middle"
               fontSize="10"
-              fill="#6E8B86"
+              fill="var(--color-muted)"
               fontFamily="ui-monospace, monospace"
             >
               {point.value === 0 ? "" : format(point.value)}
@@ -79,14 +79,14 @@ export function BarChart({
               y={height + 16}
               textAnchor="middle"
               fontSize="10"
-              fill="#6E8B86"
+              fill="var(--color-muted)"
             >
               {point.label}
             </text>
           </g>
         );
       })}
-      <line x1="0" y1={height} x2={width} y2={height} stroke="#E3EBE9" strokeWidth="1" />
+      <line x1="0" y1={height} x2={width} y2={height} stroke="var(--color-line)" strokeWidth="1" />
     </svg>
   );
 }
@@ -126,28 +126,28 @@ export function LineChart({
       role="img"
       aria-label={points.map((p) => `${p.label} : ${format(p.value)}`).join(", ")}
     >
-      <path d={area} fill="#0FA88F" fillOpacity="0.12" />
-      <path d={path} fill="none" stroke="#0FA88F" strokeWidth="2" strokeLinejoin="round" />
+      <path d={area} fill="var(--color-brand)" fillOpacity="0.12" />
+      <path d={path} fill="none" stroke="var(--color-brand)" strokeWidth="2" strokeLinejoin="round" />
       {coords.map(({ x, y, point }) => (
         <g key={point.label}>
-          <circle cx={x} cy={y} r="3" fill="#0FA88F" />
-          <text x={x} y={height + 18} textAnchor="middle" fontSize="10" fill="#6E8B86">
+          <circle cx={x} cy={y} r="3" fill="var(--color-brand)" />
+          <text x={x} y={height + 18} textAnchor="middle" fontSize="10" fill="var(--color-muted)">
             {point.label}
           </text>
         </g>
       ))}
-      <line x1="0" y1={height} x2={width} y2={height} stroke="#E3EBE9" strokeWidth="1" />
+      <line x1="0" y1={height} x2={width} y2={height} stroke="var(--color-line)" strokeWidth="1" />
     </svg>
   );
 }
 
 const DONUT_COLORS = [
-  "#0FA88F",
+  "#4B3FE4",
   "#6D5AE6",
   "#D99323",
   "#2C7BE5",
   "#C8452F",
-  "#4E9F7A",
+  "#0FA88F",
   "#8E7CC3",
   "#A8763E",
 ];

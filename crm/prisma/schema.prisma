@@ -30,7 +30,15 @@ model Stage {
   nextActionLabel String @default("")
   nextActionDays  Int    @default(3)
 
-  deals Deal[]
+  /// Critère de sortie, écrit du point de vue de **l'engagement de l'acheteur**
+  /// et non de notre activité : « a demandé une proposition » plutôt que
+  /// « proposition envoyée ». Une étape définie par ce qu'on a fait se franchit
+  /// toute seule ; définie par ce que l'autre a accordé, elle mesure quelque
+  /// chose. Affiché au survol de la colonne.
+  exitCriterion String @default("")
+
+  deals      Deal[]
+  stageVisits DealStageVisit[]
 
   @@map("stages")
 }
@@ -55,8 +63,28 @@ model Company {
   activities Activity[]
   tasks      Task[]
 
+  domainRejection DomainRejection?
+
   @@index([name])
   @@map("companies")
+}
+
+/// Proposition de domaine écartée à la main.
+///
+/// Seuls les **refus** sont stockés : une proposition acceptée écrit le domaine
+/// de la société, et disparaît d'elle-même de la liste — celle-ci ne montre que
+/// les sociétés au domaine vide. Sans cette table, une proposition rejetée
+/// reviendrait à chaque relecture, et la liste ne se viderait jamais.
+model DomainRejection {
+  id         String   @id @default(cuid())
+  companyId  String   @unique
+  /// La valeur refusée, conservée pour ne pas la reproposer à l'identique.
+  proposed   String
+  rejectedAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("domain_rejections")
 }
 
 /// `lifecycle` : Lead | Prospect | Client | Ancien Client | Perdu
@@ -95,6 +123,10 @@ model Contact {
   /// Quand le statut saisi a été posé. Sert à repérer un statut figé : une fiche
   /// dont le statut n'a pas bougé alors qu'une interaction plus récente existe.
   statusSetAt DateTime?
+
+  /// Site de la personne ou de sa boutique. Rendu comme un lien, jamais
+  /// réécrit en base — voir lib/domain/links.ts.
+  website String @default("")
 
   /// Miroir normalisé des champs cherchables — voir Company.searchText.
   searchText String @default("")
@@ -147,6 +179,7 @@ model Deal {
 
   activities    Activity[]
   tasks         Task[]
+  stageVisits   DealStageVisit[]
   conversations Conversation[]
 
   @@index([stageId])
@@ -470,4 +503,68 @@ model SnapshotRun {
 
   @@index([startedAt])
   @@map("snapshot_runs")
+}
+
+/// La file du jour, figée au premier affichage.
+///
+/// Sans cette ligne, le dénominateur de l'anneau d'avancement reculerait à
+/// chaque élément traité — la file rétrécit quand on travaille — et l'anneau
+/// resterait éternellement au même endroit. `planned` fixe la taille du matin ;
+/// il peut monter en cours de journée si de nouvelles échéances tombent, jamais
+/// descendre.
+model QueueDay {
+  /// AAAA-MM-JJ, calculé sur le fuseau du serveur comme le reste du projet.
+  day       String   @id
+  planned   Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@map("queue_days")
+}
+
+/// Un élément de la file traité aujourd'hui.
+///
+/// Le compte se fait sur des lignes distinctes plutôt que sur un compteur
+/// incrémenté : reporter deux fois la même relance est une seule ligne traitée,
+/// et un compteur l'aurait comptée deux fois. La contrainte d'unicité porte la
+/// règle, plutôt qu'un test applicatif qui perdrait aux écritures concurrentes.
+model QueueMark {
+  id String @id @default(cuid())
+  /// Même clé que `QueueDay.day`.
+  day String
+  /// Identifiant de ligne de file : `reminder-<contact>`, `task-<id>`, `deal-<id>`.
+  itemId String
+  /// L'action qui a retiré la ligne, pour le journal. Sans valeur de calcul.
+  action String   @default("")
+  at     DateTime @default(now())
+
+  @@unique([day, itemId])
+  @@index([day])
+  @@map("queue_marks")
+}
+
+
+/// Passage d'une affaire dans une étape.
+///
+/// `Deal.stageSince` ne dit que depuis quand l'affaire est dans son étape
+/// **actuelle** : il ne permet pas de répondre à « où mes affaires stagnent-elles ? »,
+/// qui demande la durée passée dans les étapes **quittées**. Une ligne est
+/// écrite à chaque entrée, y compris à la création ; la durée d'un passage est
+/// l'écart avec l'entrée suivante, ou avec maintenant pour la dernière.
+///
+/// Conséquence assumée : les affaires antérieures à cette table n'ont qu'une
+/// seule visite, reconstituée depuis `stageSince`. Leur historique de passage
+/// est perdu — il n'a jamais été enregistré — et les moyennes ne deviennent
+/// vraies qu'à mesure que de nouveaux passages s'accumulent.
+model DealStageVisit {
+  id        String   @id @default(cuid())
+  dealId    String
+  stageId   String
+  enteredAt DateTime @default(now())
+
+  deal  Deal  @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  stage Stage @relation(fields: [stageId], references: [id])
+
+  @@index([dealId, enteredAt])
+  @@index([stageId])
+  @@map("deal_stage_visits")
 }

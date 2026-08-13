@@ -1,26 +1,63 @@
 @import "tailwindcss";
 
 /**
- * Jetons de conception repris à l'identique du prototype `auraflow-crm.html`.
- * Le prototype fait foi : ces valeurs ne sont pas celles du brief initial
- * (voir CLAUDE.md § Divergences). La menthe `flux` est la couleur d'action
- * primaire ; l'encre est un vert-noir, pas un bleu-noir.
+ * Jetons de conception — palette de marque AuraFLOW.
+ *
+ * Le prototype `auraflow-crm.html` faisait de la menthe **à la fois** la couleur
+ * d'action et la couleur de réussite. Un bouton « Enregistrer » et une affaire
+ * gagnée portaient le même vert : la couleur ne voulait plus rien dire.
+ *
+ * La marque tranche. `brand` (bleu-violet, repris de la vague du logo) est la
+ * couleur d'action — boutons, liens, onglet actif, anneau de focus, séries
+ * primaires des graphiques. `win` (menthe) est la couleur de la réussite, et
+ * **seulement** cela : affaire gagnée, statut sain, sauvegarde à jour.
+ *
+ * Les contrastes mesurés (WCAG 2.1, ratio calculé sur les luminances relatives)
+ * sont notés en regard de chaque paire réellement employée.
  */
 @theme {
-  /* Encre — rail de navigation, fluxbar, boutons primaires */
-  --color-ink: #0c1614;
-  --color-ink-2: #13211e;
-  --color-ink-3: #1d2f2b;
+  /* Encre — texte, boutons sombres. Bleu-noir : un vert-noir jurerait contre
+     le rail. */
+  --color-ink: #0d1220;
+  --color-ink-2: #161c2e;
+  --color-ink-3: #232b42;
+
+  /* Rail de navigation — bleu profond de la marque.
+     blanc sur --color-rail        : 18.6:1
+     rail-text sur --color-rail    :  7.6:1
+     rail-dim  sur --color-rail    :  5.7:1
+     blanc sur --color-rail-3      : 14.2:1  (entrée active)
+     brand-lift sur --color-rail   :  8.1:1  (« CRM », icône active) */
+  --color-rail: #0b1030;
+  --color-rail-2: #161c42;
+  --color-rail-3: #232b5c;
+  --color-rail-text: #9aa4ce;
+  --color-rail-dim: #828cbc;
 
   /* Fonds */
-  --color-paper: #edf1ef;
+  --color-paper: #eeeff4;
   --color-surface: #ffffff;
-  --color-surface-2: #f7faf9;
+  --color-surface-2: #f8f9fc;
 
-  /* Menthe — action primaire, succès, affaire active */
-  --color-flux: #0fa88f;
-  --color-flux-d: #0b7a68;
-  --color-flux-l: #dff3ef;
+  /* Bleu-violet — action primaire.
+     blanc sur --color-brand   : 6.7:1
+     blanc sur --color-brand-d : 8.7:1
+     brand-d sur --color-brand-l : 7.6:1
+     --color-brand sur blanc   : 6.7:1  (liens)
+     `brand-lift` est la seule variante destinée aux fonds sombres : le bleu-
+     violet plein n'atteint que 2.1:1 sur le rail actif, il y serait illisible. */
+  --color-brand: #4b3fe4;
+  --color-brand-d: #3a2fc7;
+  --color-brand-l: #efedff;
+  --color-brand-lift: #a9a2f5;
+
+  /* Menthe — réussite, et rien d'autre : affaire gagnée, statut sain,
+     sauvegarde à jour.
+     win-d sur --color-win-l : 4.6:1
+     Jamais de texte blanc sur `win` plein : 3.0:1, sous le seuil. */
+  --color-win: #0fa88f;
+  --color-win-d: #0b7a68;
+  --color-win-l: #dff3ef;
 
   /* Rouge — alerte haute, affaire froide, perdue */
   --color-pulse: #e8503f;
@@ -38,10 +75,12 @@
   --color-sky: #2c7be5;
   --color-sky-l: #e4eefc;
 
-  /* Neutres */
-  --color-muted: #63807a;
-  --color-line: #dce5e2;
-  --color-line-2: #ebf0ee;
+  /* Neutres. `muted` passait à 4.3:1 sur blanc — sous le seuil AA pour du
+     texte courant, et c'est lui qui porte les libellés secondaires du tableau
+     des contacts. Le gris froid retenu tient 4.9:1. */
+  --color-muted: #6b7192;
+  --color-line: #dee0ea;
+  --color-line-2: #eceef4;
 
   /* Typographie — variables injectées par next/font dans app/layout.tsx */
   --font-sans: var(--font-public-sans), system-ui, -apple-system, sans-serif;
@@ -53,8 +92,8 @@
   --radius-control: 7px;
 
   /* Ombres */
-  --shadow-card: 0 1px 2px rgba(12, 22, 20, 0.05), 0 8px 24px -12px rgba(12, 22, 20, 0.18);
-  --shadow-float: 0 24px 60px -20px rgba(12, 22, 20, 0.35);
+  --shadow-card: 0 1px 2px rgba(13, 18, 32, 0.05), 0 8px 24px -12px rgba(13, 18, 32, 0.18);
+  --shadow-float: 0 24px 60px -20px rgba(13, 18, 32, 0.35);
 }
 
 @layer base {
@@ -73,17 +112,40 @@
   }
 
   ::selection {
-    background: var(--color-flux);
+    background: var(--color-brand);
     color: #fff;
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-flux);
+    outline: 2px solid var(--color-brand);
     outline-offset: 2px;
     border-radius: 4px;
   }
 }
 
+/* Apparition du bandeau d'annulation. Volontairement courte : elle signale
+   qu'un élément est arrivé, elle ne se fait pas admirer — et la règle
+   `prefers-reduced-motion` ci-dessous la réduit à rien pour qui la refuse. */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/**
+ * Le contrat de mouvement du produit, en un seul endroit.
+ *
+ * Chaque animation et chaque transition de l'application passe par cette règle :
+ * aucun composant n'a besoin de se souvenir de respecter la préférence système,
+ * et aucun ne peut l'oublier. Les durées sont ramenées à un instant plutôt qu'à
+ * zéro, pour que les gestionnaires de fin de transition se déclenchent tout de
+ * même.
+ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

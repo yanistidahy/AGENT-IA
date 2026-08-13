@@ -36,7 +36,7 @@ function isReport(value: unknown): value is Report {
 
 const MARK: Record<Step["outcome"], string> = { ok: "✓", failed: "✗", skipped: "·" };
 const TONE: Record<Step["outcome"], string> = {
-  ok: "text-flux-d",
+  ok: "text-win-d",
   failed: "text-[#B2311F]",
   skipped: "text-muted",
 };

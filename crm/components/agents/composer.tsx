@@ -72,7 +72,7 @@ export function Composer({
           onClick={submit}
           disabled={disabled || text.trim() === ""}
           aria-label="Envoyer"
-          className="rounded-control bg-flux p-1.5 text-white transition-colors hover:bg-flux-d disabled:bg-[#2A3240] disabled:text-[#5F6B7C]"
+          className="rounded-control bg-brand p-1.5 text-white transition-colors hover:bg-brand-d disabled:bg-[#2A3240] disabled:text-[#5F6B7C]"
         >
           <Icon name="arrow" size={15} />
         </button>

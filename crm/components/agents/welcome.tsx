@@ -46,7 +46,7 @@ export function Welcome({
               type="button"
               disabled={disabled}
               onClick={() => onAsk(starter.question)}
-              className="rounded-card border border-[#242C3A] bg-[#141821] px-3.5 py-3 text-left transition-colors hover:border-flux hover:bg-[#181D28] disabled:opacity-50"
+              className="rounded-card border border-[#242C3A] bg-[#141821] px-3.5 py-3 text-left transition-colors hover:border-brand-lift hover:bg-[#181D28] disabled:opacity-50"
             >
               <span className="block text-[13px] font-semibold text-white">
                 {starter.question}

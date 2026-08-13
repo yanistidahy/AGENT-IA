@@ -3,13 +3,29 @@ import { readJson } from "@/lib/api/request";
 import {
   applyLifecycleFix,
   applySearchBackfill,
+  applyWebsiteFix,
   lifecycleSnapshot,
   planLifecycleFix,
   planNameFix,
   planSearchBackfill,
+  planWebsiteFix,
   applyNameFix,
+  applyStatusFix,
+  applySiteFix,
+  planStatusFix,
+  planSiteFix,
+  siteSnapshot,
+  statusSnapshot,
+  websiteSnapshot,
 } from "@/lib/api/maintenance";
+import { readDomainReview } from "@/lib/api/domain-review";
+import { SHEET_SITES } from "@/scripts/sites-2026-08";
 import { STATUS_CORRECTIONS } from "@/scripts/corrections-2026-08";
+import {
+  SHEET_MODIFIED_AT,
+  SHEET_STATUSES,
+  SHEET_UNREADABLE,
+} from "@/scripts/statuts-2026-08";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +41,7 @@ export const dynamic = "force-dynamic";
  * `GET` simule et n'écrit rien. `POST` écrit, et exige de nommer l'opération :
  * une requête vide ne peut pas déclencher une écriture par accident.
  */
-const OPERATIONS = ["search", "lifecycles", "names"] as const;
+const OPERATIONS = ["search", "lifecycles", "names", "statuses", "websites", "sites"] as const;
 
 const applySchema = z.object({
   operation: z.enum(OPERATIONS, { error: "Opération inconnue" }),
@@ -35,10 +51,14 @@ const applySchema = z.object({
 
 export async function GET() {
   try {
-    const [search, lifecycles, names] = await Promise.all([
+    const [search, lifecycles, names, statuses, websites, sites, domains] = await Promise.all([
       planSearchBackfill(),
       planLifecycleFix(STATUS_CORRECTIONS),
       planNameFix(),
+      planStatusFix(SHEET_STATUSES, SHEET_MODIFIED_AT, SHEET_UNREADABLE),
+      planWebsiteFix(),
+      planSiteFix(SHEET_SITES),
+      readDomainReview(),
     ]);
 
     return jsonOk({
@@ -73,6 +93,65 @@ export async function GET() {
           lostReason: change.lostReason,
           evidence: change.evidence,
           uncertain: change.uncertain,
+        })),
+      },
+      statuses: {
+        total: statuses.changes.length,
+        unchanged: statuses.unchanged,
+        uncertain: statuses.changes.filter((change) => change.uncertain).length,
+        conflicting: statuses.changes.filter((change) => change.conflicting).length,
+        // Le point que la simulation doit dire tout haut : « Jamais contacté »
+        // ne retire pas une relance programmée, et ces fiches continueront donc
+        // d'apparaître dans les listes de relance.
+        keepsReminder: statuses.changes.filter((change) => change.keepsReminder).length,
+        byKind: {
+          never: statuses.changes.filter((change) => change.kind === "never").length,
+          waiting: statuses.changes.filter((change) => change.kind === "waiting").length,
+          lost: statuses.changes.filter((change) => change.kind === "lost").length,
+        },
+        touched: statuses.touched.map((row) => row.label),
+        warnings: statuses.warnings,
+        changes: statuses.changes.map((change) => ({
+          label: change.label,
+          fromStatus: change.fromStatus,
+          toStatus: change.toStatus,
+          fromLifecycle: change.fromLifecycle,
+          toLifecycle: change.toLifecycle,
+          toReason: change.toReason,
+          evidence: change.evidence,
+          uncertain: change.uncertain,
+          conflicting: change.conflicting,
+          keepsReminder: change.keepsReminder,
+        })),
+      },
+      sites: {
+        total: sites.changes.length,
+        unchanged: sites.unchanged,
+        warnings: sites.warnings,
+        sheetTotal: SHEET_SITES.length,
+        changes: sites.changes.map((change) => ({
+          label: change.label,
+          row: change.row,
+          url: change.url,
+          source: change.source,
+          company: change.companyName,
+          fillCompanyDomain: change.fillCompanyDomain,
+        })),
+      },
+      domains: {
+        rows: domains.rows,
+        noProposal: domains.noProposal,
+        totals: domains.totals,
+      },
+      websites: {
+        total: websites.rows.length,
+        unresolved: websites.unresolved,
+        otherPatterns: websites.otherPatterns,
+        rows: websites.rows.map((row) => ({
+          label: row.label,
+          value: row.value,
+          sourceLine: row.sourceLine,
+          fillCompanyDomain: row.fillCompanyDomain,
         })),
       },
     });
@@ -110,6 +189,42 @@ export async function POST(request: Request) {
         );
       }
       return jsonOk({ applied: await applyNameFix(plan) });
+    }
+
+    if (parsed.data.operation === "sites") {
+      const plan = await planSiteFix(SHEET_SITES);
+      if (plan.changes.length !== parsed.data.expected) {
+        return badRequest(
+          `La base a changé depuis la simulation (${plan.changes.length} fiches au lieu de ${parsed.data.expected}). Relancez la simulation.`,
+        );
+      }
+      return jsonOk({ applied: await applySiteFix(plan), snapshot: siteSnapshot(plan) });
+    }
+
+    if (parsed.data.operation === "websites") {
+      const plan = await planWebsiteFix();
+      if (plan.rows.length !== parsed.data.expected) {
+        return badRequest(
+          `La base a changé depuis la simulation (${plan.rows.length} fiches au lieu de ${parsed.data.expected}). Relancez la simulation.`,
+        );
+      }
+      return jsonOk({
+        applied: await applyWebsiteFix(plan),
+        snapshot: websiteSnapshot(plan),
+      });
+    }
+
+    if (parsed.data.operation === "statuses") {
+      const plan = await planStatusFix(SHEET_STATUSES, SHEET_MODIFIED_AT, SHEET_UNREADABLE);
+      if (plan.changes.length !== parsed.data.expected) {
+        return badRequest(
+          `La base a changé depuis la simulation (${plan.changes.length} fiches au lieu de ${parsed.data.expected}). Relancez la simulation.`,
+        );
+      }
+      return jsonOk({
+        applied: await applyStatusFix(plan, SHEET_MODIFIED_AT),
+        snapshot: statusSnapshot(plan),
+      });
     }
 
     const plan = await planLifecycleFix(STATUS_CORRECTIONS);

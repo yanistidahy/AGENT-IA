@@ -66,7 +66,7 @@ function githubConfig(): GitHubConfig | null {
 async function githubSha(config: GitHubConfig, key: string): Promise<string | null> {
   const response = await githubFetch(config, `${config.directory}/${key}`, { method: "GET" });
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`GitHub ${response.status} en lisant ${key}`);
+  if (!response.ok) throw await githubError(response, `en lisant ${key}`);
   const payload: unknown = await response.json();
   if (typeof payload === "object" && payload !== null && "sha" in payload) {
     const sha = (payload as { sha: unknown }).sha;
@@ -75,17 +75,44 @@ async function githubSha(config: GitHubConfig, key: string): Promise<string | nu
   return null;
 }
 
-function githubFetch(config: GitHubConfig, suffix: string, init: RequestInit): Promise<Response> {
+function githubFetch(
+  config: GitHubConfig,
+  suffix: string,
+  init: RequestInit,
+  accept = "application/vnd.github+json",
+): Promise<Response> {
   return fetch(`https://api.github.com/repos/${config.repo}/contents/${suffix}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${config.token}`,
-      Accept: "application/vnd.github+json",
+      Accept: accept,
       "X-GitHub-Api-Version": "2022-11-28",
       ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
     },
     cache: "no-store",
   });
+}
+
+/**
+ * L'erreur GitHub, avec son texte.
+ *
+ * Le code seul ne suffit pas au moment de la configuration : un 404 sur une
+ * écriture veut dire « branche absente », « dépôt inconnu » ou « jeton sans
+ * accès à ce dépôt » — trois causes, trois gestes différents. GitHub le dit
+ * dans `message`, autant le relayer jusqu'à l'écran de réglages.
+ */
+async function githubError(response: Response, what: string): Promise<Error> {
+  let detail = "";
+  try {
+    const payload: unknown = await response.json();
+    if (typeof payload === "object" && payload !== null && "message" in payload) {
+      const message = (payload as { message: unknown }).message;
+      if (typeof message === "string") detail = ` — ${message}`;
+    }
+  } catch {
+    // Corps illisible : le code seul devra suffire.
+  }
+  return new Error(`GitHub ${response.status} ${what}${detail}`);
 }
 
 function githubStore(config: GitHubConfig): SnapshotStore {
@@ -101,7 +128,7 @@ function githubStore(config: GitHubConfig): SnapshotStore {
       // Un dossier encore inexistant n'est pas une erreur : c'est l'état avant
       // la première sauvegarde.
       if (response.status === 404) return [];
-      if (!response.ok) throw new Error(`GitHub ${response.status} en listant les instantanés`);
+      if (!response.ok) throw await githubError(response, "en listant les instantanés");
 
       const payload: unknown = await response.json();
       if (!Array.isArray(payload)) return [];
@@ -131,22 +158,28 @@ function githubStore(config: GitHubConfig): SnapshotStore {
           ...(sha === null ? {} : { sha }),
         }),
       });
-      if (!response.ok) {
-        throw new Error(`GitHub ${response.status} en écrivant ${key}`);
-      }
+      if (!response.ok) throw await githubError(response, `en écrivant ${key}`);
     },
 
+    /**
+     * Lit le contenu brut, **pas** l'enveloppe JSON.
+     *
+     * Au-delà d'un mégaoctet, la réponse JSON de l'API Contents renvoie
+     * `content: ""` avec `encoding: "none"` : elle réussit, et elle est vide.
+     * Une sauvegarde de CRM dépasse ce seuil très vite, et le défaut serait
+     * invisible jusqu'à la restauration — le seul moment où il coûte tout. Le
+     * type média `raw` rend le fichier tel quel jusqu'à cent mégaoctets.
+     */
     async get(key) {
-      const response = await githubFetch(config, `${config.directory}/${key}?ref=${config.branch}`, {
-        method: "GET",
-      });
+      const response = await githubFetch(
+        config,
+        `${config.directory}/${key}?ref=${config.branch}`,
+        { method: "GET" },
+        "application/vnd.github.raw",
+      );
       if (response.status === 404) return null;
-      if (!response.ok) throw new Error(`GitHub ${response.status} en lisant ${key}`);
-      const payload: unknown = await response.json();
-      if (typeof payload !== "object" || payload === null || !("content" in payload)) return null;
-      const encoded = (payload as { content: unknown }).content;
-      if (typeof encoded !== "string") return null;
-      return Buffer.from(encoded, "base64").toString("utf8");
+      if (!response.ok) throw await githubError(response, `en lisant ${key}`);
+      return response.text();
     },
 
     async remove(key) {
@@ -160,7 +193,7 @@ function githubStore(config: GitHubConfig): SnapshotStore {
           branch: config.branch,
         }),
       });
-      if (!response.ok) throw new Error(`GitHub ${response.status} en supprimant ${key}`);
+      if (!response.ok) throw await githubError(response, `en supprimant ${key}`);
     },
   };
 }

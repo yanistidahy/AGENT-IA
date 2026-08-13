@@ -1,4 +1,9 @@
-import { FOLLOW_UP_LABELS, needsAttention, type FollowUpStatus } from "./follow-up";
+import {
+  FOLLOW_UP_LABELS,
+  FOLLOW_UP_STATUSES,
+  needsAttention,
+  type FollowUpStatus,
+} from "./follow-up";
 import { LOST_LIFECYCLE } from "./lost";
 import type { Lifecycle } from "./types";
 
@@ -39,6 +44,18 @@ export const OUTCOME_LABELS: Record<Outcome, string> = {
   meeting: "RDV obtenu",
   "wrong-person": "Mauvais interlocuteur",
 };
+
+/**
+ * Les issues qui valent réponse.
+ *
+ * « Pas intéressé » en fait partie : la personne a répondu, elle a dit non. Les
+ * confondre avec un silence ferait passer un portefeuille qui répond mal pour un
+ * portefeuille qui ne répond pas — deux problèmes, deux remèdes. Défini ici pour
+ * que le taux de réponse et le filtre de l'entonnoir emploient la même règle.
+ */
+export const ANSWERED_OUTCOMES: readonly Outcome[] = OUTCOMES.filter(
+  (outcome) => outcome !== "no-answer",
+);
 
 export function isOutcome(value: string): value is Outcome {
   return OUTCOMES.some((candidate) => candidate === value);
@@ -81,6 +98,29 @@ export interface ResolvedStatus {
   /** `stored` quand la valeur vient d'une saisie, `computed` sinon. */
   readonly source: "stored" | "computed";
   readonly attention: boolean;
+  /**
+   * Clé canonique du statut affiché, ou `null` si le libellé saisi est libre.
+   *
+   * C'est **ce sur quoi les puces filtrent**. Sans elle, une puce comparerait
+   * des chaînes libres, et « Jamais contacté » saisi ne rejoindrait jamais la
+   * puce du même nom — c'est précisément le défaut corrigé au jalon 27.
+   */
+  readonly key: FollowUpStatus | null;
+}
+
+/**
+ * Le libellé saisi correspond-il à un statut connu du domaine ?
+ *
+ * La comparaison porte sur les libellés français exacts de `FOLLOW_UP_LABELS`,
+ * qui sont aussi ce que `STATUS_SUGGESTIONS` propose et ce que les corrections
+ * de feuille écrivent. « Contacté — en attente », « Intéressé » ou « RDV pris »
+ * n'ont pas de clé : ce sont des états que nulle date ne peut calculer, et leur
+ * inventer une clé les ferait apparaître dans une puce qui ne les désigne pas.
+ */
+export function canonicalStatus(stored: string): FollowUpStatus | null {
+  const label = stored.trim();
+  if (label === "") return null;
+  return FOLLOW_UP_STATUSES.find((key) => FOLLOW_UP_LABELS[key] === label) ?? null;
 }
 
 /**
@@ -100,6 +140,7 @@ export function resolveStatus(contact: StatusLike): ResolvedStatus {
       label: FOLLOW_UP_LABELS[contact.followUp],
       source: "computed",
       attention: needsAttention(contact.followUp),
+      key: contact.followUp,
     };
   }
 
@@ -110,6 +151,7 @@ export function resolveStatus(contact: StatusLike): ResolvedStatus {
     // par défaut. Inventer une urgence à partir d'un mot qu'on ne comprend pas
     // serait pire que de n'en signaler aucune.
     attention: ATTENTION_LABELS.includes(stored),
+    key: canonicalStatus(stored),
   };
 }
 

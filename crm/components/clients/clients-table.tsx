@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Eyebrow, FollowUpTag } from "@/components/ui/primitives";
+import { ContactStatusTag, Eyebrow } from "@/components/ui/primitives";
+import { resolveStatus } from "@/lib/domain/status";
 import type { ClientRow, ClientSort } from "@/lib/api/clients";
 import { needsAttention } from "@/lib/domain/follow-up";
 import { formatDate, money, moneyShort } from "@/lib/format";
@@ -86,7 +87,7 @@ export function ClientsTable({ clients, sort, coldDays, facets }: ClientsTablePr
         <tbody>
           {clients.map((client) => {
             // Même source de vérité que /contacts et /accueil.
-            const cold = needsAttention(client.followUp);
+            const cold = resolveStatus({ status: client.status, followUp: client.followUp }).attention;
 
             return (
               <tr key={client.id} className="transition-colors hover:bg-surface-2">
@@ -127,7 +128,7 @@ export function ClientsTable({ clients, sort, coldDays, facets }: ClientsTablePr
                   {formatDate(client.nextReminder)}
                 </td>
                 <td className="border-b border-line-2 px-3.5 py-2.5">
-                  <FollowUpTag status={client.followUp} />
+                  <ContactStatusTag status={client.status} followUp={client.followUp} />
                 </td>
               </tr>
             );

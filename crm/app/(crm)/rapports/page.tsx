@@ -3,6 +3,9 @@ import { BarChart, DonutChart, LineChart } from "@/components/charts/primitives"
 import { Funnel } from "@/components/charts/funnel";
 import { Eyebrow } from "@/components/ui/primitives";
 import { parsePeriod, readReports } from "@/lib/api/reports";
+import { readProspectingReport, readSalesFlow } from "@/lib/api/prospecting";
+import { ProspectingBlock } from "@/components/reports/prospecting-block";
+import { SalesFlowBlock } from "@/components/reports/sales-flow-block";
 import { money, moneyShort, percent } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +34,17 @@ export default async function RapportsPage({
   const period = parsePeriod(Array.isArray(rawPeriod) ? rawPeriod[0] : rawPeriod);
   const current = period === null ? "all" : String(period);
 
-  const data = await readReports(period);
+  const [data, prospecting, salesFlow] = await Promise.all([
+    readReports(period),
+    readProspectingReport(),
+    readSalesFlow(),
+  ]);
+
+  // Sans affaire, les mesures de closing valent toutes zéro : elles occupent
+  // l'écran de quelqu'un dont l'activité du jour est d'appeler des gens. Le
+  // bloc Prospection passe donc devant, et il est seul tant que rien n'est
+  // ouvert — l'écran suit l'état de la base, il ne demande pas de réglage.
+  const hasDeals = salesFlow.deals > 0;
 
   return (
     <div className="px-6 py-6">
@@ -48,7 +61,7 @@ export default async function RapportsPage({
               key={option.value}
               href={`/rapports?periode=${option.value}`}
               className={`border-r border-line px-3 py-1.5 text-[12.5px] font-semibold transition-colors last:border-r-0 ${
-                current === option.value ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
+                current === option.value ? "bg-brand text-white" : "text-muted hover:bg-surface-2"
               }`}
             >
               {option.label}
@@ -57,6 +70,11 @@ export default async function RapportsPage({
         </div>
       </header>
 
+      <ProspectingBlock data={prospecting} />
+
+      <SalesFlowBlock data={salesFlow} />
+
+      {hasDeals && (
       <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Kpi label="CA signé" value={moneyShort(data.revenue)} />
         <Kpi label="Taux de closing" value={percent(data.winRate)} />
@@ -64,7 +82,9 @@ export default async function RapportsPage({
         <Kpi label="Panier moyen" value={moneyShort(data.averageDeal)} />
         <Kpi label="Rétention" value={percent(data.retention)} />
       </div>
+      )}
 
+      {hasDeals && (
       <div className="grid gap-5 lg:grid-cols-2">
         <Card title="CA signé par mois">
           <BarChart
@@ -76,10 +96,13 @@ export default async function RapportsPage({
           <BarChart points={data.forecast.map((p) => ({ label: p.month, value: p.value }))} />
         </Card>
       </div>
+      )}
 
-      <Card title="Entonnoir de conversion" className="mt-5">
-        <Funnel rows={data.funnel} />
-      </Card>
+      {hasDeals && (
+        <Card title="Entonnoir de conversion" className="mt-5">
+          <Funnel rows={data.funnel} />
+        </Card>
+      )}
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <Card title="Nouveaux contacts par mois">

@@ -62,7 +62,7 @@ export function ListEditor({
           setText(e.target.value);
           setSaved(false);
         }}
-        className="w-full rounded-control border border-line bg-surface px-2.5 py-2 font-mono text-[12.5px] outline-none focus:border-flux"
+        className="w-full rounded-control border border-line bg-surface px-2.5 py-2 font-mono text-[12.5px] outline-none focus:border-brand"
       />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <button
@@ -73,7 +73,7 @@ export function ListEditor({
         >
           {busy ? "…" : "Enregistrer"}
         </button>
-        {saved && <span className="text-[12px] text-flux-d">Enregistré.</span>}
+        {saved && <span className="text-[12px] text-win-d">Enregistré.</span>}
         {error !== null && <span className="text-[12px] text-[#B2311F]">{error}</span>}
       </div>
     </div>

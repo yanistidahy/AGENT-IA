@@ -17,7 +17,7 @@ import {
  * ce qu'on vient d'apprendre, et ce que la fiche doit dire ensuite.
  */
 const CONTROL =
-  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[13.5px] outline-none focus:border-flux";
+  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[13.5px] outline-none focus:border-brand";
 
 export interface OutcomeFieldsProps {
   readonly outcome: Outcome | "";
@@ -50,7 +50,7 @@ export function OutcomeFields(props: OutcomeFieldsProps) {
             key={value}
             className={`flex cursor-pointer items-center gap-2 rounded-control border px-2.5 py-1.5 text-[13px] transition-colors ${
               props.outcome === value
-                ? "border-flux bg-flux-l text-flux-d"
+                ? "border-brand bg-brand-l text-brand-d"
                 : "border-line hover:bg-surface-2"
             }`}
           >
@@ -90,7 +90,7 @@ export function OutcomeFields(props: OutcomeFieldsProps) {
           </label>
 
           {props.lifecycle !== null && (
-            <p className="rounded-control border border-[#B9E7DC] bg-flux-l px-2.5 py-1.5 text-[12px] text-flux-d">
+            <p className="rounded-control border border-[#D3CEFA] bg-brand-l px-2.5 py-1.5 text-[12px] text-brand-d">
               Le cycle de vie passera à <b className="font-semibold">{props.lifecycle}</b>.
             </p>
           )}

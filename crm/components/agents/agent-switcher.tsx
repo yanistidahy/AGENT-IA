@@ -48,7 +48,7 @@ export function AgentSwitcher({
               active
                 ? // L'anneau se pose en dehors du portrait : un anneau intérieur
                   // rognerait le visage, ce qu'on vient justement d'éviter.
-                  "opacity-100 ring-2 ring-flux ring-offset-2 ring-offset-[#0C1614]"
+                  "opacity-100 ring-2 ring-brand-lift ring-offset-2 ring-offset-[#0B1030]"
                 : "opacity-45 hover:opacity-80"
             }`}
           >
@@ -62,7 +62,7 @@ export function AgentSwitcher({
               <Icon
                 name="lock"
                 size={9}
-                className="absolute -right-0.5 -bottom-0.5 rounded-full bg-[#0C1614] text-gold"
+                className="absolute -right-0.5 -bottom-0.5 rounded-full bg-[#0B1030] text-gold"
               />
             )}
           </button>

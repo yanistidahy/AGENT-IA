@@ -18,7 +18,7 @@ interface TaskFullFormProps {
 }
 
 const CONTROL =
-  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[13.5px] outline-none focus:border-flux";
+  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[13.5px] outline-none focus:border-brand";
 
 type TargetKind = "none" | "contact" | "company" | "deal";
 
@@ -152,7 +152,7 @@ export function TaskFullForm({ owners, targets, onCancel, onCreated }: TaskFullF
         <button
           type="submit"
           disabled={busy}
-          className="rounded-control bg-flux px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-flux-d disabled:opacity-50"
+          className="rounded-control bg-brand px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-d disabled:opacity-50"
         >
           {busy ? "Création…" : "Créer la tâche"}
         </button>

@@ -2,6 +2,11 @@
 
 import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
+import { MaintenanceBlock as Block } from "./maintenance-block";
+import { StatusesBlock, type StatusPlan } from "./statuses-block";
+import { WebsitesBlock, type WebsitePlan } from "./websites-block";
+import { SitesBlock, type SitePlan } from "./sites-block";
+import { DomainsBlock, type DomainPlan } from "./domains-block";
 
 /**
  * Corrections de données, simulées à l'écran puis confirmées.
@@ -46,6 +51,10 @@ interface Plans {
   search: SearchPlan;
   lifecycles: LifecyclePlan;
   names: NamePlan;
+  statuses: StatusPlan;
+  websites: WebsitePlan;
+  sites: SitePlan;
+  domains: DomainPlan;
 }
 
 function isPlans(value: unknown): value is Plans {
@@ -76,7 +85,7 @@ export function MaintenancePanel() {
   };
 
   const apply = async (
-    operation: "search" | "lifecycles" | "names",
+    operation: "search" | "lifecycles" | "names" | "statuses" | "websites" | "sites",
     expected: number,
     what: string,
   ) => {
@@ -133,7 +142,7 @@ export function MaintenancePanel() {
           {error}
         </p>
       )}
-      {done !== null && <p className="mt-2 text-[12.5px] text-flux-d">{done}</p>}
+      {done !== null && <p className="mt-2 text-[12.5px] text-win-d">{done}</p>}
 
       {plans !== null && (
         <div className="mt-3 grid gap-3">
@@ -150,8 +159,8 @@ export function MaintenancePanel() {
               )
             }
           >
-            {plans.search.sample.map((row) => (
-              <li key={row.label} className="truncate">
+            {plans.search.sample.map((row, index) => (
+              <li key={`${index}-${row.label}`} className="truncate">
                 {row.label} : « {row.before || "vide"} » → « {row.after} »
               </li>
             ))}
@@ -170,12 +179,20 @@ export function MaintenancePanel() {
               )
             }
           >
-            {plans.names.rows.map((row) => (
-              <li key={row.before} className="truncate">
+            {plans.names.rows.map((row, index) => (
+              <li key={`${index}-${row.before}`} className="truncate">
                 « {row.before} » → nom « {row.kept} » + notes « {row.moved} »
               </li>
             ))}
           </Block>
+
+          <StatusesBlock plan={plans.statuses} busy={busy} onApply={apply} />
+
+          <SitesBlock plan={plans.sites} busy={busy} onApply={apply} />
+
+          <WebsitesBlock plan={plans.websites} busy={busy} onApply={apply} />
+
+          <DomainsBlock plan={plans.domains} />
 
           <Block
             title="Cycles de vie"
@@ -195,8 +212,8 @@ export function MaintenancePanel() {
                 ⚠ {warning}
               </li>
             ))}
-            {plans.lifecycles.changes.map((change) => (
-              <li key={change.label}>
+            {plans.lifecycles.changes.map((change, index) => (
+              <li key={`${index}-${change.label}`}>
                 <b className="font-semibold">{change.label}</b> — {change.from} → {change.to}
                 {change.lostReason === "" ? "" : ` · ${change.lostReason}`}
                 {change.uncertain && <span className="text-[#9A6410]"> [incertain]</span>}
@@ -206,40 +223,5 @@ export function MaintenancePanel() {
         </div>
       )}
     </section>
-  );
-}
-
-function Block({
-  title,
-  summary,
-  hint,
-  disabled,
-  onApply,
-  children,
-}: {
-  title: string;
-  summary: string;
-  hint: string;
-  disabled: boolean;
-  onApply: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-card border border-line bg-surface-2 px-3.5 py-3">
-      <div className="flex flex-wrap items-baseline gap-2">
-        <b className="font-display text-[13.5px] font-semibold">{title}</b>
-        <span className="text-[12.5px] text-muted">{summary}</span>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={onApply}
-          className={`${BUTTON} ml-auto bg-flux text-white hover:bg-flux-d`}
-        >
-          Appliquer
-        </button>
-      </div>
-      <p className="mt-1 text-[11.5px] leading-relaxed text-muted">{hint}</p>
-      <ul className="mt-2 grid max-h-[240px] gap-0.5 overflow-y-auto text-[12px]">{children}</ul>
-    </div>
   );
 }

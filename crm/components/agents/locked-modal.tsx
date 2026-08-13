@@ -66,10 +66,10 @@ export function LockedModal({
 
         <p className="mt-3 text-[13px] leading-relaxed text-[#A9B2C4]">
           Pour le débloquer, passez la variable{" "}
-          <code className="rounded bg-[#0F1117] px-1.5 py-0.5 font-mono text-[11.5px] text-flux">
+          <code className="rounded bg-[#0B0E1A] px-1.5 py-0.5 font-mono text-[11.5px] text-brand-lift">
             AGENT_ETIENNE_ENABLED
           </code>{" "}
-          à <code className="font-mono text-[11.5px] text-flux">true</code> sur le service, et
+          à <code className="font-mono text-[11.5px] text-brand-lift">true</code> sur le service, et
           écrivez sa personnalité dans{" "}
           <code className="font-mono text-[11.5px] text-[#8B97A8]">
             lib/agents/prompts/etienne.ts

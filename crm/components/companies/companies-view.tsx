@@ -32,7 +32,7 @@ interface CompaniesViewProps {
 }
 
 const CONTROL =
-  "rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-flux";
+  "rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-brand";
 
 export function CompaniesView({
   companies,
@@ -101,7 +101,7 @@ export function CompaniesView({
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className="inline-flex items-center gap-1.5 rounded-control bg-flux px-3.5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-flux-d"
+            className="inline-flex items-center gap-1.5 rounded-control bg-brand px-3.5 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-d"
           >
             <Icon name="plus" size={15} />
             Nouvelle société
@@ -115,7 +115,7 @@ export function CompaniesView({
             type="button"
             onClick={() => setParam({ filter: null })}
             className={`border-r border-line px-3 py-1.5 text-[12.5px] font-semibold transition-colors last:border-r-0 ${
-              chip === null ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
+              chip === null ? "bg-brand text-white" : "text-muted hover:bg-surface-2"
             }`}
           >
             Toutes
@@ -126,7 +126,7 @@ export function CompaniesView({
               type="button"
               onClick={() => setParam({ filter: value })}
               className={`border-r border-line px-3 py-1.5 text-[12.5px] font-semibold transition-colors last:border-r-0 ${
-                chip === value ? "bg-ink text-white" : "text-muted hover:bg-surface-2"
+                chip === value ? "bg-brand text-white" : "text-muted hover:bg-surface-2"
               }`}
             >
               {COMPANY_FILTER_LABELS[value]}

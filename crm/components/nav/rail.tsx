@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogoutButton } from "@/components/auth/logout-button";
+import { Wordmark } from "@/components/brand/logo";
 import { Icon } from "@/components/ui/icon";
 import { moneyShort } from "@/lib/format";
 import { NAV_GROUPS, type NavEntry } from "@/lib/navigation";
@@ -28,21 +29,15 @@ export function Rail({ totals }: { totals: RailTotals }) {
   const pathname = usePathname();
 
   return (
-    <aside className="flex w-[236px] shrink-0 flex-col gap-0.5 overflow-y-auto bg-ink px-3 py-[18px] text-[#CFDEDA]">
-      <div className="flex items-center gap-2.5 px-2.5 pt-1.5 pb-5">
-        <span className="size-[30px] shrink-0 rounded-[9px] bg-gradient-to-br from-flux to-violet" />
-        <span className="font-display text-[15px] leading-tight font-bold tracking-tight text-white">
-          AuraFLOW
-          <span className="mt-0.5 block font-mono text-[9.5px] font-normal tracking-[0.14em] text-flux uppercase">
-            CRM
-          </span>
-        </span>
+    <aside className="bg-rail text-rail-text flex w-[236px] shrink-0 flex-col gap-0.5 overflow-y-auto px-3 py-[18px]">
+      <div className="px-2.5 pt-1.5 pb-5">
+        <Wordmark size={34} />
       </div>
 
       <nav>
         {NAV_GROUPS.map((group) => (
           <div key={group.title}>
-            <div className="px-3 pt-4 pb-1.5 font-mono text-[9.5px] tracking-[0.14em] text-[#4E6A64] uppercase">
+            <div className="px-3 pt-4 pb-1.5 text-rail-dim font-mono text-[9.5px] tracking-[0.14em] uppercase">
               {group.title}
             </div>
             {group.entries.map((entry) => (
@@ -57,16 +52,16 @@ export function Rail({ totals }: { totals: RailTotals }) {
         ))}
       </nav>
 
-      <div className="mt-auto border-t border-[#1B2C29] px-3 pt-3.5 text-[11.5px] leading-relaxed text-[#5E7A74]">
+      <div className="text-rail-dim border-rail-3 mt-auto border-t px-3 pt-3.5 text-[11.5px] leading-relaxed">
         {totals === null ? (
-          <span className="text-[#C98B7F]">
+          <span className="text-[#FFB3A6]">
             Compteurs indisponibles
             <br />
             la base n'a pas répondu
           </span>
         ) : (
           <>
-            <b className="font-mono text-[11px] text-[#B7CCC7]">
+            <b className="text-rail-text font-mono text-[11px]">
               {moneyShort(totals.pipelineValue)}
             </b>{" "}
             en pipeline
@@ -90,15 +85,15 @@ function NavItem({
   badge: number;
 }) {
   const base =
-    "flex w-full items-center gap-2.5 rounded-control px-[11px] py-2 text-left text-[13.5px] font-medium transition-colors";
+    "relative flex w-full items-center gap-2.5 rounded-control px-[11px] py-2 text-left text-[13.5px] font-medium transition-colors";
 
   if (entry.href === null) {
     return (
       <span
-        className={`${base} cursor-default text-[#54706A]`}
+        className={`${base} text-rail-dim cursor-default`}
         title="Livré dans un jalon à venir"
       >
-        <Icon name={entry.icon} size={17} className="shrink-0 text-[#3F5854]" />
+        <Icon name={entry.icon} size={17} className="text-rail-dim shrink-0 opacity-70" />
         <span>{entry.label}</span>
         <span className="ml-auto font-mono text-[9px] tracking-wider uppercase">bientôt</span>
       </span>
@@ -112,13 +107,28 @@ function NavItem({
       href={entry.href}
       aria-current={active ? "page" : undefined}
       className={`${base} ${
-        active ? "bg-ink-3 text-white" : "text-[#B7CCC7] hover:bg-ink-2 hover:text-white"
+        active ? "bg-rail-3 text-white" : "text-rail-text hover:bg-rail-2 hover:text-white"
       }`}
     >
+      {/*
+        L'entrée active se reconnaît à trois signaux, pas un seul : le fond plus
+        clair, le libellé en blanc, et ce repère. Le fond seul ne suffit pas —
+        deux bleus profonds voisins se distinguent mal, et pas du tout pour qui
+        règle son écran bas.
+
+        Le bleu-violet plein n'atteint que 2.1:1 sur ce fond : c'est `brand-lift`
+        qui porte la marque partout où le fond est sombre.
+      */}
+      {active && (
+        <span
+          aria-hidden
+          className="bg-brand-lift absolute top-1/2 left-0 h-4 w-[3px] -translate-y-1/2 rounded-r-full"
+        />
+      )}
       <Icon
         name={entry.icon}
         size={17}
-        className={`shrink-0 ${active ? "text-flux" : "text-[#7E9994]"}`}
+        className={`shrink-0 ${active ? "text-brand-lift" : "text-rail-dim"}`}
       />
       <span>{entry.label}</span>
       {badge > 0 && (

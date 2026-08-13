@@ -40,11 +40,16 @@ interface LogFormProps {
   readonly statusSuggestions?: readonly string[];
   readonly onCancel: () => void;
   /** Reçoit le résumé de ce qui a été créé, pour que rien ne soit muet. */
-  readonly onLogged: (summary: string) => void;
+  /**
+   * `outcome` accompagne le résumé : certaines issues valent qualification, et
+   * c'est l'appelant — la fiche contact — qui décide d'ouvrir la modale. Le
+   * formulaire ne connaît pas les affaires et n'a pas à les connaître.
+   */
+  readonly onLogged: (summary: string, outcome: string) => void;
 }
 
 const CONTROL =
-  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[13.5px] outline-none focus:border-flux";
+  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[13.5px] outline-none focus:border-brand";
 
 function isoDay(offsetDays = 0): string {
   const day = new Date();
@@ -192,6 +197,7 @@ export function LogForm({
         created.length === 0
           ? "Interaction consignée."
           : `Interaction consignée, avec ${created.join(" et ")} — visible dans /taches.`,
+        outcome,
       );
       return;
     }
@@ -331,7 +337,7 @@ export function LogForm({
         <button
           type="submit"
           disabled={busy}
-          className="rounded-control bg-flux px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-flux-d disabled:opacity-50"
+          className="rounded-control bg-brand px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-d disabled:opacity-50"
         >
           {busy ? "Enregistrement…" : "Consigner"}
         </button>

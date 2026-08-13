@@ -16,7 +16,9 @@ import {
   winRate,
   wonDeals,
 } from "@/lib/domain/kpis";
-import { FOLLOW_UP_LABELS, followUpStatus } from "@/lib/domain/follow-up";
+import { FOLLOW_UP_LABELS } from "@/lib/domain/follow-up";
+import { resolveContactStatus } from "@/lib/domain/contact-status";
+import { REAL_ACTIVITY } from "@/lib/api/real-activity";
 import { dealHeat, pipelineValue, stuckDeals, weighted } from "@/lib/domain/pipeline";
 import { LIFECYCLES } from "@/lib/domain/types";
 import { defineTool } from "./types";
@@ -61,7 +63,7 @@ export const searchContacts = defineTool({
       },
       include: {
         company: { select: { name: true } },
-        _count: { select: { activities: true } },
+        _count: { select: { activities: { where: REAL_ACTIVITY } } },
       },
       take: input.limit,
       orderBy: { lastContact: "desc" },
@@ -70,12 +72,15 @@ export const searchContacts = defineTool({
     if (rows.length === 0) return EMPTY;
 
     // Le statut de relance vient de la même fonction que les écrans, avec les
-    // seuils enregistrés : un agent et /contacts ne peuvent pas diverger.
+    // seuils enregistrés : un agent et /contacts ne peuvent pas diverger. Le
+    // statut **saisi** l'emporte ici comme ailleurs — un agent qui lirait le
+    // calcul seul contredirait la fiche que l'utilisateur a sous les yeux.
     const [settings, now] = [await getPilotage(), new Date()];
 
     return rows.map((c) => {
-      const status = followUpStatus(
+      const resolved = resolveContactStatus(
         {
+          status: c.status,
           lastContact: c.lastContact,
           nextReminder: c.nextReminder,
           activityCount: c._count.activities,
@@ -96,7 +101,7 @@ export const searchContacts = defineTool({
         téléphone: c.phone,
         dernierContact: c.lastContact,
         prochaineRelance: c.nextReminder,
-        statutDeRelance: FOLLOW_UP_LABELS[status],
+        statutDeRelance: resolved.label,
         notes: c.notes,
       };
     });

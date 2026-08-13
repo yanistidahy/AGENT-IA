@@ -33,7 +33,7 @@ const FIELDS: ReadonlyArray<{ type: ActivityType; key: keyof ReminderDelays; api
   ACTIVITY_TYPES.map((type) => ({ type, key: type, api: API_FIELD[type] }));
 
 const CONTROL =
-  "w-full rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-flux";
+  "w-full rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-brand";
 
 function isSettings(value: unknown): value is { settings: unknown } {
   return typeof value === "object" && value !== null && "settings" in value;
@@ -105,11 +105,11 @@ export function RelancesForm({
           type="button"
           disabled={busy}
           onClick={() => void save()}
-          className="rounded-control bg-flux px-4 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-flux-d disabled:opacity-50"
+          className="rounded-control bg-brand px-4 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-brand-d disabled:opacity-50"
         >
           {busy ? "Enregistrement…" : "Enregistrer les délais"}
         </button>
-        {saved && <span className="text-[12.5px] text-flux-d">Enregistré.</span>}
+        {saved && <span className="text-[12.5px] text-win-d">Enregistré.</span>}
         {error !== null && <span className="text-[12.5px] text-[#B2311F]">{error}</span>}
       </div>
     </section>

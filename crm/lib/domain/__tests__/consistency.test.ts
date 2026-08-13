@@ -3,11 +3,10 @@ import { addDays } from "../dates";
 import {
   emptyFilterMessage,
   followUpStatus,
-  matchesContactFilter,
   needsAttention,
   type ContactFilter,
-  type FollowUpLike,
 } from "../follow-up";
+import { matchesContactFilter, type ContactStatusLike } from "../contact-status";
 import { DEFAULT_PILOTAGE, type PilotageSettings } from "../types";
 
 /**
@@ -27,8 +26,10 @@ import { DEFAULT_PILOTAGE, type PilotageSettings } from "../types";
 const now = new Date("2026-08-08T10:00:00Z");
 const settings = DEFAULT_PILOTAGE; // staleDays 7, coldDays 14
 
-function contact(overrides: Partial<FollowUpLike> = {}): FollowUpLike {
-  return { lastContact: null, nextReminder: null, activityCount: 0, ...overrides };
+function contact(overrides: Partial<ContactStatusLike> = {}): ContactStatusLike {
+  return {
+    // Statut saisi vide par défaut : ces cas exercent le **calcul**.
+    status: "", lastContact: null, nextReminder: null, activityCount: 0, ...overrides };
 }
 
 /**
@@ -62,7 +63,7 @@ describe("un contact silencieux mais dont la relance est programmée", () => {
 });
 
 describe("needsAttention est la seule règle de couleur", () => {
-  const cases: ReadonlyArray<[string, FollowUpLike, boolean]> = [
+  const cases: ReadonlyArray<[string, ContactStatusLike, boolean]> = [
     ["relance dépassée", contact({ lastContact: addDays(now, -2), nextReminder: addDays(now, -1) }), true],
     ["relance du jour", contact({ lastContact: addDays(now, -2), nextReminder: now }), true],
     ["relance à venir", contact({ lastContact: addDays(now, -2), nextReminder: addDays(now, 3) }), false],
@@ -106,7 +107,7 @@ describe("le seuil configuré gouverne toutes les surfaces", () => {
 
 /** Les trois filtres partitionnent sans se chevaucher sur un même contact. */
 describe("les puces ne se contredisent pas entre elles", () => {
-  const population: readonly FollowUpLike[] = [
+  const population: readonly ContactStatusLike[] = [
     contact(),
     contact({ lastContact: addDays(now, -1), activityCount: 1 }),
     contact({ lastContact: addDays(now, -30), activityCount: 1 }),

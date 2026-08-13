@@ -34,7 +34,7 @@ interface ComboboxProps {
 }
 
 const CONTROL =
-  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[13.5px] outline-none focus:border-flux";
+  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[13.5px] outline-none focus:border-brand";
 
 function normalize(value: string): string {
   return value
@@ -174,7 +174,7 @@ export function Combobox({
                 onClick={() => choose(index)}
                 className={`w-full px-3 py-1.5 text-left text-[13px] transition-colors ${
                   index === active ? "bg-surface-2" : ""
-                } ${row.create === true ? "font-semibold text-flux-d" : ""} ${
+                } ${row.create === true ? "font-semibold text-brand-d" : ""} ${
                   row.key === "__none" ? "text-muted" : ""
                 }`}
               >

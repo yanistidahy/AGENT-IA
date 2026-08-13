@@ -11,7 +11,8 @@ import {
 import { CONTACT_FILTER_COLUMNS } from "@/lib/api/contact-columns";
 import { parseFilters } from "@/lib/domain/column-filters";
 import { readAlerts } from "@/lib/api/alerts";
-import { getPilotage, listOwners, listSources } from "@/lib/api/reference";
+import { getPilotage, listOffers, listOwners, listSources } from "@/lib/api/reference";
+import { lastSoldOffer } from "@/lib/api/qualification";
 import { listSequences } from "@/lib/api/sequences";
 import { prisma } from "@/lib/db";
 import { startOfDay } from "@/lib/domain/dates";
@@ -58,6 +59,8 @@ export default async function ContactsPage({
     companyOptions,
     tags,
     incompleteCount,
+    offers,
+    defaultOffer,
   ] = await Promise.all([
     listContacts(query, settings, now, filters),
     listOwners(),
@@ -74,6 +77,8 @@ export default async function ContactsPage({
     listCompaniesWithContacts(),
     listTags(),
     countIncompleteContacts(),
+    listOffers(),
+    lastSoldOffer(),
   ]);
 
   // La fiche visée par `?fiche=` peut ne pas figurer dans la liste filtrée :
@@ -104,6 +109,8 @@ export default async function ContactsPage({
       contacts={contacts}
       owners={owners}
       sources={sources}
+      offers={offers}
+      defaultOffer={defaultOffer ?? offers[0] ?? ""}
       companies={companies}
       settings={settings}
       linkableDeals={linkableDeals}

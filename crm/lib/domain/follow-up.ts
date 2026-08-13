@@ -107,6 +107,12 @@ export function emptyFilterMessage(filter: ContactFilter, settings: PilotageSett
       return "Aucun contact « jamais contacté » : tous ont au moins une interaction consignée ou une date de dernier contact.";
     case "stale-status":
       return "Aucun statut figé : partout où un statut a été saisi, il est postérieur à la dernière interaction. C'est le signe que le statut est bien rafraîchi en consignant les échanges.";
+    case "contacted":
+      return "Aucun contact n'a d'interaction consignée. C'est le haut de l'entonnoir : tout le portefeuille reste à approcher.";
+    case "recent":
+      return "Aucun contact touché depuis sept jours. La semaine n'a pas encore commencé côté prospection.";
+    case "answered":
+      return "Aucun échange n'a d'issue renseignée. Consignez le résultat de vos appels — c'est ce qui rend le taux de réponse calculable.";
   }
 }
 
@@ -129,7 +135,23 @@ export const FOLLOW_UP_LABELS: Record<FollowUpStatus, string> = {
  * ligne. Les deux noms sont donc distincts dans le code, pour qu'aucun des deux
  * ne mente sur ce qu'il fait.
  */
-export const CONTACT_FILTERS = ["reminder", "silent", "never", "stale-status"] as const;
+export const CONTACT_FILTERS = [
+  "reminder",
+  "silent",
+  "never",
+  "stale-status",
+  /**
+   * Les trois bandes de l'entonnoir de l'accueil. Elles ne décrivent pas un
+   * statut de relance mais un fait d'historique — a-t-on parlé à cette
+   * personne, récemment, et a-t-elle répondu — et se calculent donc en SQL, sur
+   * les interactions, plutôt qu'en mémoire sur des dates dérivées. Elles
+   * existent pour que chaque bande du dessin mène quelque part : une bande qui
+   * ne s'ouvre pas est une décoration.
+   */
+  "contacted",
+  "recent",
+  "answered",
+] as const;
 export type ContactFilter = (typeof CONTACT_FILTERS)[number];
 
 export function isContactFilter(value: string): value is ContactFilter {
@@ -141,22 +163,39 @@ export const CONTACT_FILTER_LABELS: Record<ContactFilter, string> = {
   silent: FOLLOW_UP_LABELS.silent,
   never: FOLLOW_UP_LABELS.never,
   "stale-status": "Statut figé",
+  contacted: "Déjà contactés",
+  recent: "Contactés cette semaine",
+  answered: "Ont répondu",
 };
 
-/** Un contact passe-t-il le filtre ? Le statut n'intervient que pour deux d'entre eux. */
-export function matchesContactFilter(
-  contact: FollowUpLike,
-  filter: ContactFilter,
-  settings: PilotageSettings,
-  now: Date,
-): boolean {
-  if (filter === "reminder") return contact.nextReminder !== null;
-  // « Statut figé » ne porte pas sur le statut calculé : il compare la date de
-  // pose du statut saisi à celle de la dernière interaction. Il est donc appliqué
-  // par l'appelant, qui a ces deux dates — voir lib/api/contacts.ts.
-  if (filter === "stale-status") return true;
-  return followUpStatus(contact, settings, now) === filter;
+/**
+ * Filtres qui ne se décident pas sur une fiche isolée.
+ *
+ * Ils portent sur les interactions liées, que `FollowUpLike` ne contient pas :
+ * les appliquer ici demanderait de charger l'historique de chaque contact pour
+ * répondre à une question que SQL répond en une clause. Ils sont donc traités
+ * par l'appelant — voir `contactsWhere` dans lib/api/contacts.ts.
+ */
+const SQL_ONLY_FILTERS: readonly ContactFilter[] = [
+  "stale-status",
+  "contacted",
+  "recent",
+  "answered",
+];
+
+export function appliedInSql(filter: ContactFilter): boolean {
+  return SQL_ONLY_FILTERS.includes(filter);
 }
+
+/**
+ * `matchesContactFilter` a déménagé dans `lib/domain/contact-status.ts`.
+ *
+ * Il décidait ici sur le seul statut **calculé**, en ignorant le statut saisi —
+ * si bien que 66 fiches portant « Jamais contacté » en base n'étaient pas
+ * renvoyées par la puce du même nom. Le filtre doit lire la même décision que
+ * la pastille, et cette décision a besoin des deux modules : elle vit donc
+ * au-dessus, pas ici.
+ */
 
 /**
  * Lecture d'une échéance de relance, pour la hiérarchie visuelle de la liste.

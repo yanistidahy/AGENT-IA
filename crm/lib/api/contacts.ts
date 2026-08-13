@@ -2,17 +2,20 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { ownerOrDefault, syncReminderTask } from "./automation";
 import { resolveCompanyLink } from "./company-resolve";
-import { toDealStatus, toLifecycle } from "../domain/guards";
+import { toActivityType, toDealStatus, toLifecycle } from "../domain/guards";
 import {
   followUpRank,
   followUpStatus,
   idleDays,
-  matchesContactFilter,
+
   type FollowUpStatus,
 } from "../domain/follow-up";
 import { isLost, LOST_LIFECYCLE } from "../domain/lost";
-import { isStale, nameOverflow } from "../domain/status";
+import { ANSWERED_OUTCOMES, isStale, nameOverflow } from "../domain/status";
+import { matchesContactFilter } from "../domain/contact-status";
+import { REAL_ACTIVITY } from "./real-activity";
 import { searchText, searchTerm } from "../domain/text";
+import { addDays, daysSince, startOfDay } from "../domain/dates";
 import type { FilterState } from "../domain/column-filters";
 import { facetsFor, matchesAll, type FacetValue } from "../domain/column-match";
 import { columnsWhere, derivedFilters } from "./column-filters";
@@ -21,7 +24,13 @@ import {
   CONTACT_FACET_COLUMNS,
   type ContactFacetRow,
 } from "./contact-columns";
-import { DEFAULT_PILOTAGE, type DealStatus, type Lifecycle, type PilotageSettings } from "../domain/types";
+import {
+  DEFAULT_PILOTAGE,
+  type ActivityType,
+  type DealStatus,
+  type Lifecycle,
+  type PilotageSettings,
+} from "../domain/types";
 import type {
   CreateContactInput,
   ListContactsQuery,
@@ -57,6 +66,8 @@ export interface ContactRecord {
   readonly email: string;
   readonly phone: string;
   readonly linkedin: string;
+  /** Site du contact ; à défaut, le domaine de sa société. Voir `toRecord`. */
+  readonly website: string;
   readonly lifecycle: Lifecycle;
   readonly source: string;
   readonly owner: string;
@@ -80,10 +91,29 @@ export interface ContactRecord {
   readonly followUp: FollowUpStatus;
   /** Jours depuis la dernière touche, `null` si elle n'a jamais eu lieu. */
   readonly idleDays: number | null;
+
+  /**
+   * De quoi juger l'effort fourni, sans ouvrir la chronologie.
+   *
+   * « 3 tentatives · 0 réponse » se lit en une seconde et tranche entre
+   * insister et abandonner ; le même jugement demandait auparavant d'ouvrir la
+   * fiche puis de compter les lignes à la main.
+   */
+  readonly attempts: number;
+  /** Interactions dont l'issue est « sans réponse ». */
+  readonly unanswered: number;
+  /** Type et issue du dernier échange — le canal qui a servi en dernier. */
+  readonly lastChannel: ActivityType | null;
+  readonly lastOutcome: string;
+  /** Lus sur la société liée : savoir qui l'on appelle sans changer d'écran. */
+  readonly companySize: string;
+  readonly companyIndustry: string;
+  /** Jours depuis la création de la fiche — l'ancienneté dans le vivier. */
+  readonly ageDays: number;
 }
 
 const contactInclude = {
-  company: { select: { id: true, name: true } },
+  company: { select: { id: true, name: true, domain: true, size: true, industry: true } },
   deals: {
     select: {
       id: true,
@@ -94,24 +124,63 @@ const contactInclude = {
     },
     orderBy: { amount: "desc" },
   },
-  _count: { select: { activities: true } },
-  // La dernière interaction seule : elle sert à repérer un statut figé, pas à
-  // afficher la chronologie — celle-ci est chargée à l'ouverture du tiroir.
-  activities: { select: { date: true }, orderBy: { date: "desc" }, take: 1 },
+  // Deux comptes filtrés plutôt qu'un chargement des interactions : « combien
+  // de tentatives, combien sans réponse » se répond en SQL, et rapatrier
+  // l'historique de cent quarante fiches pour en compter deux nombres serait
+  // payer une lecture entière pour un affichage.
+  // `where` posé sur les deux : une note de correction n'est pas une prise de
+  // contact, et la compter fait mentir « jamais contacté ». Voir
+  // lib/api/real-activity.ts.
+  _count: { select: { activities: { where: REAL_ACTIVITY } } },
+  // La dernière interaction seule : elle sert à repérer un statut figé et à
+  // nommer le dernier canal, pas à afficher la chronologie — celle-ci est
+  // chargée à l'ouverture du tiroir. Une note de correction est plus récente
+  // que le statut qu'elle vient d'écrire : la compter figerait toutes les
+  // fiches corrigées.
+  activities: {
+    where: REAL_ACTIVITY,
+    select: { date: true, type: true, outcome: true },
+    orderBy: { date: "desc" },
+    take: 1,
+  },
 } satisfies Prisma.ContactInclude;
 
 type ContactRow = Prisma.ContactGetPayload<{ include: typeof contactInclude }>;
+
+/**
+ * Interactions sans réponse, par contact.
+ *
+ * Un `groupBy` pour toute la liste plutôt qu'un compte par fiche : Prisma ne
+ * sait pas rendre deux compteurs de la même relation dans un seul `_count`
+ * (l'un total, l'autre filtré), et cent quarante requêtes pour cent quarante
+ * lignes seraient un prix absurde pour un second nombre.
+ */
+async function unansweredByContact(ids: readonly string[]): Promise<Map<string, number>> {
+  if (ids.length === 0) return new Map();
+  const rows = await prisma.activity.groupBy({
+    by: ["contactId"],
+    where: { contactId: { in: [...ids] }, outcome: "no-answer", ...REAL_ACTIVITY },
+    _count: { _all: true },
+  });
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    if (row.contactId !== null) map.set(row.contactId, row._count._all);
+  }
+  return map;
+}
 
 function toRecord(
   row: ContactRow,
   settings: PilotageSettings,
   now: Date,
+  unanswered = 0,
 ): ContactRecord {
   const followUpInput = {
     lastContact: row.lastContact,
     nextReminder: row.nextReminder,
     activityCount: row._count.activities,
   };
+  const last = row.activities[0];
 
   return {
     activityCount: row._count.activities,
@@ -132,13 +201,24 @@ function toRecord(
     lostReason: row.lostReason,
     status: row.status,
     statusSetAt: row.statusSetAt,
+    // Le domaine de la société sert de défaut **à l'affichage**, jamais en
+    // base : recopier la valeur à l'écriture ferait diverger les deux le jour
+    // où la société change de domaine, et personne ne saurait laquelle croire.
+    website: row.website !== "" ? row.website : (row.company?.domain ?? ""),
     lastActivityAt: row.activities[0]?.date ?? null,
+    attempts: row._count.activities,
+    unanswered,
+    lastChannel: last === undefined ? null : toActivityType(last.type),
+    lastOutcome: last?.outcome ?? "",
+    companySize: row.company?.size ?? "",
+    companyIndustry: row.company?.industry ?? "",
+    ageDays: daysSince(row.createdAt, now),
     notes: row.notes,
     createdAt: row.createdAt,
     lastContact: row.lastContact,
     nextReminder: row.nextReminder,
     companyId: row.companyId,
-    company: row.company,
+    company: row.company === null ? null : { id: row.company.id, name: row.company.name },
     deals: row.deals.map((deal) => ({
       id: deal.id,
       name: deal.name,
@@ -220,7 +300,8 @@ export async function listContacts(
     orderBy: orderBy(query),
   });
 
-  let records = rows.map((row) => toRecord(row, settings, now));
+  const unanswered = await unansweredByContact(rows.map((row) => row.id));
+  let records = rows.map((row) => toRecord(row, settings, now, unanswered.get(row.id) ?? 0));
   records = applyDerived(records, query, filters, settings, now);
 
   // Le filtre « à relancer » rassemble retards et échéances à venir : sans tri
@@ -277,6 +358,21 @@ function contactsWhere(
   if (query.companyId !== undefined) and.push({ companyId: query.companyId });
   if (query.tag !== undefined) {
     and.push(query.tag === "" ? { tag: "" } : { tag: query.tag });
+  }
+
+  // Les bandes de l'entonnoir : trois questions d'historique, une clause SQL
+  // chacune. En mémoire il faudrait charger les interactions de chaque fiche
+  // pour répondre à ce qu'un `EXISTS` tranche en base.
+  if (query.followUp === "contacted") and.push({ activities: { some: REAL_ACTIVITY } });
+  if (query.followUp === "recent") {
+    and.push({
+      activities: { some: { ...REAL_ACTIVITY, date: { gte: addDays(startOfDay(now), -7) } } },
+    });
+  }
+  if (query.followUp === "answered") {
+    and.push({
+      activities: { some: { ...REAL_ACTIVITY, outcome: { in: [...ANSWERED_OUTCOMES] } } },
+    });
   }
 
   // Recherche insensible aux accents : elle porte sur le miroir normalisé, pas
@@ -349,6 +445,9 @@ function applyDerived(
           lastContact: contact.lastContact,
           nextReminder: contact.nextReminder,
           activityCount: contact.activityCount,
+          // Le statut saisi entre dans la décision : sans lui, la puce
+          // « Jamais contacté » ignorait 66 fiches qui le portaient en base.
+          status: contact.status,
         },
         filter,
         settings,
@@ -379,6 +478,7 @@ function toFacetRow(contact: ContactRecord): ContactFacetRow {
     source: contact.source,
     tag: contact.tag,
     lostReason: contact.lostReason,
+    status: contact.status,
     companyName: contact.company?.name ?? null,
     lastContact: contact.lastContact,
     nextReminder: contact.nextReminder,
@@ -411,6 +511,7 @@ export async function contactFacets(
       source: true,
       tag: true,
       lostReason: true,
+      status: true,
       lastContact: true,
       nextReminder: true,
       company: { select: { name: true } },
@@ -422,6 +523,7 @@ export async function contactFacets(
     lifecycle: row.lifecycle,
     owner: row.owner,
     source: row.source,
+    status: row.status,
     tag: row.tag,
     lostReason: row.lostReason,
     companyName: row.company?.name ?? null,
@@ -493,7 +595,9 @@ export async function getContact(
   now: Date = new Date(),
 ): Promise<ContactRecord | null> {
   const row = await prisma.contact.findUnique({ where: { id }, include: contactInclude });
-  return row === null ? null : toRecord(row, settings, now);
+  if (row === null) return null;
+  const unanswered = await unansweredByContact([row.id]);
+  return toRecord(row, settings, now, unanswered.get(row.id) ?? 0);
 }
 
 /**
@@ -516,6 +620,7 @@ export async function createContact(input: CreateContactInput): Promise<ContactR
       email: input.email ?? "",
       phone: input.phone ?? "",
       linkedin: input.linkedin ?? "",
+      website: input.website ?? "",
       source: input.source ?? "",
       owner: input.owner ?? "",
       tag: input.tag ?? "",
@@ -540,7 +645,8 @@ export async function createContact(input: CreateContactInput): Promise<ContactR
 
     return created;
   });
-  return toRecord(row, DEFAULT_PILOTAGE, new Date());
+  const unanswered = await unansweredByContact([row.id]);
+  return toRecord(row, DEFAULT_PILOTAGE, new Date(), unanswered.get(row.id) ?? 0);
 }
 
 export async function updateContact(
@@ -572,6 +678,7 @@ export async function updateContact(
   if (input.email !== undefined) data.email = input.email;
   if (input.phone !== undefined) data.phone = input.phone;
   if (input.linkedin !== undefined) data.linkedin = input.linkedin;
+  if (input.website !== undefined) data.website = input.website;
   if (input.source !== undefined) data.source = input.source;
   if (input.owner !== undefined) data.owner = input.owner;
   if (input.tag !== undefined) data.tag = input.tag;
@@ -616,7 +723,8 @@ export async function updateContact(
     return updated;
   });
 
-  return toRecord(row, DEFAULT_PILOTAGE, new Date());
+  const unanswered = await unansweredByContact([row.id]);
+  return toRecord(row, DEFAULT_PILOTAGE, new Date(), unanswered.get(row.id) ?? 0);
 }
 
 /**

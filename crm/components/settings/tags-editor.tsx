@@ -63,7 +63,7 @@ export function TagsEditor({ tags, onSaved }: TagsEditorProps) {
                   autoFocus
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
-                  className="min-w-[180px] flex-1 rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-flux"
+                  className="min-w-[180px] flex-1 rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-brand"
                 />
                 <button
                   type="button"
@@ -77,7 +77,7 @@ export function TagsEditor({ tags, onSaved }: TagsEditorProps) {
                       (count) => `« ${tag.value} » renommée en « ${draft.trim()} » sur ${count} fiche(s).`,
                     )
                   }
-                  className="rounded-control bg-flux px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-50"
+                  className="rounded-control bg-brand px-3 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-50"
                 >
                   Enregistrer
                 </button>
@@ -132,7 +132,7 @@ export function TagsEditor({ tags, onSaved }: TagsEditorProps) {
       </ul>
 
       {notice !== null && (
-        <p className="mt-2 text-[12.5px] text-flux-d">{notice}</p>
+        <p className="mt-2 text-[12.5px] text-win-d">{notice}</p>
       )}
       {error !== null && <p className="mt-2 text-[12.5px] text-[#B2311F]">{error}</p>}
     </section>

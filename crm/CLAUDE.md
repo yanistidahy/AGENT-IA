@@ -38,10 +38,71 @@ prototype divergeaient, le prototype a tranché :
 | Encre | `#16142B` | `#0C1614` — vert-noir, pas bleu-noir |
 | Titres | Bricolage Grotesque | **Space Grotesk** |
 
-Deux conséquences qui ne sont pas que des valeurs : la couleur d'action primaire
-est la **menthe**, pas le violet — le violet n'est qu'une étape de pipeline et une
-couleur d'avatar ; et l'encre vert-noir porte tout le contraste du rail de
-navigation et de la fluxbar.
+**Le prototype ne fait plus foi sur la couleur** depuis le jalon 23 : la marque
+l'a remplacé. Voir « Palette de marque » ci-dessous. Il reste la référence pour
+le modèle de données, les règles métier et la mise en page.
+
+---
+
+## Palette de marque
+
+Reprise du logo — un « A » traversé par une vague cyan → bleu → violet. Tous les
+jetons vivent dans `app/globals.css` sous `@theme` ; il n'y a pas de
+`tailwind.config.ts`. **On change la couleur à la source, jamais classe par
+classe.**
+
+| Rôle | Jeton | Valeur |
+|---|---|---|
+| Action primaire | `brand` | `#4B3FE4` |
+| Survol / lien | `brand-d` | `#3A2FC7` |
+| Teinte claire | `brand-l` | `#EFEDFF` |
+| Marque sur fond sombre | `brand-lift` | `#A9A2F5` |
+| Rail | `rail` / `rail-2` / `rail-3` | `#0B1030` / `#161C42` / `#232B5C` |
+| Texte du rail | `rail-text` / `rail-dim` | `#9AA4CE` / `#828CBC` |
+| Réussite | `win` / `win-d` / `win-l` | `#0FA88F` / `#0B7A68` / `#DFF3EF` |
+| Encre | `ink` / `ink-2` / `ink-3` | `#0D1220` / `#161C2E` / `#232B42` |
+| Neutres | `muted` / `line` / `line-2` | `#6B7192` / `#DEE0EA` / `#ECEEF4` |
+
+**`brand` porte l'action, `win` porte la réussite, et l'un ne remplace jamais
+l'autre.** Boutons, liens, entrée de navigation active, anneau de focus, états
+sélectionnés, série primaire des graphiques : `brand`. Affaire gagnée, statut
+sain, sauvegarde à jour, cycle `Client`, étape `Gagné` : `win`. Une menthe qui
+sert aussi de couleur d'action ne veut plus rien dire — c'était le défaut du
+prototype, où « Enregistrer » et « affaire gagnée » portaient le même vert.
+
+Ambre, rouge, violet et bleu ne bougent pas : ce sont des couleurs sémantiques,
+pas des couleurs de marque.
+
+### Contrastes mesurés
+
+| Paire | Ratio | Seuil |
+|---|---|---|
+| blanc sur `brand` | 6.7:1 | AA texte |
+| blanc sur `brand-d` | 8.7:1 | AA texte |
+| `brand` sur blanc (liens) | 6.7:1 | AA texte |
+| `brand-d` sur `brand-l` | 7.6:1 | AA texte |
+| blanc sur `rail` | 18.6:1 | AA texte |
+| `rail-text` sur `rail` | 7.6:1 | AA texte |
+| `rail-dim` sur `rail` | 5.7:1 | AA texte |
+| blanc sur `rail-3` (entrée active) | 14.2:1 | AA texte |
+| `brand-lift` sur `rail` | 8.1:1 | AA texte / icônes |
+| `brand-lift` sur `rail-3` | 6.2:1 | AA texte / icônes |
+| `win-d` sur `win-l` | 4.6:1 | AA texte |
+| `muted` sur blanc | 4.9:1 | AA texte |
+| bande la plus claire de l'entonnoir, texte blanc | 4.65:1 | AA texte |
+
+Deux pièges relevés et corrigés au passage : **le blanc sur menthe pleine ne
+donne que 3.0:1** — d'où l'interdiction du texte blanc sur `win` plein, la
+réussite s'affiche en `win-d` sur `win-l` ; et **le bleu-violet plein ne donne
+que 2.1:1 sur le rail actif** — d'où `brand-lift`, seule variante admise sur
+fond sombre. L'ancien `muted` vert-gris (`#63807A`) plafonnait à 4.3:1, sous le
+seuil, alors qu'il porte les libellés secondaires du tableau des contacts.
+
+Le logo vit dans `components/brand/logo.tsx` (`Mark`, `Wordmark`) et dans
+`app/icon.svg` pour la favicon. **Le tracé est une reconstruction, pas un
+calque** : le fichier source n'a jamais été lisible côté agent. Remplacer le
+corps de `Mark` et le contenu de `app/icon.svg` suffit à installer le vrai —
+aucun autre fichier ne connaît la forme.
 
 Le seed est en revanche étendu aux volumes du brief (12 sociétés, 18 contacts,
 24 affaires), en conservant les 8 sociétés du prototype comme noyau.
@@ -269,6 +330,14 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 17 | **Clés de schéma en ASCII** — cause nommée, garde vitest, substitut qui valide | **livré, à valider** |
 | 18 | **Le fil comme une conversation** — bande de portraits, écran d'ouverture, amorces | **livré, à valider** |
 | 19 | **Le filet** — fusion vers `main`, sauvegardes automatiques, planificateur | **livré, à valider** |
+| 20 | **Le cockpit** — file dense et groupable, anneau du jour, entonnoir, annulation | **livré, à valider** |
+| 21 | **Statuts de la feuille + fiche en onglets** — report contrôlé, tiroir à en-tête fixe, six colonnes | **livré, à valider** |
+| 22 | **Qualification → affaire** — pipeline refondu, fiche étoffée, rapports de prospection | **livré, à valider** |
+| 23 | **Identité de marque** — palette, rail, logo, favicon, `/login` | **livré, à valider** |
+| 24 | **Le site sort des Notes** — LinkedIn visible sans dépli, icônes d'en-tête, extraction contrôlée | **livré, à valider** |
+| 25 | **La question des domaines, tranchée** — relecture de la feuille, report des 15 adresses réelles, propositions relues une par une | **livré, à valider** |
+| 26 | **Acceptation groupée des seules déductions** — garde-fou serveur, tri par ressemblance, annulation de dix secondes | **livré, à valider** |
+| 27 | **Audit du statut de relance** — la correction se réfutait elle-même ; une seule décision, test de parité | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -2403,3 +2472,1032 @@ route) et répond correctement.
 
 **La rétention n'efface pas l'historique git.** Voir plus haut : c'est le prix
 du dépôt GitHub, et il est assumé tant que S3 n'est pas branché.
+
+## Jalon 19 (suite) — le pilote GitHub, exercé enfin
+
+Avant de livrer les instructions de configuration, le pilote GitHub a été
+exercé contre une imitation fidèle de l'API Contents — le seul chemin que le
+jalon 19 laissait non prouvé. Deux défauts en sont sortis, aucun visible à la
+lecture du code.
+
+**Au-delà d'un mégaoctet, la lecture revenait vide.** La réponse JSON de l'API
+Contents rend `content: ""` avec `encoding: "none"` passé ce seuil : elle
+réussit, et elle ne contient rien. Une sauvegarde de CRM franchit le mégaoctet
+très vite, et le défaut ne se serait manifesté qu'à la restauration — le seul
+moment où il coûte tout. La lecture passe désormais par le type média
+`application/vnd.github.raw`, qui rend le fichier tel quel jusqu'à cent
+mégaoctets. Le round-trip est vérifié sur une charge de 1,4 Mo contenant des
+caractères accentués.
+
+**Les erreurs ne portaient que le code HTTP.** Un 404 en écriture veut dire
+« branche absente », « dépôt inconnu » ou « jeton sans accès à ce dépôt » :
+trois causes, trois gestes différents. GitHub le dit dans `message` ; ce texte
+remonte maintenant jusqu'à l'écran de réglages, là où la configuration se fait.
+
+Vérifié contre l'imitation : première écriture, écrasement avec `sha`, listage,
+lecture, suppression, suppression d'un absent (silencieuse, la rétention a
+atteint son but), et dossier inexistant traité comme « rien encore ».
+
+### Configuration retenue
+
+Les variables du service Railway portent la destination
+(`SNAPSHOT_STORE=github`, `SNAPSHOT_GITHUB_REPO`, `SNAPSHOT_GITHUB_TOKEN`) ;
+les secrets de dépôt GitHub portent le déclencheur (`CRM_URL`, `CRON_SECRET`).
+`CRON_SECRET` est le seul présent des deux côtés, avec la même valeur.
+
+Le jeton est un PAT **à portée fine**, restreint au seul dépôt de sauvegarde,
+avec `Contents: Read and write` (et `Metadata: Read`, ajouté d'office). Aucun
+jeton classique à portée `repo` n'est nécessaire — le pilote n'appelle que
+`/repos/{owner}/{repo}/contents/…`.
+
+Le dépôt doit être créé **avec un README** : chaque écriture envoie
+`branch: "main"`, et un dépôt sans commit n'a pas de `main`. Le dossier
+`snapshots/` n'a pas à préexister : un 404 sur le dossier vaut « rien encore »,
+et l'API crée les répertoires intermédiaires à l'écriture.
+
+## Jalon 20 — le tableau de bord devient un cockpit
+
+### Ce qui n'allait pas
+
+Dix cartes quasi identiques, trois boutons chacune, empilées. Sarah l'avait dit
+elle-même dans un fil : « ce n'est pas dix décisions, c'en est une » — et
+l'écran forçait à décider dix fois. Aucun chiffre ne récompensait le travail
+fait ; aucune forme ne montrait où le portefeuille fuit.
+
+### Une action groupée n'est offerte que si elle s'applique à tout
+
+`batchActions()` ne retient une action que si **chaque** ligne sélectionnée la
+supporte. Proposer « Marquer perdu » sur six lignes dont deux sont des affaires,
+puis n'en traiter que quatre, produit un écran qui ment sur ce qu'il vient de
+faire. Ce qui manque est expliqué (« ne s'applique pas à toute la sélection »)
+plutôt que retiré sans un mot : un bouton absent sans raison se lit comme une
+panne.
+
+### L'annulation est une donnée, pas du code
+
+Chaque écriture du lot calcule son inverse **avant** d'écrire, à partir de
+l'état lu, et le renvoie au client. Le déduire après coup reviendrait à
+restaurer une valeur plausible plutôt que la vraie. Le client garde ce document
+le temps du bandeau et le repose tel quel sur la même route ; il ne l'inspecte
+jamais, sinon il existerait deux définitions de l'annulation.
+
+Rien n'est gardé côté serveur : une pile d'annulation devrait être attribuée à
+une session, expirée, nettoyée — de l'état à gérer pour cinq secondes de
+bandeau. Le lancement de séquence s'annule en supprimant les tâches qu'il vient
+de créer, et elles seules.
+
+### Le dénominateur de l'anneau ne recule jamais
+
+La file rétrécit quand on travaille. Mesurer « traité sur ce qui reste » ferait
+un anneau immobile toute la journée. La taille du jour est donc figée au premier
+affichage (`queue_days`), et seulement **relevée** si de nouvelles échéances
+tombent — jamais abaissée. Les lignes traitées sont comptées comme des lignes
+distinctes (`queue_marks`, unique sur `(jour, ligne)`) : reporter deux fois la
+même relance est une seule ligne traitée, et un compteur incrémenté l'aurait
+comptée deux fois.
+
+Zéro sur zéro ne vaut pas cent pour cent : une journée sans rien à faire n'est
+pas une journée accomplie, et l'écran le dit autrement.
+
+### Un taux sur zéro n'existe pas
+
+`conversionRate(0, n)` rend `null`, pas `0 %`. Zéro pour cent affirme un échec de
+conversion ; sur une bande vide il n'y a rien à convertir. Même règle pour le
+taux de réponse, déjà en place, et pour les comparaisons de période : sans
+période précédente connue, aucune tendance n'est affichée. La carte « Jamais
+contactés » n'a donc **pas** de comparaison — rien en base ne dit combien de
+fiches n'avaient jamais été approchées la semaine dernière, et inventer une
+tendance serait pire qu'un chiffre nu.
+
+### La couleur suit le sens, pas le signe
+
+`describeDelta` reçoit la direction souhaitable et refuse de la deviner : un
+« + » sur « Jamais contactés » est une mauvaise nouvelle.
+
+### Le mouvement est réglé en un seul endroit
+
+`app/globals.css` neutralise animations et transitions sous
+`prefers-reduced-motion`. Aucun composant n'a besoin de s'en souvenir, et aucun
+ne peut l'oublier. Les durées sont ramenées à un instant plutôt qu'à zéro, pour
+que les gestionnaires de fin de transition se déclenchent tout de même.
+
+### Le bandeau de sauvegarde s'acquitte, sans se taire
+
+Une alerte qu'on ne peut pas acquitter est une alerte qu'on apprend à ne plus
+voir. L'acquittement porte sur **l'épisode** — la clé mémorisée est la date de la
+dernière réussite — et non sur le bandeau : une nouvelle sauvegarde qui réussit
+puis reprend du retard produit une clé différente, et le bandeau revient plein.
+
+Le bandeau est **plein tant que le stockage local n'est pas lu**. L'inverse — ne
+rien rendre en attendant — a été écrit, et le test de page l'a rejeté : l'alerte
+devenait invisible côté serveur, donc absente pour qui n'exécute pas le script.
+Une alerte qui dépend du navigateur pour apparaître n'est pas une alerte.
+
+### Trois défauts trouvés par la vérification, pas par la lecture
+
+1. **Le bandeau de sauvegarde rendu `null` côté serveur** — voir ci-dessus,
+   attrapé par `home-page.test.ts`.
+2. **La dernière bande de l'entonnoir sortait du cadre.** Une fiche peut porter
+   plusieurs affaires : avec 24 affaires pour 18 contacts, la largeur relative
+   dépassait 1 et le rectangle se dessinait hors de l'image (`x = -113`, largeur
+   906 pour un cadre de 680). `share` est maintenant bornée des deux côtés.
+3. **Les taux de passage étaient rognés.** Placés au bord droit de leur bande,
+   ils sortaient du `viewBox` dès qu'une bande occupait toute la largeur. Ils
+   forment désormais une colonne alignée à droite du cadre.
+
+Un quatrième défaut, préexistant, a été corrigé au passage : le test « base
+vide » mettait tous les compteurs du mock à zéro sans les rendre, si bien que
+tout test écrit après lui sortait par le retour anticipé de la page.
+
+### Jalon 20 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, migration `8_queue` appliquée :
+
+- **file lue** : 12 lignes — 3 relances dues, 5 tâches en retard, 4 affaires
+  bloquées ;
+- **lot réel** : 6 relances sélectionnées, actions offertes calculées
+  (`postpone-3`, `postpone-7`, `sequence`, `assign`, `lost`), report de 3 jours
+  appliqué → 3 échéances déplacées **en base**, 3 marques du jour posées,
+  avancement passé de 0/12 à 3/12 ;
+- **annulation** : 3 étapes rejouées, `nextReminder` de chaque contact
+  **identique à l'octet près** à sa valeur d'origine, marques du jour retombées
+  à 0 ;
+- **liens de l'entonnoir** : chaque bande ouvre exactement ce qu'elle annonce —
+  `followUp=contacted` → 18, `recent` → 9, `answered` → 0, égaux aux nombres
+  dessinés ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (529 tests) verts.
+
+### Jalon 20 — ce qui ne l'est pas
+
+**Le clavier et la sélection n'ont pas été exercés dans un navigateur.** `j`,
+`k`, `espace`, `↵` et `c` sont testés au niveau du domaine — l'ordre visible
+enjambe bien les groupes repliés, le curseur ne boucle pas, il retombe sur une
+extrémité quand la ligne pointée disparaît — mais aucun test ne presse une
+touche. Le rendu des composants est vérifié, leur interactivité non : il n'y a
+pas d'environnement DOM dans cette suite.
+
+**Le regroupement par société n'a pas été vu sur données réelles.** Le jeu de
+démonstration n'a aucune société portant deux lignes de file simultanément. La
+règle est couverte par cinq tests unitaires, y compris l'ordre d'apparition et
+le cas « seule de sa société » ; ce qui reste à voir est son allure à l'écran.
+
+**L'optimisme et le bandeau d'annulation n'ont été exercés que par le service.**
+Le retrait immédiat de la ligne, le rétablissement en cas de refus partiel et le
+compte à rebours de cinq secondes sont du code client sans test automatique. Le
+chemin serveur qu'ils appellent, lui, est vérifié de bout en bout ci-dessus.
+
+**Le lancement de séquence en lot n'a pas été exercé en base.** Son inverse
+(supprimer les tâches créées) est écrit et typé, jamais joué : le jeu de
+démonstration n'a pas de séquence active rattachable aux contacts de la file.
+
+## Jalon 21 — les statuts de la feuille, et la fiche qui se lit
+
+### La feuille ne dit pas ce que la demande supposait
+
+Relecture en **lecture seule** de « CRM AURA FLOW AI », onglet « Liste de
+prospection », 152 lignes de données. Trois écarts avec l'énoncé, tous
+matériels :
+
+| | Demandé | Ce que la feuille porte |
+|---|---|---|
+| « À contacter » | 62 | **81**, plus 3 « À contacter - Tél » |
+| « Contacté » | — | **67** |
+| « Pas intéressé » | valeur de `Statut Contact` | valeur de **`Réponse ?`** — elle ne figure pas dans `Statut Contact` |
+
+Le 62 de la demande ne correspond à aucune des deux colonnes. Et lire le seul
+`Statut Contact`, comme le tableau de la demande l'indiquait, aurait laissé
+**vingt-sept refus explicites** dans le vivier à prospecter — la moitié d'entre
+eux marqués « À contacter » par ailleurs.
+
+Le report lit donc **deux colonnes**, et un refus l'emporte sur un statut de
+contact : on ne redémarche pas quelqu'un qui a dit non. Neuf lignes portent les
+deux à la fois ; la contradiction est signalée à la simulation, pas tranchée en
+silence.
+
+Après rapprochement contre une base à l'image de la production : **73** « Jamais
+contacté », **47** « Contacté — en attente », **27** passages en `Perdu`.
+
+### Une transcription, encore, pas une règle
+
+`scripts/statuts-2026-08.ts` est engendré depuis la lecture de la feuille et
+porte, ligne par ligne, son numéro de source et la preuve. Il porte aussi
+`SHEET_MODIFIED_AT` — la date de dernière modification rapportée par Drive.
+
+C'est la coupure qui départage : ce que la feuille sait est antérieur à cet
+instant, donc **tout travail consigné après l'emporte sur elle**. Une fiche
+portant un statut posé ou une interaction plus récente est laissée intacte et
+listée à part. Une transcription vieille de trois jours n'écrase pas un appel
+d'hier.
+
+**Les interactions de correction ne comptent pas comme du travail.** Les
+passages précédents en ont consigné une par fiche ; les compter ferait passer
+chaque fiche déjà corrigée pour une fiche travaillée à la main, et le report ne
+reprendrait plus jamais rien. Le filtre exclut `owner: "Correction"`.
+
+### Ce que le report ne fait pas, et le dit
+
+« Jamais contacté » est un **statut**. Il ne retire pas une relance programmée —
+ce serait un cinquième champ, hors du périmètre demandé. La simulation compte
+donc les fiches concernées et l'annonce en toutes lettres : elles continueront
+d'apparaître dans les listes de relance. Sur la base vérifiée, ce nombre est
+zéro ; en production il peut ne pas l'être, et c'est la simulation qui le dira.
+
+Une fiche déjà `Perdu` n'est pas retouchée : le passage précédent avait tranché
+avec les mêmes preuves, et repasser dessus réécrirait un motif choisi.
+
+`statusSetAt` prend la date de la **feuille**, pas celle du jour. L'horodater
+d'aujourd'hui ferait passer une transcription pour une observation fraîche, et
+la puce « Statut figé » cesserait de repérer ces fiches — alors qu'elles sont
+précisément celles à rafraîchir.
+
+### « Statut saisi » devient une colonne filtrable
+
+Le statut **calculé** ne se filtre pas en SQL : il n'existe qu'après lecture.
+Le statut **saisi**, lui, est stocké — il devient donc une colonne de filtre
+comme les autres, et c'est ce qui permet d'isoler « Contacté — en attente » pour
+organiser des relances. Les fiches au statut vide se retrouvent sous « (vide) ».
+
+### La fiche contact : en-tête fixe, trois onglets
+
+Le défaut n'était pas le contenu mais la hiérarchie. Tout était présent, dans
+une colonne unique, et la seule chose dont on a besoin avant un appel — le
+numéro et ce qui s'est dit — se trouvait tout en bas.
+
+L'en-tête vit **hors du conteneur défilant** du tiroir : sinon « sans défiler »
+ne serait vrai qu'au chargement. Il porte l'état, l'échéance, le numéro
+cliquable et l'action primaire, et rien d'autre.
+
+**L'onglet d'arrivée suit la fiche** : historique s'il y a quelque chose à lire,
+champs sinon. Deux défauts trouvés en écrivant le test plutôt qu'à l'écran :
+
+1. le choix se faisait dans un effet, donc pas au rendu serveur — l'onglet
+   correct n'apparaissait qu'après hydratation. Il est maintenant décidé à
+   l'initialisation de l'état ;
+2. l'effet dépendait de « la fiche a-t-elle un historique ». Consigner le
+   premier échange depuis l'onglet Fiche faisait basculer l'écran ailleurs au
+   moment précis où l'on venait d'agir. Il ne se recalcule plus qu'au
+   **changement de fiche**, gardé par une référence.
+
+**Un seul `RecordPanel`**, monté en permanence, dont la moitié rendue suit
+l'onglet. Deux instances — une par onglet — rechargeraient la chronologie et les
+tâches à chaque va-et-vient pour afficher les mêmes lignes.
+
+`Tabs` implémente le motif ARIA **complet**, flèches comprises. La bande de
+portraits du jalon 18 portait `role="tablist"` sans la navigation qu'il promet ;
+c'est le genre d'à-peu-près qui rend une aide technique inutilisable.
+
+### Le tableau : six colonnes, et un choix conservé
+
+Les colonnes étaient écrites deux fois — les `<th>` dans une liste, les `<td>`
+en dur dans le corps — sans rien pour garantir l'alignement des deux. Une
+colonne est maintenant **une** entrée de `CONTACT_COLUMNS` : libellé, tri,
+filtre, cellule.
+
+Six par défaut (contact, société, statut, prochaine relance, dernier contact,
+**téléphone** — qui n'existait pas), le reste derrière « Colonnes », le choix
+conservé dans le stockage local. « Contact » ne se masque pas : un tableau dont
+on peut retirer le nom des gens n'est plus un tableau de contacts.
+
+La seconde rangée de puces se replie derrière un bouton « Filtres » qui **dit
+s'il en cache une active** — un filtre invisible et actif est un écran qui ment.
+
+### Un test de composant était ignoré en silence
+
+Les globs de vitest ne couvraient que `*.test.ts`. Rendre un composant demande
+du JSX, que TypeScript refuse dans un `.ts` : un test de fiche écrit en `.tsx`
+n'aurait jamais été exécuté, tout en ayant l'air d'exister. Les quatre globs
+acceptent désormais `.test.ts?(x)`.
+
+### Jalon 21 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, sur une base rechargée depuis la feuille elle-même
+(151 contacts, 135 sociétés — l'ordre de grandeur de la production) :
+
+- **simulation** : 147 fiches à modifier, **0 écriture** — 73 « Jamais
+  contacté », 47 « Contacté — en attente », 27 `Perdu` ; 25 rapprochements
+  incertains et 9 contradictions de la feuille signalés ;
+- **cinq lignes non rapprochées, nommées** : ligne 45 (statut vide), lignes 6 et
+  25 (sans nom dans la feuille), lignes 89 et 147 (« Elena andrikian » y figure
+  deux fois, sous deux orthographes de société) — avec société et adresse, pour
+  pouvoir les traiter à la main ;
+- **application** : 147 fiches, 147 interactions consignées, sauvegarde rendue,
+  et **0 fiche dont le téléphone, les notes, l'étiquette ou la relance ont
+  bougé** ;
+- `statusSetAt` porte la date de la feuille sur les 120 fiches concernées ;
+- **idempotence** : second passage → 0 à modifier, 147 déjà à jour ;
+- **le travail plus récent gagne** : une interaction consignée le 8 août sur une
+  fiche la fait passer en « laissée de côté » avec son motif ; sa voisine est
+  bien reprise. Une note écrite par une correction ne compte pas comme du
+  travail — vérifié en en ajoutant une ;
+- **le vivier ne relance pas** : 0 des 73 « Jamais contacté » n'apparaît dans la
+  puce « À relancer » ni dans la file d'accueil ;
+- **filtre de colonne « Statut saisi »** : 47 lignes, exactement le compte des
+  « Contacté — en attente » ; les facettes du menu affichent 47 / 73 / 31 ;
+- **fiche contact** : le `tel:` est rendu **avant** le conteneur défilant, donc
+  visible sans défiler ; onglet Historique sélectionné avec 3 interactions,
+  onglet Fiche avec 0 ; « Pas de téléphone » et « Aucune relance programmée »
+  dits en toutes lettres ; les champs rares repliés ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (541 tests) verts.
+
+### Jalon 21 — ce qui ne l'est pas
+
+**Les chiffres ci-dessus viennent d'une base rechargée depuis la feuille, pas de
+la vôtre.** Les 139 contacts de production ont une histoire que ce jeu n'a pas :
+des fiches créées à la main, des relances posées, des statuts déjà saisis. Le
+nombre réellement modifié, celui des fiches laissées de côté, et surtout celui
+des « Jamais contacté » **portant encore une relance** ne se connaîtront qu'à la
+simulation sur la vraie base. C'est à cela qu'elle sert.
+
+**« Elena andrikian » est un doublon de la feuille**, pas du CRM : deux lignes,
+deux orthographes de société, la même adresse. Le report la refuse des deux
+côtés plutôt que de choisir. À trancher à la main.
+
+**Le choix de colonnes n'a pas été vérifié dans un navigateur.** Sa persistance
+passe par `localStorage` ; ce qui est testé, c'est la liste par défaut, l'unicité
+des clés, la validité des filtres référencés et le verrou sur la colonne
+« Contact ». Le fait qu'un ajout survive à un rechargement n'est pas couvert par
+cette suite, qui n'a pas de DOM.
+
+**Le clavier des onglets n'est pas exercé.** Le motif ARIA est écrit — `tablist`,
+`aria-selected`, `aria-controls`, `tabIndex` roulant, flèches, `Home`/`Fin` — et
+le rendu est vérifié, mais aucun test ne presse une touche.
+
+## Jalon 22 — la qualification crée l'affaire, et les rapports mesurent la prospection
+
+### `Qualifié` est l'engagement de l'acheteur, pas notre activité
+
+Nouveau cycle de vie entre `Prospect` et `Client`, et sa définition tient en une
+phrase, écrite **contre le champ** dans le formulaire : *le prospect a exprimé
+le désir de l'offre.* Avoir fait une démo ne qualifie personne ; avoir demandé
+un prix, si.
+
+C'est ce qui justifie qu'y passer ouvre une affaire : à partir de là, il y a
+quelque chose à suivre, à chiffrer et à perdre.
+
+**Un seul geste, une seule transaction.** Le cycle de vie, l'affaire, la visite
+d'étape et l'interaction de qualification partent ensemble. Les séparer
+laisserait, à la moindre coupure, un contact qualifié sans rien à suivre —
+exactement le demi-état que ce jalon supprime. La modale ne demande que le
+montant et l'offre ; le reste se déduit de la fiche. **Annuler la modale
+n'écrit rien du tout.**
+
+**Le montant est obligatoire et strictement positif.** Une affaire à zéro pèse
+zéro dans le pipeline pondéré et dans la prévision : elle serait invisible
+partout où elle compte tout en existant. Mieux vaut refuser la qualification que
+fabriquer une affaire fantôme.
+
+**Rejouer ne crée rien.** Un contact portant déjà une affaire ouverte est
+qualifié sans seconde affaire, et le bandeau dit laquelle existe avec son lien.
+Qualifier deux fois n'est pas une erreur de l'utilisateur — c'est ce qui arrive
+quand un prospect confirme son intérêt une seconde fois.
+
+**L'annulation réutilise le mécanisme de la file d'accueil**, sans le
+réimplémenter : le serveur rend les étapes inverses, le client les repose sur
+`POST /api/queue` en mode `undo`. Une étape `deal-delete` a été ajoutée au
+vocabulaire — jamais fabriquée par le client, seulement rendue par le serveur
+qui vient de créer cette affaire-là. Dix secondes plutôt que cinq : supprimer
+une affaire qu'on vient de créer se décide moins vite que défaire un report.
+
+Trois chemins déclenchent la modale, et un seul endroit décide : la fiche.
+Le bouton « Qualifier » de l'en-tête, le formulaire qui rend le cycle de vie
+enregistré, et l'issue d'une interaction (`RDV obtenu`, `Répondu — intéressé`)
+que `RecordPanel` remonte. Le formulaire et le formulaire d'interaction ne
+connaissent pas les affaires, et n'ont pas à les connaître.
+
+### Le pipeline suit l'acheteur, lui aussi
+
+| Avant | Après |
+|---|---|
+| Nouveau lead (10) | **Qualifié** (15) — renommée |
+| Contacté (25) | fusionnée dans Qualifié |
+| Démo planifiée (45) | **Démo planifiée** (30) |
+| — | **Démo réalisée** (50) — nouvelle |
+| Proposition envoyée (65) | inchangée |
+| Négociation (85) | inchangée |
+| Gagné (100) | inchangée |
+
+`Nouveau lead` et `Contacté` décrivent l'avant-qualification : dans le nouveau
+modèle, une affaire n'existe qu'à partir du moment où le prospect a exprimé un
+désir. Leurs affaires atterrissent donc en première étape.
+
+La migration n'agit que sur les **six étapes semées** (`s1`–`s6`), reconnues à
+leur identifiant : une étape ajoutée à la main n'est pas touchée. Le renommage
+se fait en place pour préserver les clés étrangères, positions décalées de 100
+d'abord — sinon le moindre échange violerait la contrainte d'unicité.
+
+Chaque étape porte un **critère de sortie**, affiché au survol de la colonne et
+écrit du point de vue de l'engagement : « a demandé une proposition chiffrée »
+plutôt que « proposition envoyée ». Une étape définie par ce qu'on a fait se
+franchit toute seule ; définie par ce que l'autre a accordé, elle mesure quelque
+chose.
+
+**Le seed a été mis au même jeu.** Un seed posant l'ancien pipeline ferait
+diverger une base fraîche d'une base migrée, et personne ne saurait laquelle
+fait foi.
+
+### Les durées par étape demandaient une table
+
+`Deal.stageSince` ne dit que depuis quand l'affaire est dans son étape
+**actuelle** : il ne peut pas répondre à « où mes affaires stagnent-elles ? »,
+qui demande la durée des étapes **quittées**. `deal_stage_visits` enregistre une
+ligne à chaque entrée, création comprise.
+
+Réserve honnête : les affaires antérieures n'ont qu'une visite, reconstituée
+depuis `stageSince`. Leurs passages précédents n'ont jamais été enregistrés, et
+les moyennes ne deviennent vraies qu'à mesure que de nouveaux passages
+s'accumulent. L'écran affiche donc une colonne « passages mesurés » à côté de
+chaque durée : une médiane calculée sur deux passages n'est pas une mesure, et
+l'afficher comme les autres la ferait lire comme telle.
+
+**Seuls les passages terminés comptent.** Le passage en cours mesurerait
+« depuis quand » et non « combien de temps », et tirerait toutes les durées vers
+le bas au fil des jours.
+
+**Un aller-retour compte une entrée**, et « avancé » se juge sur l'étape la plus
+avancée **atteinte**, pas sur l'étape actuelle : une affaire revenue en arrière
+est bien passée par la suivante, et l'oublier sous-estimerait la conversion à
+chaque recul.
+
+### La fiche dit enfin combien on a essayé
+
+Cinq faits calculés, aucun à saisir : tentatives et réponses (« 3 tentatives ·
+0 réponse » tranche entre insister et abandonner), canal et issue du dernier
+échange, taille et secteur de la société lus sur la fiche liée, et ancienneté
+dans le vivier en jours. Plus `website`, qui retombe **à l'affichage** sur le
+domaine de la société — le recopier en base ferait diverger les deux le jour où
+la société change de domaine.
+
+« Sans réponse » se compte par un `groupBy` pour toute la liste : Prisma ne sait
+pas rendre deux compteurs de la même relation dans un seul `_count`, et cent
+quarante requêtes pour cent quarante lignes seraient un prix absurde pour un
+second nombre.
+
+Les six nouvelles colonnes rejoignent le sélecteur « Colonnes », **non affichées
+par défaut**. Aucune n'est triable ni filtrable : ce sont des agrégats calculés
+à la lecture, et promettre un tri qui ne trierait rien serait pire que ne rien
+promettre.
+
+### `/rapports` mesure ce qu'on fait, pas seulement ce qu'on signe
+
+Deux blocs. **Prospection** passe devant et reste seul tant qu'aucune affaire
+n'existe : rythme hebdomadaire sur douze semaines, taux de réponse par canal,
+délai médian avant premier contact, discipline de relance, vieillissement du
+vivier, taux de qualification par source.
+
+**Médiane et non moyenne** pour le délai avant premier contact : trois fiches
+touchées le jour même et une oubliée depuis huit mois donneraient une moyenne de
+deux mois, qui ne décrit aucune des quatre.
+
+**« Tenue » veut dire terminée au plus tard le jour de l'échéance.** Compter
+comme tenue une relance faite trois semaines après reviendrait à mesurer qu'on
+finit par tout faire, ce qui est vrai de tout le monde.
+
+**Aucun taux n'est inventé.** Partout où le dénominateur est nul, `null` plutôt
+que zéro — et l'écran écrit « issue non renseignée » là où il aurait affiché
+« 0 % ». C'est la règle de l'entonnoir du jalon 20, reprise sans exception.
+
+**Chaque graphique vide dit pourquoi et quoi faire**, avec sa raison propre :
+« Aucune interaction consignée sur les douze dernières semaines. Consignez un
+appel depuis une fiche contact. » Un message générique serait la même absence
+d'information sous une autre forme.
+
+### Un défaut trouvé contre la vraie base
+
+Sur la base chargée depuis la feuille, le rythme annonçait **149 interactions**
+— dont **148 notes écrites par les corrections de données** des jalons 11, 12 et
+21. Ce sont nos écritures à nous, pas de la prospection : les compter aurait
+présenté au premier coup d'œil une semaine de travail que personne n'a faite.
+Toutes les mesures d'activité excluent désormais `owner: "Correction"`, la même
+exclusion que « la fiche a-t-elle été travaillée » du jalon 21. Après
+correction : **1 interaction réelle**.
+
+### Le conseil lit la prospection
+
+`get_prospecting_metrics` rend les mêmes nombres que `/rapports` en appelant le
+même service — un agent et un écran qui regardent la même semaine ne peuvent pas
+la décrire différemment.
+
+Les mesures entrent aussi dans les **briefings**, dans un champ `context`
+distinct des sections. La distinction n'est pas cosmétique : une section porte
+des enregistrements dont chaque identifiant devient une preuve cliquable, alors
+qu'un taux de réponse ne désigne aucune fiche. Les glisser parmi les sections
+aurait produit des preuves qui ne résolvent pas, donc des constats rejetés par
+la double résolution du jalon 14. Elles ne comptent pas dans `empty` : un CRM
+sans rien à signaler doit rester silencieux et gratuit.
+
+### Jalon 22 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, migration `9_qualification` appliquée sur une base
+portant déjà des données :
+
+- **restructuration du pipeline** : les six étapes lues en base après migration
+  sont exactement Qualifié 15 / Démo planifiée 30 / Démo réalisée 50 /
+  Proposition envoyée 65 / Négociation 85 / Gagné 100, positions 0 à 5, chacune
+  avec son critère de sortie ;
+- **qualification** : contact `Prospect` → affaire « Assistant IA Pro — Kotto
+  Sport » créée, `contactId` et `companyId` repris de la fiche, montant 6480,
+  étape d'entrée en position 0, clôture prévue à +30 j, **1 visite d'étape**
+  écrite, cycle de vie passé à `Qualifié` ;
+- **idempotence** : second appel → `created: false`, même `dealId`, message
+  nommant l'affaire existante, **24 affaires avant et après** ;
+- **annulation** : 2 étapes rejouées → l'affaire disparaît (24 → 25 → 24) et le
+  cycle de vie redevient `Prospect` ;
+- **offre par défaut** : « Pilote 3 mois », la dernière **vendue** ;
+- **prospection** : 18 contacts, 25 interactions sur 12 semaines, ventilées
+  `call:9 | email:6 | meeting:5 | demo:3 | note:2` ; délai médian avant premier
+  contact 19 j ; qualification par source `LinkedIn 3/5 | Scraping 2/2` ;
+- **exclusion des notes de correction** : sur la base issue de la feuille, 149
+  interactions deviennent **1** ;
+- **parcours de vente** : taux de lapin 50 % (1 démo tenue sur 2 planifiées),
+  vélocité médiane 28 j sur 7 affaires gagnées ;
+- **outil du conseil** : `get_prospecting_metrics` répond `ok` et rend le taux
+  par canal, les douze semaines de rythme comprises ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (568 tests) verts.
+
+### Jalon 22 — ce qui ne l'est pas
+
+**La modale n'a pas été ouverte dans un navigateur.** Le service qu'elle appelle
+est vérifié de bout en bout ci-dessus — création, idempotence, annulation — mais
+la saisie du montant, le clic sur « Annuler » et le compte à rebours de dix
+secondes sont du code client sans test automatique, cette suite n'ayant pas de
+DOM.
+
+**Créer un contact directement en `Qualifié` depuis « Nouveau contact » n'ouvre
+pas la modale.** Le formulaire de création ne rend pas l'identifiant de la fiche
+qu'il vient d'écrire, et la modale en a besoin. La fiche s'ouvre ensuite et son
+bouton « Qualifier » fait le travail — mais c'est un geste de plus, et il n'est
+pas dit à l'écran.
+
+**Les durées par étape reposent sur peu de passages.** Le jeu de démonstration
+n'a qu'une visite par affaire, reconstituée : la colonne « passages mesurés »
+affiche donc 0 partout sauf là où de vrais mouvements ont eu lieu. La mesure est
+juste, elle est simplement encore pauvre — et l'écran le dit.
+
+**La vélocité mélange deux définitions pour les affaires anciennes.** Depuis ce
+jalon, `createdAt` est la date de qualification ; pour les affaires antérieures,
+c'est la date de saisie. Les 28 jours mesurés portent donc sur des affaires du
+jeu de démonstration, pas sur des qualifications réelles.
+
+**`components/contacts/contact-form.tsx` reste à 276 lignes**, au-dessus de la
+limite de 250. Il en faisait 300 avant ce jalon : trois extractions l'ont réduit
+sans le ramener sous la barre. C'est de la dette reconnue, pas un oubli.
+
+**Le logo est un dessin, pas un calque du fichier fourni.** L'image existe dans
+la conversation, elle n'existe pas sur le disque : rien ne permettait de la lire
+octet par octet, et aucun vectoriseur (potrace, ImageMagick) n'est installé.
+Le tracé de `components/brand/logo.tsx` suit la description — « A » traversé par
+une vague cyan → bleu → violet, fond transparent — sans prétendre en reproduire
+les courbes. Il est isolé pour que la substitution coûte un fichier.
+
+---
+
+## Jalon 24 — le site sort des Notes, LinkedIn sort du dépli
+
+### Deux choses distinctes sur la fiche contact, l'une visuelle, l'autre de donnée
+
+**LinkedIn rejoint le site dans le bloc visible.** Les deux sont des liens
+qu'on ouvre avant un appel, pas des champs qu'on consulte une fois par mois —
+ils n'avaient rien à faire sous « Plus de détails ». Deux icônes rejoignent le
+téléphone dans l'en-tête (`globe`, `linkedin`, ajoutées à `components/ui/icon.tsx`) :
+un clic ouvre le site ou le profil sans passer par l'onglet Fiche, grisées
+plutôt qu'absentes quand la valeur manque — un bouton qui disparaît selon les
+fiches se cherche, un bouton désactivé se lit d'un coup d'œil. Le domaine de la
+société l'était déjà, sans dépli, dans le tiroir société : rien à y changer.
+
+**Le site était déjà dans la donnée, au mauvais endroit.** L'import versait
+toute colonne non reconnue dans `Notes` — `SITE :` en fait partie. Sur la
+vraie feuille (154 contacts, relue en lecture seule), **67 fiches** portent une
+ligne `SITE :` dans leurs notes et 0 dans le champ `website`.
+
+### On ne devine pas un domaine dans un titre
+
+`lib/domain/notes-extract.ts` cherche une ligne `SITE :` (et ses variantes
+`SITE:`, `Site :`), et n'en extrait un domaine ou une URL que s'il y en a un à
+extraire — un motif de domaine étroit, testé pour ne jamais confondre
+« 100% gourmand » avec un TLD. Vérifié contre les 67 lignes réelles : **8**
+portent un domaine exploitable (`cuure.com`, `numorning.com`…), **59**
+ne portent qu'un titre de page (« SITE : Shopify », « SITE : Argalys
+Essentiels ») et sont listées comme non résolues plutôt que devinées.
+
+Même contrat que les corrections précédentes : simulation d'abord, deux champs
+touchés (`website`, et `domain` de la société liée s'il est vide), jamais les
+Notes — **copie, pas déplacement**, la ligne source y reste intacte pour
+qu'on ne perde jamais le contexte autour du domaine. Idempotent : une fiche
+dont `website` est déjà rempli est ignorée, saisi ou extrait indifféremment.
+
+### Ce qui est signalé, pas traité
+
+Les mêmes Notes portent d'autres colonnes échouées à l'import — `N° :`,
+`Réponse ? :`, parfois `Canal :`. Le bloc de réglages les compte
+(`countOtherPatterns()`) et les affiche en avertissement, sans les extraire :
+ce n'est pas ce qui a été demandé, et décider où chacune devrait aller (un
+`N°` de ligne de feuille n'a pas d'équivalent dans le schéma) est une décision
+produit, pas une extraction évidente. Sur la base vérifiée : 136 lignes
+`N° :`, 50 lignes `Réponse ? :`, 0 `Canal :`.
+
+### Jalon 24 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, base rechargée depuis la vraie feuille (154
+contacts, import réel via `importContacts()`) :
+
+- **simulation** : 8 fiches à corriger, 59 lignes non résolues nommées, 0
+  écriture ; le rapport « autres motifs » cite 136 `N°`, 50 `Réponse ?`, 0
+  `Canal` ;
+- **application** : 8 `website` remplis, notes des 8 fiches **inchangées à
+  l'octet près** (comparées avant/après), 20 sociétés au total avec un domaine
+  non vide ;
+- **idempotence** : second passage → 0 fiche à corriger ;
+- **fiche Hugo Fachin** (capture) : Site et LinkedIn visibles sans dépli,
+  icônes globe et LinkedIn dans l'en-tête à côté du téléphone, toutes deux
+  cliquables, `SITE : https://cuure.com/` toujours présent dans le bloc Notes ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (578 tests) verts.
+
+### Jalon 24 — ce qui ne l'est pas
+
+Le choix de traiter `N° :`, `Réponse ? :` et `Canal :` reste ouvert — ce jalon
+les compte et les nomme, il ne décide pas où ils devraient aller.
+
+L'icône LinkedIn du jeu d'icônes est une approximation dessinée dans le même
+style que les autres (traits, pas de remplissage) : ce n'est pas le logo
+officiel, et ça n'a pas besoin de l'être — c'est un repère, pas une marque.
+
+---
+
+## Jalon 25 — la question des domaines, tranchée
+
+### Ce que la feuille contient réellement
+
+Relecture en **lecture seule** de « CRM AURA FLOW AI », les **six onglets**, le
+12 août 2026. La réponse est décevante et il valait mieux la connaître :
+
+| Onglet | Colonne susceptible de porter une adresse | Ce qu'elle contient |
+|---|---|---|
+| Liste de prospection | `SITE` | 71 valeurs sur 152 lignes — **14 sont des adresses**, 57 sont des titres de page |
+| Prospects chauds | `Boutique / URL` | 2 lignes, **1 adresse** ; sa colonne `SITE` dit « Shopify » — la plateforme |
+| Suivi mensuel par canal | — | aucune adresse |
+| Tableau de bord | — | aucune adresse |
+| Clients signés & suivi | — | table vide |
+| Grille tarifaire | — | aucune adresse |
+
+**Rien n'a été perdu à l'import.** La colonne `SITE` a bien été versée dans les
+Notes ; elle était simplement, à 80 %, autre chose qu'une adresse — le titre de
+l'onglet du navigateur (« Vitamines et Compléments alimentaires | Argalys
+Essentiels ») plutôt que son adresse. Le total exploitable dans tout le
+classeur est de **15 adresses**.
+
+### Deux corrections, deux sources
+
+`planWebsiteFix()` (jalon 24) lit les **Notes** du CRM. `planSiteFix()` lit la
+**feuille**, transcrite dans `scripts/sites-2026-08.ts`. Elles ne trouvent pas
+la même chose, et c'est la raison d'être de la seconde : une ligne que l'import
+a refusée — nom manquant — n'a laissé aucune note, donc aucune adresse à
+extraire. **Six des quinze adresses sont dans ce cas** ; elles sont signalées
+« introuvable » avec leur nom, leur société et leur adresse électronique, pour
+être traitées à la main.
+
+Mêmes garanties que les autres reports de feuille : simulation d'abord,
+`website` du contact et `domain` de la société **seulement s'ils sont vides**
+(la condition est portée par le `updateMany`, pas par une lecture antérieure),
+Notes intactes, sauvegarde JSON avant écriture, idempotent.
+
+### Les domaines proposés ne s'appliquent jamais en masse
+
+Pour les sociétés sans domaine, `lib/domain/domain-guess.ts` propose — **et ne
+vérifie rien, par construction**. Aucun appel réseau n'est émis vers une
+adresse proposée, et c'est le point dur de ce jalon : un domaine deviné qui
+*répond* peut appartenir à n'importe qui. Le vérifier depuis le serveur
+donnerait à une supposition l'apparence d'un fait, et l'erreur se découvrirait
+devant un client, sur un lien menant chez un tiers.
+
+Deux règles, dans l'ordre de fiabilité :
+
+| Règle | D'où vient la valeur | Couverture (base vérifiée) |
+|---|---|---|
+| `email` | domaine d'une adresse **professionnelle déjà saisie** sur une fiche de la société — une déduction, pas une invention | 96 sociétés sur 125 |
+| `name` | nom de la société transformé en domaine — **pure supposition** | 29 sociétés |
+
+Les messageries grand public (Gmail, Orange, Yahoo…) sont exclues : elles ne
+disent rien de la société. Deux domaines différents parmi les contacts font
+tomber la confiance et le disent (« 2 domaines différents… »).
+
+**Même la règle `email` se trompe.** « Absolution » et « Spring » portent des
+contacts en `@teledyne.com` — une adresse manifestement erronée dans la
+feuille. « Agence ads » donne `ads.com`. C'est exactement pourquoi il n'existe
+aucune fonction qui écrive plusieurs domaines d'un coup : le bloc « Domaines
+proposés » se relit **ligne à ligne**, chaque proposition portant sa règle, sa
+confiance et la phrase qui l'explique.
+
+Accepter écrit **une** société (et recalcule son miroir de recherche, sans quoi
+elle resterait introuvable par son adresse). Écarter n'écrit rien sur la
+société : le refus est mémorisé dans `domain_rejections` pour que la ligne ne
+revienne pas — mais **le refus porte sur la valeur**, pas sur la société : si
+la règle propose autre chose plus tard, la ligne revient.
+
+### Jalon 25 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, base chargée depuis la feuille par l'import réel
+(154 contacts, 135 sociétés), migration `10_domain_review` appliquée puis
+`migrate diff` renvoyant une migration vide :
+
+- **report des sites** : 8 fiches renseignées sur les 15 adresses de la
+  feuille, 7 lignes « introuvable » nommées (six refusées à l'import, plus
+  « Aurélie » de l'onglet Prospects chauds) ; **notes identiques à l'octet
+  près** avant/après ; second passage → 0 à écrire, 8 déjà pourvues ;
+- **propositions** : 125 sociétés sans domaine → 96 déduites d'une adresse,
+  29 supposées du nom, 0 sans proposition ;
+- **accepter** écrit une seule société et recalcule son `searchText` ;
+  **écarter** laisse `domain` vide en base ; la ligne acceptée et la ligne
+  écartée sortent toutes deux de la liste ;
+- **un refus ne vaut que pour sa valeur** : changer la valeur mémorisée fait
+  revenir la ligne ;
+- **écriture concurrente** : domaine renseigné à la main entre l'affichage et
+  le clic → l'acceptation refuse en le nommant, la valeur saisie est conservée ;
+- **collision de clés React corrigée** au passage : deux fiches homonymes
+  (« Elena andrikian », doublon de la feuille) partageaient une clé dans quatre
+  listes du panneau — React pouvait en omettre une, dans l'écran qui sert
+  précisément à relire ce qui va être écrit. Vérifié : plus aucun message en
+  console ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (590 tests) verts.
+
+### Jalon 25 — ce que je recommande pour les sociétés restantes
+
+**Ne pas généraliser la règle `name`.** Elle produit du plausible, pas du vrai :
+`ads.com` pour « Agence ads », `bacha.com` pour « Bacha » (le site réel est
+*bachca.com*, visible dans les Notes). Un champ rempli de domaines plausibles
+est pire qu'un champ vide, parce qu'on cesse de se méfier.
+
+Dans l'ordre de ce que je ferais :
+
+1. **Accepter les propositions `email` après relecture** — 96 sociétés, une
+   déduction à partir d'une donnée réellement saisie. Compter quelques minutes
+   de relecture, en écartant les cas manifestes (`teledyne.com`).
+2. **Récolter le reste au fil des appels.** Le site se demande en trente
+   secondes pendant la conversation, et il arrive alors vérifié par la personne
+   même. C'est le seul canal qui produit une donnée sûre sans rien payer.
+3. **Pour un rattrapage en masse, un service d'enrichissement**, pas une
+   supposition. Un connecteur d'enrichissement B2B est disponible dans
+   l'environnement de travail (`Vibe_Prospecting`) et sait rendre le domaine
+   d'une entreprise à partir de son nom ; il est payant à l'appel et n'a pas
+   été utilisé ici, faute d'accord préalable. C'est la réponse honnête à
+   « comment obtenir cette donnée » : l'acheter à quelqu'un dont c'est le
+   métier, ou la demander au prospect.
+4. **Ce qu'il ne faut pas faire** : vérifier les domaines devinés en les
+   appelant depuis le serveur. Une page qui s'affiche ne prouve pas qu'elle
+   appartient au prospect — seulement que le nom est déposé.
+
+### Jalon 25 — ce qui n'est pas vérifié
+
+**Les chiffres viennent d'une base reconstituée depuis la feuille, pas de la
+vôtre.** 135 sociétés ici, 133 annoncées en production : la répartition entre
+`email` et `name` y sera proche mais pas identique. La simulation sur la vraie
+base est le seul chiffre qui fasse foi.
+
+**Aucun domaine proposé n'a été vérifié, et c'est voulu.** Ni par le serveur,
+ni par moi. `nailmatic.com` et `typology.com` sont probablement justes ;
+`ads.com` est probablement faux ; la liste ne fait pas la différence et ne
+prétend pas la faire.
+
+**Le bloc de relecture n'a pas été exercé au clavier dans un navigateur.** Les
+deux boutons de chaque ligne appellent une route vérifiée de bout en bout, et
+le rendu du bloc est vérifié par capture ; la navigation au clavier entre cent
+lignes ne l'est pas.
+
+---
+
+## Jalon 26 — accepter en bloc, mais seulement ce qui est déduit
+
+### La distinction que le bouton ne doit pas pouvoir effacer
+
+Les propositions de domaine se partagent en deux populations qui n'ont pas la
+même valeur : celles **déduites** d'une adresse professionnelle déjà saisie, et
+celles **supposées** à partir du nom de la société. Relire les premières une par
+une est une corvée ; relire les secondes est le seul moyen de ne pas remplir la
+base de plausible.
+
+« Tout accepter » n'existe donc que pour les déductions, et la règle est portée
+à deux endroits, dont un seul compte vraiment :
+
+- **À l'écran**, le bouton n'apparaît que sous le filtre « Déduites d'une
+  adresse ». **Absent, pas désactivé** : un bouton grisé invite à chercher
+  comment l'activer, un bouton absent ne pose pas la question. Il nomme son
+  compte — « Accepter les 105 domaines déduits ».
+- **Au serveur**, `acceptManyDomains()` **recalcule la proposition de chaque
+  société** et écarte tout ce qui n'est pas de règle `email`. C'est ce qui rend
+  la règle vraie : un appel fabriqué à la main qui listerait des sociétés
+  « supposées du nom » écrit zéro ligne. Vérifié en passant trois suppositions
+  en force → `0 domaines écrits · 3 ignorés (ne sont plus des déductions)`.
+
+L'acceptation et le rejet à l'unité ne bougent pas : le bouton groupé est un
+raccourci sur un sous-ensemble filtré, pas un remplacement.
+
+### Ce que le groupé garantit, et ce qu'il refuse
+
+- **Confirmation qui montre**, pas qui résume : la liste complète de ce qui sera
+  écrit, les lignes douteuses en tête, et le rappel — mot pour mot celui du
+  panneau — qu'aucune de ces adresses n'a été appelée. Deux formulations pour
+  la même garantie finiraient par diverger.
+- **Ne touche que ce qui est encore en attente** dans la vue filtrée : une ligne
+  déjà acceptée ou écartée n'y est plus.
+- **Ignore sans échouer** une société dont le domaine a été renseigné entre
+  l'affichage et le clic — même garde que l'acceptation à l'unité, portée par la
+  condition du `updateMany` et non par une lecture antérieure. Idem si la
+  proposition a changé de valeur : ce qui serait écrit ne serait plus ce qui a
+  été relu.
+- **Dit exactement ce qui s'est passé** : `describeBulkOutcome()` (pur, testé)
+  rend « 84 domaines écrits · 4 ignorés (déjà renseignés) », chaque raison
+  accordée sur son propre compte.
+- **Annulation de dix secondes**, par le mécanisme de la file d'accueil : les
+  étapes inverses sont calculées **avant** d'écrire, à partir de l'état lu, et
+  reposées telles quelles sur `POST /api/queue` en mode `undo`. Une étape
+  `company-domain` rejoint le vocabulaire — elle transporte l'ancien domaine
+  **et** l'ancien miroir de recherche plutôt que de le recalculer : recalculer
+  supposerait de relire le nom tel qu'il est *maintenant*, et une modification
+  faite entre-temps se retrouverait défaite par une annulation qui n'a rien à
+  voir avec elle.
+
+### La ressemblance nom ↔ domaine, ou l'art de se méfier au bon endroit
+
+`nameSimilarity()` compare le nom de la société à l'étiquette du domaine —
+inclusion valant 1, sinon coefficient de Dice sur les bigrammes. Les
+correspondances les plus faibles remontent en tête de la vue « Déduites » avec
+un repère discret.
+
+**Ce n'est pas une mesure de justesse, c'est une mesure d'étonnement.** Un score
+bas ne dit pas que le domaine est faux : « AGENCE INCARE Marketing » chez
+`oomylab.com` peut très bien être exact. Ce que le score attrape réellement,
+c'est **l'adresse erronée dans la feuille source**. Sur la base vérifiée, 11 des
+105 déductions passent sous le seuil de 0,34 — et l'on y trouve les deux
+sociétés de cosmétique rattachées à `teledyne.com`, un électronicien américain,
+ainsi que « Sisi la paillette » rattachée à `u-paris.fr`, une université. Les 75
+correspondances exactes (`numorning.com` pour Numorning) ne sont pas signalées.
+
+Le seuil est calé sur cette base : juste au-dessus se trouvent
+`Laboratoire mademoiselle → mademoisellecosmetique.com` (0,51) et
+`Omnie → omie.fr` (0,57) — une faute de frappe dans le nom, pas une erreur de
+domaine. Les signaler aurait dilué les onze qui comptent.
+
+### Jalon 26 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, base chargée depuis la feuille (154 contacts, 135
+sociétés) :
+
+- **tri** : les 105 déductions passent toutes avant les 30 suppositions, et à
+  l'intérieur la ressemblance la plus faible d'abord — les six premières lignes
+  sont à 0,00, `teledyne.com` en tête ;
+- **garde-fou serveur** : 3 suppositions passées en force → `0 domaines écrits ·
+  3 ignorés (ne sont plus des déductions)` ;
+- **groupé** : 104 écrits, 1 ignoré, `104 domaines écrits · 1 ignoré (déjà
+  renseigné)` ; la société renseignée à la main entre-temps **a gardé sa
+  valeur** ;
+- **annulation** : 104 étapes rejouées, domaine **et** miroir de recherche
+  revenus à vide, 0 société avec domaine en base après le tour complet ;
+- **à l'écran** : le bouton est **absent** sous « Toutes » et sous « Supposées
+  du nom » (compté à 0 dans le DOM, pas seulement désactivé), présent sous
+  « Déduites » ; le parcours complet clic → confirmation → écriture → bandeau →
+  « Annuler » rejoué dans un navigateur, sans une erreur en console ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (601 tests) verts.
+
+### Jalon 26 — ce qui ne l'est pas
+
+**La ressemblance ne dit toujours rien de la justesse.** Elle trie, elle
+n'arbitre pas. Une déduction à 1,00 peut être fausse — une société qui a changé
+de nom — et une à 0,00 peut être juste. Aucun domaine n'est vérifié, et
+toujours pas depuis le serveur.
+
+**Le bandeau d'annulation n'a qu'une vie de page.** Recharger `/reglages` dans
+les dix secondes le fait disparaître avec les étapes inverses qu'il portait ;
+il faut alors revider les domaines à la main. C'est le même compromis que la
+file d'accueil, à un volume plus grand.
+
+**Le groupé écrit dans la requête HTTP**, une société après l'autre, sans
+transaction d'ensemble : une coupure au milieu laisse les lignes déjà écrites
+écrites — et sans bandeau pour les défaire. À 105 lignes c'est instantané ; à
+plusieurs milliers, il faudrait découper en lots.
+
+---
+
+## Jalon 27 — le statut de relance, audité puis unifié
+
+### Le symptôme, et ce qu'il cachait
+
+La puce « Jamais contacté » de `/contacts` renvoyait **2** contacts alors que la
+correction de feuille venait d'en écrire **67**. Audit mené sur une base
+reconstituée depuis la feuille (154 fiches), correction appliquée pour
+reproduire l'état signalé.
+
+**La cause n'est pas dans les filtres : c'est la correction qui se réfutait
+elle-même.** `applyStatusFix()` consigne une interaction par fiche pour
+expliquer ce qu'elle écrit — c'est ce qui rend l'historique lisible six mois
+plus tard. Mais `followUpStatus()` teste `activityCount === 0` pour dire
+« jamais contacté ». En écrivant le statut, la correction créait l'interaction
+qui le contredit : 135 notes de correction, 134 fiches n'ayant **que** cela,
+18 fiches portant une interaction réelle.
+
+Le jalon 22 avait déjà rencontré ce piège sur les rapports de prospection —
+149 interactions dont 148 étaient nos propres notes — et posé `CORRECTION_OWNER`
+dans `lib/api/prospecting.ts`. L'exclusion n'avait jamais atteint le statut de
+relance.
+
+### Les cinq divergences trouvées, et leur fichier
+
+| # | Divergence | Où |
+|---|---|---|
+| 1 | Les notes de correction comptaient comme prise de contact | `lib/api/contacts.ts` `_count: { activities: true }` |
+| 2 | Les puces filtraient sur le statut **calculé**, la pastille affichait le **saisi** | `lib/domain/follow-up.ts` `matchesContactFilter()` |
+| 3 | `/accueil` et `/clients` ne lisaient jamais le champ saisi | `lib/api/dashboard.ts` `readStaleContacts()`, `lib/api/clients.ts` |
+| 4 | Les outils du conseil non plus | `lib/agents/tools/reads.ts` `searchContacts` |
+| 5 | « Statut figé » comptait la note de la correction comme interaction postérieure | `lib/api/contacts.ts`, dernière `activities` |
+
+Mesures avant / après, mêmes 154 fiches :
+
+| Surface | Avant | Après |
+|---|---|---|
+| stocké « Jamais contacté » | 66 | 66 |
+| puce « Jamais contacté » | **2** | **68** |
+| puce « Sans nouvelles » | 39 | 4 |
+| puce « Déjà contactés » | 128 | 18 |
+| puce « Contactés cette semaine » | 119 | 9 |
+| puce « Statut figé » | 110 | 0 |
+| `/accueil` en désaccord avec `/contacts` | **110 fiches** | **0** |
+| `/clients` en désaccord | 0 | 0 |
+| outils du conseil en désaccord | (calcul seul) | 0 |
+
+Les 68 de la puce sont les 66 saisis plus 2 fiches sans statut saisi dont le
+calcul dit « jamais » — la puce montre le **statut résolu**, pas le champ.
+
+### Une seule décision, deux fonctions
+
+`lib/domain/contact-status.ts` est créé au-dessus de `follow-up.ts` (le calcul)
+et de `status.ts` (la saisie) — au-dessus et non entre les deux, pour que
+l'ordre des dépendances reste acyclique.
+
+- **`resolveContactStatus()`** décide du statut d'un contact. Toutes les
+  surfaces l'appellent, directement ou via `ContactStatusTag`.
+- **`matchesContactFilter()`** décide de ce que chaque puce sélectionne. Il a
+  déménagé de `follow-up.ts`, où il ne voyait que le calcul. Aucune vue ne
+  réimplémente ce prédicat.
+
+`resolveStatus()` rend désormais une **clé canonique** (`key`) en plus du
+libellé : c'est elle que les puces comparent. Un libellé saisi hors vocabulaire
+du domaine — « Contacté — en attente », « Intéressé » — rend `key: null` et
+n'est revendiqué par aucune puce. C'est un fait sur le vocabulaire, pas un
+oubli, et le test de parité l'impose.
+
+`lib/api/real-activity.ts` porte `CORRECTION_OWNER` et le fragment Prisma
+`REAL_ACTIVITY`, posé partout où l'on **mesure** l'activité — jamais où on
+l'**affiche** : la chronologie d'une fiche doit montrer les corrections.
+`prospecting.ts` réexporte la constante au lieu d'en garder une copie.
+
+### Le test de parité
+
+`lib/domain/__tests__/status-parity.test.ts`, dans la lignée de
+`column-filters-parity.test.ts` et `no-duplicate-thresholds.test.ts` : dix-huit
+fiches couvrant les cinq statuts calculés croisés avec les statuts saisis, et
+trois invariants — la pastille et les puces désignent le même statut ; un
+contact appartient à **au plus une** puce de statut ; un libellé libre n'est
+revendiqué par aucune.
+
+Éprouvé en écrivant d'abord une assertion trop forte : le test a signalé que
+`due`, `planned` et `waiting` n'ont **pas** de puce, ce qui est correct — `due`
+et `planned` sont couverts par la puce de date « À relancer », `waiting` est
+l'état par défaut. L'invariant a été resserré sur ce fait plutôt que l'inverse.
+
+### Jalon 27 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, 154 fiches issues de la feuille, correction des
+statuts appliquée :
+
+- **0 désaccord** entre `/contacts`, `/accueil`, `/clients` et les outils du
+  conseil, contact par contact, sur le libellé réellement affiché ;
+- **0 fiche** portant « Jamais contacté » en base et absente de la puce, contre
+  66 avant ; **0 fiche** dans la puce portant un autre statut saisi ;
+- `never ∩ contacted = 0`, `recent ⊆ contacted`, `answered ⊆ contacted` ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (608 tests) verts.
+
+### Jalon 27 — ce qui n'est pas fait, et vous attend
+
+**La seconde rangée de puces n'a pas été réduite** — c'est votre décision. Ce
+qu'elles sélectionnent, mesuré :
+
+| Puce | Sélectionne | Verdict |
+|---|---|---|
+| À relancer | toute relance programmée (date) | garder — c'est le pipeline de relances |
+| Sans nouvelles | statut résolu `silent` | garder |
+| Jamais contacté | statut résolu `never` | garder |
+| Statut figé | statut saisi antérieur à la dernière vraie interaction | garder — outil d'hygiène |
+| Déjà contactés | ≥ 1 interaction réelle | **redondant** : c'est le complément exact de « Jamais contacté » |
+| Contactés cette semaine | ≥ 1 interaction < 7 j | sous-ensemble de « Déjà contactés » |
+| Ont répondu | ≥ 1 interaction à issue ≠ « pas de réponse » | sous-ensemble de « Déjà contactés » |
+
+Les trois dernières viennent des bandes de l'entonnoir de l'accueil (jalon 20),
+où chaque bande devait mener quelque part. Recommandation : **retirer « Déjà
+contactés »** (strictement complémentaire de « Jamais contacté », donc du bruit)
+et **garder « Contactés cette semaine » et « Ont répondu »**, qui ne se
+déduisent d'aucune autre — au prix de conserver leur cible pour les liens de
+l'entonnoir. Cinq puces plutôt que sept.
+
+**Les chiffres viennent d'une base reconstituée**, pas de la vôtre. La
+répartition de production différera ; le mécanisme, lui, est celui-ci.
+
+**La puce « Ont répondu » renvoie 0** sur cette base — aucune interaction n'y
+porte d'issue renseignée. Le filtre est correct, la donnée manque.

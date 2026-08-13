@@ -12,7 +12,7 @@ interface CompanyFormProps {
 }
 
 const CONTROL =
-  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[13.5px] outline-none focus:border-flux";
+  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[13.5px] outline-none focus:border-brand";
 
 const SIZES = ["1-10", "11-50", "51-200", "201-500", "500+"] as const;
 
@@ -106,7 +106,7 @@ export function CompanyForm({ company, industries, onCancel, onSaved }: CompanyF
         <button
           type="submit"
           disabled={busy}
-          className="rounded-control bg-flux px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-flux-d disabled:opacity-50"
+          className="rounded-control bg-brand px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-d disabled:opacity-50"
         >
           {busy ? "Enregistrement…" : company === null ? "Créer la société" : "Enregistrer"}
         </button>

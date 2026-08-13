@@ -2,7 +2,8 @@ import { prisma } from "@/lib/db";
 import { getPilotage } from "@/lib/api/reference";
 import { addDays, daysSince, startOfDay } from "@/lib/domain/dates";
 import { LOST_LIFECYCLE } from "@/lib/domain/lost";
-import type { PilotageSettings } from "@/lib/domain/types";
+import { ACTIVITY_LABELS, type PilotageSettings } from "@/lib/domain/types";
+import { readProspectingReport } from "@/lib/api/prospecting";
 
 /**
  * Briefing d'une vacation : les faits, calculés.
@@ -50,6 +51,19 @@ export interface Briefing {
   readonly settings: PilotageSettings;
   /** Vrai quand aucune section ne porte d'élément : le silence est la sortie. */
   readonly empty: boolean;
+  /**
+   * Mesures agrégées — rythme, taux de réponse par canal, arriéré.
+   *
+   * Séparées des sections, et **volontairement** : une section porte des
+   * enregistrements dont chaque identifiant devient une preuve cliquable, alors
+   * qu'un taux de réponse ne désigne aucune fiche. Les glisser parmi les
+   * sections aurait produit des preuves qui ne résolvent pas, donc des constats
+   * rejetés par la double résolution du jalon 14.
+   *
+   * Elles ne comptent pas dans `empty` : un CRM sans rien à signaler doit
+   * rester silencieux et gratuit, même si ces lignes existent.
+   */
+  readonly context: readonly string[];
 }
 
 function section(
@@ -187,7 +201,57 @@ export async function followUpBriefing(now: Date = new Date()): Promise<Briefing
     sections,
     settings,
     empty: sections.every((entry) => entry.items.length === 0),
+    context: await prospectingContext(),
   };
+}
+
+/**
+ * Les mesures de prospection, en phrases.
+ *
+ * Le modèle ne compte rien — même règle que pour les sections : les nombres
+ * viennent de PostgreSQL par le service que `/rapports` emploie, et l'agent ne
+ * fait que les commenter. « Votre taux de réponse au téléphone est trois fois
+ * celui de l'email » n'est utile que si les deux nombres sont exacts.
+ */
+async function prospectingContext(): Promise<string[]> {
+  try {
+    const report = await readProspectingReport();
+    const lines: string[] = [];
+
+    const weeks = report.rhythm.slice(-4);
+    const recent = weeks.reduce((sum, week) => sum + week.total, 0);
+    lines.push(`Interactions consignées sur les 4 dernières semaines : ${recent}.`);
+
+    for (const channel of report.channels) {
+      lines.push(
+        channel.rate === null
+          ? `${ACTIVITY_LABELS[channel.channel]} : ${channel.total} échange(s), aucune issue renseignée — taux inconnu.`
+          : `${ACTIVITY_LABELS[channel.channel]} : ${channel.total} échange(s), ${channel.rate} % de réponse sur ${channel.known} à l'issue connue.`,
+      );
+    }
+
+    if (report.firstTouch.untouched > 0) {
+      lines.push(
+        `${report.firstTouch.untouched} contact(s) n'ont jamais été approchés` +
+          (report.firstTouch.untouchedMedianAgeDays === null
+            ? "."
+            : `, depuis ${report.firstTouch.untouchedMedianAgeDays} jours en médiane.`),
+      );
+    }
+
+    const honoured = report.discipline.reduce((sum, week) => sum + week.honoured, 0);
+    const missed = report.discipline.reduce((sum, week) => sum + week.missed, 0);
+    if (honoured + missed > 0) {
+      lines.push(`Relances : ${honoured} tenue(s) à l'échéance, ${missed} manquée(s).`);
+    }
+
+    return lines;
+  } catch (error) {
+    // Le contexte est un bonus : son échec ne doit pas empêcher une vacation
+    // de signaler ce qu'elle a bel et bien trouvé.
+    console.error("[vacation] contexte de prospection", error);
+    return [];
+  }
 }
 
 /**
@@ -273,12 +337,22 @@ export async function qualityBriefing(now: Date = new Date()): Promise<Briefing>
     sections,
     settings,
     empty: sections.every((entry) => entry.items.length === 0),
+    context: await prospectingContext(),
   };
 }
+
 
 /** Rendu texte du briefing, tel qu'il part au modèle. */
 export function renderBriefing(briefing: Briefing): string {
   const parts: string[] = [];
+
+  if (briefing.context.length > 0) {
+    parts.push(
+      "## Mesures de prospection (agrégats — ne pas citer comme preuve, aucun enregistrement associé)",
+    );
+    for (const line of briefing.context) parts.push(`- ${line}`);
+    parts.push("");
+  }
 
   for (const entry of briefing.sections) {
     if (entry.items.length === 0) continue;

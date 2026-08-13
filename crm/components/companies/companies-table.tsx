@@ -137,7 +137,7 @@ export function CompaniesTable({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(event) => event.stopPropagation()}
-                      className="text-[12px] text-muted hover:text-flux-d hover:underline"
+                      className="text-[12px] text-muted hover:text-brand-d hover:underline"
                     >
                       {externalLabel(company.domain)}
                     </a>

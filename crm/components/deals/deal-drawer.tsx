@@ -120,9 +120,20 @@ export function DealDrawer({
 
           <dl className="grid grid-cols-[130px_1fr] gap-x-3.5 gap-y-2.5 text-[13.5px]">
             <Row label="Contact">
-              {deal.contact === null
-                ? "—"
-                : `${deal.contact.firstName} ${deal.contact.lastName}`}
+              {/* Lien dans les deux sens : la fiche contact liste ses affaires,
+                  l'affaire renvoie à sa fiche. Sans cela, une affaire créée à la
+                  qualification est un cul-de-sac — on sait qu'elle vient de
+                  quelqu'un sans pouvoir y retourner. */}
+              {deal.contact === null ? (
+                "—"
+              ) : (
+                <Link
+                  href={`/contacts?lifecycle=all&fiche=${encodeURIComponent(deal.contact.id)}`}
+                  className="text-brand-d hover:underline"
+                >
+                  {deal.contact.firstName} {deal.contact.lastName}
+                </Link>
+              )}
             </Row>
             <Row label="Offre">{deal.offer === "" ? "—" : deal.offer}</Row>
             <Row label="Créée le">{formatDate(deal.createdAt)}</Row>
@@ -163,7 +174,7 @@ export function DealDrawer({
           )}
 
           {autoNotice !== null && (
-            <p className="mt-3 flex flex-wrap items-center gap-2 rounded-control border border-[#B9E7DC] bg-flux-l px-3 py-2 text-[12.5px] text-flux-d">
+            <p className="mt-3 flex flex-wrap items-center gap-2 rounded-control border border-[#D3CEFA] bg-brand-l px-3 py-2 text-[12.5px] text-brand-d">
               {autoNotice}
               <Link href="/taches" className="font-semibold underline">
                 Ouvrir /taches

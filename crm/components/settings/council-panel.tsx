@@ -22,7 +22,7 @@ import type { AgentProfile } from "@/lib/api/agents";
  */
 
 const FIELD =
-  "w-full rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-flux";
+  "w-full rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-brand";
 const BUTTON =
   "rounded-control border border-line bg-surface px-2.5 py-1 text-[12px] font-semibold transition-colors hover:bg-surface-2 disabled:opacity-50";
 
@@ -201,7 +201,7 @@ function AgentRow({ agent }: { readonly agent: AgentProfile }) {
           )}
         </div>
 
-        {notice !== null && <p className="text-[12px] text-flux-d sm:col-span-2">{notice}</p>}
+        {notice !== null && <p className="text-[12px] text-brand-d sm:col-span-2">{notice}</p>}
         {error !== null && <p className="text-[12px] text-[#B2311F] sm:col-span-2">{error}</p>}
       </div>
     </li>

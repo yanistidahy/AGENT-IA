@@ -82,6 +82,15 @@ vi.mock("@/lib/db", () => ({
         ),
     },
     settings: { findUnique: () => Promise.resolve(null) },
+    // L'anneau d'avancement lit les marques du jour et la taille figée de la
+    // file. Sans ces deux mocks, `readQueueProgress` retombait sur son chemin
+    // d'erreur et le test validait le repli au lieu du comportement.
+    queueMark: { count: () => Promise.resolve(2), createMany: empty, deleteMany: empty },
+    queueDay: {
+      findUnique: () => Promise.resolve({ day: "", planned: 5, createdAt: new Date() }),
+      create: empty,
+      update: empty,
+    },
   },
 }));
 
@@ -184,15 +193,23 @@ describe("centre de pilotage", () => {
   });
 
   it("dit franchement qu'une base vide est vide, sans le déguiser en panne", async () => {
-    for (const key of Object.keys(counts)) {
-      counts[key as keyof typeof counts] = 0;
-    }
-    vi.resetModules();
-    const html = await renderHome();
+    // Les comptes sont **rendus** ensuite : ce mock est partagé par tout le
+    // fichier, et le laisser à zéro faisait sortir la page par son retour
+    // anticipé « base vide » dans chaque test écrit après celui-ci.
+    const original = { ...counts };
+    try {
+      for (const key of Object.keys(counts)) {
+        counts[key as keyof typeof counts] = 0;
+      }
+      vi.resetModules();
+      const html = await renderHome();
 
-    expect(html).toContain("Base de données connectée");
-    expect(html).toMatch(/elle est vide/);
-    expect(html).toMatch(/db:seed/);
+      expect(html).toContain("Base de données connectée");
+      expect(html).toMatch(/elle est vide/);
+      expect(html).toMatch(/db:seed/);
+    } finally {
+      Object.assign(counts, original);
+    }
   });
 });
 
@@ -225,5 +242,65 @@ describe("bandeau de sauvegarde", () => {
     const html = await renderHome();
     expect(html).not.toContain("Sauvegarde en retard");
     backupAgeHours = null;
+  });
+});
+
+/**
+ * Le tableau de bord refondu.
+ *
+ * Trois choses doivent tenir ensemble et venir de la base : l'entonnoir, qui est
+ * l'ancre visuelle ; l'anneau, qui mesure la journée ; et les cartes, qui
+ * doivent enseigner plutôt qu'afficher un tiret.
+ */
+describe("cockpit", () => {
+  beforeEach(() => {
+    backupAgeHours = 10;
+    vi.resetModules();
+  });
+
+  it("dessine l'entonnoir avec les nombres de la base", async () => {
+    const html = await renderHome();
+
+    expect(html).toContain("Entonnoir de prospection");
+    // `contact.count` renvoie 18, `deal.count` 24 : les bandes portent ces
+    // valeurs, pas une illustration.
+    expect(html).toContain("18 contacts");
+    expect(html).toContain("24 affaires");
+  });
+
+  it("mène chaque bande vers sa vue filtrée", async () => {
+    const html = await renderHome();
+
+    for (const href of [
+      "/contacts?lifecycle=all&amp;followUp=contacted",
+      "/contacts?lifecycle=all&amp;followUp=recent",
+      "/contacts?lifecycle=all&amp;followUp=answered",
+      "/affaires?status=all",
+    ]) {
+      expect(html, href).toContain(href);
+    }
+  });
+
+  it("montre l'anneau et son libellé accessible", async () => {
+    const html = await renderHome();
+
+    // L'apostrophe est échappée par le rendu : on cherche ce que le navigateur
+    // recevra, pas ce que la source contient.
+    expect(html).toContain("Traité aujourd&#x27;hui");
+    // Deux marques posées aujourd'hui, aucune ligne restante dans ce jeu vide :
+    // la file est terminée, et l'écran doit le dire au lieu de hausser les épaules.
+    expect(html).toContain("élément(s) traité(s)");
+  });
+
+  it("explique une carte vide au lieu d'afficher un tiret muet", async () => {
+    const html = await renderHome();
+
+    expect(html).toContain("Taux de réponse");
+    expect(html).toContain("renseignez le résultat de vos échanges");
+  });
+
+  it("annonce ce que demain apporte quand la file est vide", async () => {
+    const html = await renderHome();
+    expect(html).toContain("demain");
   });
 });

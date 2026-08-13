@@ -71,7 +71,7 @@ export function DashboardHeader({
           </div>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-paper">
             <div
-              className={`h-full rounded-full ${ratio >= 100 ? "bg-flux" : "bg-gold"}`}
+              className={`h-full rounded-full ${ratio >= 100 ? "bg-win" : "bg-gold"}`}
               style={{ width: `${Math.min(100, Math.max(0, ratio))}%` }}
             />
           </div>

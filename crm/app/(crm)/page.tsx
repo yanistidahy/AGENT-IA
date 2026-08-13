@@ -8,10 +8,21 @@ import { readAlerts } from "@/lib/api/alerts";
 import { listRecommendations } from "@/lib/api/recommendations";
 import { findAgentProfile } from "@/lib/api/agents";
 import { snapshotHealth, type SnapshotHealth } from "@/lib/api/snapshots";
-import { describeAge, STALE_AFTER_HOURS } from "@/lib/domain/snapshots";
+import { describeAge } from "@/lib/domain/snapshots";
 import { RecommendationCard } from "@/components/recommendations/recommendation-card";
-import { readActionQueue, readProspecting, readWeek } from "@/lib/api/dashboard";
-import { ActionQueue } from "@/components/dashboard/action-queue";
+import {
+  readActionQueue,
+  readFunnel,
+  readProspecting,
+  readTomorrow,
+  readWeek,
+} from "@/lib/api/dashboard";
+import { ActionQueue } from "@/components/dashboard/queue/action-queue";
+import { ProspectingFunnel } from "@/components/dashboard/funnel";
+import { BackupBanner } from "@/components/dashboard/backup-banner";
+import { CollapsibleBlock } from "@/components/ui/collapsible-block";
+import { readQueueProgress } from "@/lib/api/queue";
+import { listSequences } from "@/lib/api/sequences";
 import { ProspectingCards, WeekCard } from "@/components/dashboard/prospecting";
 import { listOwners } from "@/lib/api/reference";
 import { staleDealsWithoutTask } from "@/lib/api/automation";
@@ -80,7 +91,7 @@ export default async function HomePage({
       <Shell deploy={deploy} renderedAt={renderedAt} backup={backup}>
         <section className="rounded-card border border-line bg-surface p-5 shadow-card">
           <div className="flex items-center gap-2.5">
-            <span aria-hidden className="size-2 rounded-full bg-flux" />
+            <span aria-hidden className="size-2 rounded-full bg-brand" />
             <h2 className="font-display text-[15px] font-semibold">Base de données connectée</h2>
           </div>
           <Counters counts={status.counts} />
@@ -99,13 +110,21 @@ export default async function HomePage({
 
   const [data, alerts] = await Promise.all([readDashboard(renderedAt), readAlerts(renderedAt)]);
 
-  const [actions, prospecting, week, owners, recommendations] = await Promise.all([
-    readActionQueue(data.settings, renderedAt),
-    readProspecting(renderedAt),
-    readWeek(renderedAt),
-    listOwners(),
-    listRecommendations({ scope: "open" }, renderedAt),
-  ]);
+  const [actions, prospecting, week, owners, recommendations, funnel, tomorrow, sequences] =
+    await Promise.all([
+      readActionQueue(data.settings, renderedAt),
+      readProspecting(renderedAt),
+      readWeek(renderedAt),
+      listOwners(),
+      listRecommendations({ scope: "open" }, renderedAt),
+      readFunnel(renderedAt),
+      readTomorrow(renderedAt),
+      listSequences(),
+    ]);
+
+  // Lu **après** la file : la taille du jour se fige sur ce qui reste à traiter
+  // maintenant, et cette lecture écrit la ligne du jour si elle manque.
+  const queueProgress = await readQueueProgress(actions.length, renderedAt);
 
   // L'écran suit l'état de la base : sans affaire, les cartes de revenu ne
   // disent rien qu'on ne sache déjà, et cèdent la place à la prospection.
@@ -136,7 +155,7 @@ export default async function HomePage({
           </ul>
           {recommendations.length > 3 && (
             <p className="mt-2 text-[12.5px] text-muted">
-              <Link href="/conseil/suggestions" className="underline hover:text-flux-d">
+              <Link href="/conseil/suggestions" className="underline hover:text-brand-d">
                 Voir les {recommendations.length} recommandations
               </Link>
             </p>
@@ -157,25 +176,45 @@ export default async function HomePage({
       />
       )}
 
-      <Block title="À traiter maintenant" count={actions.length}>
+      {/* La file porte son propre en-tête : l'anneau d'avancement mesure ce
+          qu'elle contient, et il avance de façon optimiste au fil des actions —
+          il doit donc vivre dans le même composant client qu'elle. */}
+      <section className="mb-5">
         <WakeStaleDeals dealIds={wakeable} />
         <ActionQueue
           rows={actions}
           owners={owners}
           defaultOwner={owners[0] ?? ""}
+          sequences={sequences.filter((sequence) => sequence.active)}
+          serverDone={queueProgress.done}
+          serverPlanned={queueProgress.planned}
+          tomorrow={tomorrow}
         />
-      </Block>
+      </section>
 
-      <Block title="Ma semaine" hint="le second chiffre est celui qui dit si j'ai prospecté">
+      <CollapsibleBlock
+        id="funnel"
+        title="Entonnoir de prospection"
+        hint="chaque bande s'ouvre sur la liste correspondante"
+      >
+        <ProspectingFunnel data={funnel} />
+      </CollapsibleBlock>
+
+      <CollapsibleBlock
+        id="week"
+        title="Ma semaine"
+        hint="le second chiffre est celui qui dit si j'ai prospecté"
+      >
         <WeekCard week={week} />
-      </Block>
+      </CollapsibleBlock>
 
-      <Block
+      <CollapsibleBlock
+        id="stale"
         title="Clients & prospects — dernière touche"
         hint={`rouge au-delà de ${data.settings.coldDays} jours sans contact`}
       >
         <StaleContacts contacts={data.staleContacts} sort={sort} />
-      </Block>
+      </CollapsibleBlock>
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Block title="Relances à venir (7 jours)" count={data.upcoming.length}>
@@ -190,9 +229,9 @@ export default async function HomePage({
         )}
       </div>
 
-      <Block title="Activité récente">
+      <CollapsibleBlock id="feed" title="Activité récente" defaultOpen={false}>
         <ActivityFeed items={data.feed} />
-      </Block>
+      </CollapsibleBlock>
 
       <Counters counts={status.counts} />
     </Shell>
@@ -216,17 +255,10 @@ function Shell({
           quand la base est vide ou injoignable, et c'est précisément là qu'une
           sauvegarde périmée doit se voir. */}
       {backup.stale && (
-        <div className="mb-4 rounded-card border border-[#F0C9C2] bg-pulse-l px-4 py-3">
-          <p className="text-[13px] font-semibold">Sauvegarde en retard</p>
-          <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted">
-            Dernière sauvegarde réussie : {describeAge(backup.lastSuccessAt, renderedAt)}. Au-delà
-            de {STALE_AFTER_HOURS} h sans instantané, une perte de base ne serait plus
-            rattrapable.{" "}
-            <Link href="/reglages" className="underline hover:text-flux-d">
-              Vérifier les sauvegardes
-            </Link>
-          </p>
-        </div>
+        <BackupBanner
+          age={describeAge(backup.lastSuccessAt, renderedAt)}
+          lastSuccessAt={backup.lastSuccessAt?.toISOString() ?? null}
+        />
       )}
       {children}
       <p className="mt-8 border-t border-line pt-3 font-mono text-[10.5px] text-muted">

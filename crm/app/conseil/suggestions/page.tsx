@@ -39,7 +39,7 @@ export default async function SuggestionsPage({
       key={href}
       href={href}
       className={`rounded-control border px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${
-        active ? "border-flux bg-flux text-white" : "border-line bg-surface hover:bg-surface-2"
+        active ? "border-brand bg-brand text-white" : "border-line bg-surface hover:bg-surface-2"
       }`}
     >
       {label}

@@ -1,10 +1,14 @@
 "use client";
 
+import { IdentityFields } from "./identity-fields";
+
+import { LifecycleField } from "./lifecycle-field";
+
 import { useState } from "react";
 import { Combobox, companyFields, type ComboboxValue } from "@/components/ui/combobox";
 import type { ContactRecord } from "@/lib/api/contacts";
 import { createContact, updateContact } from "@/lib/client/crm-api";
-import { LIFECYCLES } from "@/lib/domain/types";
+
 import { isLost, LOST_REASONS } from "@/lib/domain/lost";
 
 /**
@@ -26,11 +30,16 @@ interface ContactFormProps extends ContactFormOptions {
   readonly contact: ContactRecord | null;
   readonly companyId?: string | null;
   readonly onCancel: () => void;
-  readonly onSaved: () => void;
+  /**
+   * Le cycle de vie enregistré est rendu à l'appelant : c'est la fiche qui
+   * reconnaît une entrée dans « Qualifié » et ouvre la modale de montant. Le
+   * formulaire ne connaît pas les affaires.
+   */
+  readonly onSaved: (lifecycle: string) => void;
 }
 
 const CONTROL =
-  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[13.5px] outline-none focus:border-flux";
+  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[13.5px] outline-none focus:border-brand";
 
 function day(date: Date | null): string {
   return date === null ? "" : date.toISOString().slice(0, 10);
@@ -75,6 +84,7 @@ export function ContactForm({
       email: text("email"),
       phone: text("phone"),
       linkedin: text("linkedin"),
+      website: text("website"),
       source: text("source"),
       owner: text("owner"),
       tag: tag.kind === "existing" ? tag.id : tag.kind === "new" ? tag.name : "",
@@ -99,7 +109,7 @@ export function ContactForm({
 
     setBusy(false);
     if (result.ok) {
-      onSaved();
+      onSaved(lifecycle);
       return;
     }
     setError(result.message);
@@ -108,31 +118,7 @@ export function ContactForm({
 
   return (
     <form onSubmit={(event) => void submit(event)} className="grid gap-3.5">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Prénom" errors={fields.firstName}>
-          <input name="firstName" required defaultValue={contact?.firstName ?? ""} className={CONTROL} />
-        </Field>
-        <Field label="Nom" errors={fields.lastName}>
-          <input name="lastName" required defaultValue={contact?.lastName ?? ""} className={CONTROL} />
-        </Field>
-        <Field label="Fonction" errors={fields.title}>
-          <input name="title" defaultValue={contact?.title ?? ""} className={CONTROL} />
-        </Field>
-        <Field label="Département" errors={fields.dep}>
-          <input name="dep" defaultValue={contact?.dep ?? ""} className={CONTROL} />
-        </Field>
-        <Field label="Email" errors={fields.email}>
-          <input name="email" type="email" defaultValue={contact?.email ?? ""} className={CONTROL} />
-        </Field>
-        <Field label="Téléphone" errors={fields.phone}>
-          <input name="phone" defaultValue={contact?.phone ?? ""} className={CONTROL} />
-        </Field>
-      </div>
-
-      <Field label="LinkedIn" errors={fields.linkedin}>
-        <input name="linkedin" defaultValue={contact?.linkedin ?? ""} className={CONTROL} />
-      </Field>
-
+      <IdentityFields contact={contact} fields={fields} />
       <div className="grid grid-cols-2 gap-3">
         <Field label="Société" errors={fields.companyId ?? fields.companyName}>
           <Combobox
@@ -143,18 +129,11 @@ export function ContactForm({
             emptyLabel="Sans société"
           />
         </Field>
-        <Field label="Cycle de vie" errors={fields.lifecycle}>
-          <select
-            name="lifecycle"
-            value={lifecycle}
-            onChange={(event) => setLifecycle(toLifecycleValue(event.target.value))}
-            className={CONTROL}
-          >
-            {LIFECYCLES.map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </select>
-        </Field>
+        <LifecycleField
+          value={lifecycle}
+          errors={fields.lifecycle}
+          onChange={setLifecycle}
+        />
         <Field label="Étiquette" errors={fields.tag}>
           <Combobox
             options={TAG_OPTIONS(tags).map((value) => ({ id: value, label: value }))}
@@ -243,7 +222,7 @@ export function ContactForm({
         <button
           type="submit"
           disabled={busy}
-          className="rounded-control bg-flux px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-flux-d disabled:opacity-50"
+          className="rounded-control bg-brand px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-d disabled:opacity-50"
         >
           {busy ? "Enregistrement…" : contact === null ? "Créer le contact" : "Enregistrer"}
         </button>
@@ -295,6 +274,3 @@ function TAG_OPTIONS(used: readonly string[]): string[] {
 }
 
 /** La valeur d'un `<select>` est une chaîne : elle se vérifie, elle ne s'assère pas. */
-function toLifecycleValue(value: string): (typeof LIFECYCLES)[number] {
-  return LIFECYCLES.find((candidate) => candidate === value) ?? "Lead";
-}

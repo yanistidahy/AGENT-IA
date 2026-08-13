@@ -97,7 +97,7 @@ export function BackupPanel({ onRestored }: { onRestored: () => void }) {
       )}
 
       {report !== null && (
-        <p className="mt-2.5 rounded-control border border-[#B9E7DC] bg-flux-l px-3 py-2 text-[12.5px] text-flux-d">
+        <p className="mt-2.5 rounded-control border border-[#B9E7DC] bg-win-l px-3 py-2 text-[12.5px] text-win-d">
           Restauration terminée :{" "}
           {Object.entries(report)
             .map(([label, count]) => `${count} ${label}`)

@@ -49,7 +49,7 @@ export function LinkDeal({ contactId, deals, onChanged }: LinkDealProps) {
       <select
         value={choice}
         onChange={(event) => setChoice(event.target.value)}
-        className="min-w-[220px] rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-flux"
+        className="min-w-[220px] rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-brand"
       >
         <option value="">Lier à une affaire existante…</option>
         {available.map((deal) => (
