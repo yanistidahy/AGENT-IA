@@ -79,6 +79,15 @@
      texte courant, et c'est lui qui porte les libellés secondaires du tableau
      des contacts. Le gris froid retenu tient 4.9:1. */
   --color-muted: #6b7192;
+  /**
+   * Gris de la fiche close, sur fond `paper`.
+   *
+   * `muted` sur `paper` ne donne que 4.15:1 — sous le seuil AA. Tant que le ton
+   * neutre ne portait qu'un mot secondaire, cela passait inaperçu ; il porte
+   * désormais le libellé de la colonne Statut d'une fiche « Perdu », qui est la
+   * première chose qu'on lit sur la ligne. 4.86:1 sur `paper`.
+   */
+  --color-closed: #616780;
   --color-line: #dee0ea;
   --color-line-2: #eceef4;
 

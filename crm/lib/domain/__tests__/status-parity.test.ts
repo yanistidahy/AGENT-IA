@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CONTACT_FILTERS, FOLLOW_UP_LABELS, followUpStatus } from "../follow-up";
 import {
+  compareByStatus,
   contactAttention,
   matchesContactFilter,
   resolveContactStatus,
@@ -109,8 +110,12 @@ describe("parité du statut de relance", () => {
         matchesContactFilter(row, chip, settings, now),
       );
 
-      // Cycle terminal : aucune pastille de statut, donc aucune puce.
-      if (shown === null) {
+      // Cycle terminal : la pastille porte le cycle de vie, et aucune puce de
+      // statut de relance ne peut la revendiquer.
+      if (shown.terminal) {
+        if (shown.label !== row.lifecycle) {
+          disagreements.push(`${label} : pastille terminale « ${shown.label} » ≠ ${row.lifecycle}`);
+        }
         if (selectedBy.length !== 0) {
           disagreements.push(`${label} : cycle terminal revendiqué par [${selectedBy.join(", ")}]`);
         }
@@ -161,7 +166,7 @@ describe("parité du statut de relance", () => {
     // Le calcul dit autre chose…
     expect(followUpStatus(row, settings, now)).toBe("silent");
     // …et c'est bien la saisie qui gagne, à l'affichage comme au filtre.
-    expect(resolveContactStatus(row, settings, now)?.label).toBe(FOLLOW_UP_LABELS.never);
+    expect(resolveContactStatus(row, settings, now).label).toBe(FOLLOW_UP_LABELS.never);
     expect(matchesContactFilter(row, "never", settings, now)).toBe(true);
     expect(matchesContactFilter(row, "silent", settings, now)).toBe(false);
   });
@@ -175,7 +180,7 @@ describe("parité du statut de relance", () => {
   it("« reminder » reste une puce de date, plus large que le statut « due »", () => {
     const future = contact({ lastContact: day("2026-08-01"), activityCount: 1, nextReminder: day("2026-09-01") });
     expect(matchesContactFilter(future, "reminder", settings, now)).toBe(true);
-    expect(resolveContactStatus(future, settings, now)?.key).toBe("planned");
+    expect(resolveContactStatus(future, settings, now).key).toBe("planned");
   });
 
   it("canonicalStatus ne reconnaît que le vocabulaire du domaine", () => {
@@ -213,7 +218,22 @@ describe("cycle de vie terminal", () => {
     // Le calcul dirait « Sans nouvelles », la saisie dirait « en attente » :
     // le cycle de vie tranche, et il n'y a pas de statut du tout.
     expect(followUpStatus(lost, settings, now)).toBe("silent");
-    expect(resolveContactStatus(lost, settings, now)).toBeNull();
+
+    // Ce qui s'affiche est le cycle de vie, marqué terminal — pas un statut de
+    // relance, et pas une case vide : la colonne Statut reste lisible.
+    const shown = resolveContactStatus(lost, settings, now);
+    expect(shown.label).toBe(LOST_LIFECYCLE);
+    expect(shown.terminal).toBe(true);
+    expect(shown.key).toBeNull();
+    expect(shown.attention).toBe(false);
+  });
+
+  it("rend son propre libellé pour chaque cycle terminal", () => {
+    for (const lifecycle of TERMINAL_LIFECYCLES) {
+      const shown = resolveContactStatus(contact({ lifecycle }), settings, now);
+      expect(shown.label, `${lifecycle} doit s'afficher sous son nom`).toBe(lifecycle);
+      expect(shown.terminal).toBe(true);
+    }
   });
 
   it("n'est revendiqué par aucune puce de statut", () => {
@@ -225,12 +245,40 @@ describe("cycle de vie terminal", () => {
     }
   });
 
-  it("reste dans la puce « À relancer » si une relance traîne — c'est ce que la correction nettoie", () => {
-    // La puce `reminder` porte sur une date, pas sur un statut : elle est le
-    // signal qu'il reste quelque chose à nettoyer, pas une contradiction.
+  it("n'entre pas dans « À relancer », même si une relance traîne en base", () => {
+    // La valeur stockée n'est pas effacée : sans exclusion explicite, la puce de
+    // date ressusciterait un contact perdu dans une liste de travail. Afficher
+    // « Perdu » dans la colonne Statut ne doit rien rouvrir.
     const row = contact({ lifecycle: LOST_LIFECYCLE, nextReminder: day("2026-08-01") });
-    expect(matchesContactFilter(row, "reminder", settings, now)).toBe(true);
+    expect(matchesContactFilter(row, "reminder", settings, now)).toBe(false);
+    // La contradiction en base reste signalée : c'est ce que le rangement traite.
     expect(contradictsTerminal({ lifecycle: LOST_LIFECYCLE, status: "", nextReminder: day("2026-08-01") })).toBe(true);
+  });
+
+  it("n'appelle jamais l'attention, donc ne rougit aucune ligne", () => {
+    for (const [label, row] of POPULATION) {
+      if (!TERMINAL_LIFECYCLES.includes(row.lifecycle)) continue;
+      const attention = contactAttention({
+        status: row.status,
+        followUp: followUpStatus(row, settings, now),
+        lifecycle: row.lifecycle,
+      });
+      expect(attention, `${label} ne doit pas appeler l'attention`).toBe(false);
+    }
+  });
+
+  it("part en fin de liste dans les deux sens du tri", () => {
+    const active = POPULATION.filter(([, r]) => !TERMINAL_LIFECYCLES.includes(r.lifecycle)).map(([, r]) => r);
+    const terminal = POPULATION.filter(([, r]) => TERMINAL_LIFECYCLES.includes(r.lifecycle)).map(([, r]) => r);
+    // Mélangés à dessein : un tri qui ne déplace rien passerait sinon.
+    const mixed = [terminal[0]!, active[0]!, terminal[1]!, active[1]!, terminal[2]!];
+
+    for (const direction of [1, -1] as const) {
+      const sorted = [...mixed].sort((a, b) => compareByStatus(a, b, direction, settings, now));
+      const firstTerminal = sorted.findIndex((r) => TERMINAL_LIFECYCLES.includes(r.lifecycle));
+      const lastActive = sorted.map((r) => !TERMINAL_LIFECYCLES.includes(r.lifecycle)).lastIndexOf(true);
+      expect(firstTerminal, `sens ${direction} : une terminale précède une active`).toBeGreaterThan(lastActive);
+    }
   });
 
   /**
@@ -257,40 +305,35 @@ describe("cycle de vie terminal", () => {
           status: row.status,
           followUp: followUpStatus(row, settings, now),
           lifecycle: row.lifecycle,
-        })?.label ?? null,
+        }).label,
     ],
     // Les outils du conseil : `statutDeRelance` rendu à l'agent.
-    ["outils du conseil", (row) => resolveContactStatus(row, settings, now)?.label ?? null],
-    // La couleur d'alerte de la colonne « dernière touche » : elle doit se taire
-    // sur une fiche terminale, comme la pastille.
-    [
-      "couleur d'alerte",
-      (row) =>
-        contactAttention({
-          status: row.status,
-          followUp: followUpStatus(row, settings, now),
-          lifecycle: row.lifecycle,
-        })
-          ? "alerte"
-          : null,
-    ],
+    ["outils du conseil", (row) => resolveContactStatus(row, settings, now).label],
   ];
 
-  it("aucune surface n'affiche de statut de relance sur un cycle terminal", () => {
-    const leaks: string[] = [];
+  it("toutes les surfaces affichent le cycle de vie, et aucune n'y voit du travail", () => {
+    const problems: string[] = [];
 
     for (const [label, row] of POPULATION) {
       if (!TERMINAL_LIFECYCLES.includes(row.lifecycle)) continue;
 
       for (const [surface, render] of SURFACES) {
         const shown = render(row);
-        if (shown !== null) {
-          leaks.push(`${label} → ${surface} affiche « ${shown} »`);
+        // Ce que chaque surface doit montrer : le cycle de vie, ni un statut de
+        // relance, ni rien du tout.
+        if (shown !== row.lifecycle) {
+          problems.push(`${label} → ${surface} affiche « ${shown ?? "rien"} » au lieu de « ${row.lifecycle} »`);
         }
       }
+
+      // …et le style doit dire « close », pas « à traiter ».
+      const resolved = resolveContactStatus(row, settings, now);
+      if (!resolved.terminal) problems.push(`${label} : pastille non marquée terminale`);
+      if (resolved.attention) problems.push(`${label} : marquée comme appelant l'attention`);
+      if (resolved.key !== null) problems.push(`${label} : porte la clé ${resolved.key}`);
     }
 
-    expect(leaks).toEqual([]);
+    expect(problems).toEqual([]);
   });
 
   it("les surfaces s'accordent sur les fiches non terminales", () => {

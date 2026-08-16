@@ -89,6 +89,7 @@ pas des couleurs de marque.
 | `brand-lift` sur `rail-3` | 6.2:1 | AA texte / icônes |
 | `win-d` sur `win-l` | 4.6:1 | AA texte |
 | `muted` sur blanc | 4.9:1 | AA texte |
+| `closed` sur `paper` (fiche close) | 4.86:1 | AA texte |
 | bande la plus claire de l'entonnoir, texte blanc | 4.65:1 | AA texte |
 
 Deux pièges relevés et corrigés au passage : **le blanc sur menthe pleine ne
@@ -340,6 +341,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 27 | **Audit du statut de relance** — la correction se réfutait elle-même ; une seule décision, test de parité | **livré, à valider** |
 | 28 | **Cycle de vie terminal** — « Perdu » gagne sur le statut de relance ; tiroir durci | **livré, à valider** |
 | 29 | **La règle terminale devient structurelle** — appliquée à la lecture, une seule porte, garde statique | **livré, à valider** |
+| 30 | **La fiche close se lit « Perdu »** — le cycle de vie devient le statut affiché, en gris, trié en fin | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -3763,3 +3765,133 @@ Un composant qui afficherait `{contact.status}` en texte brut ne serait pas
 attrapé — aucun n'en fait autant aujourd'hui, et ce serait un autre défaut que
 celui-ci. Ce que le test ferme, c'est le chemin par lequel la règle a réellement
 été contournée deux fois.
+
+---
+
+## Jalon 30 — une fiche close se lit « Perdu », pas une case vide
+
+### Le défaut du jalon 29
+
+La règle était juste et l'écran illisible. `resolveDisplayStatus()` rendait
+`null` pour un cycle terminal, donc la colonne Statut restait **vide** — or
+c'est la première colonne qu'on lit. Une case vide ne dit pas « cette fiche est
+close » : elle ne dit rien, et on va chercher ailleurs ce qu'elle aurait dû
+répondre.
+
+### Le cycle de vie devient le statut affiché
+
+`resolveDisplayStatus()` ne rend plus `null` : elle rend le **cycle de vie
+lui-même**, marqué `terminal: true`. `ResolvedStatus` porte donc un quatrième
+champ, et c'est lui qui permet à la couleur, aux puces et au tri de traiter ces
+lignes comme closes sans que chaque surface ait à le savoir.
+
+| Champ | Valeur pour une fiche close | Effet |
+|---|---|---|
+| `label` | `Perdu` / `Ancien Client` | la colonne Statut redevient lisible |
+| `terminal` | `true` | ton gris, suffixe supprimé, tri en fin |
+| `attention` | `false` | **jamais de rouge, jamais de liste de travail** |
+| `key` | `null` | aucune puce de statut ne la revendique |
+
+**La règle reste à un seul endroit.** Aucune surface ne teste le cycle de vie
+pour décider quoi afficher : elles affichent ce que le domaine rend. La garde
+statique du jalon 29 (`status-single-source.test.ts`) est inchangée et continue
+de fermer le contournement.
+
+### Les trois conséquences, traitées
+
+**1. Jamais d'alerte.** `contactAttention()` rend `false` — c'est
+mécanique, il lit `resolveDisplayStatus().attention`. Deux trous ont été trouvés
+et bouchés en vérifiant, tous deux hors de la fonction :
+
+- **`matchesContactFilter()` laissait passer la puce « À relancer ».** Elle porte
+  sur une **date**, pas sur un statut : une fiche perdue dont l'échéance dort
+  encore en base y remontait. Le test du jalon 28 fixait même ce comportement
+  comme voulu (« c'est ce que la correction nettoie »). Il ne l'est plus :
+  afficher « Perdu » dans la colonne Statut ne doit rien rouvrir, et la valeur
+  stockée n'étant volontairement pas effacée, l'exclusion doit être explicite.
+- **`readActionQueue()` et `readTomorrow()` n'excluaient que `Perdu`**, pas
+  `Ancien Client` (`lib/api/dashboard.ts`). Un ancien client portant une relance
+  entrait donc dans la file du jour, et dans le dénominateur de l'anneau.
+  Les deux lisent maintenant `TERMINAL_LIFECYCLES`.
+
+**2. Pas de doublon.** La colonne Statut garde le libellé — c'est là qu'on
+regarde. Là où les deux pastilles sont **côte à côte**, `LifecycleTag` disparaît
+sur une fiche close :
+
+| Endroit | Décision |
+|---|---|
+| en-tête du tiroir (`contact-header.tsx`) | la pastille de statut garde « Perdu » ; le motif de perte reste affiché juste après |
+| cellule « Cycle de vie » de `/accueil` (`stale-contacts.tsx`) | idem, même cellule |
+| colonne « Cycle de vie » de `/contacts` | **conservée** — colonne dédiée, hors des six par défaut, et elle porte aussi le motif de perte. La vider serait l'effacer précisément pour les lignes dont elle parle. Sur la vue par défaut, « Perdu » n'apparaît donc qu'une fois. |
+
+Le **suffixe** est supprimé lui aussi : sans cela une fiche close silencieuse
+depuis un mois affichait « Perdu · 31 j », c'est-à-dire un décompte là où il n'y
+a plus rien à décompter.
+
+**3. Tri en fin, dans les deux sens.** `compareByStatus()` (domaine) partitionne
+avant de comparer : le sens ne s'applique qu'aux fiches actives. Inverser le tri
+ne peut donc pas ramener des « Perdu » en tête d'une liste de travail. C'est le
+même principe que les relances sans date du tri par échéance.
+
+### Un contraste sous le seuil, trouvé en calculant
+
+Le ton `mute` était `text-muted` sur `bg-paper` : **4.15:1**, sous le seuil AA de
+4.5. Tant qu'il ne portait qu'un mot secondaire, cela passait ; il porte
+désormais le libellé de la colonne Statut. Jeton `--color-closed: #616780`
+ajouté — **4.86:1 sur `paper`**, 5.58:1 sur blanc — et `mute` l'utilise. `muted`
+ne bouge pas : il porte tout le texte secondaire du produit et ses 4.9:1 sur
+blanc sont conformes.
+
+### Le test de parité, étendu et non remplacé
+
+Son intention est la même — toutes les surfaces s'accordent, contact par contact
+— mais l'accord attendu sur une fiche close passe de « aucune ne montre rien » à
+« toutes montrent le cycle de vie, en style terminal, et aucune n'y voit du
+travail ». Quatre cas ajoutés : le libellé propre à chaque cycle terminal,
+l'absence d'attention sur toute la population close, l'exclusion de « À
+relancer », et le tri dans les deux sens.
+
+**Éprouvé en réintroduisant trois régressions distinctes :**
+
+| Régression | Ce qui tombe |
+|---|---|
+| la pastille retombe sur la lecture brute | 4 tests, dont « Perdu, sans statut saisi → pastille affiche « Sans nouvelles » au lieu de « Perdu » » |
+| `attention: true` sur une fiche close | 3 tests, dont « n'appelle jamais l'attention, donc ne rougit aucune ligne » |
+| la partition du tri retirée | « sens 1 : une terminale précède une active: expected 0 to be greater than 3 » |
+
+### Jalon 30 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (154 fiches) et le serveur standalone de
+production, sur une base portant **12 fiches closes au statut stocké
+contradictoire**, sans lancer aucune correction :
+
+- **couche de service** : `/contacts?lifecycle=Perdu` 47 lignes → libellés
+  `["Perdu"]`, toutes marquées `terminal`, **0 en alerte** ;
+  `?lifecycle=Ancien Client` 5 lignes → `["Ancien Client"]`, idem ;
+- **0 fiche close** dans la puce « À relancer » (9 lignes), **0** dans la file
+  d'accueil (25 lignes), **0** dans « dernière touche » (102 lignes) ;
+- **tri par Statut** : 154 lignes, première close en position 102, dernière
+  active en 101 — **dans les deux sens** ;
+- **aucune écriture** : les 12 fiches portent toujours leur statut stocké ;
+- **navigateur** : colonne Statut `{"Perdu": 47}` et `{"Ancien Client": 5}`,
+  couleur du texte `rgb(97, 103, 128)` = `#616780`, **0 ligne en rouge** ;
+  tiroir → « Perdu » **une seule fois**, pastilles d'état `["Perdu"]` ; tri
+  vérifié dans les deux sens ; **0 réponse HTTP ≥ 400, 0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**620 tests**) verts.
+
+### Jalon 30 — ce qui ne l'est pas
+
+**Les outils du conseil rendent désormais `statutDeRelance: "Perdu"`** au lieu de
+`null`. C'est ce que la parité exige — toutes les surfaces disent la même chose —
+mais un agent lit donc « Perdu » dans un champ nommé « statut de relance », alors
+que `cycleDeVie` porte déjà l'information. Ce n'est pas faux, c'est redondant.
+Renommer le champ serait le geste juste ; il touche les prompts et les schémas
+d'outils, et n'appartient pas à ce jalon.
+
+**La colonne « Cycle de vie » de `/contacts` duplique « Perdu »** avec la colonne
+Statut si on l'active. Choix assumé et expliqué plus haut : elle est hors des six
+colonnes par défaut, et la vider reviendrait à l'effacer pour les lignes qu'elle
+décrit le mieux.
+
+**La seconde rangée de puces n'est toujours pas réduite** — décision en attente
+depuis le jalon 27.

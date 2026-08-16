@@ -1,4 +1,4 @@
-import { LOST_LIFECYCLE } from "../domain/lost";
+import { TERMINAL_LIFECYCLES } from "../domain/lost";
 import { prisma } from "../db";
 import { toActivityType, toDealStatus, toLifecycle, toTaskPriority } from "../domain/guards";
 import { addDays, daysSince, monthKey, startOfDay } from "../domain/dates";
@@ -103,7 +103,7 @@ async function readStaleContacts(
     // « Ancien Client » et « Perdu » sont hors du quotidien : l'un a cessé
     // d'acheter, l'autre a dit non. Les faire figurer dans « dernière touche »
     // remplirait la liste de fiches sur lesquelles il n'y a rien à faire.
-    where: { NOT: { lifecycle: { in: ["Ancien Client", LOST_LIFECYCLE] } } },
+    where: { NOT: { lifecycle: { in: [...TERMINAL_LIFECYCLES] } } },
     select: {
       id: true,
       firstName: true,
@@ -184,7 +184,11 @@ async function readUpcoming(now: Date): Promise<UpcomingItem[]> {
     prisma.contact.findMany({
       where: {
         nextReminder: { gte: from, lt: to },
-        NOT: { lifecycle: LOST_LIFECYCLE },
+        // Les **deux** cycles terminaux, pas seulement « Perdu » : un ancien
+        // client dont une relance dort encore en base remontait dans « Relances
+        // à venir » alors que sa colonne Statut le dit clos. Une fiche close
+        // n'entre dans aucune liste de travail.
+        NOT: { lifecycle: { in: [...TERMINAL_LIFECYCLES] } },
       },
       select: { id: true, firstName: true, lastName: true, owner: true, nextReminder: true },
       orderBy: { nextReminder: "asc" },
@@ -446,7 +450,12 @@ export async function readTomorrow(now: Date = new Date()): Promise<number> {
   const [tasks, reminders] = await Promise.all([
     prisma.task.count({ where: { done: false, due: { gte: from, lt: to } } }),
     prisma.contact.count({
-      where: { nextReminder: { gte: from, lt: to }, NOT: { lifecycle: LOST_LIFECYCLE } },
+      // Taille du jour : elle doit compter le même périmètre que la file, sinon
+      // l'anneau annonce un dénominateur que la liste ne contient pas.
+      where: {
+        nextReminder: { gte: from, lt: to },
+        NOT: { lifecycle: { in: [...TERMINAL_LIFECYCLES] } },
+      },
     }),
   ]);
 
@@ -555,7 +564,9 @@ export async function readActionQueue(
     prisma.contact.findMany({
       where: {
         nextReminder: { lte: today },
-        NOT: { lifecycle: LOST_LIFECYCLE },
+        // La file d'accueil est la liste de travail du jour : aucune fiche close
+        // n'y entre, « Perdu » comme « Ancien Client ».
+        NOT: { lifecycle: { in: [...TERMINAL_LIFECYCLES] } },
       },
       select: {
         id: true,

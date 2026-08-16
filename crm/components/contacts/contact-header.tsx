@@ -45,7 +45,11 @@ export function ContactHeader({
   return (
     <div className="border-b border-line bg-surface-2 px-[22px] py-3">
       <div className="flex flex-wrap items-center gap-1.5">
-        <LifecycleTag lifecycle={contact.lifecycle} />
+        {/* Sur une fiche close, la pastille de statut porte déjà « Perdu » : la
+            doubler d'une pastille de cycle de vie identique, côte à côte, dit
+            deux fois la même chose. C'est la colonne Statut qui la garde — c'est
+            là qu'on regarde. Le motif de perte reste affiché juste après. */}
+        {!terminal && <LifecycleTag lifecycle={contact.lifecycle} />}
         <ContactStatusTag
           status={contact.status}
           followUp={contact.followUp}

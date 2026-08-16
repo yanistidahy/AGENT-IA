@@ -1,4 +1,5 @@
 import {
+  followUpRank,
   followUpStatus,
   type ContactFilter,
   type FollowUpLike,
@@ -66,37 +67,79 @@ export interface ContactStatusLike extends FollowUpLike {
  * soit la valeur stockée. La valeur reste en base — c'est de l'histoire, et
  * l'effacer est une autre question — mais elle ne s'affiche pas.
  *
+ * **Ce qui s'affiche à la place, c'est le cycle de vie lui-même**, marqué
+ * `terminal`. Rendre `null` était juste et illisible : la colonne Statut est la
+ * première qu'on lit, et une case vide n'y apprend rien. « Perdu » y répond à la
+ * question posée, en gris neutre, sans redevenir du travail — `attention` reste
+ * faux, `key` reste nul, et le tri renvoie ces lignes à la fin.
+ *
  * Cette fonction prend un `followUp` **déjà calculé** plutôt que les réglages et
  * l'horloge, parce que c'est ce dont disposent les composants : la liste et le
  * tiroir reçoivent le statut calculé par la couche de service. Les deux portes
  * d'entrée — celle-ci pour l'affichage, `resolveContactStatus()` pour le
- * domaine — se rejoignent donc ici, et il n'existe aucun chemin qui rende un
- * statut sans passer par ce `return null`.
+ * domaine — se rejoignent donc ici, et il n'existe aucun chemin qui produise un
+ * statut affiché sans passer par ce `isTerminal()`.
  */
 export function resolveDisplayStatus(contact: {
   readonly status: string;
   readonly followUp: FollowUpStatus;
   readonly lifecycle: Lifecycle;
-}): ResolvedStatus | null {
-  if (isTerminal(contact.lifecycle)) return null;
+}): ResolvedStatus {
+  if (isTerminal(contact.lifecycle)) {
+    return {
+      // **Le cycle de vie devient le libellé de la colonne Statut.** Rendre
+      // `null` était juste mais illisible : une case vide n'apprend rien à qui
+      // lit cette colonne en premier. « Perdu » y dit ce qu'il faut savoir.
+      label: contact.lifecycle,
+      source: "stored",
+      // **Jamais d'alerte.** C'est de la lisibilité, pas une résurrection : une
+      // fiche close ne rougit pas et n'entre dans aucune liste de travail.
+      attention: false,
+      // Aucune clé : aucune puce de statut de relance ne peut la revendiquer.
+      key: null,
+      terminal: true,
+    };
+  }
+
   return resolveStatus({ status: contact.status, followUp: contact.followUp });
 }
 
-/**
- * Le rouge de « dernière touche », lui aussi soumis à la règle terminale.
- *
- * Une fiche perdue ne peut pas être « en retard » : il n'y a plus de rendez-vous
- * à honorer. Sans cette fonction, chaque tableau rappelait `resolveStatus()`
- * pour la couleur — donc lisait la valeur stockée brute — et une fiche perdue
- * portant « Sans nouvelles » en base s'affichait en rouge d'alerte à côté d'une
- * pastille correctement absente.
- */
 export function contactAttention(contact: {
   readonly status: string;
   readonly followUp: FollowUpStatus;
   readonly lifecycle: Lifecycle;
 }): boolean {
-  return resolveDisplayStatus(contact)?.attention ?? false;
+  return resolveDisplayStatus(contact).attention;
+}
+
+/**
+ * Le rang de tri de la colonne Statut.
+ *
+ * **Les fiches terminales partent en fin de liste dans les deux sens.** Elles
+ * sont closes : elles n'ont pas leur place en tête d'une liste de travail, et
+ * inverser le tri ne doit pas les y ramener. Le sens ne s'applique donc qu'aux
+ * fiches actives, exactement comme les relances sans date du tri par échéance.
+ */
+export function statusSortRank(contact: ContactStatusLike, settings: PilotageSettings, now: Date) {
+  const resolved = resolveContactStatus(contact, settings, now);
+  return {
+    terminal: resolved.terminal,
+    rank: followUpRank(followUpStatus(contact, settings, now)),
+  };
+}
+
+/** Comparateur complet : terminales toujours après, actives selon le sens. */
+export function compareByStatus(
+  a: ContactStatusLike,
+  b: ContactStatusLike,
+  direction: 1 | -1,
+  settings: PilotageSettings,
+  now: Date,
+): number {
+  const left = statusSortRank(a, settings, now);
+  const right = statusSortRank(b, settings, now);
+  if (left.terminal !== right.terminal) return left.terminal ? 1 : -1;
+  return (left.rank - right.rank) * direction;
 }
 
 /**
@@ -112,7 +155,7 @@ export function resolveContactStatus(
   contact: ContactStatusLike,
   settings: PilotageSettings,
   now: Date,
-): ResolvedStatus | null {
+): ResolvedStatus {
   // Le calcul d'abord, la règle terminale ensuite — et cette dernière n'est pas
   // réécrite ici : c'est `resolveDisplayStatus()` qui la porte, pour qu'il n'en
   // existe qu'un exemplaire.
@@ -146,13 +189,17 @@ export function matchesContactFilter(
   settings: PilotageSettings,
   now: Date,
 ): boolean {
+  // Une fiche close n'entre dans aucune liste de travail, même si une échéance
+  // dort encore dans sa colonne : la valeur stockée n'est pas effacée, et sans
+  // cette ligne « À relancer » ressusciterait un contact perdu.
+  if (isTerminal(contact.lifecycle)) return false;
+
   if (filter === "reminder") return contact.nextReminder !== null;
 
   // Déjà tranché en SQL : répondre « faux » ici viderait la liste.
   if (appliedInSql(filter)) return true;
 
-  // Une fiche terminale n'appartient à aucune puce de statut de relance.
-  return resolveContactStatus(contact, settings, now)?.key === filter;
+  return resolveContactStatus(contact, settings, now).key === filter;
 }
 
 /** La clé canonique du statut affiché, ou `null` pour un libellé libre. */
@@ -161,5 +208,5 @@ export function statusKey(
   settings: PilotageSettings,
   now: Date,
 ): FollowUpStatus | null {
-  return resolveContactStatus(contact, settings, now)?.key ?? null;
+  return resolveContactStatus(contact, settings, now).key;
 }
