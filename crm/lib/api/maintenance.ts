@@ -2,7 +2,15 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { fold, searchText } from "../domain/text";
 import { nameOverflow, splitOverflow } from "../domain/status";
-import { LOST_LIFECYCLE } from "../domain/lost";
+import {
+  contradictsTerminal,
+  LOST_LIFECYCLE,
+  TERMINAL_LIFECYCLES,
+  TERMINAL_RESET,
+} from "../domain/lost";
+import { toLifecycle } from "../domain/guards";
+import { autoKey } from "../domain/automation";
+import { removeAutoTask } from "./automation";
 import { countOtherPatterns, findSiteLine, type OtherPatternCounts } from "../domain/notes-extract";
 import { REAL_ACTIVITY } from "./real-activity";
 import type { SheetSite } from "@/scripts/sites-2026-08";
@@ -946,4 +954,91 @@ export async function applySiteFix(plan: SitePlan): Promise<number> {
   });
 
   return plan.changes.length;
+}
+
+// ------------------------------------- fiches terminales en contradiction
+
+/**
+ * Fiches dont le cycle de vie est terminal mais qui portent encore un statut de
+ * relance ou une échéance.
+ *
+ * L'état corrigé ici est celui signalé en usage : cycle « Perdu », statut saisi
+ * « Contacté — en attente », et une relance parfois encore programmée. Quatre
+ * affirmations sur la même ligne dont trois parlaient d'attente.
+ *
+ * Depuis le jalon 28, aucun chemin d'écriture ne peut plus produire cet état —
+ * `TERMINAL_RESET` est appliqué par le formulaire, le tiroir et la consignation
+ * d'interaction. Cette correction ne traite donc que l'existant.
+ *
+ * **Trois champs, jamais plus** : `status`, `statusSetAt`, `nextReminder`. Le
+ * cycle de vie, le motif de perte, les notes et l'historique ne sont pas
+ * touchés — et la tâche miroir de relance est refermée, parce qu'une échéance
+ * effacée qui laisserait sa tâche ouverte serait le même mensonge déplacé.
+ */
+export interface TerminalFixRow {
+  readonly id: string;
+  readonly label: string;
+  readonly lifecycle: string;
+  readonly status: string;
+  readonly hadReminder: boolean;
+}
+
+export async function planTerminalFix(): Promise<readonly TerminalFixRow[]> {
+  const rows = await prisma.contact.findMany({
+    where: { lifecycle: { in: [...TERMINAL_LIFECYCLES] } },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      lifecycle: true,
+      status: true,
+      nextReminder: true,
+      company: { select: { name: true } },
+    },
+  });
+
+  return rows
+    .filter((row) =>
+      contradictsTerminal({
+        lifecycle: toLifecycle(row.lifecycle),
+        status: row.status,
+        nextReminder: row.nextReminder,
+      }),
+    )
+    .map((row) => ({
+      id: row.id,
+      label: `${row.firstName} ${row.lastName}`.trim() || "(sans nom)",
+      lifecycle: row.lifecycle,
+      status: row.status,
+      hadReminder: row.nextReminder !== null,
+    }));
+}
+
+/** État avant nettoyage — les trois champs, et rien d'autre à restaurer. */
+export function terminalSnapshot(plan: readonly TerminalFixRow[]): unknown {
+  return {
+    takenAt: new Date().toISOString(),
+    note: "État AVANT nettoyage des fiches terminales. Restaurer en réécrivant status, statusSetAt et nextReminder.",
+    contacts: plan.map((row) => ({
+      id: row.id,
+      label: row.label,
+      lifecycle: row.lifecycle,
+      status: row.status,
+      hadReminder: row.hadReminder,
+    })),
+  };
+}
+
+export async function applyTerminalFix(plan: readonly TerminalFixRow[]): Promise<number> {
+  if (plan.length === 0) return 0;
+
+  await prisma.$transaction(async (tx) => {
+    for (const row of plan) {
+      await tx.contact.update({ where: { id: row.id }, data: { ...TERMINAL_RESET } });
+      // La tâche « Relancer X » disparaît avec l'échéance qu'elle reflétait.
+      if (row.hadReminder) await removeAutoTask(tx, autoKey("reminder", row.id));
+    }
+  });
+
+  return plan.length;
 }

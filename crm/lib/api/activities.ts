@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
-import { optedOut } from "../domain/lost";
+import { isTerminal, optedOut, TERMINAL_RESET } from "../domain/lost";
 import { prisma } from "../db";
-import { toActivityType } from "../domain/guards";
+import { toActivityType, toLifecycle } from "../domain/guards";
 import type { ActivityType } from "../domain/types";
 import type { CreateActivityInput, ListActivitiesQuery } from "./activity-schemas";
 import { ownerOrDefault, syncReminderTask, type AutoTaskOutcome } from "./automation";
@@ -166,6 +166,7 @@ export async function logActivity(input: CreateActivityInput): Promise<LogActivi
           firstName: true,
           lastName: true,
           owner: true,
+          lifecycle: true,
           lostReason: true,
         },
       });
@@ -198,13 +199,21 @@ export async function logActivity(input: CreateActivityInput): Promise<LogActivi
       if (input.lifecycle !== undefined) contactData.lifecycle = input.lifecycle;
       if (input.lostReason !== undefined) contactData.lostReason = input.lostReason;
 
+      // Même règle que le formulaire de fiche : un cycle de vie terminal efface
+      // le statut de relance et son échéance. L'issue « Répondu — pas
+      // intéressé » proposait jusqu'ici le statut « Perdu » **en plus** du cycle
+      // de vie, ce qui laissait un libellé de relance sur une fiche qui n'attend
+      // plus rien.
+      const resulting = input.lifecycle ?? toLifecycle(current?.lifecycle ?? "Lead");
+      if (isTerminal(resulting)) Object.assign(contactData, TERMINAL_RESET);
+
       if (Object.keys(contactData).length > 0) {
         await tx.contact.update({ where: { id: contactId }, data: contactData });
       }
 
       // `setReminder: null` efface la relance — c'est ce que produit l'issue
       // « pas intéressé », qui referme aussi la tâche miroir par `syncReminderTask`.
-      if (input.setReminder === null) {
+      if (input.setReminder === null || isTerminal(resulting)) {
         await tx.contact.update({ where: { id: contactId }, data: { nextReminder: null } });
         reminderTask = await syncReminderTask(tx, {
           contactId,

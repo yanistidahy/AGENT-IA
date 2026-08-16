@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { FOLLOW_UP_LABELS, type FollowUpStatus } from "@/lib/domain/follow-up";
 import { resolveStatus } from "@/lib/domain/status";
+import { isTerminal } from "@/lib/domain/lost";
 import type { DealHeat, DealStatus, Lifecycle, StageLike } from "@/lib/domain/types";
 
 /** Petites briques d'affichage partagées par les vues CRM. */
@@ -120,12 +121,21 @@ const FOLLOW_UP_TONES: Record<FollowUpStatus, Tone> = {
 export function ContactStatusTag({
   status,
   followUp,
+  lifecycle,
   suffix,
 }: {
   status: string;
   followUp: FollowUpStatus;
+  /**
+   * Fourni, un cycle de vie terminal **supprime** la pastille de statut : une
+   * fiche « Perdu » n'attend rien, et afficher « en attente » à côté de son
+   * cycle de vie était la contradiction corrigée au jalon 28.
+   */
+  lifecycle?: Lifecycle;
   suffix?: string;
 }) {
+  if (lifecycle !== undefined && isTerminal(lifecycle)) return null;
+
   const resolved = resolveStatus({ status, followUp });
 
   // Le ton suit le statut *calculé* tant que rien n'est saisi ; un libellé saisi

@@ -6,6 +6,7 @@ import { MaintenanceBlock as Block } from "./maintenance-block";
 import { StatusesBlock, type StatusPlan } from "./statuses-block";
 import { WebsitesBlock, type WebsitePlan } from "./websites-block";
 import { SitesBlock, type SitePlan } from "./sites-block";
+import { TerminalBlock, type TerminalPlan } from "./terminal-block";
 import { DomainsBlock, type DomainPlan } from "./domains-block";
 
 /**
@@ -54,6 +55,7 @@ interface Plans {
   statuses: StatusPlan;
   websites: WebsitePlan;
   sites: SitePlan;
+  terminal: TerminalPlan;
   domains: DomainPlan;
 }
 
@@ -85,7 +87,7 @@ export function MaintenancePanel() {
   };
 
   const apply = async (
-    operation: "search" | "lifecycles" | "names" | "statuses" | "websites" | "sites",
+    operation: "search" | "lifecycles" | "names" | "statuses" | "websites" | "sites" | "terminal",
     expected: number,
     what: string,
   ) => {
@@ -189,6 +191,8 @@ export function MaintenancePanel() {
           <StatusesBlock plan={plans.statuses} busy={busy} onApply={apply} />
 
           <SitesBlock plan={plans.sites} busy={busy} onApply={apply} />
+
+          <TerminalBlock plan={plans.terminal} busy={busy} onApply={apply} />
 
           <WebsitesBlock plan={plans.websites} busy={busy} onApply={apply} />
 

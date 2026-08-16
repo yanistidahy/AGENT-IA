@@ -8,6 +8,7 @@ import { describeReminder } from "@/lib/domain/follow-up";
 import { externalUrl } from "@/lib/domain/links";
 import { ACTIVITY_LABELS } from "@/lib/domain/types";
 import { isOutcome, OUTCOME_LABELS } from "@/lib/domain/status";
+import { isTerminal } from "@/lib/domain/lost";
 
 /**
  * L'en-tête fixe de la fiche contact.
@@ -31,6 +32,11 @@ export function ContactHeader({
   onQualify?: () => void;
 }) {
   const phone = contact.phone.trim();
+  // Un cycle de vie terminal supprime tout le mobilier de relance : pastille de
+  // statut, échéance, et le « jamais contacté » du coin droit. Une fiche perdue
+  // n'attend rien — quatre affirmations sur la même ligne dont trois parlaient
+  // d'attente, c'était le défaut signalé.
+  const terminal = isTerminal(contact.lifecycle);
   const websiteHref = externalUrl(contact.website);
   const linkedinHref = externalUrl(contact.linkedin);
   const reminder =
@@ -40,8 +46,12 @@ export function ContactHeader({
     <div className="border-b border-line bg-surface-2 px-[22px] py-3">
       <div className="flex flex-wrap items-center gap-1.5">
         <LifecycleTag lifecycle={contact.lifecycle} />
-        <ContactStatusTag status={contact.status} followUp={contact.followUp} />
-        {reminder !== null && (
+        <ContactStatusTag
+          status={contact.status}
+          followUp={contact.followUp}
+          lifecycle={contact.lifecycle}
+        />
+        {!terminal && reminder !== null && (
           <span
             className={`inline-flex items-center rounded-full px-2 py-[3px] text-[11.5px] font-semibold ${
               reminder.urgency === "future" ? "bg-paper text-muted" : "bg-pulse-l text-[#B2311F]"
@@ -50,8 +60,11 @@ export function ContactHeader({
             Relance {reminder.label}
           </span>
         )}
-        {contact.nextReminder === null && (
+        {!terminal && contact.nextReminder === null && (
           <span className="text-[11.5px] text-muted">Aucune relance programmée</span>
+        )}
+        {terminal && contact.lostReason !== "" && (
+          <span className="text-[11.5px] text-muted">{contact.lostReason}</span>
         )}
       </div>
 
@@ -101,9 +114,11 @@ export function ContactHeader({
         )}
 
         <span className="ml-auto text-[11.5px] text-muted">
-          {contact.lastContact === null
-            ? "jamais contacté"
-            : `dernier contact ${formatDate(contact.lastContact)}`}
+          {contact.lastContact !== null
+            ? `dernier contact ${formatDate(contact.lastContact)}`
+            : terminal
+              ? ""
+              : "jamais contacté"}
         </span>
       </div>
 

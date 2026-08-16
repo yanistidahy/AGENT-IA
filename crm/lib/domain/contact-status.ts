@@ -6,7 +6,8 @@ import {
   appliedInSql,
 } from "./follow-up";
 import { resolveStatus, type ResolvedStatus } from "./status";
-import type { PilotageSettings } from "./types";
+import { isTerminal } from "./lost";
+import type { Lifecycle, PilotageSettings } from "./types";
 
 /**
  * **Le statut d'un contact se décide ici, et nulle part ailleurs.**
@@ -46,6 +47,12 @@ import type { PilotageSettings } from "./types";
 export interface ContactStatusLike extends FollowUpLike {
   /** Statut saisi. Vide = on retombe sur le calcul. */
   readonly status: string;
+  /**
+   * Le cycle de vie tranche avant tout le reste quand il est terminal.
+   * Facultatif pour les appelants qui n'en disposent pas — ils obtiennent alors
+   * l'ancien comportement, ce qui est correct pour un contact non terminal.
+   */
+  readonly lifecycle?: Lifecycle;
 }
 
 /**
@@ -61,7 +68,13 @@ export function resolveContactStatus(
   contact: ContactStatusLike,
   settings: PilotageSettings,
   now: Date,
-): ResolvedStatus {
+): ResolvedStatus | null {
+  // **Le cycle de vie terminal l'emporte sur tout.** Une fiche « Perdu » n'est
+  // pas « en attente » de quelque chose : elle n'attend rien. Rendre `null`
+  // plutôt qu'un libellé permet aux vues de n'afficher **qu'une** pastille, et
+  // aux puces de ne jamais la revendiquer.
+  if (contact.lifecycle !== undefined && isTerminal(contact.lifecycle)) return null;
+
   return resolveStatus({ status: contact.status, followUp: followUpStatus(contact, settings, now) });
 }
 
@@ -93,7 +106,8 @@ export function matchesContactFilter(
   // Déjà tranché en SQL : répondre « faux » ici viderait la liste.
   if (appliedInSql(filter)) return true;
 
-  return resolveContactStatus(contact, settings, now).key === filter;
+  // Une fiche terminale n'appartient à aucune puce de statut de relance.
+  return resolveContactStatus(contact, settings, now)?.key === filter;
 }
 
 /** La clé canonique du statut affiché, ou `null` pour un libellé libre. */
@@ -102,5 +116,5 @@ export function statusKey(
   settings: PilotageSettings,
   now: Date,
 ): FollowUpStatus | null {
-  return resolveContactStatus(contact, settings, now).key;
+  return resolveContactStatus(contact, settings, now)?.key ?? null;
 }

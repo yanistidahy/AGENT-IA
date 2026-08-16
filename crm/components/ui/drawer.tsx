@@ -6,9 +6,27 @@ import { Icon } from "./icon";
 /**
  * Tiroir latéral, reprenant l'animation du prototype.
  *
- * Ferme sur Échap et sur clic hors panneau ; le focus part sur le bouton de
- * fermeture à l'ouverture et le défilement de la page est bloqué tant que le
- * tiroir est ouvert.
+ * Ferme sur Échap, sur clic hors panneau et sur le bouton ✕. Le focus part sur
+ * le bouton de fermeture à l'ouverture, **revient à l'élément d'où l'on vient**
+ * à la fermeture, et le défilement de la page est bloqué tant que le tiroir est
+ * ouvert.
+ *
+ * Trois choses valent d'être dites sur la mécanique, parce qu'elles ont été
+ * écrites de travers avant :
+ *
+ * 1. **`onClose` est lu dans une référence, pas dans les dépendances.** Il vient
+ *    presque toujours d'une flèche définie dans le rendu du parent, donc d'une
+ *    identité neuve à chaque rendu : le mettre en dépendance faisait rejouer
+ *    l'effet à *chaque* rendu, et donc reprendre le focus sur le ✕ pendant qu'on
+ *    travaillait dans le tiroir.
+ * 2. **Le panneau passe au-dessus du voile par son `z-index`, pas par l'ordre du
+ *    DOM.** Les deux étaient à `z-50` et seul l'ordre des nœuds les départageait
+ *    — un portail, une transition ou un fragment inséré entre eux aurait suffi à
+ *    faire passer le voile devant le ✕, ce qui rend le bouton inerte sans que
+ *    rien ne paraisse anormal.
+ * 3. **Le voile ne ferme que si le geste a commencé sur lui.** Un `mousedown`
+ *    dans le panneau qui finit sur le voile — une sélection de texte qu'on tire
+ *    trop loin, un glissement de curseur — ne doit pas refermer le tiroir.
  */
 interface DrawerProps {
   readonly open: boolean;
@@ -35,14 +53,25 @@ export function Drawer({
   children,
 }: DrawerProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  /** L'élément qui avait le focus avant l'ouverture — la ligne du tableau. */
+  const opener = useRef<HTMLElement | null>(null);
+  const overlayDown = useRef(false);
+
+  // `onClose` change d'identité à chaque rendu du parent ; le garder dans une
+  // référence permet à l'effet ci-dessous de ne dépendre que de `open`.
+  const close = useRef(onClose);
+  close.current = onClose;
 
   useEffect(() => {
     if (!open) return;
 
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") close.current();
     };
     document.addEventListener("keydown", onKeyDown);
+
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     closeRef.current?.focus();
@@ -50,16 +79,25 @@ export function Drawer({
     return () => {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
+      // Rendre le focus là où on l'a pris : sans cela, il retombe sur `body` et
+      // la tabulation suivante repart du haut de la page.
+      opener.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
   return (
     <>
       <div
-        className="fixed inset-0 z-50 bg-[rgba(12,22,20,0.42)] backdrop-blur-[2px]"
-        onClick={onClose}
+        className="fixed inset-0 z-40 bg-[rgba(13,18,32,0.42)] backdrop-blur-[2px]"
+        onMouseDown={(event) => {
+          overlayDown.current = event.target === event.currentTarget;
+        }}
+        onClick={(event) => {
+          if (overlayDown.current && event.target === event.currentTarget) close.current();
+          overlayDown.current = false;
+        }}
         aria-hidden
       />
       <aside
@@ -79,9 +117,9 @@ export function Drawer({
           <button
             ref={closeRef}
             type="button"
-            onClick={onClose}
+            onClick={() => close.current()}
             aria-label="Fermer"
-            className="rounded-control p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+            className="relative z-10 shrink-0 rounded-control p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-ink"
           >
             <Icon name="x" size={18} />
           </button>

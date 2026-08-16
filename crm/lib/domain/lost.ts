@@ -17,6 +17,63 @@ export function isLost(lifecycle: Lifecycle): boolean {
 }
 
 /**
+ * Cycles de vie **terminaux** : la relation ne court plus.
+ *
+ * `Perdu` a dit non, `Ancien Client` a cessé d'acheter. Ni l'un ni l'autre
+ * n'attend quoi que ce soit de nous, et c'est ce qui les distingue de tous les
+ * autres états : **ils n'ont pas de statut de relance**, ni saisi ni calculé.
+ *
+ * Sans cette règle, une fiche pouvait afficher quatre affirmations
+ * incompatibles sur la même ligne — cycle « Perdu », statut saisi « Contacté —
+ * en attente », statut calculé « jamais contacté », et « 0 tentative ». Le
+ * cycle de vie terminal tranche : il gagne partout.
+ */
+export const TERMINAL_LIFECYCLES: readonly Lifecycle[] = [LOST_LIFECYCLE, "Ancien Client"];
+
+export function isTerminal(lifecycle: Lifecycle): boolean {
+  return TERMINAL_LIFECYCLES.includes(lifecycle);
+}
+
+/**
+ * Les champs de relance qu'un cycle de vie terminal remet à zéro.
+ *
+ * **Écrit une fois, appliqué par tous les chemins d'écriture** — formulaire de
+ * fiche, tiroir, interaction consignée avec l'issue « pas intéressé », outils du
+ * conseil. Le chemin de l'interaction effaçait déjà la relance ; les autres non,
+ * et aucun n'effaçait le statut saisi.
+ *
+ * `statusSetAt` part avec `status` : une date de saisie sans valeur saisie
+ * ferait apparaître la fiche dans la puce « Statut figé » pour un statut qui
+ * n'existe plus.
+ */
+export interface TerminalReset {
+  readonly status: "";
+  readonly statusSetAt: null;
+  readonly nextReminder: null;
+}
+
+export const TERMINAL_RESET: TerminalReset = {
+  status: "",
+  statusSetAt: null,
+  nextReminder: null,
+};
+
+/**
+ * La fiche est-elle en contradiction avec son cycle de vie terminal ?
+ *
+ * Sert au repérage (correction de maintenance) autant qu'aux tests. Une fiche
+ * terminale ne doit porter ni statut saisi, ni relance programmée.
+ */
+export function contradictsTerminal(contact: {
+  readonly lifecycle: Lifecycle;
+  readonly status: string;
+  readonly nextReminder: Date | null;
+}): boolean {
+  if (!isTerminal(contact.lifecycle)) return false;
+  return contact.status.trim() !== "" || contact.nextReminder !== null;
+}
+
+/**
  * Motifs proposés. Ce sont des **suggestions**, pas une liste fermée : le champ
  * reste libre, parce qu'une raison de perte qu'on n'avait pas prévue est
  * justement celle qu'il faut pouvoir écrire.

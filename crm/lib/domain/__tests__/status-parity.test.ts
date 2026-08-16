@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CONTACT_FILTERS, FOLLOW_UP_LABELS, followUpStatus } from "../follow-up";
 import { matchesContactFilter, resolveContactStatus, type ContactStatusLike } from "../contact-status";
 import { canonicalStatus, resolveStatus } from "../status";
+import { contradictsTerminal, LOST_LIFECYCLE, TERMINAL_LIFECYCLES } from "../lost";
 import { DEFAULT_PILOTAGE } from "../types";
 
 /**
@@ -59,6 +60,15 @@ const POPULATION: ReadonlyArray<readonly [string, ContactStatusLike]> = [
   ["saisi « Intéressé »", contact({ status: "Intéressé", lastContact: day("2026-08-05"), activityCount: 2 })],
   ["saisi « RDV pris »", contact({ status: "RDV pris", lastContact: day("2026-08-05"), activityCount: 2 })],
   ["saisi libre inconnu", contact({ status: "À rappeler en septembre", activityCount: 1 })],
+
+  // Cycles de vie terminaux : la relation ne court plus, donc aucun statut de
+  // relance — même quand la fiche en porte un en base, ce qui est exactement
+  // l'état contradictoire signalé (« Perdu » + « Contacté — en attente »).
+  ["Perdu, sans statut saisi", contact({ lifecycle: LOST_LIFECYCLE, lastContact: day("2026-06-01"), activityCount: 1 })],
+  ["Perdu + statut saisi contradictoire", contact({ lifecycle: LOST_LIFECYCLE, status: "Contacté — en attente", lastContact: day("2026-06-01"), activityCount: 1 })],
+  ["Perdu + « Jamais contacté » saisi", contact({ lifecycle: LOST_LIFECYCLE, status: FOLLOW_UP_LABELS.never })],
+  ["Perdu + relance encore posée", contact({ lifecycle: LOST_LIFECYCLE, nextReminder: day("2026-08-01"), lastContact: day("2026-07-01"), activityCount: 1 })],
+  ["Ancien Client", contact({ lifecycle: "Ancien Client", lastContact: day("2026-05-01"), activityCount: 3 })],
 ];
 
 /**
@@ -84,6 +94,14 @@ describe("parité du statut de relance", () => {
       const selectedBy = STATUS_CHIPS.filter((chip) =>
         matchesContactFilter(row, chip, settings, now),
       );
+
+      // Cycle terminal : aucune pastille de statut, donc aucune puce.
+      if (shown === null) {
+        if (selectedBy.length !== 0) {
+          disagreements.push(`${label} : cycle terminal revendiqué par [${selectedBy.join(", ")}]`);
+        }
+        continue;
+      }
 
       // La clé a une puce → exactement celle-là retient le contact.
       const chipForKey = STATUS_CHIPS.find((chip) => chip === shown.key);
@@ -129,7 +147,7 @@ describe("parité du statut de relance", () => {
     // Le calcul dit autre chose…
     expect(followUpStatus(row, settings, now)).toBe("silent");
     // …et c'est bien la saisie qui gagne, à l'affichage comme au filtre.
-    expect(resolveContactStatus(row, settings, now).label).toBe(FOLLOW_UP_LABELS.never);
+    expect(resolveContactStatus(row, settings, now)?.label).toBe(FOLLOW_UP_LABELS.never);
     expect(matchesContactFilter(row, "never", settings, now)).toBe(true);
     expect(matchesContactFilter(row, "silent", settings, now)).toBe(false);
   });
@@ -143,7 +161,7 @@ describe("parité du statut de relance", () => {
   it("« reminder » reste une puce de date, plus large que le statut « due »", () => {
     const future = contact({ lastContact: day("2026-08-01"), activityCount: 1, nextReminder: day("2026-09-01") });
     expect(matchesContactFilter(future, "reminder", settings, now)).toBe(true);
-    expect(resolveContactStatus(future, settings, now).key).toBe("planned");
+    expect(resolveContactStatus(future, settings, now)?.key).toBe("planned");
   });
 
   it("canonicalStatus ne reconnaît que le vocabulaire du domaine", () => {
@@ -167,5 +185,43 @@ describe("parité du statut de relance", () => {
       source: "stored",
       key: null,
     });
+  });
+});
+
+describe("cycle de vie terminal", () => {
+  it("supprime le statut de relance, quel que soit ce qui est saisi", () => {
+    const lost = contact({
+      lifecycle: LOST_LIFECYCLE,
+      status: "Contacté — en attente",
+      lastContact: day("2026-06-01"),
+      activityCount: 1,
+    });
+    // Le calcul dirait « Sans nouvelles », la saisie dirait « en attente » :
+    // le cycle de vie tranche, et il n'y a pas de statut du tout.
+    expect(followUpStatus(lost, settings, now)).toBe("silent");
+    expect(resolveContactStatus(lost, settings, now)).toBeNull();
+  });
+
+  it("n'est revendiqué par aucune puce de statut", () => {
+    for (const lifecycle of TERMINAL_LIFECYCLES) {
+      const row = contact({ lifecycle, status: FOLLOW_UP_LABELS.never });
+      for (const chip of STATUS_CHIPS) {
+        expect(matchesContactFilter(row, chip, settings, now), `${lifecycle} / ${chip}`).toBe(false);
+      }
+    }
+  });
+
+  it("reste dans la puce « À relancer » si une relance traîne — c'est ce que la correction nettoie", () => {
+    // La puce `reminder` porte sur une date, pas sur un statut : elle est le
+    // signal qu'il reste quelque chose à nettoyer, pas une contradiction.
+    const row = contact({ lifecycle: LOST_LIFECYCLE, nextReminder: day("2026-08-01") });
+    expect(matchesContactFilter(row, "reminder", settings, now)).toBe(true);
+    expect(contradictsTerminal({ lifecycle: LOST_LIFECYCLE, status: "", nextReminder: day("2026-08-01") })).toBe(true);
+  });
+
+  it("contradictsTerminal ne signale que les fiches terminales incohérentes", () => {
+    expect(contradictsTerminal({ lifecycle: LOST_LIFECYCLE, status: "Intéressé", nextReminder: null })).toBe(true);
+    expect(contradictsTerminal({ lifecycle: LOST_LIFECYCLE, status: "", nextReminder: null })).toBe(false);
+    expect(contradictsTerminal({ lifecycle: "Prospect", status: "Intéressé", nextReminder: day("2026-09-01") })).toBe(false);
   });
 });

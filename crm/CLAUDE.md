@@ -338,6 +338,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 25 | **La question des domaines, tranchée** — relecture de la feuille, report des 15 adresses réelles, propositions relues une par une | **livré, à valider** |
 | 26 | **Acceptation groupée des seules déductions** — garde-fou serveur, tri par ressemblance, annulation de dix secondes | **livré, à valider** |
 | 27 | **Audit du statut de relance** — la correction se réfutait elle-même ; une seule décision, test de parité | **livré, à valider** |
+| 28 | **Cycle de vie terminal** — « Perdu » gagne sur le statut de relance ; tiroir durci | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -3501,3 +3502,118 @@ répartition de production différera ; le mécanisme, lui, est celui-ci.
 
 **La puce « Ont répondu » renvoie 0** sur cette base — aucune interaction n'y
 porte d'issue renseignée. Le filtre est correct, la donnée manque.
+
+---
+
+## Jalon 28 — un cycle de vie terminal n'attend rien
+
+### La contradiction
+
+Une fiche affichait sur la même ligne : cycle `Perdu`, statut saisi
+« Contacté — en attente », « jamais contacté » à droite, et « 0 tentative ».
+Trois de ces quatre affirmations parlent d'attente ; la première dit que la
+relation est finie.
+
+**La règle manquait au domaine.** `resolveStatus()` ne connaissait que le couple
+saisi/calculé et ignorait le cycle de vie, si bien que chaque surface affichait
+consciencieusement un statut de relance sur une fiche qui n'attend plus rien.
+
+### La règle, et où elle vit
+
+`lib/domain/lost.ts` porte `TERMINAL_LIFECYCLES` — `Perdu` et `Ancien Client` :
+l'un a dit non, l'autre a cessé d'acheter. `resolveContactStatus()` rend
+désormais **`null`** pour ces deux cycles, avant toute autre considération.
+
+Conséquences, obtenues sans qu'aucune vue n'ait à y penser :
+
+- `ContactStatusTag` **ne rend rien** quand le cycle est terminal : l'en-tête ne
+  peut plus afficher deux pastilles d'état à la fois ;
+- aucune puce de statut ne revendique une fiche terminale ;
+- l'accueil, le portefeuille et les outils du conseil se taisent pareillement —
+  l'outil du conseil rend `statutDeRelance: null` plutôt qu'un libellé inventé ;
+- l'en-tête de fiche supprime aussi l'échéance, le « Aucune relance
+  programmée » et le « jamais contacté », et affiche le motif de perte à la
+  place.
+
+### L'écriture est uniforme
+
+`TERMINAL_RESET` — `status: ""`, `statusSetAt: null`, `nextReminder: null` —
+est appliqué par **tous** les chemins :
+
+| Chemin | Avant | Après |
+|---|---|---|
+| formulaire / tiroir (`updateContact`) | effaçait la relance, **au passage seulement** | efface les trois champs dès que le cycle **résultant** est terminal |
+| interaction « Répondu — pas intéressé » (`logActivity`) | effaçait la relance, écrivait `status: "Perdu"` | efface les trois champs |
+| tâche miroir de relance | refermée au passage | refermée dans les deux cas |
+
+La condition porte sur le cycle **résultant**, pas sur la transition : une fiche
+déjà `Perdu` à laquelle on écrit un statut par ailleurs est nettoyée elle aussi.
+C'est ce que l'ancienne version, qui ne réagissait qu'au passage, laissait
+passer.
+
+### La correction de l'existant
+
+`planTerminalFix()` / `applyTerminalFix()`, avec les garanties habituelles :
+simulation d'abord, sauvegarde JSON, idempotent, **trois champs et rien
+d'autre** — cycle de vie, motif de perte, notes et historique intacts — et la
+tâche miroir de relance refermée, parce qu'une échéance effacée laissant sa
+tâche ouverte serait le même mensonge déplacé.
+
+### Le tiroir
+
+**Je n'ai pas reproduit l'échec du ✕.** Testé dans un navigateur piloté sur les
+huit tiroirs de l'application — contact, société, affaire, tâche, import,
+créations — le bouton ferme à chaque fois, entre 65 et 570 ms, sans une erreur
+en console ; `elementFromPoint` sur le centre du bouton renvoie bien le bouton.
+Le dire plutôt que d'inventer une cause.
+
+Trois défauts réels ont été trouvés et corrigés en cherchant, chacun capable de
+produire ce symptôme :
+
+1. **L'effet dépendait de `onClose`**, dont l'identité est neuve à chaque rendu
+   du parent. Il rejouait donc à chaque rendu et **reprenait le focus sur le ✕**
+   pendant qu'on travaillait dans le tiroir. `onClose` est désormais lu dans une
+   référence, et l'effet ne dépend plus que de `open`.
+2. **Le voile et le panneau étaient tous deux à `z-50`**, départagés par le seul
+   ordre du DOM. Un portail, une transition ou un fragment inséré entre eux
+   aurait suffi à faire passer le voile devant le ✕ — le bouton devient inerte
+   sans que rien ne paraisse anormal. Voile à `z-40`, panneau à `z-50`, bouton
+   `relative z-10` dans son en-tête.
+3. **Le voile fermait sur n'importe quel clic**, même quand le geste avait
+   commencé dans le panneau : une sélection de texte tirée trop loin refermait
+   le tiroir. Il ne ferme plus que si `mousedown` **et** `click` ont eu lieu sur
+   lui.
+
+**Échap fermait déjà** — c'était en place depuis l'origine. Ce qui manquait, et
+qui est ajouté : **le focus revient à la ligne d'où l'on vient**. Sans cela il
+retombait sur `body` et la tabulation suivante repartait du haut de la page.
+
+### Jalon 28 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, sur la base issue de la feuille :
+
+- **détection** : 12 fiches `Perdu` portant « Contacté — en attente » et une
+  relance sont listées ; application → 12 corrigées, `status`, `statusSetAt` et
+  `nextReminder` vidés, **motif de perte, notes et cycle de vie intacts**,
+  0 tâche de relance ouverte restante ; second passage → **0** ;
+- **passage en Perdu par le formulaire** : statut, date et relance effacés,
+  tâche miroir refermée, statut résolu `null` ;
+- **passage en Perdu par une interaction « pas intéressé »** : même résultat ;
+- **à l'écran**, fiche `Perdu` : **une seule pastille** (« Perdu »), aucun
+  « jamais contacté », aucun « Aucune relance programmée » ;
+- **✕ ferme en 421 ms et rend le focus à la ligne d'origine** ; **Échap ferme**
+  aussi ; aucune erreur en console ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (612 tests) verts.
+
+### Jalon 28 — ce qui n'est pas résolu
+
+**La cause de votre ✕ inerte reste inconnue.** Les trois défauts corrigés
+peuvent l'expliquer — le vol de focus surtout, qui déplace le curseur pendant
+qu'on vise — mais ce n'est pas établi. Si le symptôme persiste après ce
+déploiement, ce qu'il faudrait savoir : sur quelle page, après quel geste, et
+si la page derrière reste bloquée en défilement.
+
+**« 0 tentative(s) · 0 réponse(s) » subsiste sur une fiche perdue.** Ce n'est
+pas une contradiction mais un fait : depuis le jalon 27, ce compteur ne compte
+que les interactions réelles, et une fiche importée puis passée en `Perdu`
+depuis la feuille n'en a effectivement aucune.

@@ -77,6 +77,7 @@ export const CONTACT_COLUMNS: readonly ContactColumn[] = [
       <ContactStatusTag
         status={contact.status}
         followUp={contact.followUp}
+        lifecycle={contact.lifecycle}
         suffix={
           contact.followUp === "silent" && contact.idleDays !== null
             ? `${contact.idleDays} j`

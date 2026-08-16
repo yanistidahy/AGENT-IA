@@ -117,7 +117,11 @@ export function StaleContacts({ contacts, sort, limit = 12 }: StaleContactsProps
                 <td className="border-b border-line-2 px-3.5 py-2.5">
                   <span className="flex flex-wrap items-center gap-1.5">
                     <LifecycleTag lifecycle={contact.lifecycle} />
-                    <ContactStatusTag status={contact.status} followUp={contact.followUp} />
+                    <ContactStatusTag
+                      status={contact.status}
+                      followUp={contact.followUp}
+                      lifecycle={contact.lifecycle}
+                    />
                   </span>
                 </td>
                 <td className="border-b border-line-2 px-3.5 py-2.5 font-mono text-[12.5px]">
