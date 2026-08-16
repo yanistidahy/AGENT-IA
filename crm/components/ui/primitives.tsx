@@ -14,7 +14,7 @@ const TONES = {
   pulse: "bg-pulse-l text-[#B2311F]",
   violet: "bg-violet-l text-[#4B37C0]",
   sky: "bg-sky-l text-[#1B5AB0]",
-  mute: "bg-paper text-muted",
+  mute: "bg-paper text-closed",
 } as const;
 
 export type Tone = keyof typeof TONES;
@@ -135,18 +135,25 @@ export function ContactStatusTag({
   suffix?: string;
 }) {
   // La décision n'est pas prise ici : ce composant ne connaît pas la règle, il
-  // affiche ce que le domaine rend. `null` veut dire « pas de statut à montrer ».
+  // affiche ce que le domaine rend — y compris le cycle de vie d'une fiche close.
   const resolved = resolveDisplayStatus({ status, followUp, lifecycle });
-  if (resolved === null) return null;
 
-  // Le ton suit le statut *calculé* tant que rien n'est saisi ; un libellé saisi
-  // et connu reprend son ton, un libellé libre reste neutre.
-  const tone = resolved.source === "computed" ? FOLLOW_UP_TONES[followUp] : toneFor(resolved.label);
+  // Une fiche close se lit d'un coup d'œil comme close : gris neutre, sans point
+  // d'attention, visuellement distincte des statuts actifs (rouge « À relancer »,
+  // ambre « Sans nouvelles », bleu « Relance prévue »).
+  const tone = resolved.terminal
+    ? "mute"
+    : resolved.source === "computed"
+      ? FOLLOW_UP_TONES[followUp]
+      : toneFor(resolved.label);
 
   return (
     <Tag tone={tone} dot={resolved.attention}>
       {resolved.label}
-      {suffix !== undefined && suffix !== "" ? ` · ${suffix}` : ""}
+      {/* Le suffixe décrit le statut de relance (« · 31 j » de silence) : sur une
+          fiche close il produirait « Perdu · 31 j », qui remet du décompte là où
+          il n'y a plus rien à décompter. */}
+      {!resolved.terminal && suffix !== undefined && suffix !== "" ? ` · ${suffix}` : ""}
     </Tag>
   );
 }

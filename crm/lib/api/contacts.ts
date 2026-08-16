@@ -4,15 +4,13 @@ import { ownerOrDefault, syncReminderTask } from "./automation";
 import { resolveCompanyLink } from "./company-resolve";
 import { toActivityType, toDealStatus, toLifecycle } from "../domain/guards";
 import {
-  followUpRank,
   followUpStatus,
   idleDays,
-
   type FollowUpStatus,
 } from "../domain/follow-up";
 import { isLost, isTerminal, LOST_LIFECYCLE, TERMINAL_RESET } from "../domain/lost";
 import { ANSWERED_OUTCOMES, isStale, nameOverflow } from "../domain/status";
-import { matchesContactFilter } from "../domain/contact-status";
+import { compareByStatus, matchesContactFilter } from "../domain/contact-status";
 import { REAL_ACTIVITY } from "./real-activity";
 import { searchText, searchTerm } from "../domain/text";
 import { addDays, daysSince, startOfDay } from "../domain/dates";
@@ -311,9 +309,10 @@ export async function listContacts(
 
   if (sortKey === "followUp") {
     const direction = query.dir === "desc" ? -1 : 1;
-    records = [...records].sort(
-      (a, b) => (followUpRank(a.followUp) - followUpRank(b.followUp)) * direction,
-    );
+    // Le comparateur vit dans le domaine : c'est lui qui sait que les fiches
+    // closes vont en fin de liste **dans les deux sens**. Inverser le tri ne doit
+    // pas ramener des « Perdu » en tête d'une liste de travail.
+    records = [...records].sort((a, b) => compareByStatus(a, b, direction, settings, now));
   }
 
   if (sortKey === "nextReminder") {

@@ -106,6 +106,16 @@ export interface ResolvedStatus {
    * puce du même nom — c'est précisément le défaut corrigé au jalon 27.
    */
   readonly key: FollowUpStatus | null;
+  /**
+   * Le libellé rendu est un **cycle de vie terminal**, pas un statut de relance.
+   *
+   * C'est le drapeau qui permet à la colonne Statut de rester lisible — « Perdu »
+   * plutôt qu'une case vide — sans que cette ligne redevienne pour autant du
+   * travail : le ton passe au gris neutre, `attention` reste faux, `key` reste
+   * `null` (donc aucune puce ne la revendique) et le tri la renvoie en fin de
+   * liste. Une case vide n'apprend rien ; « Perdu » en rouge serait pire.
+   */
+  readonly terminal: boolean;
 }
 
 /**
@@ -141,6 +151,7 @@ export function resolveStatus(contact: StatusLike): ResolvedStatus {
       source: "computed",
       attention: needsAttention(contact.followUp),
       key: contact.followUp,
+      terminal: false,
     };
   }
 
@@ -152,6 +163,9 @@ export function resolveStatus(contact: StatusLike): ResolvedStatus {
     // serait pire que de n'en signaler aucune.
     attention: ATTENTION_LABELS.includes(stored),
     key: canonicalStatus(stored),
+    // `resolveStatus()` ne connaît pas le cycle de vie : c'est
+    // `resolveDisplayStatus()` qui pose ce drapeau, et lui seul.
+    terminal: false,
   };
 }
 

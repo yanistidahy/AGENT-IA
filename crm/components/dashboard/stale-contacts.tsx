@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ContactStatusTag, LifecycleTag } from "@/components/ui/primitives";
 import { contactAttention } from "@/lib/domain/contact-status";
+import { isTerminal } from "@/lib/domain/lost";
 import type { StaleContact } from "@/lib/api/dashboard";
 import { needsAttention } from "@/lib/domain/follow-up";
 import { formatDate } from "@/lib/format";
@@ -116,7 +117,11 @@ export function StaleContacts({ contacts, sort, limit = 12 }: StaleContactsProps
                 </td>
                 <td className="border-b border-line-2 px-3.5 py-2.5">
                   <span className="flex flex-wrap items-center gap-1.5">
-                    <LifecycleTag lifecycle={contact.lifecycle} />
+                    {/* Même cellule que la pastille de statut, qui porte déjà
+                        « Perdu » sur une fiche close : une seule suffit. */}
+                    {!isTerminal(contact.lifecycle) && (
+                      <LifecycleTag lifecycle={contact.lifecycle} />
+                    )}
                     <ContactStatusTag
                       status={contact.status}
                       followUp={contact.followUp}
