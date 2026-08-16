@@ -147,6 +147,10 @@ export const CONTACT_FILTERS = [
    * les interactions, plutôt qu'en mémoire sur des dates dérivées. Elles
    * existent pour que chaque bande du dessin mène quelque part : une bande qui
    * ne s'ouvre pas est une décoration.
+   *
+   * `contacted` n'a **plus de puce** depuis le jalon 31 (voir `CONTACT_CHIPS`)
+   * mais reste une valeur valide, précisément pour que sa bande continue de
+   * s'ouvrir.
    */
   "contacted",
   "recent",
@@ -156,6 +160,37 @@ export type ContactFilter = (typeof CONTACT_FILTERS)[number];
 
 export function isContactFilter(value: string): value is ContactFilter {
   return CONTACT_FILTERS.some((candidate) => candidate === value);
+}
+
+/**
+ * **Les puces réellement proposées**, par opposition aux valeurs valides.
+ *
+ * `contacted` en sort : c'est le **complément exact** de « Jamais contacté »
+ * — un contact a une interaction réelle ou n'en a pas — et deux puces qui
+ * partagent la même frontière font choisir entre deux formulations d'une seule
+ * question. Elle sortait toujours le reste du portefeuille, ce qu'un « Tous »
+ * fait déjà.
+ *
+ * **Elle reste une valeur valide**, et ce n'est pas un oubli : la bande
+ * « contactés » de l'entonnoir de l'accueil pointe sur `?followUp=contacted`,
+ * et les vues mises en favori aussi. Retirer la valeur casserait un lien qui
+ * fonctionne aujourd'hui, pour ne rien gagner — la question qu'on retire, c'est
+ * celle qu'on posait deux fois dans la barre de filtres, pas la lecture qu'ouvre
+ * l'entonnoir.
+ *
+ * Un filtre actif hors de cette liste reste donc affiché — voir
+ * `ContactChips` : une puce absente qui filtre quand même serait exactement
+ * l'écran qui ment que « Filtres · 1 actif » cherche à empêcher.
+ */
+const HIDDEN_CHIPS: readonly ContactFilter[] = ["contacted"];
+
+export const CONTACT_CHIPS: readonly ContactFilter[] = CONTACT_FILTERS.filter(
+  (filter) => !HIDDEN_CHIPS.includes(filter),
+);
+
+/** Cette valeur est-elle proposée comme puce, ou seulement atteignable par URL ? */
+export function isChipFilter(filter: ContactFilter): boolean {
+  return CONTACT_CHIPS.includes(filter);
 }
 
 export const CONTACT_FILTER_LABELS: Record<ContactFilter, string> = {

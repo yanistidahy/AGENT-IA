@@ -342,6 +342,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 28 | **Cycle de vie terminal** — « Perdu » gagne sur le statut de relance ; tiroir durci | **livré, à valider** |
 | 29 | **La règle terminale devient structurelle** — appliquée à la lecture, une seule porte, garde statique | **livré, à valider** |
 | 30 | **La fiche close se lit « Perdu »** — le cycle de vie devient le statut affiché, en gris, trié en fin | **livré, à valider** |
+| 31 | **« Déjà contactés » retirée** — six puces, la valeur reste valide pour l'entonnoir | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -3498,7 +3499,10 @@ où chaque bande devait mener quelque part. Recommandation : **retirer « Déjà
 contactés »** (strictement complémentaire de « Jamais contacté », donc du bruit)
 et **garder « Contactés cette semaine » et « Ont répondu »**, qui ne se
 déduisent d'aucune autre — au prix de conserver leur cible pour les liens de
-l'entonnoir. Cinq puces plutôt que sept.
+l'entonnoir. Six puces plutôt que sept.
+
+*(Décidé au jalon 31 : retrait appliqué. Le compte annoncé ici disait d'abord
+« cinq », ce qui était une erreur d'arithmétique — sept moins une en fait six.)*
 
 **Les chiffres viennent d'une base reconstituée**, pas de la vôtre. La
 répartition de production différera ; le mécanisme, lui, est celui-ci.
@@ -3895,3 +3899,85 @@ décrit le mieux.
 
 **La seconde rangée de puces n'est toujours pas réduite** — décision en attente
 depuis le jalon 27.
+
+---
+
+## Jalon 31 — une puce en moins, et pas une vue en moins
+
+Décision prise par le propriétaire du produit, en attente depuis le jalon 27 :
+**retirer « Déjà contactés », garder les autres.** Six puces au lieu de sept.
+
+Correction d'arithmétique au passage : le jalon 27 annonçait « cinq puces
+plutôt que sept » pour une seule suppression. C'était faux, et le chiffre est
+rectifié là où il a été écrit.
+
+### Pourquoi celle-là
+
+« Déjà contactés » retient les fiches ayant au moins une interaction réelle —
+c'est le **complément exact** de « Jamais contacté ». Deux puces qui partagent
+la même frontière font choisir entre deux formulations d'une seule question, et
+celle-ci sortait toujours tout le reste du portefeuille, ce que « Tous » fait
+déjà.
+
+Les deux autres de la rangée restent : « Contactés cette semaine » et « Ont
+répondu » ne se déduisent d'aucune autre.
+
+### La valeur reste valide — et c'est le point
+
+**Retirer la puce n'est pas retirer la vue.** La bande « contactés » de
+l'entonnoir de l'accueil pointe sur `/contacts?lifecycle=all&followUp=contacted`,
+et des vues mises en favori aussi. Supprimer la valeur casserait un lien qui
+fonctionne, pour ne rien gagner : ce qu'on retire, c'est la question posée deux
+fois dans la barre de filtres, pas la lecture qu'ouvre l'entonnoir.
+
+D'où la séparation, dans `lib/domain/follow-up.ts`, entre deux notions qui
+n'étaient qu'une :
+
+| | Contenu | Rôle |
+|---|---|---|
+| `CONTACT_FILTERS` | les 7 valeurs | ce que l'URL et le schéma Zod acceptent |
+| `CONTACT_CHIPS` | les 6 proposées | ce que la barre de filtres affiche |
+
+`isChipFilter()` tranche entre les deux. `HIDDEN_CHIPS` liste les exceptions —
+aujourd'hui `contacted` seule.
+
+### Le filtre orphelin s'affiche quand même
+
+Un filtre actif sans puce serait invisible : la liste serait filtrée, rien à
+l'écran ne dirait lequel, et on ne pourrait l'annuler qu'en éditant l'URL.
+C'est exactement l'écran qui ment que « Filtres · 1 actif » cherche à empêcher
+depuis le jalon 21.
+
+`ContactChips` rend donc une puce de rattrapage **tant que le filtre est
+actif** : elle porte son libellé, elle est marquée active, et un clic la
+retire. Elle disparaît dès qu'on choisit autre chose. Arriver par l'entonnoir
+donne donc exactement la même barre qu'avant, plus une puce ; partir de
+`/contacts` n'en montre que six.
+
+### Jalon 31 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (154 fiches) et le serveur standalone :
+
+- **barre par défaut** : `["Tous", "À relancer (15 · 6 en retard)", "Sans
+  nouvelles", "Jamais contacté", "Statut figé", "Contactés cette semaine", "Ont
+  répondu", "Contacts incomplets (1)"]` — **« Déjà contactés » absente** ;
+- **arrivée par l'entonnoir** (`?followUp=contacted`) : la puce apparaît, elle
+  est **active**, la liste rend 15 lignes, et le bouton annonce
+  « Filtres · 1 actif » ;
+- **la bande de l'entonnoir existe toujours** sur `/` et pointe bien sur
+  `/contacts?lifecycle=all&followUp=contacted` ; elle ouvre les 15 mêmes lignes ;
+- **0 réponse HTTP ≥ 400, 0 erreur console** ;
+- trois tests fixent la décision : le jeu des six puces dans l'ordre, le fait
+  que `contacted` reste une valeur valide sans puce, et que toute valeur sans
+  puce garde un libellé — sans quoi la puce de rattrapage sortirait vide ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**623 tests**) verts.
+
+### Jalon 31 — ce qui ne l'est pas
+
+**La puce de rattrapage n'a pas de test de rendu**, comme tout le reste des
+composants clients de ce projet : elle est vérifiée dans un navigateur piloté,
+pas par la suite, qui n'a pas de DOM.
+
+**`emptyFilterMessage("contacted")` est conservé** : la valeur reste
+atteignable, donc son état vide doit continuer de nommer sa règle. Ce n'est pas
+du code mort.

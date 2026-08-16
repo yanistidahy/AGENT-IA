@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { CONTACT_FILTERS, FOLLOW_UP_LABELS, followUpStatus } from "../follow-up";
+import {
+  CONTACT_CHIPS,
+  CONTACT_FILTERS,
+  CONTACT_FILTER_LABELS,
+  FOLLOW_UP_LABELS,
+  followUpStatus,
+  isChipFilter,
+} from "../follow-up";
 import {
   compareByStatus,
   contactAttention,
@@ -204,6 +211,44 @@ describe("parité du statut de relance", () => {
       source: "stored",
       key: null,
     });
+  });
+});
+
+describe("le jeu de puces", () => {
+  /**
+   * La décision, écrite noir sur blanc.
+   *
+   * « Déjà contactés » est retirée : complément exact de « Jamais contacté »,
+   * donc deux formulations d'une même frontière. Les six autres restent.
+   * Ce test existe pour qu'on ne la réintroduise pas par distraction — et pour
+   * qu'en ajouter une soit un geste délibéré, pas un effet de bord.
+   */
+  it("propose exactement les six puces retenues", () => {
+    expect(CONTACT_CHIPS.map((chip) => CONTACT_FILTER_LABELS[chip])).toEqual([
+      "À relancer",
+      "Sans nouvelles",
+      "Jamais contacté",
+      "Statut figé",
+      "Contactés cette semaine",
+      "Ont répondu",
+    ]);
+  });
+
+  it("« Déjà contactés » reste une valeur valide, sans puce", () => {
+    // La bande « contactés » de l'entonnoir pointe dessus : retirer la valeur
+    // casserait un lien qui fonctionne. C'est la puce qu'on retire, pas la vue.
+    expect(CONTACT_FILTERS).toContain("contacted");
+    expect(isChipFilter("contacted")).toBe(false);
+    expect(CONTACT_CHIPS).not.toContain("contacted");
+  });
+
+  it("chaque valeur sans puce reste nommable et donc affichable", () => {
+    // Le filtre orphelin est rendu à l'écran tant qu'il est actif : il lui faut
+    // un libellé, sinon la puce de rattrapage sortirait vide.
+    for (const filter of CONTACT_FILTERS) {
+      if (isChipFilter(filter)) continue;
+      expect(CONTACT_FILTER_LABELS[filter], `${filter} sans libellé`).toBeTruthy();
+    }
   });
 });
 

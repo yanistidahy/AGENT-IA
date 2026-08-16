@@ -1,6 +1,11 @@
 "use client";
 
-import { CONTACT_FILTERS, CONTACT_FILTER_LABELS } from "@/lib/domain/follow-up";
+import {
+  CONTACT_CHIPS,
+  CONTACT_FILTER_LABELS,
+  isChipFilter,
+  isContactFilter,
+} from "@/lib/domain/follow-up";
 import { LIFECYCLES } from "@/lib/domain/types";
 
 /**
@@ -37,6 +42,11 @@ export function ContactChips({
   onChange: (updates: Record<string, string | null>) => void;
 }) {
   const followUpActive = followUp !== null || incomplete;
+
+  // Le filtre actif n'a-t-il pas de puce ? Alors on lui en rend une, le temps
+  // qu'il est actif — voir le commentaire à son point de rendu.
+  const orphan =
+    followUp !== null && isContactFilter(followUp) && !isChipFilter(followUp) ? followUp : null;
 
   return (
     <>
@@ -83,7 +93,7 @@ export function ContactChips({
       >
         Tous
       </button>
-      {CONTACT_FILTERS.map((value) => (
+      {CONTACT_CHIPS.map((value) => (
         <button
           key={value}
           type="button"
@@ -101,6 +111,23 @@ export function ContactChips({
           )}
         </button>
       ))}
+      {/*
+        Un filtre atteint par URL mais sans puce — aujourd'hui « Déjà contactés »,
+        qu'ouvre la bande de l'entonnoir. Il s'affiche **parce qu'il est actif** :
+        une liste filtrée dont rien à l'écran ne nomme le filtre est un écran qui
+        ment, et on n'aurait aucun moyen de l'annuler autrement qu'en éditant
+        l'URL. Il disparaît dès qu'on en choisit un autre.
+      */}
+      {orphan !== null && (
+        <button
+          type="button"
+          onClick={() => onChange({ followUp: null, incomplete: null })}
+          className={`${CHIP} bg-brand text-white`}
+        >
+          {CONTACT_FILTER_LABELS[orphan]}
+        </button>
+      )}
+
       {/*
         « Incomplets » : ni adresse ni téléphone, ou un nom marqué à compléter
         par l'import. C'est une file de travail — les fiches qu'on ne sait pas
