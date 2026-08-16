@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { ContactStatusTag, LifecycleTag } from "@/components/ui/primitives";
 import type { ContactRecord } from "@/lib/api/contacts";
 import { describeReminder } from "@/lib/domain/follow-up";
-import { resolveStatus } from "@/lib/domain/status";
+import { contactAttention } from "@/lib/domain/contact-status";
 import { formatDate } from "@/lib/format";
 import { EXTRA_COLUMNS } from "./contact-table-extra-columns";
 
@@ -118,7 +118,7 @@ export const CONTACT_COLUMNS: readonly ContactColumn[] = [
       <>
         {/* La couleur vient du statut, jamais d'un seuil recalculé ici : une
             relance déjà programmée n'est pas une alerte. Voir needsAttention(). */}
-        <span className={resolveStatus(contact).attention ? "font-semibold text-[#B2311F]" : "text-muted"}>
+        <span className={contactAttention(contact) ? "font-semibold text-[#B2311F]" : "text-muted"}>
           {contact.lastContact === null ? "jamais" : formatDate(contact.lastContact)}
         </span>
         {contact.idleDays !== null && (

@@ -49,10 +49,54 @@ export interface ContactStatusLike extends FollowUpLike {
   readonly status: string;
   /**
    * Le cycle de vie tranche avant tout le reste quand il est terminal.
-   * Facultatif pour les appelants qui n'en disposent pas — ils obtiennent alors
-   * l'ancien comportement, ce qui est correct pour un contact non terminal.
+   *
+   * **Obligatoire, et c'est le cœur du correctif.** Il a d'abord été facultatif,
+   * « pour les appelants qui n'en disposent pas ». Un champ facultatif qui porte
+   * une règle de sécurité d'affichage est une règle qu'on peut oublier
+   * d'appliquer : `/clients` l'oubliait, et rien ne le signalait. Le rendre
+   * obligatoire déplace l'oubli du navigateur vers le compilateur.
    */
-  readonly lifecycle?: Lifecycle;
+  readonly lifecycle: Lifecycle;
+}
+
+/**
+ * **La règle terminale, écrite une seule fois.**
+ *
+ * Un cycle de vie terminal n'affiche **jamais** de statut de relance, quelle que
+ * soit la valeur stockée. La valeur reste en base — c'est de l'histoire, et
+ * l'effacer est une autre question — mais elle ne s'affiche pas.
+ *
+ * Cette fonction prend un `followUp` **déjà calculé** plutôt que les réglages et
+ * l'horloge, parce que c'est ce dont disposent les composants : la liste et le
+ * tiroir reçoivent le statut calculé par la couche de service. Les deux portes
+ * d'entrée — celle-ci pour l'affichage, `resolveContactStatus()` pour le
+ * domaine — se rejoignent donc ici, et il n'existe aucun chemin qui rende un
+ * statut sans passer par ce `return null`.
+ */
+export function resolveDisplayStatus(contact: {
+  readonly status: string;
+  readonly followUp: FollowUpStatus;
+  readonly lifecycle: Lifecycle;
+}): ResolvedStatus | null {
+  if (isTerminal(contact.lifecycle)) return null;
+  return resolveStatus({ status: contact.status, followUp: contact.followUp });
+}
+
+/**
+ * Le rouge de « dernière touche », lui aussi soumis à la règle terminale.
+ *
+ * Une fiche perdue ne peut pas être « en retard » : il n'y a plus de rendez-vous
+ * à honorer. Sans cette fonction, chaque tableau rappelait `resolveStatus()`
+ * pour la couleur — donc lisait la valeur stockée brute — et une fiche perdue
+ * portant « Sans nouvelles » en base s'affichait en rouge d'alerte à côté d'une
+ * pastille correctement absente.
+ */
+export function contactAttention(contact: {
+  readonly status: string;
+  readonly followUp: FollowUpStatus;
+  readonly lifecycle: Lifecycle;
+}): boolean {
+  return resolveDisplayStatus(contact)?.attention ?? false;
 }
 
 /**
@@ -69,13 +113,14 @@ export function resolveContactStatus(
   settings: PilotageSettings,
   now: Date,
 ): ResolvedStatus | null {
-  // **Le cycle de vie terminal l'emporte sur tout.** Une fiche « Perdu » n'est
-  // pas « en attente » de quelque chose : elle n'attend rien. Rendre `null`
-  // plutôt qu'un libellé permet aux vues de n'afficher **qu'une** pastille, et
-  // aux puces de ne jamais la revendiquer.
-  if (contact.lifecycle !== undefined && isTerminal(contact.lifecycle)) return null;
-
-  return resolveStatus({ status: contact.status, followUp: followUpStatus(contact, settings, now) });
+  // Le calcul d'abord, la règle terminale ensuite — et cette dernière n'est pas
+  // réécrite ici : c'est `resolveDisplayStatus()` qui la porte, pour qu'il n'en
+  // existe qu'un exemplaire.
+  return resolveDisplayStatus({
+    status: contact.status,
+    followUp: followUpStatus(contact, settings, now),
+    lifecycle: contact.lifecycle,
+  });
 }
 
 /**

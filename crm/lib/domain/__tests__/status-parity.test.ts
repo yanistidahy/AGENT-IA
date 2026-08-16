@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { CONTACT_FILTERS, FOLLOW_UP_LABELS, followUpStatus } from "../follow-up";
-import { matchesContactFilter, resolveContactStatus, type ContactStatusLike } from "../contact-status";
+import {
+  contactAttention,
+  matchesContactFilter,
+  resolveContactStatus,
+  resolveDisplayStatus,
+  type ContactStatusLike,
+} from "../contact-status";
 import { canonicalStatus, resolveStatus } from "../status";
 import { contradictsTerminal, LOST_LIFECYCLE, TERMINAL_LIFECYCLES } from "../lost";
 import { DEFAULT_PILOTAGE } from "../types";
@@ -30,7 +36,15 @@ const now = new Date("2026-08-12T10:00:00Z");
 const settings = DEFAULT_PILOTAGE;
 
 function contact(overrides: Partial<ContactStatusLike> = {}): ContactStatusLike {
-  return { status: "", lastContact: null, nextReminder: null, activityCount: 0, ...overrides };
+  return {
+    status: "",
+    // Non terminal par défaut ; les cas terminaux le surchargent explicitement.
+    lifecycle: "Prospect",
+    lastContact: null,
+    nextReminder: null,
+    activityCount: 0,
+    ...overrides,
+  };
 }
 
 const day = (iso: string) => new Date(`${iso}T09:00:00Z`);
@@ -217,6 +231,90 @@ describe("cycle de vie terminal", () => {
     const row = contact({ lifecycle: LOST_LIFECYCLE, nextReminder: day("2026-08-01") });
     expect(matchesContactFilter(row, "reminder", settings, now)).toBe(true);
     expect(contradictsTerminal({ lifecycle: LOST_LIFECYCLE, status: "", nextReminder: day("2026-08-01") })).toBe(true);
+  });
+
+  /**
+   * **Les surfaces, simulées une par une.**
+   *
+   * Chaque entrée reproduit ce que fait réellement un écran pour obtenir le
+   * libellé qu'il affiche. Le test n'inspecte pas du HTML — il n'y a pas de DOM
+   * dans cette suite — mais il exerce le **chemin de décision** de chaque vue,
+   * qui est l'endroit où la divergence se produit.
+   *
+   * Le défaut que ceci attrape, et qui était bien réel : `/clients` appelait
+   * `resolveStatus()` sans cycle de vie. Rebrancher cette lecture brute — dans
+   * n'importe laquelle de ces surfaces — fait tomber ce test.
+   */
+  const SURFACES: ReadonlyArray<
+    readonly [string, (row: ContactStatusLike) => string | null]
+  > = [
+    // /contacts et /accueil et /clients : tous trois via ContactStatusTag, qui
+    // délègue à resolveDisplayStatus avec le followUp déjà calculé.
+    [
+      "pastille (tableau, accueil, portefeuille, tiroir)",
+      (row) =>
+        resolveDisplayStatus({
+          status: row.status,
+          followUp: followUpStatus(row, settings, now),
+          lifecycle: row.lifecycle,
+        })?.label ?? null,
+    ],
+    // Les outils du conseil : `statutDeRelance` rendu à l'agent.
+    ["outils du conseil", (row) => resolveContactStatus(row, settings, now)?.label ?? null],
+    // La couleur d'alerte de la colonne « dernière touche » : elle doit se taire
+    // sur une fiche terminale, comme la pastille.
+    [
+      "couleur d'alerte",
+      (row) =>
+        contactAttention({
+          status: row.status,
+          followUp: followUpStatus(row, settings, now),
+          lifecycle: row.lifecycle,
+        })
+          ? "alerte"
+          : null,
+    ],
+  ];
+
+  it("aucune surface n'affiche de statut de relance sur un cycle terminal", () => {
+    const leaks: string[] = [];
+
+    for (const [label, row] of POPULATION) {
+      if (!TERMINAL_LIFECYCLES.includes(row.lifecycle)) continue;
+
+      for (const [surface, render] of SURFACES) {
+        const shown = render(row);
+        if (shown !== null) {
+          leaks.push(`${label} → ${surface} affiche « ${shown} »`);
+        }
+      }
+    }
+
+    expect(leaks).toEqual([]);
+  });
+
+  it("les surfaces s'accordent sur les fiches non terminales", () => {
+    // Le pendant du test précédent : sans lui, supprimer tout affichage rendrait
+    // les deux verts. Une règle qui se vérifie en n'affichant rien ne vérifie
+    // rien.
+    for (const [label, row] of POPULATION) {
+      if (TERMINAL_LIFECYCLES.includes(row.lifecycle)) continue;
+
+      const expected = resolveContactStatus(row, settings, now)?.label ?? null;
+      expect(expected, `${label} : aucune surface ne devrait se taire ici`).not.toBeNull();
+
+      const first = SURFACES[0];
+      expect(first?.[1](row), `${label} : la pastille diverge`).toBe(expected);
+    }
+  });
+
+  it("chaque cycle terminal est représenté dans la population", () => {
+    // Sans cela, ajouter un cycle terminal demain le laisserait hors du test
+    // ci-dessus — qui resterait vert en ne vérifiant rien à son sujet.
+    for (const lifecycle of TERMINAL_LIFECYCLES) {
+      const covered = POPULATION.some(([, row]) => row.lifecycle === lifecycle);
+      expect(covered, `${lifecycle} n'est couvert par aucun cas`).toBe(true);
+    }
   });
 
   it("contradictsTerminal ne signale que les fiches terminales incohérentes", () => {

@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { FOLLOW_UP_LABELS, type FollowUpStatus } from "@/lib/domain/follow-up";
-import { resolveStatus } from "@/lib/domain/status";
-import { isTerminal } from "@/lib/domain/lost";
+import { resolveDisplayStatus } from "@/lib/domain/contact-status";
 import type { DealHeat, DealStatus, Lifecycle, StageLike } from "@/lib/domain/types";
 
 /** Petites briques d'affichage partagées par les vues CRM. */
@@ -127,16 +126,18 @@ export function ContactStatusTag({
   status: string;
   followUp: FollowUpStatus;
   /**
-   * Fourni, un cycle de vie terminal **supprime** la pastille de statut : une
-   * fiche « Perdu » n'attend rien, et afficher « en attente » à côté de son
-   * cycle de vie était la contradiction corrigée au jalon 28.
+   * **Obligatoire.** Un cycle de vie terminal supprime la pastille de statut :
+   * une fiche « Perdu » n'attend rien. Le rendre facultatif laissait chaque
+   * appelant décider s'il appliquait la règle — et `/clients` ne l'appliquait
+   * pas, sans que rien ne le signale.
    */
-  lifecycle?: Lifecycle;
+  lifecycle: Lifecycle;
   suffix?: string;
 }) {
-  if (lifecycle !== undefined && isTerminal(lifecycle)) return null;
-
-  const resolved = resolveStatus({ status, followUp });
+  // La décision n'est pas prise ici : ce composant ne connaît pas la règle, il
+  // affiche ce que le domaine rend. `null` veut dire « pas de statut à montrer ».
+  const resolved = resolveDisplayStatus({ status, followUp, lifecycle });
+  if (resolved === null) return null;
 
   // Le ton suit le statut *calculé* tant que rien n'est saisi ; un libellé saisi
   // et connu reprend son ton, un libellé libre reste neutre.

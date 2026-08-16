@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ContactStatusTag, LifecycleTag } from "@/components/ui/primitives";
-import { resolveStatus } from "@/lib/domain/status";
+import { contactAttention } from "@/lib/domain/contact-status";
 import type { StaleContact } from "@/lib/api/dashboard";
 import { needsAttention } from "@/lib/domain/follow-up";
 import { formatDate } from "@/lib/format";
@@ -100,7 +100,7 @@ export function StaleContacts({ contacts, sort, limit = 12 }: StaleContactsProps
             // Même règle que /contacts et /clients : c'est le statut qui décide,
             // pas un seuil recalculé — sans quoi une relance programmée
             // s'afficherait en rouge ici et en bleu là-bas.
-            const cold = resolveStatus({ status: contact.status, followUp: contact.followUp }).attention;
+            const cold = contactAttention(contact);
 
             return (
               <tr key={contact.id} className="transition-colors hover:bg-surface-2">
