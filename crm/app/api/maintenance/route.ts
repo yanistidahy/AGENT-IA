@@ -15,6 +15,9 @@ import {
   planStatusFix,
   planSiteFix,
   siteSnapshot,
+  planTerminalFix,
+  applyTerminalFix,
+  terminalSnapshot,
   statusSnapshot,
   websiteSnapshot,
 } from "@/lib/api/maintenance";
@@ -41,7 +44,7 @@ export const dynamic = "force-dynamic";
  * `GET` simule et n'écrit rien. `POST` écrit, et exige de nommer l'opération :
  * une requête vide ne peut pas déclencher une écriture par accident.
  */
-const OPERATIONS = ["search", "lifecycles", "names", "statuses", "websites", "sites"] as const;
+const OPERATIONS = ["search", "lifecycles", "names", "statuses", "websites", "sites", "terminal"] as const;
 
 const applySchema = z.object({
   operation: z.enum(OPERATIONS, { error: "Opération inconnue" }),
@@ -51,13 +54,14 @@ const applySchema = z.object({
 
 export async function GET() {
   try {
-    const [search, lifecycles, names, statuses, websites, sites, domains] = await Promise.all([
+    const [search, lifecycles, names, statuses, websites, sites, terminal, domains] = await Promise.all([
       planSearchBackfill(),
       planLifecycleFix(STATUS_CORRECTIONS),
       planNameFix(),
       planStatusFix(SHEET_STATUSES, SHEET_MODIFIED_AT, SHEET_UNREADABLE),
       planWebsiteFix(),
       planSiteFix(SHEET_SITES),
+      planTerminalFix(),
       readDomainReview(),
     ]);
 
@@ -138,6 +142,15 @@ export async function GET() {
           fillCompanyDomain: change.fillCompanyDomain,
         })),
       },
+      terminal: {
+        total: terminal.length,
+        rows: terminal.map((row) => ({
+          label: row.label,
+          lifecycle: row.lifecycle,
+          status: row.status,
+          hadReminder: row.hadReminder,
+        })),
+      },
       domains: {
         rows: domains.rows,
         noProposal: domains.noProposal,
@@ -189,6 +202,16 @@ export async function POST(request: Request) {
         );
       }
       return jsonOk({ applied: await applyNameFix(plan) });
+    }
+
+    if (parsed.data.operation === "terminal") {
+      const plan = await planTerminalFix();
+      if (plan.length !== parsed.data.expected) {
+        return badRequest(
+          `La base a changé depuis la simulation (${plan.length} fiches au lieu de ${parsed.data.expected}). Relancez la simulation.`,
+        );
+      }
+      return jsonOk({ applied: await applyTerminalFix(plan), snapshot: terminalSnapshot(plan) });
     }
 
     if (parsed.data.operation === "sites") {

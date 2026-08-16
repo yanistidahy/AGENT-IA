@@ -10,7 +10,7 @@ import {
 
   type FollowUpStatus,
 } from "../domain/follow-up";
-import { isLost, LOST_LIFECYCLE } from "../domain/lost";
+import { isLost, isTerminal, LOST_LIFECYCLE, TERMINAL_RESET } from "../domain/lost";
 import { ANSWERED_OUTCOMES, isStale, nameOverflow } from "../domain/status";
 import { matchesContactFilter } from "../domain/contact-status";
 import { REAL_ACTIVITY } from "./real-activity";
@@ -448,6 +448,8 @@ function applyDerived(
           // Le statut saisi entre dans la décision : sans lui, la puce
           // « Jamais contacté » ignorait 66 fiches qui le portaient en base.
           status: contact.status,
+          // Et le cycle de vie tranche avant lui quand il est terminal.
+          lifecycle: contact.lifecycle,
         },
         filter,
         settings,
@@ -692,15 +694,18 @@ export async function updateContact(
     if (companyId !== undefined) {
       data.company = companyId === null ? { disconnect: true } : { connect: { id: companyId } };
     }
-    // Passer en « Perdu » efface la relance et referme la tâche miroir : laisser
-    // une échéance sur quelqu'un qui a dit non, c'est se rappeler soi-même de
-    // rappeler quelqu'un qui a refusé d'être rappelé.
-    const becomesLost =
-      input.lifecycle !== undefined &&
-      isLost(input.lifecycle) &&
-      !isLost(toLifecycle(existing.lifecycle));
+    // Un cycle de vie **terminal** efface le statut saisi, sa date, la relance,
+    // et referme la tâche miroir. Laisser une échéance sur quelqu'un qui a dit
+    // non, c'est se rappeler soi-même de rappeler quelqu'un qui a refusé.
+    //
+    // La condition porte sur le cycle de vie **résultant**, pas sur la
+    // transition : une fiche déjà « Perdu » à laquelle on écrit un statut par
+    // ailleurs doit être nettoyée elle aussi. C'est ce que l'ancienne version,
+    // qui ne réagissait qu'au passage, laissait passer.
+    const resulting = toLifecycle(input.lifecycle ?? existing.lifecycle);
+    const becomesLost = isTerminal(resulting);
 
-    if (becomesLost) data.nextReminder = null;
+    if (becomesLost) Object.assign(data, TERMINAL_RESET);
 
     const updated = await tx.contact.update({ where: { id }, data, include: contactInclude });
 

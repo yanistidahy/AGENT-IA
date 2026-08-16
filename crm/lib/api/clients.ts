@@ -9,8 +9,8 @@ import {
   idleDays as computeIdleDays,
   type FollowUpStatus,
 } from "../domain/follow-up";
-import { toDealStatus } from "../domain/guards";
-import { DEFAULT_PILOTAGE, type PilotageSettings } from "../domain/types";
+import { toDealStatus, toLifecycle } from "../domain/guards";
+import { DEFAULT_PILOTAGE, type Lifecycle, type PilotageSettings } from "../domain/types";
 
 /**
  * Portefeuille clients.
@@ -27,6 +27,14 @@ import { DEFAULT_PILOTAGE, type PilotageSettings } from "../domain/types";
 export interface ClientRow {
   /** Statut saisi, pour que la pastille résolve comme sur /contacts. */
   readonly status: string;
+  /**
+   * Le cycle de vie voyage jusqu'à la ligne, sans quoi la règle terminale ne
+   * peut pas s'y appliquer. La vue ne lit aujourd'hui que des « Client », mais
+   * une pastille qui dépend du périmètre de la requête est une pastille juste
+   * par accident : le jour où le portefeuille inclurait les anciens clients,
+   * elle recommencerait à mentir sans que rien ne bouge dans le composant.
+   */
+  readonly lifecycle: Lifecycle;
   readonly id: string;
   readonly firstName: string;
   readonly lastName: string;
@@ -83,6 +91,7 @@ export async function readClients(
       company: { select: { name: true } },
       deals: { select: { amount: true, status: true, closedAt: true } },
       status: true,
+      lifecycle: true,
       _count: { select: { activities: { where: REAL_ACTIVITY } } },
     },
   });
@@ -103,6 +112,7 @@ export async function readClients(
 
     return {
       status: row.status,
+      lifecycle: toLifecycle(row.lifecycle),
       id: row.id,
       firstName: row.firstName,
       lastName: row.lastName,

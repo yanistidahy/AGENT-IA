@@ -21,6 +21,7 @@ import { resolveContactStatus } from "@/lib/domain/contact-status";
 import { REAL_ACTIVITY } from "@/lib/api/real-activity";
 import { dealHeat, pipelineValue, stuckDeals, weighted } from "@/lib/domain/pipeline";
 import { LIFECYCLES } from "@/lib/domain/types";
+import { toLifecycle } from "@/lib/domain/guards";
 import { defineTool } from "./types";
 
 /**
@@ -81,6 +82,7 @@ export const searchContacts = defineTool({
       const resolved = resolveContactStatus(
         {
           status: c.status,
+          lifecycle: toLifecycle(c.lifecycle),
           lastContact: c.lastContact,
           nextReminder: c.nextReminder,
           activityCount: c._count.activities,
@@ -101,7 +103,9 @@ export const searchContacts = defineTool({
         téléphone: c.phone,
         dernierContact: c.lastContact,
         prochaineRelance: c.nextReminder,
-        statutDeRelance: resolved.label,
+        // `null` quand le cycle de vie est terminal : une fiche perdue n'a pas
+        // de statut de relance, et en inventer un tromperait l'agent.
+        statutDeRelance: resolved?.label ?? null,
         notes: c.notes,
       };
     });

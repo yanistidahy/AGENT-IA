@@ -6,7 +6,8 @@ import {
   appliedInSql,
 } from "./follow-up";
 import { resolveStatus, type ResolvedStatus } from "./status";
-import type { PilotageSettings } from "./types";
+import { isTerminal } from "./lost";
+import type { Lifecycle, PilotageSettings } from "./types";
 
 /**
  * **Le statut d'un contact se décide ici, et nulle part ailleurs.**
@@ -46,6 +47,56 @@ import type { PilotageSettings } from "./types";
 export interface ContactStatusLike extends FollowUpLike {
   /** Statut saisi. Vide = on retombe sur le calcul. */
   readonly status: string;
+  /**
+   * Le cycle de vie tranche avant tout le reste quand il est terminal.
+   *
+   * **Obligatoire, et c'est le cœur du correctif.** Il a d'abord été facultatif,
+   * « pour les appelants qui n'en disposent pas ». Un champ facultatif qui porte
+   * une règle de sécurité d'affichage est une règle qu'on peut oublier
+   * d'appliquer : `/clients` l'oubliait, et rien ne le signalait. Le rendre
+   * obligatoire déplace l'oubli du navigateur vers le compilateur.
+   */
+  readonly lifecycle: Lifecycle;
+}
+
+/**
+ * **La règle terminale, écrite une seule fois.**
+ *
+ * Un cycle de vie terminal n'affiche **jamais** de statut de relance, quelle que
+ * soit la valeur stockée. La valeur reste en base — c'est de l'histoire, et
+ * l'effacer est une autre question — mais elle ne s'affiche pas.
+ *
+ * Cette fonction prend un `followUp` **déjà calculé** plutôt que les réglages et
+ * l'horloge, parce que c'est ce dont disposent les composants : la liste et le
+ * tiroir reçoivent le statut calculé par la couche de service. Les deux portes
+ * d'entrée — celle-ci pour l'affichage, `resolveContactStatus()` pour le
+ * domaine — se rejoignent donc ici, et il n'existe aucun chemin qui rende un
+ * statut sans passer par ce `return null`.
+ */
+export function resolveDisplayStatus(contact: {
+  readonly status: string;
+  readonly followUp: FollowUpStatus;
+  readonly lifecycle: Lifecycle;
+}): ResolvedStatus | null {
+  if (isTerminal(contact.lifecycle)) return null;
+  return resolveStatus({ status: contact.status, followUp: contact.followUp });
+}
+
+/**
+ * Le rouge de « dernière touche », lui aussi soumis à la règle terminale.
+ *
+ * Une fiche perdue ne peut pas être « en retard » : il n'y a plus de rendez-vous
+ * à honorer. Sans cette fonction, chaque tableau rappelait `resolveStatus()`
+ * pour la couleur — donc lisait la valeur stockée brute — et une fiche perdue
+ * portant « Sans nouvelles » en base s'affichait en rouge d'alerte à côté d'une
+ * pastille correctement absente.
+ */
+export function contactAttention(contact: {
+  readonly status: string;
+  readonly followUp: FollowUpStatus;
+  readonly lifecycle: Lifecycle;
+}): boolean {
+  return resolveDisplayStatus(contact)?.attention ?? false;
 }
 
 /**
@@ -61,8 +112,15 @@ export function resolveContactStatus(
   contact: ContactStatusLike,
   settings: PilotageSettings,
   now: Date,
-): ResolvedStatus {
-  return resolveStatus({ status: contact.status, followUp: followUpStatus(contact, settings, now) });
+): ResolvedStatus | null {
+  // Le calcul d'abord, la règle terminale ensuite — et cette dernière n'est pas
+  // réécrite ici : c'est `resolveDisplayStatus()` qui la porte, pour qu'il n'en
+  // existe qu'un exemplaire.
+  return resolveDisplayStatus({
+    status: contact.status,
+    followUp: followUpStatus(contact, settings, now),
+    lifecycle: contact.lifecycle,
+  });
 }
 
 /**
@@ -93,7 +151,8 @@ export function matchesContactFilter(
   // Déjà tranché en SQL : répondre « faux » ici viderait la liste.
   if (appliedInSql(filter)) return true;
 
-  return resolveContactStatus(contact, settings, now).key === filter;
+  // Une fiche terminale n'appartient à aucune puce de statut de relance.
+  return resolveContactStatus(contact, settings, now)?.key === filter;
 }
 
 /** La clé canonique du statut affiché, ou `null` pour un libellé libre. */
@@ -102,5 +161,5 @@ export function statusKey(
   settings: PilotageSettings,
   now: Date,
 ): FollowUpStatus | null {
-  return resolveContactStatus(contact, settings, now).key;
+  return resolveContactStatus(contact, settings, now)?.key ?? null;
 }

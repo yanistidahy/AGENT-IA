@@ -16,7 +16,10 @@ const settings = DEFAULT_PILOTAGE; // staleDays 7, coldDays 14
 function contact(overrides: Partial<ContactStatusLike> = {}): ContactStatusLike {
   return {
     // Statut saisi vide par défaut : ces cas exercent le **calcul**.
-    status: "", lastContact: null, nextReminder: null, activityCount: 0, ...overrides };
+    status: "",
+    // Cycle non terminal par défaut : un cycle terminal supprimerait le statut.
+    lifecycle: "Prospect",
+    lastContact: null, nextReminder: null, activityCount: 0, ...overrides };
 }
 
 describe("followUpStatus", () => {

@@ -338,6 +338,8 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 25 | **La question des domaines, tranchée** — relecture de la feuille, report des 15 adresses réelles, propositions relues une par une | **livré, à valider** |
 | 26 | **Acceptation groupée des seules déductions** — garde-fou serveur, tri par ressemblance, annulation de dix secondes | **livré, à valider** |
 | 27 | **Audit du statut de relance** — la correction se réfutait elle-même ; une seule décision, test de parité | **livré, à valider** |
+| 28 | **Cycle de vie terminal** — « Perdu » gagne sur le statut de relance ; tiroir durci | **livré, à valider** |
+| 29 | **La règle terminale devient structurelle** — appliquée à la lecture, une seule porte, garde statique | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -3501,3 +3503,263 @@ répartition de production différera ; le mécanisme, lui, est celui-ci.
 
 **La puce « Ont répondu » renvoie 0** sur cette base — aucune interaction n'y
 porte d'issue renseignée. Le filtre est correct, la donnée manque.
+
+---
+
+## Jalon 28 — un cycle de vie terminal n'attend rien
+
+### La contradiction
+
+Une fiche affichait sur la même ligne : cycle `Perdu`, statut saisi
+« Contacté — en attente », « jamais contacté » à droite, et « 0 tentative ».
+Trois de ces quatre affirmations parlent d'attente ; la première dit que la
+relation est finie.
+
+**La règle manquait au domaine.** `resolveStatus()` ne connaissait que le couple
+saisi/calculé et ignorait le cycle de vie, si bien que chaque surface affichait
+consciencieusement un statut de relance sur une fiche qui n'attend plus rien.
+
+### La règle, et où elle vit
+
+`lib/domain/lost.ts` porte `TERMINAL_LIFECYCLES` — `Perdu` et `Ancien Client` :
+l'un a dit non, l'autre a cessé d'acheter. `resolveContactStatus()` rend
+désormais **`null`** pour ces deux cycles, avant toute autre considération.
+
+Conséquences, obtenues sans qu'aucune vue n'ait à y penser :
+
+- `ContactStatusTag` **ne rend rien** quand le cycle est terminal : l'en-tête ne
+  peut plus afficher deux pastilles d'état à la fois ;
+- aucune puce de statut ne revendique une fiche terminale ;
+- l'accueil, le portefeuille et les outils du conseil se taisent pareillement —
+  l'outil du conseil rend `statutDeRelance: null` plutôt qu'un libellé inventé ;
+- l'en-tête de fiche supprime aussi l'échéance, le « Aucune relance
+  programmée » et le « jamais contacté », et affiche le motif de perte à la
+  place.
+
+### L'écriture est uniforme
+
+`TERMINAL_RESET` — `status: ""`, `statusSetAt: null`, `nextReminder: null` —
+est appliqué par **tous** les chemins :
+
+| Chemin | Avant | Après |
+|---|---|---|
+| formulaire / tiroir (`updateContact`) | effaçait la relance, **au passage seulement** | efface les trois champs dès que le cycle **résultant** est terminal |
+| interaction « Répondu — pas intéressé » (`logActivity`) | effaçait la relance, écrivait `status: "Perdu"` | efface les trois champs |
+| tâche miroir de relance | refermée au passage | refermée dans les deux cas |
+
+La condition porte sur le cycle **résultant**, pas sur la transition : une fiche
+déjà `Perdu` à laquelle on écrit un statut par ailleurs est nettoyée elle aussi.
+C'est ce que l'ancienne version, qui ne réagissait qu'au passage, laissait
+passer.
+
+### La correction de l'existant
+
+`planTerminalFix()` / `applyTerminalFix()`, avec les garanties habituelles :
+simulation d'abord, sauvegarde JSON, idempotent, **trois champs et rien
+d'autre** — cycle de vie, motif de perte, notes et historique intacts — et la
+tâche miroir de relance refermée, parce qu'une échéance effacée laissant sa
+tâche ouverte serait le même mensonge déplacé.
+
+### Le tiroir
+
+**Je n'ai pas reproduit l'échec du ✕.** Testé dans un navigateur piloté sur les
+huit tiroirs de l'application — contact, société, affaire, tâche, import,
+créations — le bouton ferme à chaque fois, entre 65 et 570 ms, sans une erreur
+en console ; `elementFromPoint` sur le centre du bouton renvoie bien le bouton.
+Le dire plutôt que d'inventer une cause.
+
+Trois défauts réels ont été trouvés et corrigés en cherchant, chacun capable de
+produire ce symptôme :
+
+1. **L'effet dépendait de `onClose`**, dont l'identité est neuve à chaque rendu
+   du parent. Il rejouait donc à chaque rendu et **reprenait le focus sur le ✕**
+   pendant qu'on travaillait dans le tiroir. `onClose` est désormais lu dans une
+   référence, et l'effet ne dépend plus que de `open`.
+2. **Le voile et le panneau étaient tous deux à `z-50`**, départagés par le seul
+   ordre du DOM. Un portail, une transition ou un fragment inséré entre eux
+   aurait suffi à faire passer le voile devant le ✕ — le bouton devient inerte
+   sans que rien ne paraisse anormal. Voile à `z-40`, panneau à `z-50`, bouton
+   `relative z-10` dans son en-tête.
+3. **Le voile fermait sur n'importe quel clic**, même quand le geste avait
+   commencé dans le panneau : une sélection de texte tirée trop loin refermait
+   le tiroir. Il ne ferme plus que si `mousedown` **et** `click` ont eu lieu sur
+   lui.
+
+**Échap fermait déjà** — c'était en place depuis l'origine. Ce qui manquait, et
+qui est ajouté : **le focus revient à la ligne d'où l'on vient**. Sans cela il
+retombait sur `body` et la tabulation suivante repartait du haut de la page.
+
+### Jalon 28 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, sur la base issue de la feuille :
+
+- **détection** : 12 fiches `Perdu` portant « Contacté — en attente » et une
+  relance sont listées ; application → 12 corrigées, `status`, `statusSetAt` et
+  `nextReminder` vidés, **motif de perte, notes et cycle de vie intacts**,
+  0 tâche de relance ouverte restante ; second passage → **0** ;
+- **passage en Perdu par le formulaire** : statut, date et relance effacés,
+  tâche miroir refermée, statut résolu `null` ;
+- **passage en Perdu par une interaction « pas intéressé »** : même résultat ;
+- **à l'écran**, fiche `Perdu` : **une seule pastille** (« Perdu »), aucun
+  « jamais contacté », aucun « Aucune relance programmée » ;
+- **✕ ferme en 421 ms et rend le focus à la ligne d'origine** ; **Échap ferme**
+  aussi ; aucune erreur en console ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (612 tests) verts.
+
+### Jalon 28 — ce qui n'est pas résolu
+
+**La cause de votre ✕ inerte reste inconnue.** Les trois défauts corrigés
+peuvent l'expliquer — le vol de focus surtout, qui déplace le curseur pendant
+qu'on vise — mais ce n'est pas établi. Si le symptôme persiste après ce
+déploiement, ce qu'il faudrait savoir : sur quelle page, après quel geste, et
+si la page derrière reste bloquée en défilement.
+
+**« 0 tentative(s) · 0 réponse(s) » subsiste sur une fiche perdue.** Ce n'est
+pas une contradiction mais un fait : depuis le jalon 27, ce compteur ne compte
+que les interactions réelles, et une fiche importée puis passée en `Perdu`
+depuis la feuille n'en a effectivement aucune.
+
+---
+
+## Jalon 29 — la règle terminale s'applique à la lecture, ou elle ne s'applique pas
+
+### Le diagnostic, d'abord : les deux causes étaient vraies
+
+La question posée était « déploiement pas encore en ligne, ou bien la table lit
+la valeur brute ? ». La réponse est **les deux**, et il fallait les séparer :
+
+1. **Le correctif du jalon 28 n'a jamais atteint la production.** Railway déploie
+   depuis `main` ; `main` était **35 commits en retard** sur
+   `claude/wonderful-cannon-1s8sd2`, et la PR n'était pas fusionnée. Reginald
+   André et Carine Bozon s'affichaient donc avec le code d'avant le jalon 28.
+   C'est la cause de ce qui était à l'écran.
+2. **Mais la règle était bel et bien contournable**, et deux surfaces la
+   contournaient :
+   - `components/clients/clients-table.tsx:131` rendait
+     `<ContactStatusTag status={…} followUp={…} />` **sans `lifecycle`** ;
+   - `clients-table.tsx:90`, `stale-contacts.tsx:103` et
+     `contact-table-columns.tsx:121` appelaient `resolveStatus()` en direct pour
+     la couleur d'alerte — donc lisaient la valeur stockée brute.
+
+Le second point est celui qui méritait le travail : sans lui, fusionner aurait
+corrigé `/contacts` et laissé `/clients` mentir.
+
+**Le cas de Carine Bozon dit pourquoi la règle ne peut pas être « ne pas écrire
+de statut ».** Son champ `status` est **vide** : « Sans nouvelles · 31 j » venait
+du **calcul**, pas d'une valeur stockée. Aucune correction de données n'aurait pu
+l'atteindre — il n'y avait rien à nettoyer. Seule une règle appliquée à la
+lecture pouvait la faire taire.
+
+### Le champ facultatif était la faille
+
+`ContactStatusLike.lifecycle` et la prop `lifecycle` de `ContactStatusTag`
+étaient **facultatifs**, « pour les appelants qui n'en disposent pas ». Un champ
+facultatif qui porte une règle d'affichage est une règle qu'on peut oublier
+d'appliquer, et l'oubli ne se voit pas : la pastille s'affiche, simplement elle
+ment.
+
+Les deux sont désormais **obligatoires**. Le compilateur refuse un appelant qui
+ne fournit pas le cycle de vie — c'est la moitié de la garantie, et elle est
+gratuite : tous les appelants sauf `/clients` le fournissaient déjà.
+
+### Une seule porte
+
+```
+lib/domain/status.ts            couche basse : saisi contre calculé
+        ↑ (n'est plus importé que par contact-status.ts)
+lib/domain/contact-status.ts    resolveDisplayStatus()  ← LA règle terminale
+        ↑                       resolveContactStatus()  ← délègue à la précédente
+        ↑                       contactAttention()      ← la couleur, même règle
+components/ui/primitives.tsx    ContactStatusTag → resolveDisplayStatus()
+```
+
+`resolveDisplayStatus({status, followUp, lifecycle})` porte l'unique
+`if (isTerminal(…)) return null`. Elle prend un `followUp` **déjà calculé**
+plutôt que les réglages et l'horloge, parce que c'est ce dont disposent les
+composants ; `resolveContactStatus()` calcule d'abord puis l'appelle. **Il
+n'existe aucun chemin qui rende un statut sans passer par ce `return null`.**
+
+`contactAttention()` étend la règle au rouge de « dernière touche » : une fiche
+perdue ne peut pas être « en retard », il n'y a plus de rendez-vous à honorer.
+
+### Ce que la correction de données devient
+
+**Elle ne rend plus l'écran correct — l'écran l'est déjà.** Le bloc s'appelle
+désormais « Rangement : statuts périmés des fiches terminales » et sa phrase de
+résumé le dit : *« Aucun de ces statuts n'est affiché nulle part : l'écran
+applique déjà la règle à la lecture. »* Son `hint` s'ouvre sur « Facultatif ».
+
+La valeur stockée reste en base, et c'est délibéré : c'est de l'histoire.
+L'effacer ne sert qu'à rendre les exports et les requêtes directes aussi propres
+que l'écran. **On n'a jamais besoin de cliquer pour qu'un écran cesse de
+mentir** — une consultation qui doit écrire pour être juste est exactement ce
+qu'on a refusé aux agents au jalon 8.
+
+### Deux tests, et ce qu'ils attrapent
+
+**`status-single-source.test.ts` (nouveau).** Parcourt `lib/`, `app/` et
+`components/` et échoue si un fichier hors liste blanche **importe**
+`resolveStatus`. Liste blanche : `contact-status.ts` (le décideur), `status.ts`
+(le module), `maintenance.ts` (qui raisonne sur la valeur stockée — c'est son
+objet). Un second cas fixe que la prop `lifecycle` reste obligatoire.
+
+**`status-parity.test.ts` (étendu).** Trois surfaces simulées — la pastille, les
+outils du conseil, la couleur d'alerte — croisées avec les cinq cas terminaux de
+la population. Plus deux garde-fous contre le test qui se satisfait de rien : un
+test vérifie que les surfaces **affichent** bien quelque chose sur les fiches non
+terminales (sans quoi tout supprimer rendrait le premier vert), et un autre que
+**chaque** cycle de `TERMINAL_LIFECYCLES` est représenté dans la population
+(sans quoi un cycle ajouté demain resterait hors du test).
+
+**Éprouvés en réintroduisant la lecture brute**, comme demandé :
+
+| Régression réintroduite | Ce qui tombe |
+|---|---|
+| `clients-table.tsx` remis à `resolveStatus()` sans `lifecycle` | `status-single-source` : « components/clients/clients-table.tsx:3 importe resolveStatus » — **et** `tsc` : « Property 'lifecycle' is missing » |
+| `return null` retiré de `resolveDisplayStatus()` | 3 tests, dont la liste nominative des fuites par surface : « Perdu + statut saisi contradictoire → outils du conseil affiche « Contacté — en attente » » |
+
+### Jalon 29 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (154 fiches issues de la feuille) et le serveur
+standalone de production, sur une base **délibérément contradictoire** et
+**sans avoir lancé aucune correction** :
+
+- **11 fiches terminales portant un statut stocké** injectées en base
+  (« Contacté — en attente », « Sans nouvelles », « Jamais contacté » sur
+  `Perdu` et `Ancien Client`) ;
+- **les deux cas signalés reproduits à l'identique** : Reginald André en `Perdu`
+  avec « Contacté — en attente » **stocké**, Carine Bozon en `Perdu` au statut
+  **vide** et 31 jours de silence — donc un libellé venu du calcul. Les deux
+  lignes rendent une **colonne Statut vide** dans le navigateur ;
+- **couche de service** : `/contacts?lifecycle=Perdu` 46 lignes → **0 pastille** ;
+  `/contacts?lifecycle=all` 51 lignes terminales → 0 ; `/clients` → `lifecycle`
+  présent sur chaque ligne ; `/accueil` → 0 ligne terminale (exclusion de
+  périmètre, désormais doublée de la règle) ; **0 fuite** ;
+- **aucune écriture** : les 11 fiches portent toujours leur statut stocké après
+  lecture de toutes les surfaces — la consultation ne corrige rien en base ;
+- **navigateur** : `/contacts?lifecycle=Perdu` 46 lignes et
+  `/contacts?lifecycle=Ancien Client` 5 lignes, **toutes terminales par
+  construction du filtre**, → **0 statut de relance affiché** ; tiroir d'une
+  fiche perdue → `pastilles : ["Perdu"]`, aucun statut de relance, ni « jamais
+  contacté » ni « Aucune relance programmée » ; **0 réponse HTTP ≥ 400, 0 erreur
+  console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**617 tests**) verts.
+
+### Jalon 29 — ce qui ne l'est pas
+
+**`/clients` ne peut pas exhiber le défaut aujourd'hui** : `readClients()`
+interroge `where: { lifecycle: "Client" }`, donc aucune fiche terminale n'y
+entre. La correction y est structurelle, pas observable — le `lifecycle` voyage
+maintenant jusqu'à la ligne pour que la pastille cesse d'être juste **par
+accident du périmètre de la requête**. Le jour où le portefeuille inclurait les
+anciens clients, rien n'aurait à bouger dans le composant.
+
+**La seconde rangée de puces n'est toujours pas réduite** — c'est votre décision,
+en attente depuis le jalon 27 (retirer « Déjà contactés », garder « Contactés
+cette semaine » et « Ont répondu » : cinq puces au lieu de sept).
+
+**La garde statique porte sur les imports, pas sur toute lecture concevable.**
+Un composant qui afficherait `{contact.status}` en texte brut ne serait pas
+attrapé — aucun n'en fait autant aujourd'hui, et ce serait un autre défaut que
+celui-ci. Ce que le test ferme, c'est le chemin par lequel la règle a réellement
+été contournée deux fois.
