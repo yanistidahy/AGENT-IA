@@ -15,6 +15,12 @@ import { signatureBlock } from "./prompts/company";
 import { alexDynamicRules } from "./alex-rules";
 import { AGENTS } from "./registry";
 import { readMailConfig, type MailConfig } from "@/lib/api/mail";
+import {
+  listSignatories,
+  pickSignatory,
+  signatoryNames,
+  type Signatory,
+} from "@/lib/api/signatories";
 
 /**
  * Le brouillon d'Alex.
@@ -56,24 +62,27 @@ const AGENT_NAMES: readonly string[] = AGENTS.map((agent) => agent.name);
  * règle « jamais ton prénom, jamais celui de l'utilisateur », et il se lit là où
  * il est déjà réglé plutôt que d'être deviné.
  */
-function forbiddenSigners(config: MailConfig): readonly string[] {
-  // Le nom du signataire figure ici **en plus** des noms d'agents, et c'est le
-  // correctif du jalon 33 qu'il ne faut pas reperdre : un brouillon terminé par
-  // « Yanis » ne porte aucun nom d'agent, la signature serait donc *ajoutée* et
-  // le message partirait avec deux signatures l'une sous l'autre. Le nom
-  // complet **et** le prénom seul : on signe rarement de son nom entier.
-  const names = [config.signName, config.fromName]
-    .map((value) => value.trim())
-    .filter((value) => value !== "");
-
-  const parts = new Set<string>();
-  for (const name of names) {
-    parts.add(name);
-    const first = name.split(/\s+/)[0] ?? "";
-    if (first !== "") parts.add(first);
+function forbiddenSigners(
+  config: MailConfig,
+  signatories: readonly Signatory[],
+): readonly string[] {
+  // **Tous les signataires**, pas seulement celui qui signe ce message : un
+  // brouillon destiné à partir sous le nom de Mohamed ne doit pas se terminer
+  // par celui de Yanis. Plus le nom d'expédition SMTP, et le prénom seul de
+  // chacun — on signe rarement de son nom entier.
+  //
+  // C'est aussi le correctif du jalon 33 qu'il ne faut pas reperdre : un
+  // brouillon terminé par « Yanis » ne porte aucun nom d'agent, la signature
+  // serait donc *ajoutée* et le message partirait avec deux signatures.
+  const extra = new Set(signatoryNames(signatories));
+  const sender = config.fromName.trim();
+  if (sender !== "") {
+    extra.add(sender);
+    const first = sender.split(/\s+/)[0] ?? "";
+    if (first !== "") extra.add(first);
   }
 
-  return [...AGENT_NAMES, ...parts];
+  return [...AGENT_NAMES, ...extra];
 }
 
 
@@ -89,6 +98,10 @@ export interface EmailDraft {
   readonly body: string;
   readonly to: string;
   readonly contactName: string;
+  /** Les signataires disponibles, pour le sélecteur du panneau. */
+  readonly signatories: readonly Signatory[];
+  /** Celui qui a été retenu — le propriétaire de la fiche s'il correspond. */
+  readonly signatoryId: string | null;
 }
 
 export type DraftResult =
@@ -195,9 +208,12 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
  * système : ce sont les deux points sur lesquels un modèle dérive le plus, et
  * les rappeler à l'endroit où il produit coûte trois lignes.
  */
-function draftInstruction(config: MailConfig): string {
-  const signature = signatureBlock({ name: config.signName, title: config.signTitle });
-  const demo = config.demoUrl.trim() === "" ? "" : `\n- L'avant-dernier paragraphe se termine par « → ${config.demoLabel} », sans URL.`;
+function draftInstruction(config: MailConfig, signatory: Signatory | null): string {
+  const signature =
+    signatory === null
+      ? signatureBlock({ name: config.signName, title: config.signTitle })
+      : signatureBlock(signatory);
+  const demo = config.demoUrl.trim() === "" ? "" : `\n- Second appel à l'action : un paragraphe court se terminant par « → ${config.demoLabel} », sans URL.`;
 
   return `Rédige **un** email à partir du dossier ci-dessus.
 
@@ -208,8 +224,9 @@ Contraintes, non négociables :
 - \`body\` sépare ses paragraphes par une ligne vide (\\n\\n).
 - Ouvre sur quelque chose de concret concernant **leur** activité, jamais sur toi ni sur un message précédent.
 - Nomme le volume de questions récurrentes que **leur équipe** traite, avant de parler de l'offre.
-- Présente le Personal Shopper comme un conseiller proactif qui guide vers l'achat, le SAV 24/7 venant ensuite.${demo}
-- Termine par une question légère, pas par une demande de rendez-vous.
+- Présente le Personal Shopper comme un conseiller proactif qui guide vers l'achat, le SAV 24/7 venant ensuite.
+- Annonce une démonstration **déjà préparée pour leur site**, pas un diagnostic générique.
+- Premier appel à l'action : leur demander de répondre à ce message pour recevoir le lien de la démonstration.${demo}
 - Les deux dernières lignes du corps sont exactement :
 ${signature}
 - Aucun prix, aucun nom d'offre, aucun montant.
@@ -222,7 +239,7 @@ export async function draftEmail(
 ): Promise<DraftResult> {
   const contact = await prisma.contact.findUnique({
     where: { id: contactId },
-    select: { firstName: true, lastName: true, email: true },
+    select: { firstName: true, lastName: true, email: true, owner: true },
   });
 
   if (contact === null) return { ok: false, message: "Contact introuvable." };
@@ -238,17 +255,24 @@ export async function draftEmail(
   const context = await contextFor(contactId, focusActivityId);
   if (context === null) return { ok: false, message: "Contact introuvable." };
 
-  const config = await readMailConfig();
-  const system = await promptForAgent(ALEX_SLUG, await alexDynamicRules());
+  const [config, signatories] = await Promise.all([readMailConfig(), listSignatories()]);
+  // Le propriétaire de la fiche d'abord : si « Yanis » suit ce prospect, c'est
+  // lui qui écrit. Proposer systématiquement le signataire par défaut ferait
+  // partir la moitié des messages sous la mauvaise identité.
+  const signatory = pickSignatory(signatories, contact.owner);
+
+  const system = await promptForAgent(ALEX_SLUG, await alexDynamicRules(signatory));
   if (system === null) return { ok: false, message: "L'agent Alex est introuvable." };
 
   return complete(
     system,
-    `${context}\n\n---\n\n${draftInstruction(config)}`,
+    `${context}\n\n---\n\n${draftInstruction(config, signatory)}`,
     to,
     contact.firstName,
     contact.lastName,
     config,
+    signatories,
+    signatory,
   );
 }
 
@@ -267,9 +291,14 @@ async function complete(
   firstName: string,
   lastName: string,
   config: MailConfig,
+  signatories: readonly Signatory[],
+  signatory: Signatory | null,
 ): Promise<DraftResult> {
-  const forbidden = forbiddenSigners(config);
-  const signature = signatureBlock({ name: config.signName, title: config.signTitle });
+  const forbidden = forbiddenSigners(config, signatories);
+  const signature =
+    signatory === null
+      ? signatureBlock({ name: config.signName, title: config.signTitle })
+      : signatureBlock(signatory);
 
   try {
     const response = await anthropic().messages.create({
@@ -313,6 +342,8 @@ async function complete(
         body: enforceSignature(checked.data.body.trim(), signature, forbidden),
         to,
         contactName: `${firstName} ${lastName}`.trim(),
+        signatories,
+        signatoryId: signatory?.id ?? null,
       },
     };
   } catch (error) {

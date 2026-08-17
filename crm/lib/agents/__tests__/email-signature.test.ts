@@ -127,7 +127,18 @@ describe("le prompt porte le pitch et les règles", () => {
     // Les trois règles de forme, tirées du mail de référence.
     expect(prompt).toContain("Ouvre sur quelque chose de concret sur leur activité");
     expect(prompt).toContain("Nomme la douleur de leur côté");
-    expect(prompt).toContain("Termine par une question légère");
+    // Les deux règles ajoutées au jalon 35, tirées du nouveau mail de référence.
+    expect(prompt).toContain("Deux appels à l'action, dans cet ordre, jamais un seul");
+    expect(prompt).toContain("La démonstration est préparée pour LEUR site");
+  });
+
+  it("l'ordre des deux appels à l'action est explicite", () => {
+    // Commencer par le calendrier demande un engagement à quelqu'un qui ne nous
+    // connaît pas : la réponse d'abord, la réservation en second.
+    const reponse = WRITING_SHAPE.indexOf("d'abord leur demander de répondre");
+    const creneau = WRITING_SHAPE.indexOf("proposer la réservation d'un créneau");
+    expect(reponse).toBeGreaterThan(-1);
+    expect(creneau).toBeGreaterThan(reponse);
   });
 
   it("le mail de référence est donné comme exemple, jamais comme gabarit", () => {
@@ -136,7 +147,9 @@ describe("le prompt porte le pitch et les règles", () => {
     expect(WRITING_SHAPE).toContain("à imiter, jamais à recopier");
     expect(WRITING_SHAPE).toContain("N'en reprends ni les");
     expect(WRITING_SHAPE).toContain("chaque destinataire doit recevoir un");
-    expect(WRITING_SHAPE).toContain("Miye car");
+    expect(WRITING_SHAPE).toContain("Linaé");
+    // L'ancienne référence a disparu : deux exemples se contrediraient.
+    expect(WRITING_SHAPE).not.toContain("Miye car");
   });
 
   it("le positionnement décrit le conseiller proactif, pas le ticket de support", () => {
@@ -184,9 +197,11 @@ describe("les consignes calculées depuis les réglages", () => {
     expect(rule).not.toContain(DEFAULT_DEMO.url);
   });
 
-  it("une URL vide fait supprimer la phrase, pas inventer un lien", () => {
-    const rule = demoRule({ label: "Diagnostic offert", url: "" });
+  it("une URL vide supprime le second appel, pas le premier", () => {
+    // Le premier appel — demander une réponse — ne dépend d'aucun lien et doit
+    // survivre : c'est lui qui ouvre la conversation.
+    const rule = demoRule({ label: "Réserver un appel", url: "" });
     expect(rule).toContain("n'invente aucune adresse");
-    expect(rule).toContain("N'écris donc aucune phrase");
+    expect(rule).toContain("Garde le premier");
   });
 });

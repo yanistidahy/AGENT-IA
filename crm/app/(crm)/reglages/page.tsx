@@ -14,6 +14,7 @@ import { stageDealCounts } from "@/lib/api/settings";
 import { prisma } from "@/lib/db";
 import { listAgentProfiles } from "@/lib/api/agents";
 import { readMailStatus, PASSWORD_ENV } from "@/lib/api/mail";
+import { listSignatories } from "@/lib/api/signatories";
 import { LIFECYCLES } from "@/lib/domain/types";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,7 @@ export default async function ReglagesPage() {
     settingsRow,
     agents,
     mail,
+    signatories,
   ] = await Promise.all([
       listSequences(),
       listStagesWithActions(),
@@ -51,6 +53,7 @@ export default async function ReglagesPage() {
       db.settings.findUnique({ where: { id: "singleton" } }),
       listAgentProfiles(),
       readMailStatus(),
+      listSignatories(),
     ]);
 
   const lifecycles = lifecycleRows.map((row) => row.value);
@@ -71,6 +74,7 @@ export default async function ReglagesPage() {
       agents={agents}
       mail={mail}
       passwordEnv={PASSWORD_ENV}
+      signatories={signatories}
       stages={stages}
       dealCounts={dealCounts}
       settings={settings}

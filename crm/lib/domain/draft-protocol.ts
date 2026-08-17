@@ -100,7 +100,21 @@ export function composeMessage(
   contact: { readonly id: string; readonly name: string },
   draft: { readonly subject: string; readonly body: string },
   instruction: string,
+  /** Le signataire retenu pour ce message, s'il y en a un. */
+  signature?: string,
 ): string {
+  // La signature voyage avec le brouillon : le fil ne sait pas qui l'utilisateur
+  // a choisi dans le sélecteur, et une reprise qui reposerait la signature par
+  // défaut ferait repartir le message sous le mauvais nom.
+  //
+  // Elle est annoncée **avant** le brouillon, dans l'en-tête, et non entre le
+  // corps et la demande : intercalée là, elle se lisait comme la fin du message
+  // et se retrouvait recopiée dans le corps.
+  const signatureLines =
+    signature === undefined || signature.trim() === ""
+      ? []
+      : [`[Signataire de ce message] ${signature.trim().replace(/\n/g, " · ")}`, ""];
+
   return [
     // L'identifiant est donné pour qu'Alex puisse **lire la fiche** avec ses
     // outils quand on lui demande « qu'est-ce qu'on sait d'elle ? ». Sans lui,
@@ -108,10 +122,12 @@ export function composeMessage(
     // homonymes suffiraient à lui faire lire la mauvaise fiche.
     `[Contact] ${contact.name} — identifiant ${contact.id}`,
     "",
+    ...signatureLines,
     "[Brouillon actuel, retouches de l'utilisateur comprises]",
     `Objet : ${draft.subject}`,
     "",
     draft.body,
+    "",
     "",
     "[Demande]",
     instruction.trim(),

@@ -26,16 +26,24 @@ export interface MailStatus {
   passwordSet: boolean;
   ready: boolean;
   missing: readonly string[];
-  /** Signature des brouillons — l'associé signe la sienne. */
-  signName: string;
-  signTitle: string;
   /** Lien de démonstration. URL vide = Alex supprime la phrase entière. */
   demoLabel: string;
   demoUrl: string;
 }
 
+export interface Signatory {
+  id?: string;
+  name: string;
+  title: string;
+  isDefault: boolean;
+}
+
 function isPayload(value: unknown): value is { mail: MailStatus; passwordEnv: string } {
   return typeof value === "object" && value !== null && "mail" in value;
+}
+
+function isSignatories(value: unknown): value is { signatories: Signatory[] } {
+  return typeof value === "object" && value !== null && "signatories" in value;
 }
 
 function isSent(value: unknown): value is { sentTo: string } {
@@ -51,11 +59,14 @@ const BUTTON =
 export function MailPanel({
   initial,
   passwordEnv,
+  initialSignatories,
 }: {
   initial: MailStatus;
   passwordEnv: string;
+  initialSignatories: readonly Signatory[];
 }) {
   const [mail, setMail] = useState(initial);
+  const [signatories, setSignatories] = useState<Signatory[]>([...initialSignatories]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -78,8 +89,6 @@ export function MailPanel({
           user: mail.user,
           from: mail.from,
           fromName: mail.fromName,
-          signName: mail.signName,
-          signTitle: mail.signTitle,
           demoLabel: mail.demoLabel,
           demoUrl: mail.demoUrl,
         }),
@@ -90,6 +99,22 @@ export function MailPanel({
     if (result.ok) {
       setMail(result.data.mail);
       setDone("Configuration enregistrée.");
+    } else setError(result.message);
+  };
+
+  const saveSigners = async () => {
+    setBusy(true);
+    setError(null);
+    setDone(null);
+    const result = await requestJson(
+      "/api/mail",
+      { method: "PUT", body: JSON.stringify({ signatories }) },
+      isSignatories,
+    );
+    setBusy(false);
+    if (result.ok) {
+      setSignatories(result.data.signatories);
+      setDone("Signataires enregistrés.");
     } else setError(result.message);
   };
 
@@ -183,30 +208,96 @@ export function MailPanel({
         « L'équipe AuraFLOW AI » dans un fichier de prompt — une valeur écrite en
         dur qui contredit l'écran le jour où on la change.
       */}
+      {/*
+        Les signataires : une liste, parce qu'ils sont deux. Le couple unique du
+        jalon 34 ne savait décrire qu'une personne, et le choix se fait de toute
+        façon message par message — c'est une propriété de l'envoi, pas un
+        réglage global.
+      */}
       <div className="mt-4 border-t border-line pt-3">
-        <h4 className="text-[13px] font-semibold">Signature des brouillons</h4>
+        <h4 className="text-[13px] font-semibold">Signataires</h4>
         <p className="mt-0.5 text-[11.5px] text-muted">
-          Les deux dernières lignes de chaque email rédigé par Alex.
+          Les deux dernières lignes de chaque email. Celui coché sert de proposition quand le
+          propriétaire de la fiche ne correspond à personne.
         </p>
-        <div className="mt-2 grid gap-3 sm:grid-cols-2">
-          <label>
-            <span className={LABEL}>Nom</span>
-            <input
-              className={FIELD}
-              value={mail.signName}
-              placeholder="Yanis Tidahy"
-              onChange={(event) => set("signName", event.target.value)}
-            />
-          </label>
-          <label>
-            <span className={LABEL}>Titre</span>
-            <input
-              className={FIELD}
-              value={mail.signTitle}
-              placeholder="Fondateur, Aura Flow AI"
-              onChange={(event) => set("signTitle", event.target.value)}
-            />
-          </label>
+
+        <ul className="mt-2 grid gap-2">
+          {signatories.map((signatory, index) => (
+            <li key={signatory.id ?? index} className="flex flex-wrap items-end gap-2">
+              <label className="min-w-[140px] flex-1">
+                <span className={LABEL}>Nom</span>
+                <input
+                  className={FIELD}
+                  value={signatory.name}
+                  onChange={(event) =>
+                    setSignatories((current) =>
+                      current.map((entry, at) =>
+                        at === index ? { ...entry, name: event.target.value } : entry,
+                      ),
+                    )
+                  }
+                />
+              </label>
+              <label className="min-w-[180px] flex-1">
+                <span className={LABEL}>Titre</span>
+                <input
+                  className={FIELD}
+                  value={signatory.title}
+                  onChange={(event) =>
+                    setSignatories((current) =>
+                      current.map((entry, at) =>
+                        at === index ? { ...entry, title: event.target.value } : entry,
+                      ),
+                    )
+                  }
+                />
+              </label>
+              <label className="flex items-center gap-1.5 pb-2 text-[12px] text-muted">
+                <input
+                  type="radio"
+                  name="signatory-default"
+                  checked={signatory.isDefault}
+                  onChange={() =>
+                    setSignatories((current) =>
+                      current.map((entry, at) => ({ ...entry, isDefault: at === index })),
+                    )
+                  }
+                />
+                par défaut
+              </label>
+              {signatories.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSignatories((current) => current.filter((_, at) => at !== index))
+                  }
+                  className="rounded-control border border-line px-2 py-1.5 pb-1.5 text-[11.5px] text-muted transition-colors hover:bg-surface-2"
+                >
+                  Retirer
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              setSignatories((current) => [...current, { name: "", title: "", isDefault: false }])
+            }
+            className={`${BUTTON} border border-line bg-surface hover:bg-surface-2`}
+          >
+            Ajouter un signataire
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void saveSigners()}
+            className={`${BUTTON} bg-brand text-white hover:bg-brand-d`}
+          >
+            Enregistrer les signataires
+          </button>
         </div>
       </div>
 

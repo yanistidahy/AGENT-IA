@@ -330,10 +330,12 @@ model Settings {
   smtpFrom       String  @default("")
   smtpFromName   String  @default("")
 
-  /// Signature des emails : ce qui clôt chaque brouillon.
+  /// Signature par défaut, conservée pour les bases antérieures au jalon 35.
   ///
-  /// En base et non en code : l'associé signe de son propre nom, et changer de
-  /// signataire ne doit pas demander un déploiement.
+  /// La liste des signataires vit désormais dans `signatories` : deux personnes
+  /// envoient depuis ce CRM, et un couple unique ne pouvait en décrire qu'une.
+  /// Ces deux colonnes ne sont plus lues — elles restent pour que la migration
+  /// puisse semer le premier signataire depuis ce qui était réglé.
   signName  String @default("Yanis Tidahy")
   signTitle String @default("Fondateur, Aura Flow AI")
 
@@ -596,4 +598,21 @@ model DealStageVisit {
   @@index([dealId, enteredAt])
   @@index([stageId])
   @@map("deal_stage_visits")
+}
+
+/// Les personnes qui peuvent signer un email.
+///
+/// Une table plutôt que deux colonnes : ils sont deux aujourd'hui, et le couple
+/// « nom / titre » unique du jalon 34 ne savait en décrire qu'un. Le signataire
+/// se choisit à la rédaction, message par message — ce n'est pas un réglage
+/// global mais une propriété de l'envoi.
+model Signatory {
+  id    String @id @default(cuid())
+  name  String
+  title String @default("")
+  /// Le signataire proposé quand rien d'autre ne tranche.
+  isDefault Boolean @default(false)
+  position  Int     @default(0)
+
+  @@map("signatories")
 }
