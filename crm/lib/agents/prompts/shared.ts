@@ -1,3 +1,5 @@
+import { COMPANY_CONTEXT } from "./company";
+
 /**
  * Socle commun ajouté à la fin de chaque prompt système.
  *
@@ -94,7 +96,11 @@ export interface PromptIdentity {
  * La liste des collègues est injectée pour la même raison : un renvoi vers un
  * nom figé dans un fichier finirait par désigner quelqu'un qui n'existe plus.
  */
-export function buildSystemPrompt(persona: string, identity: PromptIdentity): string {
+export function buildSystemPrompt(
+  persona: string,
+  identity: PromptIdentity,
+  rules?: string,
+): string {
   const roster = identity.colleagues
     .map((colleague) => `- **${colleague.name}** — ${colleague.role}`)
     .join("\n");
@@ -106,5 +112,14 @@ export function buildSystemPrompt(persona: string, identity: PromptIdentity): st
       ? ""
       : `\n\n## Le conseil\n\nTes collègues, avec leur domaine. Ce sont les seuls noms que tu emploies pour\nrenvoyer une question qui n'est pas de ton ressort :\n\n${roster}`;
 
-  return `${header}\n\n${persona.trim()}${council}\n\n${SHARED_RULES}`;
+  // Le contexte entreprise vient **avant** la personnalité : un agent doit
+  // savoir ce qu'on vend avant de savoir comment il en parle. Il est injecté
+  // pour tous, pas seulement pour Alex — Sabrina arbitre sur le même métier, et
+  // deux descriptions du positionnement finiraient par se contredire.
+  // Les règles propres à l'agent viennent après sa personnalité et avant le
+  // socle commun : ce sont des interdits, et un interdit se lit mieux une fois
+  // qu'on sait de quel métier il parle.
+  const own = rules === undefined ? "" : `\n\n${rules.trim()}`;
+
+  return `${header}\n\n${COMPANY_CONTEXT}\n\n${persona.trim()}${own}${council}\n\n${SHARED_RULES}`;
 }

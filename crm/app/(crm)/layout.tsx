@@ -1,4 +1,5 @@
 import { Rail, type RailTotals } from "@/components/nav/rail";
+import { listAgentProfiles } from "@/lib/api/agents";
 import { SearchPalette } from "@/components/search/palette";
 import { countOverdueTasks } from "@/lib/api/tasks";
 import { prisma } from "@/lib/db";
@@ -39,11 +40,17 @@ async function readRailTotals(): Promise<RailTotals> {
 export default async function CrmLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const totals = await readRailTotals();
+  // Les agents du rail, lus au rendu serveur comme les compteurs. Filtrés sur
+  // l'activation ici plutôt que dans le composant : le rail affiche ce qu'on lui
+  // donne, la décision « qui fait partie du conseil » appartient à la donnée.
+  const [totals, agents] = await Promise.all([
+    readRailTotals(),
+    listAgentProfiles().catch(() => []),
+  ]);
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Rail totals={totals} />
+      <Rail totals={totals} agents={agents.filter((agent) => agent.enabled && !agent.locked)} />
       <main className="flex-1 overflow-y-auto bg-paper">{children}</main>
       <SearchPalette />
     </div>

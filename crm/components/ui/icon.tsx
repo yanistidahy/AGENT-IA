@@ -22,6 +22,8 @@ const PATHS = {
     "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM7 10v6M7 7v.01M11 16v-3.5a2 2 0 0 1 4 0V16M11 12.5v0",
   /** Enveloppe : rabat ouvert, dans le même trait que le reste du jeu. */
   mail: "M3 6h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM2.5 7l9.5 6.5L21.5 7",
+  /** Flèches vers les coins : « ouvrir en grand », du panneau vers la page. */
+  expand: "M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7",
 } as const;
 
 export type IconName = keyof typeof PATHS;

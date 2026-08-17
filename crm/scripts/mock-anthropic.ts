@@ -97,6 +97,24 @@ function draftAnswer(brief: string): string {
    * contact — l'échange désigné compris — atteint bien le modèle. Un substitut
    * qui répondrait un joli message ne prouverait rien sur ce qu'on lui a donné.
    */
+  /**
+   * Reprise d'un brouillon (jalon 33).
+   *
+   * Le substitut **renvoie le corps qu'il a reçu**, préfixé de l'instruction :
+   * c'est ce qui permet de vérifier qu'Alex repart bien du texte affiché —
+   * retouches manuelles comprises — et non de son brouillon d'origine. Un
+   * substitut qui réécrirait joliment ne prouverait rien sur son entrée.
+   */
+  if (brief.includes("Réécris ce message en appliquant la demande")) {
+    const demande = /Demande de l'utilisateur : ([^\n]+)/.exec(brief);
+    const recu = /Objet : ([^\n]*)\n\n([\s\S]*?)\n\n---/.exec(brief);
+    const corps = (recu?.[2] ?? "").trim();
+    return JSON.stringify({
+      subject: recu?.[1] ?? "Objet repris",
+      body: [`[reprise: ${demande?.[1] ?? "?"}]`, corps].join("\n\n"),
+    });
+  }
+
   if (brief.includes("Rends exclusivement un objet JSON")) {
     const focus = /- ([^\n]*← L'ÉCHANGE QUI VIENT D'AVOIR LIEU)/.exec(brief);
     const name = /Destinataire : ([^\n,]+)/.exec(brief);

@@ -1,6 +1,6 @@
 import { badRequest, invalidPayload, jsonOk, serverError } from "@/lib/api/errors";
 import { readJson } from "@/lib/api/request";
-import { draftEmail } from "@/lib/agents/email-draft";
+import { draftEmail, reviseEmail } from "@/lib/agents/email-draft";
 import { sendEmailSchema, sendEmailToContact } from "@/lib/api/email-send";
 import { z } from "zod";
 
@@ -25,8 +25,26 @@ const draftSchema = z.object({
   fromActivityId: z.string().optional(),
 });
 
+/**
+ * Reprise d'un brouillon.
+ *
+ * `subject` et `body` sont ceux **affichés à l'écran**, retouches à la main
+ * comprises : c'est le client qui les envoie, pas le serveur qui les relit en
+ * base. Le serveur n'a d'ailleurs rien à relire — un brouillon n'existe nulle
+ * part tant qu'il n'est pas envoyé, et c'est très bien ainsi.
+ */
+const reviseSchema = z.object({
+  mode: z.literal("revise"),
+  contactId: z.string().min(1, "Contact requis"),
+  subject: z.string().max(200),
+  body: z.string().min(1, "Le message ne peut pas être vide"),
+  instruction: z.string().trim().min(1, "Dites ce qu'il faut changer").max(1000),
+  fromActivityId: z.string().optional(),
+});
+
 const bodySchema = z.discriminatedUnion("mode", [
   draftSchema,
+  reviseSchema,
   sendEmailSchema.extend({ mode: z.literal("send") }),
 ]);
 
@@ -40,6 +58,17 @@ export async function POST(request: Request) {
   try {
     if (parsed.data.mode === "draft") {
       const result = await draftEmail(parsed.data.contactId, parsed.data.fromActivityId);
+      if (!result.ok) return badRequest(result.message);
+      return jsonOk({ draft: result.draft });
+    }
+
+    if (parsed.data.mode === "revise") {
+      const result = await reviseEmail(
+        parsed.data.contactId,
+        { subject: parsed.data.subject, body: parsed.data.body },
+        parsed.data.instruction,
+        parsed.data.fromActivityId,
+      );
       if (!result.ok) return badRequest(result.message);
       return jsonOk({ draft: result.draft });
     }
