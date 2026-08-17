@@ -13,6 +13,8 @@ import type { Alert } from "@/lib/domain/types";
 import { ContactForm, type ContactFormOptions } from "./contact-form";
 import { ContactFields } from "./contact-fields";
 import { ContactHeader } from "./contact-header";
+import { ComposePanel } from "@/components/emails/compose-panel";
+import { SentToast, type SentNotice } from "@/components/emails/sent-toast";
 import type { LinkableDeal } from "./link-deal";
 import { FollowUpTab } from "./contact-followup-tab";
 import { Notices } from "./drawer-notices";
@@ -72,6 +74,9 @@ export function ContactDrawer({
   const [tab, setTab] = useState<TabKey>(() => (hasHistory ? "historique" : "fiche"));
   const [panel, setPanel] = useState<Panel>("none");
   const [qualifying, setQualifying] = useState<QualifyTarget | null>(null);
+  /** Panneau de rédaction ouvert, et l'échange auquel le message se réfère. */
+  const [composing, setComposing] = useState<{ activityId: string | undefined } | null>(null);
+  const [sentNotice, setSentNotice] = useState<SentNotice | null>(null);
 
   /**
    * L'onglet ne se recalcule qu'au **changement de fiche**.
@@ -130,6 +135,9 @@ export function ContactDrawer({
                 setTab("historique");
                 setPanel("log");
               }}
+              // Écrire sans consigner d'abord : le brouillon part alors du seul
+              // historique, sans échange désigné.
+              onCompose={() => setComposing({ activityId: undefined })}
               onQualify={
                 contact.lifecycle === QUALIFIED
                   ? undefined
@@ -230,11 +238,31 @@ export function ContactDrawer({
                   });
                 }
               }}
+              onCompose={(activityId) => setComposing({ activityId })}
               onChanged={onChanged}
             />
           </div>
         </>
       )}
+
+      <ComposePanel
+        open={composing !== null}
+        contactId={composing === null ? null : contact.id}
+        fromActivityId={composing?.activityId}
+        onClose={() => setComposing(null)}
+        onSent={(sent) => {
+          setComposing(null);
+          setSentNotice(sent);
+          onChanged();
+        }}
+      />
+
+      <SentToast
+        sent={sentNotice}
+        contactId={contact.id}
+        onDismiss={() => setSentNotice(null)}
+        onChanged={onChanged}
+      />
 
       <QualifyFlow
         target={qualifying}

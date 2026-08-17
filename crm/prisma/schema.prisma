@@ -316,6 +316,20 @@ model Settings {
   /// dépasserait s'arrête et le dit, plutôt que de faire monter la facture.
   shiftTokenBudget Int @default(4000)
 
+  /// Messagerie sortante (SMTP).
+  ///
+  /// **Le mot de passe n'est pas ici, et ce n'est pas un oubli.** Il vit dans la
+  /// variable d'environnement `SMTP_PASSWORD`, comme `ANTHROPIC_API_KEY` : une
+  /// sauvegarde JSON, un export ou une lecture de table ne doivent jamais le
+  /// contenir. Ce qui est ci-dessous est de la configuration, pas un secret.
+  smtpHost       String  @default("")
+  smtpPort       Int     @default(587)
+  /// tls | starttls — `tls` pour le port 465, `starttls` pour le 587.
+  smtpEncryption String  @default("starttls")
+  smtpUser       String  @default("")
+  smtpFrom       String  @default("")
+  smtpFromName   String  @default("")
+
   @@map("settings")
 }
 

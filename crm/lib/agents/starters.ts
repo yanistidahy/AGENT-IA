@@ -21,6 +21,13 @@ export interface Starter {
 }
 
 export const STARTERS: Record<string, readonly Starter[]> = {
+  alex: [
+    { question: "Écris un mot à celui que je viens d'appeler", subtitle: "Depuis l'échange consigné, pas un modèle" },
+    { question: "Relance ceux qui n'ont jamais répondu", subtitle: "Un message court par contact silencieux" },
+    { question: "Comment relancer sans insister ?", subtitle: "La formulation, sur un cas précis de votre base" },
+    { question: "Reprends contact après trois mois de silence", subtitle: "Le message qui rouvre sans s'excuser" },
+  ],
+
   sabrina: [
     { question: "Quelles sont mes trois priorités aujourd'hui ?", subtitle: "L'arbitrage, pas la liste complète" },
     { question: "Qu'est-ce qui cloche dans mes données ?", subtitle: "Fiches incomplètes, sociétés sans contact" },

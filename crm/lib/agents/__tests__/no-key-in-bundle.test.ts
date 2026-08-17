@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * Aucune clé Anthropic ne doit atteindre le navigateur.
+ * Aucun secret serveur ne doit atteindre le navigateur.
  *
  * Le test lit la sortie de build réelle — `.next/static`, ce que le client
  * télécharge — et y cherche le préfixe des clés Anthropic ainsi que le nom de
@@ -20,6 +20,14 @@ const STATIC_DIR = path.join(process.cwd(), ".next", "static");
 const FORBIDDEN = [
   "sk-ant-", // préfixe des clés Anthropic
   "ANTHROPIC_API_KEY",
+  /**
+   * Le mot de passe SMTP suit exactement la même règle depuis le jalon 32 : il
+   * vit dans une variable d'environnement, `lib/api/mail.ts` porte
+   * `import "server-only"`, et le panneau de réglages n'apprend que son
+   * existence. La valeur elle-même est inconnue d'ici — on cherche donc le nom
+   * de la variable, seul indice qu'un composant client aurait tenté de la lire.
+   */
+  "SMTP_PASSWORD",
 ];
 
 async function collectFiles(dir: string): Promise<string[]> {

@@ -45,7 +45,13 @@ interface LogFormProps {
    * c'est l'appelant — la fiche contact — qui décide d'ouvrir la modale. Le
    * formulaire ne connaît pas les affaires et n'a pas à les connaître.
    */
-  readonly onLogged: (summary: string, outcome: string) => void;
+  /**
+   * `activityId` accompagne le résumé : c'est lui qui permet à la rédaction
+   * d'email de se référer à **cet** échange plutôt qu'à l'historique en vrac.
+   * Sans lui, le brouillon retomberait sur une relance générique — le défaut
+   * que ce déclencheur doit précisément éviter.
+   */
+  readonly onLogged: (summary: string, outcome: string, activityId: string) => void;
 }
 
 const CONTROL =
@@ -198,6 +204,7 @@ export function LogForm({
           ? "Interaction consignée."
           : `Interaction consignée, avec ${created.join(" et ")} — visible dans /taches.`,
         outcome,
+        result.data.activity.id,
       );
       return;
     }

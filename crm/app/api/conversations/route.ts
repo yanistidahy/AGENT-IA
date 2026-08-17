@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { findAgent, isUnlocked } from "@/lib/agents/registry";
+import { findAgentProfile } from "@/lib/api/agents";
 import { badRequest, invalidPayload, jsonOk, serverError } from "@/lib/api/errors";
 import { readJson } from "@/lib/api/request";
 
@@ -38,6 +39,16 @@ export async function POST(request: Request) {
   if (agent === undefined) return badRequest("Agent inconnu.");
   if (!isUnlocked(agent)) {
     return badRequest(`${agent.name} est verrouillé sur ce déploiement.`);
+  }
+
+  // **Désactivé vaut refus, pas seulement absence du roster.** Le verrou
+  // `isUnlocked` porte sur une variable d'environnement ; l'activation, elle,
+  // est de la donnée réglable à l'écran. Sans ce contrôle, un agent retiré du
+  // conseil resterait joignable par un appel direct à l'API — une porte que
+  // l'écran ne montre plus mais qui n'est pas fermée.
+  const profile = await findAgentProfile(agent.slug);
+  if (profile !== null && !profile.enabled) {
+    return badRequest(`${profile.name} est désactivé. Réactivez-le dans Réglages → Conseil.`);
   }
 
   try {

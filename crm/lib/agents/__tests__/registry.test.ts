@@ -18,9 +18,13 @@ afterEach(() => {
 });
 
 describe("composition du conseil", () => {
-  it("compte huit agents, aux identifiants uniques", () => {
-    expect(AGENTS).toHaveLength(8);
-    expect(new Set(AGENTS.map((a) => a.slug)).size).toBe(8);
+  it("compte neuf agents, aux identifiants uniques", () => {
+    // Neuf **définis**, deux **visibles** : Alex et Sabrina. Les sept autres
+    // sont désactivés en base au jalon 32, pas retirés du code — leurs
+    // conversations et vacations restent lisibles, et réactiver l'un d'eux est
+    // un réglage, pas un déploiement.
+    expect(AGENTS).toHaveLength(9);
+    expect(new Set(AGENTS.map((a) => a.slug)).size).toBe(9);
   });
 
   it("prend Sabrina par défaut", () => {

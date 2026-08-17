@@ -20,6 +20,8 @@ const PATHS = {
     "M2 12a10 10 0 1 0 20 0 10 10 0 1 0-20 0zM2 12h20M12 2c2.5 2.7 4 6.2 4 10s-1.5 7.3-4 10c-2.5-2.7-4-6.2-4-10s1.5-7.3 4-10z",
   linkedin:
     "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM7 10v6M7 7v.01M11 16v-3.5a2 2 0 0 1 4 0V16M11 12.5v0",
+  /** Enveloppe : rabat ouvert, dans le même trait que le reste du jeu. */
+  mail: "M3 6h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM2.5 7l9.5 6.5L21.5 7",
 } as const;
 
 export type IconName = keyof typeof PATHS;

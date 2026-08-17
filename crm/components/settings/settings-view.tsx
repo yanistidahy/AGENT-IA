@@ -13,6 +13,7 @@ import { SequenceEditor, type SequenceEditable } from "./sequence-editor";
 import { TagsEditor } from "./tags-editor";
 import { MaintenancePanel } from "./maintenance-panel";
 import { ApiDiagnostic } from "./api-diagnostic";
+import { MailPanel, type MailStatus } from "./mail-panel";
 import { SnapshotsPanel } from "./snapshots-panel";
 import { CouncilPanel } from "./council-panel";
 import { ShiftsPanel } from "./shifts-panel";
@@ -24,6 +25,8 @@ interface SettingsViewProps {
   readonly dealCounts: Record<string, number>;
   readonly settings: PilotageSettings;
   readonly tokenBudget: number;
+  readonly mail: MailStatus;
+  readonly passwordEnv: string;
   readonly delays: ReminderDelays;
   readonly lists: Record<SettingsListKind, readonly string[]>;
   readonly tags: ReadonlyArray<{ value: string; count: number }>;
@@ -43,6 +46,8 @@ export function SettingsView({
   dealCounts,
   settings,
   tokenBudget,
+  mail,
+  passwordEnv,
   delays,
   lists,
   tags,
@@ -66,6 +71,13 @@ export function SettingsView({
         hint="nom, rôle, photo et cadence de chaque agent — l'identifiant technique ne bouge pas"
       >
         <CouncilPanel agents={agents} />
+      </Section>
+
+      <Section
+        title="Messagerie"
+        hint="envoi des emails par SMTP — la réception n'est pas gérée par cette version"
+      >
+        <MailPanel initial={mail} passwordEnv={passwordEnv} />
       </Section>
 
       <Section

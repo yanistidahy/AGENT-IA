@@ -24,10 +24,13 @@ import { isTerminal } from "@/lib/domain/lost";
 export function ContactHeader({
   contact,
   onLog,
+  onCompose,
   onQualify,
 }: {
   contact: ContactRecord;
   onLog: () => void;
+  /** Écrire sans passer par la consignation d'un échange. */
+  onCompose: () => void;
   /** Absent quand la fiche est déjà qualifiée : il n'y a plus rien à proposer. */
   onQualify?: () => void;
 }) {
@@ -97,6 +100,32 @@ export function ContactHeader({
         */}
         <HeaderLink href={websiteHref} icon="globe" label="Ouvrir le site" />
         <HeaderLink href={linkedinHref} icon="linkedin" label="Ouvrir le profil LinkedIn" />
+
+        {/*
+          Écrire est un geste d'avant-appel au même titre qu'ouvrir le site : il
+          a sa place à côté du numéro, et non derrière une consignation. Désactivé
+          plutôt qu'absent quand la fiche n'a pas d'adresse — même règle que les
+          deux liens ci-dessus, et le titre dit pourquoi.
+        */}
+        {contact.email.trim() === "" ? (
+          <span
+            title="Pas d'adresse électronique sur cette fiche"
+            aria-disabled
+            className="inline-flex items-center rounded-control border border-dashed border-line px-2 py-1.5 text-line-2"
+          >
+            <Icon name="mail" size={15} />
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={onCompose}
+            title={`Rédiger un email à ${contact.email}`}
+            aria-label="Rédiger un email"
+            className="inline-flex items-center rounded-control border border-line bg-surface px-2 py-1.5 text-muted transition-colors hover:bg-paper hover:text-brand-d"
+          >
+            <Icon name="mail" size={15} />
+          </button>
+        )}
 
         <button
           type="button"

@@ -56,6 +56,13 @@ export interface RecordPanelProps {
    * l'ignorent, et c'est pour cela que la propriété est facultative.
    */
   readonly onOutcome?: (outcome: string) => void;
+  /**
+   * Proposer d'écrire depuis l'échange qu'on vient de consigner.
+   *
+   * Facultatif : seule la fiche contact sait à qui écrire. Les tiroirs société
+   * et affaire ne le fournissent pas, et le bouton n'y apparaît donc pas.
+   */
+  readonly onCompose?: (activityId: string) => void;
 }
 
 export type Panel = "none" | "log" | "task" | "sequence";
@@ -74,6 +81,7 @@ export function RecordPanel({
   panel: controlledPanel,
   onPanelChange,
   onOutcome,
+  onCompose,
 }: RecordPanelProps) {
   const [activities, setActivities] = useState<readonly ActivityView[]>([]);
   const [tasks, setTasks] = useState<readonly TaskView[]>([]);
@@ -108,9 +116,13 @@ export function RecordPanel({
     void load();
   }, [load]);
 
-  const afterWrite = (message: string) => {
+  /** L'échange qui vient d'être consigné, pour proposer d'y répondre par écrit. */
+  const [justLogged, setJustLogged] = useState<string | null>(null);
+
+  const afterWrite = (message: string, activityId: string | null = null) => {
     setPanel("none");
     setNotice(message);
+    setJustLogged(activityId);
     void load();
     onChanged();
   };
@@ -147,9 +159,23 @@ export function RecordPanel({
       </div>
 
       {notice !== null && panel === "none" && (
-        <p className="mb-3 rounded-control border border-[#D3CEFA] bg-brand-l px-3 py-2 text-[12.5px] text-brand-d">
-          {notice}
-        </p>
+        <div className="mb-3 rounded-control border border-[#D3CEFA] bg-brand-l px-3 py-2 text-[12.5px] text-brand-d">
+          <p>{notice}</p>
+          {/*
+            **Quelle que soit l'issue.** Un « pas de réponse » est exactement le
+            moment où l'on écrit — c'est même le cas le plus fréquent. Filtrer
+            sur l'issue aurait masqué le bouton là où il sert le plus.
+          */}
+          {justLogged !== null && onCompose !== undefined && (
+            <button
+              type="button"
+              onClick={() => onCompose(justLogged)}
+              className="mt-1.5 rounded-control bg-brand px-3 py-1 text-[12.5px] font-semibold text-white transition-colors hover:bg-brand-d"
+            >
+              Rédiger un email
+            </button>
+          )}
+        </div>
       )}
 
       {panel === "log" && (
@@ -161,8 +187,8 @@ export function RecordPanel({
           currentStatus={currentStatus}
           statusSuggestions={statusSuggestions}
           onCancel={() => setPanel("none")}
-          onLogged={(summary, outcome) => {
-            afterWrite(summary);
+          onLogged={(summary, outcome, activityId) => {
+            afterWrite(summary, activityId);
             if (onOutcome !== undefined) onOutcome(outcome);
           }}
         />
