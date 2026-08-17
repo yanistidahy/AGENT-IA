@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { anthropic, describeAnthropicError, logAnthropicError } from "@/lib/agents/runtime/client";
 import { shiftRequest } from "@/lib/agents/runtime/request";
 import { findAgent } from "@/lib/agents/registry";
-import { promptForAgent } from "@/lib/api/agents";
+import { listAgentProfiles, promptForAgent } from "@/lib/api/agents";
 import { findTool } from "@/lib/agents/tools";
 import {
   dedupeKey as buildKey,
@@ -364,10 +364,28 @@ export async function runShift(
   }
 }
 
-/** Toutes les vacations du jour, dans l'ordre. Alfred passe en dernier. */
+/**
+ * Toutes les vacations du jour, dans l'ordre.
+ *
+ * **Un agent désactivé ne travaille pas**, et c'est vérifié ici plutôt que dans
+ * la liste `SHIFTS` : la désactivation est de la donnée, réglable à l'écran, et
+ * une liste écrite en dur ne peut pas la connaître. Sans ce filtre, réduire le
+ * conseil à deux agents aurait laissé les vacations de Sarah tourner tous les
+ * matins — appelant l'API, produisant des recommandations, pour un agent que
+ * plus personne ne voit.
+ *
+ * La ligne de journal n'est pas créée pour un agent sauté : elle documenterait
+ * une vacation qui n'a pas eu lieu.
+ */
 export async function runAllShifts(manual = false): Promise<readonly ShiftResult[]> {
+  const profiles = await listAgentProfiles();
+  const active = new Set(
+    profiles.filter((profile) => profile.enabled && !profile.locked).map((profile) => profile.slug),
+  );
+
   const results: ShiftResult[] = [];
   for (const shift of [...SHIFTS].sort((a, b) => a.order - b.order)) {
+    if (!active.has(shift.agentId)) continue;
     results.push(await runShift(shift, { manual }));
   }
   return results;

@@ -22,7 +22,9 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
     "@prisma/client": "^6.19.3",
+    "@types/nodemailer": "^8.0.1",
     "next": "^15.5.23",
+    "nodemailer": "^9.0.5",
     "prisma": "^6.19.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

@@ -1,3 +1,4 @@
+import { ALEX } from "./prompts/alex";
 import { SABRINA } from "./prompts/sabrina";
 import { BRUTUS } from "./prompts/brutus";
 import { ETIENNE } from "./prompts/etienne";
@@ -40,6 +41,25 @@ const READS = READ_TOOL_NAMES;
 const ALL_TOOLS = [...READ_TOOL_NAMES, ...WRITE_TOOL_NAMES];
 
 export const AGENTS: readonly AgentDefinition[] = [
+  {
+    slug: "alex",
+    starters: startersFor("alex"),
+    name: "Alex",
+    specialty: "Emails",
+    color: "#2C7BE5",
+    scope:
+      "Rédige les emails à partir de l'échange qu'on vient de consigner et de tout l'historique du contact. Écrit, ne décide pas : chaque message est relu et validé avant départ.",
+    persona: ALEX,
+    /**
+     * **Lectures seules.** Alex lit l'historique pour écrire juste ; il n'écrit
+     * rien en base. L'envoi lui-même n'est pas un outil d'agent : il part d'un
+     * panneau où l'utilisateur a relu le texte et vu l'adresse du destinataire.
+     * En faire un outil rendrait possible un envoi décidé par une boucle de
+     * modèle — exactement ce que « aucune écriture sans clic » interdit, et
+     * l'envoi d'un courriel est la moins réversible des écritures.
+     */
+    tools: READS,
+  },
   {
     slug: "sabrina",
     starters: startersFor("sabrina"),

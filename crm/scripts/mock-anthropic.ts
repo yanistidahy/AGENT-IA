@@ -89,6 +89,30 @@ function validate(body: Body): string | null {
 
 /** Réponse rejouée : cite des identifiants du briefing, plus un inventé. */
 function draftAnswer(brief: string): string {
+  /**
+   * Rédaction d'email (jalon 32).
+   *
+   * Le substitut **renvoie le contexte qu'il a reçu** dans le corps, plutôt
+   * qu'un texte inventé : c'est ce qui permet de vérifier que le dossier réel du
+   * contact — l'échange désigné compris — atteint bien le modèle. Un substitut
+   * qui répondrait un joli message ne prouverait rien sur ce qu'on lui a donné.
+   */
+  if (brief.includes("Rends exclusivement un objet JSON")) {
+    const focus = /- ([^\n]*← L'ÉCHANGE QUI VIENT D'AVOIR LIEU)/.exec(brief);
+    const name = /Destinataire : ([^\n,]+)/.exec(brief);
+    return JSON.stringify({
+      subject: "Le délai dont on parlait",
+      body: [
+        `Bonjour ${name?.[1]?.split(" ")[0] ?? ""},`.trim(),
+        focus === null
+          ? "Je reviens vers vous."
+          : `J'ai bien noté notre échange : ${focus[1]?.replace(" ← L'ÉCHANGE QUI VIENT D'AVOIR LIEU", "") ?? ""}.`,
+        "Seriez-vous disponible jeudi en fin de matinée ?",
+        "Yanis",
+      ].join("\n\n"),
+    });
+  }
+
   const ids = [...brief.matchAll(/\[contact:([^\]]+)\]/g)].map((match) => match[1]);
   const recommendations: unknown[] = [];
 

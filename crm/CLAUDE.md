@@ -246,6 +246,7 @@ disponible localement.
 | `DATABASE_URL` | phase 1 | connexion PostgreSQL |
 | `WORKSPACE_PASSWORD` | **jalon 9, obligatoire** | mot de passe unique de l'espace + clé de signature des sessions |
 | `ANTHROPIC_API_KEY` | phase 3 | conseil d'agents — **serveur uniquement** |
+| `SMTP_PASSWORD` | **jalon 32** | mot de passe de la boîte d'envoi — **serveur uniquement**, jamais en base |
 | `AGENT_ETIENNE_ENABLED` | phase 4 | drapeau de l'agent verrouillé |
 
 Aucune clé n'est lue côté client. Tout appel Anthropic passe par une route
@@ -342,6 +343,8 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 28 | **Cycle de vie terminal** — « Perdu » gagne sur le statut de relance ; tiroir durci | **livré, à valider** |
 | 29 | **La règle terminale devient structurelle** — appliquée à la lecture, une seule porte, garde statique | **livré, à valider** |
 | 30 | **La fiche close se lit « Perdu »** — le cycle de vie devient le statut affiché, en gris, trié en fin | **livré, à valider** |
+| 31 | **« Déjà contactés » retirée** — six puces, la valeur reste valide pour l'entonnoir | **livré, à valider** |
+| 32 | **Emails** — conseil réduit à Alex et Sabrina, SMTP IONOS, mise en forme fidèle, rédaction depuis un échange | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -3498,7 +3501,10 @@ où chaque bande devait mener quelque part. Recommandation : **retirer « Déjà
 contactés »** (strictement complémentaire de « Jamais contacté », donc du bruit)
 et **garder « Contactés cette semaine » et « Ont répondu »**, qui ne se
 déduisent d'aucune autre — au prix de conserver leur cible pour les liens de
-l'entonnoir. Cinq puces plutôt que sept.
+l'entonnoir. Six puces plutôt que sept.
+
+*(Décidé au jalon 31 : retrait appliqué. Le compte annoncé ici disait d'abord
+« cinq », ce qui était une erreur d'arithmétique — sept moins une en fait six.)*
 
 **Les chiffres viennent d'une base reconstituée**, pas de la vôtre. La
 répartition de production différera ; le mécanisme, lui, est celui-ci.
@@ -3895,3 +3901,281 @@ décrit le mieux.
 
 **La seconde rangée de puces n'est toujours pas réduite** — décision en attente
 depuis le jalon 27.
+
+---
+
+## Jalon 31 — une puce en moins, et pas une vue en moins
+
+Décision prise par le propriétaire du produit, en attente depuis le jalon 27 :
+**retirer « Déjà contactés », garder les autres.** Six puces au lieu de sept.
+
+Correction d'arithmétique au passage : le jalon 27 annonçait « cinq puces
+plutôt que sept » pour une seule suppression. C'était faux, et le chiffre est
+rectifié là où il a été écrit.
+
+### Pourquoi celle-là
+
+« Déjà contactés » retient les fiches ayant au moins une interaction réelle —
+c'est le **complément exact** de « Jamais contacté ». Deux puces qui partagent
+la même frontière font choisir entre deux formulations d'une seule question, et
+celle-ci sortait toujours tout le reste du portefeuille, ce que « Tous » fait
+déjà.
+
+Les deux autres de la rangée restent : « Contactés cette semaine » et « Ont
+répondu » ne se déduisent d'aucune autre.
+
+### La valeur reste valide — et c'est le point
+
+**Retirer la puce n'est pas retirer la vue.** La bande « contactés » de
+l'entonnoir de l'accueil pointe sur `/contacts?lifecycle=all&followUp=contacted`,
+et des vues mises en favori aussi. Supprimer la valeur casserait un lien qui
+fonctionne, pour ne rien gagner : ce qu'on retire, c'est la question posée deux
+fois dans la barre de filtres, pas la lecture qu'ouvre l'entonnoir.
+
+D'où la séparation, dans `lib/domain/follow-up.ts`, entre deux notions qui
+n'étaient qu'une :
+
+| | Contenu | Rôle |
+|---|---|---|
+| `CONTACT_FILTERS` | les 7 valeurs | ce que l'URL et le schéma Zod acceptent |
+| `CONTACT_CHIPS` | les 6 proposées | ce que la barre de filtres affiche |
+
+`isChipFilter()` tranche entre les deux. `HIDDEN_CHIPS` liste les exceptions —
+aujourd'hui `contacted` seule.
+
+### Le filtre orphelin s'affiche quand même
+
+Un filtre actif sans puce serait invisible : la liste serait filtrée, rien à
+l'écran ne dirait lequel, et on ne pourrait l'annuler qu'en éditant l'URL.
+C'est exactement l'écran qui ment que « Filtres · 1 actif » cherche à empêcher
+depuis le jalon 21.
+
+`ContactChips` rend donc une puce de rattrapage **tant que le filtre est
+actif** : elle porte son libellé, elle est marquée active, et un clic la
+retire. Elle disparaît dès qu'on choisit autre chose. Arriver par l'entonnoir
+donne donc exactement la même barre qu'avant, plus une puce ; partir de
+`/contacts` n'en montre que six.
+
+### Jalon 31 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (154 fiches) et le serveur standalone :
+
+- **barre par défaut** : `["Tous", "À relancer (15 · 6 en retard)", "Sans
+  nouvelles", "Jamais contacté", "Statut figé", "Contactés cette semaine", "Ont
+  répondu", "Contacts incomplets (1)"]` — **« Déjà contactés » absente** ;
+- **arrivée par l'entonnoir** (`?followUp=contacted`) : la puce apparaît, elle
+  est **active**, la liste rend 15 lignes, et le bouton annonce
+  « Filtres · 1 actif » ;
+- **la bande de l'entonnoir existe toujours** sur `/` et pointe bien sur
+  `/contacts?lifecycle=all&followUp=contacted` ; elle ouvre les 15 mêmes lignes ;
+- **0 réponse HTTP ≥ 400, 0 erreur console** ;
+- trois tests fixent la décision : le jeu des six puces dans l'ordre, le fait
+  que `contacted` reste une valeur valide sans puce, et que toute valeur sans
+  puce garde un libellé — sans quoi la puce de rattrapage sortirait vide ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**623 tests**) verts.
+
+### Jalon 31 — ce qui ne l'est pas
+
+**La puce de rattrapage n'a pas de test de rendu**, comme tout le reste des
+composants clients de ce projet : elle est vérifiée dans un navigateur piloté,
+pas par la suite, qui n'a pas de DOM.
+
+**`emptyFilterMessage("contacted")` est conservé** : la valeur reste
+atteignable, donc son état vide doit continuer de nommer sa règle. Ce n'est pas
+du code mort.
+
+---
+
+## Jalon 32 — les emails, et un conseil réduit à deux
+
+### Le conseil : deux visibles, neuf définis
+
+Alex (Emails) et Sabrina (Directrice des Opérations) sont seuls affichés. Les
+sept autres — Victor, Oxana, Noah, Sarah, Héloïse, Étienne, Brutus — sont
+**désactivés, pas supprimés** : `enabled = false` en base, définitions
+conservées dans le code.
+
+**Leurs données sont intactes et interrogeables.** Vérifié sur la base de
+production reconstituée : Sarah, désactivée, garde ses 3 conversations, sa
+recommandation et sa vacation. Réactiver un agent est un interrupteur dans
+`/reglages` ; le supprimer aurait été irréversible.
+
+Quatre surfaces devaient respecter `enabled`, et **deux ne le faisaient pas** :
+
+| Surface | État |
+|---|---|
+| roster et bande de `/conseil` | filtrait déjà |
+| `/reglages` → Conseil | montre tout le monde, c'est son rôle — c'est là qu'on réactive |
+| **lanceur de vacations** | **ne filtrait pas.** Sarah porte une vacation quotidienne : sans correctif, elle aurait continué d'appeler l'API tous les matins pour un agent que personne ne voit. Le filtre est dans `runAllShifts()`, pas dans la liste `SHIFTS` — l'activation est de la donnée, une liste écrite en dur ne peut pas la connaître |
+| **`POST /api/conversations`** | **ne vérifiait que le verrou d'environnement**, pas l'activation. Un agent retiré du conseil restait joignable par un appel direct : une porte que l'écran ne montre plus mais qui n'était pas fermée |
+
+### Alex
+
+`slug: "alex"`, prompt propre (`lib/agents/prompts/alex.ts`), quatre amorces,
+portrait téléversable comme les autres. **Outils en lecture seule**, et c'est
+délibéré : l'envoi n'est pas un outil d'agent. En faire un rendrait possible un
+courriel décidé par une boucle de modèle — or c'est la moins réversible des
+écritures, et « aucune écriture sans clic » l'interdit. Alex propose un texte ;
+c'est un formulaire relu par un humain qui déclenche l'envoi.
+
+### La mise en forme, qui est le vrai sujet
+
+`lib/domain/email-format.ts`, **pur et testé** : les règles se vérifient sans
+réseau, ce qui compte parce qu'elles sont exactement le genre de chose qu'on
+croit juste en lisant le code et qui se révèle fausse à la réception.
+
+- `text/plain` **et** `text/html`, en `multipart/alternative` ;
+- le texte n'est **pas reformaté** : aucune coupure à 72 colonnes, aucune
+  retouche. Les lignes vides séparent les paragraphes, les fins de ligne
+  internes sont conservées ;
+- le HTML n'est que des `<p>`, avec `<br>` pour les fins de ligne internes.
+  Aucun style, aucune police, aucune couleur, aucun tableau, aucune image,
+  aucun pixel de suivi. Un test énumère les huit motifs interdits ;
+- un test croisé vérifie que **les deux parties comptent le même nombre de
+  paragraphes** — sans quoi elles se contrediraient selon le client ;
+- `sanitizeSubject()` coupe les fins de ligne : le sujet vient d'un champ libre
+  et, désormais, d'un modèle. Un retour à la ligne dans un en-tête est une
+  injection, pas un détail d'affichage.
+
+`Message-ID` porte **le domaine de l'expéditeur** : celui de nodemailer aurait
+porté le nom d'hôte de la machine, donc un identifiant de conteneur Railway —
+un signal négatif pour les filtres.
+
+### SMTP, et le mot de passe qui n'entre pas en base
+
+Configuration en base (hôte, port, chiffrement, identifiant, adresse et nom
+d'expédition), **mot de passe dans `SMTP_PASSWORD` uniquement**. `lib/api/mail.ts`
+porte `import "server-only"` ; aucune fonction ne rend la valeur ; le panneau
+apprend seulement si elle est **définie**. Conséquence voulue : une sauvegarde
+JSON, un export ou un `SELECT * FROM settings` ne peuvent pas la contenir.
+`no-key-in-bundle.test.ts` cherche désormais `SMTP_PASSWORD` en plus de la clé
+Anthropic.
+
+`requireTLS` est posé en mode STARTTLS : sans lui, un serveur qui n'annonce pas
+STARTTLS ferait passer le mot de passe en clair sans rien dire.
+
+**« Tester l'envoi » rend l'erreur du serveur, pas un « échec ».** Même leçon
+qu'au jalon 16 : `describeSmtpError()` distingue authentification refusée,
+connexion impossible, délai dépassé et expéditeur refusé, **et cite la réponse
+brute**. Vérifié avec un mauvais mot de passe : « Authentification refusée par
+le serveur : identifiant ou mot de passe incorrect. Réponse du serveur : 535
+5.7.8 Error: authentication failed: bad credentials (code EAUTH) ».
+
+**La réception est hors périmètre, et le panneau le dit en toutes lettres** pour
+qu'on n'attende pas dans le CRM des réponses qui arrivent dans la messagerie.
+
+### Envoyer, puis consigner — l'ordre n'est pas symétrique
+
+`sendEmailToContact()` envoie **d'abord**, consigne ensuite. Une interaction
+écrite pour un message que SMTP a refusé serait un mensonge indiscernable d'un
+envoi réussi ; un envoi réussi dont la consignation échoue laisse un courriel
+réellement parti et une erreur à l'écran — désagréable, mais vrai.
+
+L'interaction est de type `email`, porte **objet et corps** (« je lui ai écrit
+quoi, déjà ? » se répond depuis la chronologie), et **aucune issue** : on vient
+d'écrire, on ne sait pas encore si l'on a été lu. Renseigner une issue ferait
+entrer l'envoi dans le taux de réponse, qui ne compte que les échanges dont le
+résultat est connu.
+
+Un défaut trouvé à la vérification : l'interaction héritait du propriétaire de
+la fiche, **vide** sur beaucoup de contacts importés — l'envoi serait sorti des
+tableaux par propriétaire de `/rapports`. Elle passe désormais par
+`ownerOrDefault()`, comme le formulaire d'interaction.
+
+### Le déclencheur
+
+« Rédiger un email » apparaît sur la confirmation d'interaction, **quelle que
+soit l'issue** : un « pas de réponse » est précisément le moment où l'on écrit.
+L'identifiant de l'échange voyage jusqu'au brouillon, et le contexte le
+**désigne** (`← L'ÉCHANGE QUI VIENT D'AVOIR LIEU`) plutôt que de le noyer dans
+la liste — sans quoi le message retomberait sur une relance générique.
+
+Le contexte est collecté par le serveur, pas cherché par le modèle : même
+principe que les briefings du jalon 14. Dix interactions au plus, le statut
+résolu, la société, les affaires. Trois conséquences : le message ne peut pas
+inventer un échange, il n'y a **aucun appel d'outil** donc une seule requête, et
+l'entrée est bornée.
+
+**L'adresse du destinataire est affichée en grand** dans le panneau, et c'est le
+seul ornement : se tromper de personne est la seule faute qu'aucune annulation
+ne rattrape. L'envoi part sans seconde confirmation, comme demandé — le texte
+est sous les yeux et modifiable jusqu'au dernier instant, donc le clic *est* la
+confirmation.
+
+Après l'envoi : le toast **nomme** le destinataire et son adresse, et propose
+une relance à date pré-remplie (délai « après un email » des réglages), jamais
+posée d'office.
+
+L'icône enveloppe rejoint le téléphone, le site et LinkedIn dans l'en-tête de
+la fiche — désactivée plutôt qu'absente quand le contact n'a pas d'adresse.
+
+### Jalon 32 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (154 fiches), migration `11_email` appliquée puis
+`migrate diff` **vide**, et un **puits SMTP local avec STARTTLS** qui écrit sur
+disque la source exactement telle qu'elle passe sur le fil :
+
+- **agents** : 2 actifs / 7 désactivés / 9 en base ; Sarah désactivée conserve
+  3 conversations, 1 recommandation, 1 vacation ; roster de `/conseil` =
+  `["Alex", "Sabrina"]`, aucun des six autres nulle part dans la page ;
+- **`/reglages` → Messagerie** : section présente, avertissement « les réponses
+  n'arrivent pas dans le CRM », **0 champ de saisie de mot de passe**, état
+  « Défini dans la variable SMTP_PASSWORD » ;
+- **« Tester l'envoi » cliqué dans le navigateur** → « Message d'essai envoyé à
+  yanis@… », message reçu en **deux paragraphes séparés d'une ligne vide** ;
+- **mauvais mot de passe** → l'erreur SMTP citée avec son code 535 et la réponse
+  du serveur ;
+- **source brute du message reçu** : `From` avec nom affiché, `To`, `Reply-To`,
+  `Subject` encodé UTF-8, `Message-ID` au domaine de l'expéditeur, `Date`,
+  `multipart/alternative`. Partie texte décodée **identique au caractère près**
+  au brouillon, 5 paragraphes, signature sur deux lignes sans blanc parasite ;
+  partie HTML 5 `<p>` et 2 `<br>`, **aucun** style/police/couleur/tableau/image ;
+  **aucune** occurrence de « sent from », « envoyé depuis », `X-Mailer`,
+  « nodemailer », « unsubscribe » ni du nom du produit ;
+- **parcours complet dans le navigateur** : appel consigné avec « Pas de
+  réponse » → bouton « Rédiger un email » sur la confirmation → panneau avec
+  destinataire en 19 px, objet, corps en 4 paragraphes → envoi → toast
+  « Email envoyé à Sandra Giner (sandra@mymosa.fr) » ;
+- **consignation** : interaction `email`, issue vide, notes portant objet et
+  corps, `lastContact` avancé ; contact sans adresse → refus **sans rien
+  consigner** ;
+- **étanchéité** : ni le secret ni `SMTP_PASSWORD` dans `.next/static` ;
+  `GET /api/mail` rend `passwordSet: true` et jamais la valeur ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**647 tests**) verts.
+
+### Jalon 32 — ce qui n'est pas vérifié
+
+**Aucun message n'est parti vers IONOS depuis cet environnement.** Il n'y a ni
+identifiants ni accès sortant SMTP ici : tout ce qui précède a été exercé contre
+un puits local qui parle le protocole (EHLO, STARTTLS, AUTH PLAIN, DATA) et
+écrit la source reçue. Ce que cela établit : la mise en forme, les en-têtes, la
+consignation, la traduction des erreurs, l'étanchéité du secret. Ce que cela
+n'établit pas : que `smtp.ionos.fr` accepte vos identifiants, et le rendu dans
+votre client de messagerie. **Le premier clic sur « Tester l'envoi » en
+production est le seul juge** — et c'est précisément pour cela que ce bouton
+existe et qu'il cite la réponse du serveur.
+
+**Aucun appel Anthropic réel.** Le brouillon a été exercé contre
+`scripts/mock-anthropic.ts`, étendu pour ce jalon : il **renvoie le contexte
+reçu** dans le corps du message, ce qui prouve que le dossier réel du contact —
+l'échange désigné compris — atteint bien le modèle. Vérifié : le brouillon
+contient « 17 août 26 · Appel — Pas de réponse ». Ce qui reste à établir, c'est
+qu'Alex *écrive bien* : la qualité du texte relève du modèle et du prompt.
+
+**Un défaut du puits a failli passer pour un défaut du produit.** La première
+lecture montrait une ligne vide parasite entre « Bien à vous, » et « Yanis ».
+Cause : le puits découpait chaque paquet TCP isolément, coupant en deux toute
+ligne à cheval sur deux paquets. Corrigé dans le puits, pas dans le produit —
+et c'est la raison pour laquelle la vérification compare la partie texte
+**décodée** au brouillon d'origine caractère par caractère, plutôt que de se
+fier à une lecture à l'œil.
+
+**Le lien de suivi des réponses n'existe pas.** Aucun `In-Reply-To`, aucun
+`References`, aucune boîte lue : une réponse du prospect arrive dans la
+messagerie et n'apparaîtra pas dans le CRM. C'est le périmètre demandé, et le
+panneau le dit.
+
+**`@types/nodemailer` est en `dependencies`**, pas en `devDependencies` — même
+posture défensive que `prisma` et `tsx` (voir § Déploiement) : un élagage des
+dépendances de développement avant le build casserait le typecheck. C'est
+quelques kilo-octets inutiles en production, assumés.
