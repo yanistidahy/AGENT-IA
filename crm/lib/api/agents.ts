@@ -130,7 +130,7 @@ export async function findAgentProfile(slug: string): Promise<AgentProfile | nul
  * C'est le seul chemin par lequel un prompt doit être construit : il est le
  * seul à connaître à la fois le fichier de personnalité et le nom réglé.
  */
-export async function promptForAgent(slug: string): Promise<string | null> {
+export async function promptForAgent(slug: string, extra?: string): Promise<string | null> {
   const definition = findAgent(slug);
   if (definition === undefined) return null;
 
@@ -144,7 +144,7 @@ export async function promptForAgent(slug: string): Promise<string | null> {
     colleagues: profiles
       .filter((profile) => profile.slug !== slug && profile.enabled && !profile.locked)
       .map((profile) => ({ name: profile.name, role: profile.role })),
-  });
+  }, extra);
 }
 
 /** L'agent ouvert par défaut, en respectant l'activation et l'ordre. */

@@ -1,5 +1,5 @@
 import { ALEX } from "./prompts/alex";
-import { SALES_WRITING_RULES, SIGNATURE_RULE } from "./prompts/company";
+import { SALES_WRITING_RULES, WRITING_SHAPE } from "./prompts/company";
 import { SABRINA } from "./prompts/sabrina";
 import { BRUTUS } from "./prompts/brutus";
 import { ETIENNE } from "./prompts/etienne";
@@ -62,7 +62,11 @@ export const AGENTS: readonly AgentDefinition[] = [
     persona: ALEX,
     // Ce qu'Alex ne doit jamais écrire, et comment il signe. Les deux vivent
     // dans `prompts/company.ts`, avec le positionnement qu'ils protègent.
-    rules: `${SALES_WRITING_RULES}\n\n${SIGNATURE_RULE}`,
+    // La forme et les interdits sont statiques. La signature et le lien de
+    // démonstration, eux, viennent des réglages : ils sont ajoutés au moment de
+    // construire le prompt (voir `promptForAgent`), sans quoi une valeur figée
+    // ici contredirait l'écran le jour où on la change.
+    rules: `${SALES_WRITING_RULES}\n\n${WRITING_SHAPE}`,
     /**
      * **Lectures seules.** Alex lit l'historique pour écrire juste ; il n'écrit
      * rien en base. L'envoi lui-même n'est pas un outil d'agent : il part d'un
@@ -200,8 +204,14 @@ export function isReadOnly(agent: AgentDefinition): boolean {
  * évite qu'un appelant oublie de le faire et laisse l'agent se présenter sous
  * son nom d'usine.
  */
-export function systemPromptFor(agent: AgentDefinition, identity: PromptIdentity): string {
-  return buildSystemPrompt(agent.persona, identity, agent.rules);
+export function systemPromptFor(
+  agent: AgentDefinition,
+  identity: PromptIdentity,
+  /** Règles calculées depuis les réglages — signature, lien de démonstration. */
+  extra?: string,
+): string {
+  const rules = [agent.rules, extra].filter((part) => part !== undefined && part !== "").join("\n\n");
+  return buildSystemPrompt(agent.persona, identity, rules === "" ? undefined : rules);
 }
 
 /**

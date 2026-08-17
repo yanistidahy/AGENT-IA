@@ -9,6 +9,7 @@ import {
 } from "../messages";
 import { findAgent, isUnlocked, type AgentDefinition } from "../registry";
 import { findAgentProfile, promptForAgent } from "@/lib/api/agents";
+import { alexDynamicRules, DRAFT_PROTOCOL } from "@/lib/agents/alex-rules";
 import { findTool, toolsFor } from "../tools";
 import { anthropic, describeAnthropicError, logAnthropicError } from "./client";
 import { conversationRequest } from "./request";
@@ -238,7 +239,13 @@ export function streamConversation(
           return;
         }
 
-        const systemPrompt = await promptForAgent(agentId);
+        // Alex écrit des emails dans **tous** ses fils, y compris ceux ouverts
+        // depuis le rail : sa signature, son lien et le protocole de brouillon
+        // font partie de son prompt, pas d'un contexte particulier.
+        const extra =
+          agentId === "alex" ? `${await alexDynamicRules()}\n\n${DRAFT_PROTOCOL}` : undefined;
+
+        const systemPrompt = await promptForAgent(agentId, extra);
         if (systemPrompt === null) throw new Error(`Prompt introuvable : ${agentId}`);
 
         const options: RunOptions = {

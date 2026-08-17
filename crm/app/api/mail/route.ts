@@ -24,6 +24,14 @@ const configSchema = z.object({
   user: z.string().trim().max(200),
   from: z.union([z.literal(""), z.email("Adresse d'expédition invalide")]),
   fromName: z.string().trim().max(120),
+  signName: z.string().trim().max(80),
+  signTitle: z.string().trim().max(120),
+  demoLabel: z.string().trim().max(80),
+  /**
+   * Vide **est** une valeur valide : elle demande à Alex de supprimer la phrase
+   * de démonstration. Exiger une URL forcerait à en inventer une.
+   */
+  demoUrl: z.union([z.literal(""), z.url("Adresse du lien invalide")]),
 });
 
 export async function GET() {
@@ -49,6 +57,10 @@ export async function PATCH(request: Request) {
       smtpUser: parsed.data.user,
       smtpFrom: parsed.data.from,
       smtpFromName: parsed.data.fromName,
+      signName: parsed.data.signName,
+      signTitle: parsed.data.signTitle,
+      demoLabel: parsed.data.demoLabel,
+      demoUrl: parsed.data.demoUrl,
     };
 
     await prisma.settings.upsert({

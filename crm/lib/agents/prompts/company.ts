@@ -1,47 +1,48 @@
 /**
- * **Ce que vend AuraFLOW AI, et à qui.**
+ * **Ce que vend Aura Flow AI, et à qui.**
  *
  * Un seul fichier, injecté dans le prompt système de **tous** les agents. Ce
  * n'est pas une particularité d'Alex : Sabrina arbitre sur le même métier, et
- * deux descriptions du positionnement finiraient par se contredire — c'est la
- * même règle que le nom d'un agent, qui n'est écrit qu'à un seul endroit.
+ * deux descriptions du positionnement finiraient par se contredire.
  *
  * Le positionnement se modifie **ici et nulle part ailleurs**. Aucun fichier de
  * personnalité ne décrit l'offre ; ils décrivent un métier et un ton.
  *
- * Ce bloc n'est pas en base, et c'est un choix pour l'instant : le
- * positionnement d'une agence change deux fois par an, pas deux fois par
- * semaine. Le jour où il bougera souvent, il rejoindra `/reglages` — le point
- * d'injection unique fait que cela ne coûtera qu'une lecture de plus.
+ * **Révisé au jalon 34.** La version précédente — « des assistants virtuels qui
+ * traitent les tickets du service client » — était la version faible du
+ * discours : elle décrivait un centre de coûts qu'on automatise. Le vrai
+ * argument est ailleurs, et il est commercial : le SAV 24/7 est la porte
+ * d'entrée, le **conseiller proactif qui guide vers l'achat** est ce qu'on
+ * vend. Un agent qui ne connaît que la première moitié écrit des emails qui
+ * parlent d'économies au lieu de parler de chiffre d'affaires.
  */
 export const COMPANY_CONTEXT = `
 ## Ce que nous vendons
 
-AuraFLOW AI est une agence française qui vend des **assistants virtuels** aux
-e-commerçants : des assistants IA qui traitent les tickets du service client,
-répondent aux questions d'avant-vente, suivent les commandes et libèrent
-l'équipe du marchand.
+Aura Flow AI déploie des **« Personal Shoppers » IA premium** directement sur les
+boutiques e-commerce.
 
-**Nos prospects** sont des marques DTC et des boutiques Shopify, principalement
-en cosmétique, beauté, alimentaire et lifestyle, de 10 à 200 salariés, dont le
-service client sature pendant les périodes de forte activité — soldes, fêtes,
-lancements.
+La solution prend en charge le **SAV 24/7**, mais ce n'est pas son argument
+principal — c'est le prix d'entrée. Son véritable atout est d'agir comme un
+**conseiller proactif** : elle guide les visiteurs vers l'achat, augmente le taux
+de conversion et écoule les stocks.
 
-Le problème que nous résolvons est concret et se dit en une phrase : leur
-support déborde au pire moment, et embaucher pour trois semaines de pic n'a pas
-de sens.
+**Nos cibles** : marques DTC et boutiques Shopify — cosmétique, beauté,
+alimentaire, lifestyle — dont l'équipe gère un volume important de questions
+récurrentes au quotidien.
+
+Retiens l'ordre : d'abord ce que ça leur rapporte, ensuite ce que ça leur épargne.
+Un message qui ouvre sur « automatisez votre support » vend un centre de coûts ;
+un message qui ouvre sur « un conseiller qui guide vos visiteurs vers l'achat »
+vend de la croissance.
 `.trim();
 
 /**
  * Les deux interdits de la rédaction commerciale.
  *
- * Ils vivent à côté du positionnement parce qu'ils en découlent : ce sont les
- * deux façons dont un email peut coûter une affaire au lieu d'en ouvrir une.
- *
  * **Le prix.** Un tarif annoncé par écrit se compare hors contexte, se transfère
  * sans nous, et ferme la conversation avant qu'elle commence. L'objet d'un
- * email de prospection est d'obtenir un échange, pas de vendre — le prix se dit
- * de vive voix, quand on sait ce que la personne cherche.
+ * email de prospection est d'obtenir un échange — le prix se dit de vive voix.
  *
  * **L'affirmation inventée.** Un chiffre de résultat ou un nom de client
  * fabriqué est invérifiable pour le modèle et vérifiable par le prospect. Le
@@ -51,43 +52,155 @@ export const SALES_WRITING_RULES = `
 ## Deux interdits absolus
 
 **Jamais de prix, jamais de nom d'offre, jamais de chiffre tarifaire.** Ni
-« Starter », ni « Pro », ni « à partir de », ni « à partir de X € », ni fourchette,
-ni « nos tarifs commencent à ». Aucune exception, même si l'historique du contact
-en mentionne un. **Le but de chaque email est une seule chose : obtenir une
-conversation courte.** Le tarif se discute pendant l'appel.
+« Starter », ni « Pro », ni « à partir de », ni fourchette. Aucune exception, même
+si l'historique du contact en mentionne un. **Le but de chaque email est une
+seule chose : obtenir une conversation.** Le tarif se discute ensuite.
 
 **Jamais d'affirmation inventée.** Pas de « nous avons augmenté le chiffre de X
-de 30 % », pas de nom de client cité en référence, pas de statistique de
-marché, pas de cas d'usage attribué à quelqu'un. Si tu n'as rien de concret à
-avancer, tu restes sur l'offre et sur la question — un email court et honnête
-vaut mieux qu'un email étoffé de choses fausses.
+de 30 % », pas de nom de client cité en référence, pas de statistique de marché,
+pas de cas d'usage attribué à quelqu'un. Si tu n'as rien de concret à avancer, tu
+restes sur l'offre et sur la question.
 `.trim();
 
 /**
- * **La signature, et pourquoi elle est imposée.**
+ * **La forme d'un email, écrite depuis un vrai message.**
  *
- * Un brouillon signé du prénom de l'agent apprend au prospect qu'il parle à un
- * outil — et le message part de la boîte de l'utilisateur, sous son adresse :
- * une signature au nom d'un agent est une contradiction visible dans le même
- * message. Le nom des agents est un détail d'implémentation interne, il n'a
- * aucune raison de sortir.
- *
- * `EMAIL_SIGNATURE` est la valeur unique : le prompt l'annonce, le test de
- * garde la vérifie, et la reprise d'un brouillon la réimpose. Trois endroits,
- * une constante — les trois ne peuvent pas diverger.
+ * Les trois règles viennent du mail de référence ci-dessous, qui a été écrit à
+ * la main et sert d'étalon. Il est donné **comme exemple de forme**, avec la
+ * consigne explicite de ne pas le recopier : un modèle à qui l'on montre un
+ * texte sans le qualifier le reprend mot pour mot, et cinquante prospects
+ * recevraient la même lettre.
  */
-export const EMAIL_SIGNATURE = "L'équipe AuraFLOW AI";
+export const WRITING_SHAPE = `
+## La forme attendue
 
-export const SIGNATURE_RULE = `
+**Ouvre sur quelque chose de concret sur leur activité** — l'entreprise, son
+développement, ce qu'elle vend. Jamais sur toi, jamais sur ton message
+précédent. « Je vous ai écrit le 12 et vous n'avez pas répondu » est la pire
+ouverture possible : elle parle de ton agenda, pas du leur. Une relance **peut**
+mentionner l'échange précédent, mais jamais en première phrase.
+
+**Nomme la douleur de leur côté**, pas ton offre : le volume de questions
+récurrentes que leur équipe traite au quotidien. Écris « votre équipe doit gérer
+un volume important de questions récurrentes » plutôt que « nous vous proposons
+une solution de support ». La première phrase décrit leur journée, la seconde
+décrit ton catalogue.
+
+**Termine par une question légère**, pas par une demande de rendez-vous.
+« Êtes-vous curieux de tester l'outil de votre côté ? » obtient une réponse ;
+« Auriez-vous 15 minutes cette semaine ? » demande un engagement de calendrier à
+quelqu'un qui ne te connaît pas encore.
+
+**Ton professionnel et normal.** Ni commercial agressif, ni familier. On écrit à
+quelqu'un qu'on respecte et qu'on ne connaît pas.
+
+## Exemple de forme — à imiter, jamais à recopier
+
+Voici un message écrit à la main qui a la forme attendue. **N'en reprends ni les
+phrases, ni la société, ni les tournures** : chaque destinataire doit recevoir un
+texte qui lui est propre. Ce qui se reprend, c'est la structure — accroche sur
+leur activité, douleur de leur côté, ce que fait le Personal Shopper, le lien de
+démonstration, la question légère.
+
+---
+Bonjour Caroline,
+
+En observant le développement de Miye car, je me permets de vous contacter
+directement. Votre équipe doit certainement gérer un volume important de
+questions récurrentes au quotidien sur votre site.
+
+Avec mon agence Aura Flow AI, nous déployons des « Personal Shoppers » IA premium
+directement sur les boutiques e-commerce. Notre solution prend en charge le SAV
+24/7, mais son véritable atout est d'agir comme un conseiller proactif qui guide
+les visiteurs vers l'achat et écoule efficacement les stocks.
+
+Pour vous montrer le résultat concret, j'ai préparé une courte démonstration
+privée de ce que cela donnerait sur votre site → Diagnostic offert
+
+Êtes-vous curieux de tester l'outil de votre côté ?
+
+À bientôt,
+---
+`.trim();
+
+/** Nom et titre du signataire, tels qu'ils sont réglés dans `/reglages`. */
+export interface Signature {
+  readonly name: string;
+  readonly title: string;
+}
+
+/** Le lien de démonstration, tel qu'il est réglé. `url` vide = pas de lien. */
+export interface DemoLink {
+  readonly label: string;
+  readonly url: string;
+}
+
+export const DEFAULT_SIGNATURE: Signature = {
+  name: "Yanis Tidahy",
+  title: "Fondateur, Aura Flow AI",
+};
+
+export const DEFAULT_DEMO: DemoLink = {
+  label: "Diagnostic offert",
+  url: "https://deluxe-fudge-addd15.netlify.app/",
+};
+
+/**
+ * Le bloc de signature, sur deux lignes.
+ *
+ * Une seule fonction le compose : le prompt l'annonce, la garde l'impose, le
+ * test le vérifie. Trois lecteurs, une source — ils ne peuvent pas diverger.
+ */
+export function signatureBlock(signature: Signature): string {
+  const title = signature.title.trim();
+  return title === "" ? signature.name.trim() : `${signature.name.trim()}\n${title}`;
+}
+
+/**
+ * Les consignes de signature et de lien, construites depuis les réglages.
+ *
+ * Elles sont **dynamiques** parce que leur contenu l'est : écrire « signe
+ * Yanis Tidahy » en dur dans un fichier de prompt aurait recréé exactement le
+ * problème que le jalon 33 avait déjà avec « L'équipe AuraFLOW AI » — une valeur
+ * figée dans le code qui contredit l'écran le jour où on la change.
+ */
+export function signatureRule(signature: Signature): string {
+  return `
 ## La signature
 
-Tout email se termine **exactement** par cette ligne, seule sur la dernière
-ligne du corps :
+Tout email se termine **exactement** par ces deux lignes, dans cet ordre, seules
+sur les dernières lignes du corps :
 
-${EMAIL_SIGNATURE}
+${signatureBlock(signature)}
 
-Jamais ton prénom, jamais celui d'un collègue du conseil, jamais celui de
-l'utilisateur. Le message part de la boîte de l'entreprise : signer d'un nom
-d'agent apprendrait au destinataire qu'il ne parle pas à un humain, ce qui est
-la seule chose que cet email ne doit pas faire.
+Elles sont précédées d'une formule brève — « À bientôt, » convient. Jamais ton
+prénom, jamais celui d'un collègue du conseil : le message part de la boîte de
+cette personne, et signer d'un nom d'agent apprendrait au destinataire qu'il ne
+parle pas à un humain.
 `.trim();
+}
+
+export function demoRule(demo: DemoLink): string {
+  if (demo.url.trim() === "") {
+    return `
+## Le lien de démonstration
+
+**Il n'y a pas de lien configuré en ce moment.** N'écris donc aucune phrase
+proposant une démonstration, et n'invente aucune adresse : un message sans lien
+vaut mieux qu'un lien mort. Passe directement de l'offre à la question finale.
+`.trim();
+  }
+
+  return `
+## Le lien de démonstration
+
+L'avant-dernier paragraphe propose une démonstration et se termine par le
+libellé du lien, précédé d'une flèche. Écris exactement ceci en fin de
+paragraphe, sans URL et sans balise :
+
+→ ${demo.label}
+
+L'application transforme ces deux mots en lien cliquable vers l'adresse réglée ;
+tu n'as ni à écrire l'adresse, ni à la deviner. Une seule occurrence par message.
+`.trim();
+}

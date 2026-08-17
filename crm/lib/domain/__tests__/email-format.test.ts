@@ -131,3 +131,79 @@ describe("les deux parties disent la même chose", () => {
     }
   });
 });
+
+
+/**
+ * Le lien de démonstration : une ancre en HTML, une adresse lisible en texte.
+ *
+ * Les deux moitiés du problème sont réelles. En HTML, « → Diagnostic offert »
+ * seul ne mène nulle part ; en texte brut, une ancre n'existe pas — un client
+ * texte affiche le libellé et perd l'adresse. Il faut donc **deux rendus
+ * différents du même paragraphe**, et c'est exactement ce qu'une partie
+ * `multipart/alternative` permet.
+ */
+const DEMO = { label: "Diagnostic offert", url: "https://deluxe-fudge-addd15.netlify.app/" };
+
+const AVEC_LIEN = `Bonjour Caroline,
+
+Votre équipe doit gérer un volume important de questions récurrentes.
+
+Pour vous montrer le résultat concret, j'ai préparé une courte démonstration privée → Diagnostic offert
+
+Êtes-vous curieux de tester l'outil de votre côté ?
+
+À bientôt,
+
+Yanis Tidahy
+Fondateur, Aura Flow AI`;
+
+describe("lien de démonstration", () => {
+  it("devient une vraie ancre en HTML", () => {
+    const html = toHtml(AVEC_LIEN, DEMO);
+    expect(html).toContain(`<a href="${DEMO.url}">Diagnostic offert</a>`);
+    // Ni bouton, ni style, ni paramètre de suivi : un lien maquillé se voit, et
+    // un `?utm_` contredit la « démonstration privée » que la phrase annonce.
+    expect(html).not.toContain("style=");
+    expect(html).not.toContain("utm_");
+    expect(html).not.toContain("<button");
+  });
+
+  it("montre l'adresse en texte brut, puisqu'un client texte ne sait pas la rendre", () => {
+    const plain = toPlainText(AVEC_LIEN, DEMO);
+    expect(plain).toContain(`Diagnostic offert : ${DEMO.url}`);
+  });
+
+  it("garde la flèche et la structure du paragraphe dans les deux versions", () => {
+    expect(toPlainText(AVEC_LIEN, DEMO)).toContain("→ Diagnostic offert :");
+    expect(toHtml(AVEC_LIEN, DEMO)).toContain("→ <a href=");
+  });
+
+  it("ne pose qu'une seule ancre, même si le libellé revient", () => {
+    // Transformer chaque mention en lien produirait un message truffé d'ancres.
+    const deux = "Un Diagnostic offert ici.\n\nEt un Diagnostic offert là.";
+    expect(toHtml(deux, DEMO).match(/<a /g)).toHaveLength(1);
+  });
+
+  it("n'ajoute rien quand l'URL est vide", () => {
+    const sans = { label: "Diagnostic offert", url: "" };
+    expect(toHtml(AVEC_LIEN, sans)).not.toContain("<a ");
+    expect(toPlainText(AVEC_LIEN, sans)).not.toContain("https://");
+  });
+
+  it("n'ajoute rien quand le libellé est absent du corps", () => {
+    const corps = "Bonjour,\n\nUne question.";
+    expect(toHtml(corps, DEMO)).not.toContain("<a ");
+    expect(toPlainText(corps, DEMO)).not.toContain("https://");
+  });
+
+  it("échappe l'URL comme le reste : une adresse est du texte", () => {
+    const piege = { label: "Diagnostic offert", url: 'https://x.test/?a="b' };
+    expect(toHtml(AVEC_LIEN, piege)).toContain('href="https://x.test/?a=&quot;b"');
+  });
+
+  it("les deux parties gardent le même nombre de paragraphes", () => {
+    const plain = toPlainText(AVEC_LIEN, DEMO).split("\n\n").filter((b) => b.trim() !== "");
+    const html = toHtml(AVEC_LIEN, DEMO).match(/<p>/g) ?? [];
+    expect(html.length).toBe(plain.length);
+  });
+});

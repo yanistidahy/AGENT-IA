@@ -330,6 +330,21 @@ model Settings {
   smtpFrom       String  @default("")
   smtpFromName   String  @default("")
 
+  /// Signature des emails : ce qui clôt chaque brouillon.
+  ///
+  /// En base et non en code : l'associé signe de son propre nom, et changer de
+  /// signataire ne doit pas demander un déploiement.
+  signName  String @default("Yanis Tidahy")
+  signTitle String @default("Fondateur, Aura Flow AI")
+
+  /// Lien de démonstration proposé dans le corps du message.
+  ///
+  /// `demoUrl` vide **supprime la phrase entière** plutôt que d'écrire un lien
+  /// mort : un lien qui ne mène nulle part dans un premier contact coûte plus
+  /// que l'absence de lien.
+  demoLabel String @default("Diagnostic offert")
+  demoUrl   String @default("https://deluxe-fudge-addd15.netlify.app/")
+
   @@map("settings")
 }
 

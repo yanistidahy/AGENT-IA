@@ -16,6 +16,10 @@ const CONFIG = {
   user: "yanis@exemple.fr",
   from: "yanis@exemple.fr",
   fromName: "Yanis",
+  signName: "Yanis Tidahy",
+  signTitle: "Fondateur, Aura Flow AI",
+  demoLabel: "Diagnostic offert",
+  demoUrl: "https://exemple.test/",
 };
 
 describe("ce qui manque pour envoyer", () => {

@@ -346,6 +346,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 31 | **« Déjà contactés » retirée** — six puces, la valeur reste valide pour l'entonnoir | **livré, à valider** |
 | 32 | **Emails** — conseil réduit à Alex et Sabrina, SMTP IONOS, mise en forme fidèle, rédaction depuis un échange | **livré, à valider** |
 | 33 | **Les agents dans le rail** — panneau latéral, contexte entreprise, signature imposée, reprise du brouillon | **livré, à valider** |
+| 34 | **Le vrai pitch** — Personal Shoppers, signature et lien réglables, conversation avec Alex | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -4338,3 +4339,174 @@ sur `EADDRINUSE`, si bien que le navigateur testait l'ancien binaire. Le
 correctif était juste, la mesure était fausse. Toujours lire les deux premières
 lignes du journal du serveur avant de conclure, et vérifier qu'un `kill` a
 réellement libéré le port.
+
+---
+
+## Jalon 34 — le vrai discours, et une conversation plutôt qu'un formulaire
+
+### Le pitch était la version faible de lui-même
+
+`COMPANY_CONTEXT` disait « des assistants virtuels qui traitent les tickets du
+service client ». C'est vrai et c'est mauvais : cela décrit un **centre de coûts
+qu'on automatise**. Le vrai argument est commercial.
+
+> Aura Flow AI déploie des « Personal Shoppers » IA premium sur les boutiques
+> e-commerce. La solution prend en charge le SAV 24/7, mais son véritable atout
+> est d'agir comme un **conseiller proactif** : elle guide les visiteurs vers
+> l'achat, augmente le taux de conversion et écoule les stocks.
+
+Le fichier porte désormais l'ordre explicitement : « d'abord ce que ça leur
+rapporte, ensuite ce que ça leur épargne ». Un test refuse le retour de l'ancienne
+formule.
+
+### Trois règles, tirées d'un vrai message
+
+Le mail de référence a été écrit à la main par le propriétaire du produit. Les
+trois règles en sont extraites, et le message lui-même entre dans le prompt
+**marqué comme exemple** :
+
+| Règle | Ce qu'elle interdit |
+|---|---|
+| Ouvrir sur quelque chose de concret sur **leur** activité | « je vous ai écrit le 12 et vous n'avez pas répondu » — cela parle de notre agenda |
+| Nommer la douleur **de leur côté** | « nous vous proposons une solution de support » — cela décrit notre catalogue |
+| Clore sur une **question légère** | « auriez-vous 15 minutes ? » — un engagement de calendrier avant de se connaître |
+
+**L'exemple est explicitement qualifié** — « à imiter, jamais à recopier », et
+« n'en reprends ni les phrases, ni la société ». Un modèle à qui l'on montre un
+texte sans le qualifier le reprend mot pour mot, et cinquante prospects
+recevraient la même lettre. Un test vérifie que cette mise en garde est présente.
+
+### Signature et lien : de la donnée, plus du code
+
+Quatre colonnes en base (migration `12_pitch`), réglables dans
+`/reglages` → Messagerie :
+
+| Réglage | Défaut |
+|---|---|
+| Nom du signataire | `Yanis Tidahy` |
+| Titre | `Fondateur, Aura Flow AI` |
+| Libellé du lien | `Diagnostic offert` |
+| URL du lien | l'adresse Netlify |
+
+Le jalon 33 avait figé « L'équipe AuraFLOW AI » dans un fichier de prompt : une
+valeur en dur qui contredit l'écran le jour où on la change. Elles sont donc
+lues à chaque construction de prompt, par `alexDynamicRules()` — **un seul
+module, deux appelants** (la rédaction en un coup et la conversation), pour que
+les deux ne divergent pas.
+
+**Une URL vide supprime la phrase**, elle ne produit pas un lien mort : la
+consigne devient « n'invente aucune adresse, passe directement de l'offre à la
+question ».
+
+### Le lien, rendu deux fois
+
+Le même paragraphe doit exister sous deux formes, parce qu'un client texte ne
+sait pas rendre une ancre :
+
+```
+text/plain :  … sur votre site → Diagnostic offert : https://deluxe-fudge-addd15.netlify.app/
+text/html  :  … sur votre site → <a href="https://deluxe-fudge-addd15.netlify.app/">Diagnostic offert</a>
+```
+
+Ni bouton, ni style, ni paramètre de suivi : un `?utm_` ajouté à une adresse
+qu'on présente comme une démonstration privée dit exactement le contraire de ce
+que la phrase affirme. **Une seule ancre par message**, alignée sur la version
+texte qui ne développe elle aussi que la première occurrence — deux rendus qui
+poseraient le lien à des endroits différents se contrediraient selon le client.
+
+Alex n'écrit **jamais** l'adresse : il pose « → Diagnostic offert » et
+l'application fait le reste. Un test vérifie que l'URL n'apparaît pas dans son
+prompt.
+
+### La boîte de reprise devient un fil
+
+C'était un formulaire : on tapait une instruction, un brouillon revenait en
+silence. On ne pouvait ni demander « pourquoi tu as écrit ça ? », ni « qu'est-ce
+qu'on sait d'elle ? ».
+
+C'est maintenant le **même `useAgentChat`** que le panneau du rail : streaming,
+outils de lecture du CRM, historique en base. Alex peut donc aller lire la
+chronologie pour répondre, sans qu'on ait rien à câbler.
+
+**Ce qui distingue une réponse d'une reprise n'est pas un bouton mais la présence
+d'un bloc** dans sa réponse (`lib/domain/draft-protocol.ts`, pur et testé).
+Trois options avaient été pesées :
+
+| Option | Verdict |
+|---|---|
+| un outil d'écriture | **refusé** — les outils passent par la carte de confirmation, or un brouillon n'existe qu'à l'écran : rien à confirmer, rien à écrire |
+| deux appels, un pour répondre un pour réécrire | **refusé** — deux fois le coût, et le second ne verrait pas ce que le premier a dit |
+| un bloc marqué dans la réponse | **retenu** — un seul appel, compatible avec le streaming, et l'absence de bloc *est* le signal « je ne touche pas au brouillon » |
+
+Deux garde-fous : le bloc n'est appliqué qu'**à la fin du tour** (l'extraire
+pendant le flux remplacerait le message par des fragments successifs), et un bloc
+ouvert mais jamais refermé — réponse tronquée — est **ignoré** plutôt
+qu'appliqué à moitié.
+
+Le brouillon courant voyage **dans chaque message**, retouches comprises : le fil
+vit côté serveur, mais le texte est retouché dans un champ que le serveur ne voit
+jamais. L'identifiant du contact voyage avec lui, pour qu'Alex lise la bonne
+fiche plutôt que de chercher par nom.
+
+Le mode `revise` de `/api/emails` est **supprimé** : garder un second chemin de
+réécriture aurait fait deux implémentations d'une même chose, dont une seule
+serait exercée.
+
+### Une régression réintroduite par moi, puis rattrapée
+
+En rendant `forbiddenSigners()` synchrone, j'ai perdu le nom de l'expéditeur — le
+correctif du jalon 33. Résultat observé dans le navigateur : un brouillon
+terminé par « Yanis » ne portait aucun nom d'agent, la signature était donc
+**ajoutée**, et le message affichait `Yanis` puis `Yanis Tidahy / Fondateur`.
+Corrigé, et un test porte désormais ce cas précis.
+
+### Jalon 34 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, migration `12_pitch` appliquée, et un puits SMTP
+local :
+
+- **prompt d'Alex** : `Personal Shoppers` ✓, `conseiller proactif` ✓, les trois
+  règles de forme ✓, le mail de référence ✓, la signature réglée ✓, le libellé du
+  lien ✓, et **l'URL absente du prompt** ✓ ;
+- **URL vide** → la consigne devient « n'invente aucune adresse » ;
+- **brouillon** : dernière ligne `Fondateur, Aura Flow AI`, **une seule
+  signature** ;
+- **source brute du message reçu** : `→ Diagnostic offert : https://…` en texte,
+  `<a href="https://…">Diagnostic offert</a>` en HTML, `Yanis Tidahy<br>Fondateur,
+  Aura Flow AI`, aucun style, aucun `utm_` ;
+- **`/reglages` → Messagerie** : les quatre champs présents et pré-remplis ;
+- **navigateur** : « qu'est-ce qu'on sait d'elle ? » → réponse affichée dans le
+  fil, **corps strictement inchangé** ; retouche à la main puis « fais plus
+  court » → le brouillon est repris, **la phrase manuelle survit**, le fil montre
+  « J'ai appliqué « fais plus court » » et « ✓ brouillon mis à jour » ; « Revenir
+  au brouillon précédent » restaure **exactement** la version retouchée ;
+- **0 réponse HTTP ≥ 400, 0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**689 tests**) verts.
+
+### Jalon 34 — ce qui n'est pas vérifié
+
+**Aucun appel Anthropic réel.** Le substitut a été étendu pour jouer les deux cas
+du protocole — question sans bloc, reprise avec bloc — et il **renvoie le corps
+qu'il a reçu**, ce qui prouve qu'Alex repart du texte affiché. Ce qu'il ne prouve
+pas : qu'Alex écrive réellement un bon email, qu'il respecte l'ouverture sur leur
+activité, et qu'il n'aille pas recopier le mail de référence. **Ce dernier point
+est le risque principal de ce jalon** et ne se lèvera qu'au premier vrai
+brouillon.
+
+**Le lien n'a pas été cliqué depuis une vraie boîte.** L'ancre est correcte dans
+la source ; qu'elle s'affiche comme un lien dans Gmail ou Outlook relève du
+client, pas du code.
+
+**Trois pièges de méthode, tous du même genre.** Le substitut et le puits SMTP
+sont morts silencieusement à plusieurs reprises, et le port restait pris par
+l'ancien processus : les mesures portaient alors sur un binaire périmé. Deux
+symptômes ont été pris pour des défauts du produit avant vérification. **Lire les
+deux premières lignes du journal d'un service de vérification avant d'en tirer
+une conclusion** — c'est la même leçon qu'au jalon 33, et elle a resservi trois
+fois.
+
+**Le substitut a eu deux défauts propres**, corrigés : il ne lisait que les
+contenus de type chaîne (les messages de conversation sont des tableaux de blocs,
+donc son briefing était vide et il retombait sur sa réponse de vacation), et il
+lisait la **première** occurrence de `[Demande]` au lieu de la dernière, faisant
+passer tout l'historique pour la demande courante.

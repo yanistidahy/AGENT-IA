@@ -11,9 +11,10 @@ import { ACTIVITY_LABELS, type ActivityType } from "@/lib/domain/types";
 import { OUTCOME_LABELS, isOutcome } from "@/lib/domain/status";
 import { formatDate } from "@/lib/format";
 import { enforceSignature, sanitizeSubject } from "@/lib/domain/email-format";
-import { EMAIL_SIGNATURE } from "./prompts/company";
+import { signatureBlock } from "./prompts/company";
+import { alexDynamicRules } from "./alex-rules";
 import { AGENTS } from "./registry";
-import { readMailConfig } from "@/lib/api/mail";
+import { readMailConfig, type MailConfig } from "@/lib/api/mail";
 
 /**
  * Le brouillon d'Alex.
@@ -55,17 +56,27 @@ const AGENT_NAMES: readonly string[] = AGENTS.map((agent) => agent.name);
  * règle « jamais ton prénom, jamais celui de l'utilisateur », et il se lit là où
  * il est déjà réglé plutôt que d'être deviné.
  */
-async function forbiddenSigners(): Promise<readonly string[]> {
-  const config = await readMailConfig().catch(() => null);
-  const sender = config?.fromName.trim() ?? "";
-  if (sender === "") return AGENT_NAMES;
+function forbiddenSigners(config: MailConfig): readonly string[] {
+  // Le nom du signataire figure ici **en plus** des noms d'agents, et c'est le
+  // correctif du jalon 33 qu'il ne faut pas reperdre : un brouillon terminé par
+  // « Yanis » ne porte aucun nom d'agent, la signature serait donc *ajoutée* et
+  // le message partirait avec deux signatures l'une sous l'autre. Le nom
+  // complet **et** le prénom seul : on signe rarement de son nom entier.
+  const names = [config.signName, config.fromName]
+    .map((value) => value.trim())
+    .filter((value) => value !== "");
 
-  // Le nom complet **et** le prénom seul : on signe rarement « Yanis Tidahy ».
-  const first = sender.split(/\s+/)[0] ?? "";
-  return first === "" || first === sender
-    ? [...AGENT_NAMES, sender]
-    : [...AGENT_NAMES, sender, first];
+  const parts = new Set<string>();
+  for (const name of names) {
+    parts.add(name);
+    const first = name.split(/\s+/)[0] ?? "";
+    if (first !== "") parts.add(first);
+  }
+
+  return [...AGENT_NAMES, ...parts];
 }
+
+
 
 /** Ce que le modèle doit rendre, et rien d'autre. */
 const draftSchema = z.object({
@@ -177,88 +188,32 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
   return lines.join("\n");
 }
 
-const INSTRUCTION = `Rédige **un** email à partir du dossier ci-dessus.
-
-Rends exclusivement un objet JSON, sans texte autour, sans bloc de code :
-{"subject": "...", "body": "..."}
-
-Contraintes de forme, non négociables :
-- \`body\` sépare ses paragraphes par une ligne vide (\\n\\n). Trois paragraphes courts valent mieux qu'un bloc.
-- Trois à six phrases au total.
-- Une seule demande, à la fin, à laquelle on peut répondre en une ligne.
-- La dernière ligne du corps est exactement : ${EMAIL_SIGNATURE}
-- Aucun prix, aucun nom d'offre, aucun montant.
-- N'invente aucun fait qui ne soit pas dans le dossier.`;
-
 /**
- * La consigne de reprise.
+ * Les consignes de rédaction, construites depuis les réglages.
  *
- * Elle rappelle **toutes** les contraintes de forme plutôt que de renvoyer à la
- * demande initiale : le modèle ne voit pas le premier échange, et une reprise
- * qui perdrait la signature ou laisserait passer un prix serait exactement le
- * genre de régression qu'on ne remarque qu'à la réception.
+ * Elles répètent la signature et le lien plutôt que de renvoyer au prompt
+ * système : ce sont les deux points sur lesquels un modèle dérive le plus, et
+ * les rappeler à l'endroit où il produit coûte trois lignes.
  */
-const REVISE_INSTRUCTION = `Réécris ce message en appliquant la demande ci-dessus.
+function draftInstruction(config: MailConfig): string {
+  const signature = signatureBlock({ name: config.signName, title: config.signTitle });
+  const demo = config.demoUrl.trim() === "" ? "" : `\n- L'avant-dernier paragraphe se termine par « → ${config.demoLabel} », sans URL.`;
+
+  return `Rédige **un** email à partir du dossier ci-dessus.
 
 Rends exclusivement un objet JSON, sans texte autour, sans bloc de code :
 {"subject": "...", "body": "..."}
 
-- Pars du message **tel qu'il est ci-dessus** : il a pu être retouché à la main, et ces retouches sont voulues. Ne reviens pas à une version antérieure.
-- Ne change que ce que la demande implique. Le reste du texte est conservé mot pour mot.
+Contraintes, non négociables :
 - \`body\` sépare ses paragraphes par une ligne vide (\\n\\n).
-- La dernière ligne du corps est exactement : ${EMAIL_SIGNATURE}
+- Ouvre sur quelque chose de concret concernant **leur** activité, jamais sur toi ni sur un message précédent.
+- Nomme le volume de questions récurrentes que **leur équipe** traite, avant de parler de l'offre.
+- Présente le Personal Shopper comme un conseiller proactif qui guide vers l'achat, le SAV 24/7 venant ensuite.${demo}
+- Termine par une question légère, pas par une demande de rendez-vous.
+- Les deux dernières lignes du corps sont exactement :
+${signature}
 - Aucun prix, aucun nom d'offre, aucun montant.
 - N'invente aucun fait qui ne soit pas dans le dossier.`;
-
-/**
- * Reprendre un brouillon sur instruction.
- *
- * **Le point qui compte : on repart du texte que l'utilisateur a sous les yeux**,
- * pas de ce qu'Alex avait produit. Quelqu'un qui a réécrit un paragraphe puis
- * demande « fais plus court » veut son paragraphe raccourci, pas l'original
- * raccourci. Repartir du brouillon d'origine jetterait silencieusement son
- * travail — et il ne s'en apercevrait qu'après l'envoi.
- *
- * Le contexte du contact est renvoyé aussi : sans lui, la reprise perdrait la
- * connaissance du dossier au deuxième tour et retomberait sur du générique.
- */
-export async function reviseEmail(
-  contactId: string,
-  current: { readonly subject: string; readonly body: string },
-  instruction: string,
-  focusActivityId?: string,
-): Promise<DraftResult> {
-  const contact = await prisma.contact.findUnique({
-    where: { id: contactId },
-    select: { firstName: true, lastName: true, email: true },
-  });
-  if (contact === null) return { ok: false, message: "Contact introuvable." };
-
-  const to = contact.email.trim();
-  if (to === "") return { ok: false, message: "Ce contact n'a pas d'adresse électronique." };
-
-  const context = await contextFor(contactId, focusActivityId);
-  if (context === null) return { ok: false, message: "Contact introuvable." };
-
-  const system = await promptForAgent(ALEX_SLUG);
-  if (system === null) return { ok: false, message: "L'agent Alex est introuvable." };
-
-  const ask = [
-    context,
-    "---",
-    "Voici le message **dans son état actuel**. Il a pu être modifié à la main :",
-    "",
-    `Objet : ${current.subject}`,
-    "",
-    current.body,
-    "",
-    "---",
-    `Demande de l'utilisateur : ${instruction}`,
-    "",
-    REVISE_INSTRUCTION,
-  ].join("\n");
-
-  return complete(system, ask, to, contact.firstName, contact.lastName);
 }
 
 export async function draftEmail(
@@ -283,10 +238,18 @@ export async function draftEmail(
   const context = await contextFor(contactId, focusActivityId);
   if (context === null) return { ok: false, message: "Contact introuvable." };
 
-  const system = await promptForAgent(ALEX_SLUG);
+  const config = await readMailConfig();
+  const system = await promptForAgent(ALEX_SLUG, await alexDynamicRules());
   if (system === null) return { ok: false, message: "L'agent Alex est introuvable." };
 
-  return complete(system, `${context}\n\n---\n\n${INSTRUCTION}`, to, contact.firstName, contact.lastName);
+  return complete(
+    system,
+    `${context}\n\n---\n\n${draftInstruction(config)}`,
+    to,
+    contact.firstName,
+    contact.lastName,
+    config,
+  );
 }
 
 /**
@@ -303,8 +266,10 @@ async function complete(
   to: string,
   firstName: string,
   lastName: string,
+  config: MailConfig,
 ): Promise<DraftResult> {
-  const forbidden = await forbiddenSigners();
+  const forbidden = forbiddenSigners(config);
+  const signature = signatureBlock({ name: config.signName, title: config.signTitle });
 
   try {
     const response = await anthropic().messages.create({
@@ -345,7 +310,7 @@ async function complete(
         // prompt : une consigne tient presque toujours, et « presque » n'est
         // pas assez quand la conséquence est qu'un prospect lit le prénom d'un
         // agent dans un message censé venir d'un humain.
-        body: enforceSignature(checked.data.body.trim(), EMAIL_SIGNATURE, forbidden),
+        body: enforceSignature(checked.data.body.trim(), signature, forbidden),
         to,
         contactName: `${firstName} ${lastName}`.trim(),
       },
