@@ -96,18 +96,19 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       },
     ],
   },
-  {
-    title: "Conseil",
-    entries: [
-      {
-        label: "Alfred & Associés",
-        href: "/conseil",
-        icon: "bot",
-        desc: "Huit agents qui lisent le CRM et proposent des actions.",
-      },
-    ],
-  },
+  /**
+   * Le conseil n'est plus une entrée de navigation mais **les agents
+   * eux-mêmes**, rendus par le rail depuis la base (voir `components/nav/rail.tsx`).
+   *
+   * Ils ne figurent donc pas ici : ce fichier décrit des écrans, et un agent
+   * n'est pas un écran — cliquer sur lui ouvre un panneau par-dessus celui qu'on
+   * regarde, sans naviguer. `/conseil` reste joignable depuis le panneau, pour
+   * la vue pleine largeur.
+   */
 ];
+
+/** Le groupe des agents, rendu à part parce que ses entrées viennent de la base. */
+export const COUNCIL_TITLE = "Conseil";
 
 /** Écrans livrés, hors accueil : ce que les cartes de la page d'accueil proposent. */
 export function shippedEntries(): NavEntry[] {

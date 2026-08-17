@@ -1,4 +1,5 @@
 import { ALEX } from "./prompts/alex";
+import { SALES_WRITING_RULES, SIGNATURE_RULE } from "./prompts/company";
 import { SABRINA } from "./prompts/sabrina";
 import { BRUTUS } from "./prompts/brutus";
 import { ETIENNE } from "./prompts/etienne";
@@ -31,6 +32,15 @@ export interface AgentDefinition {
   /** Amorces de conversation, spécifiques au périmètre. Voir `starters.ts`. */
   readonly starters: readonly Starter[];
   readonly persona: string;
+  /**
+   * Règles supplémentaires, hors personnalité.
+   *
+   * Séparées de `persona` à dessein : la personnalité décrit un métier et un
+   * ton, et son budget de 200 à 400 mots est vérifié par un test. Des règles
+   * partagées collées dedans feraient exploser ce budget sans que personne
+   * n'ait écrit une ligne de personnalité — et le garde-fou perdrait son sens.
+   */
+  readonly rules?: string;
   /** Noms d'outils autorisés. L'ordre est celui du registre, pas celui-ci. */
   readonly tools: readonly string[];
   /** Verrouillé derrière un drapeau d'environnement. */
@@ -50,6 +60,9 @@ export const AGENTS: readonly AgentDefinition[] = [
     scope:
       "Rédige les emails à partir de l'échange qu'on vient de consigner et de tout l'historique du contact. Écrit, ne décide pas : chaque message est relu et validé avant départ.",
     persona: ALEX,
+    // Ce qu'Alex ne doit jamais écrire, et comment il signe. Les deux vivent
+    // dans `prompts/company.ts`, avec le positionnement qu'ils protègent.
+    rules: `${SALES_WRITING_RULES}\n\n${SIGNATURE_RULE}`,
     /**
      * **Lectures seules.** Alex lit l'historique pour écrire juste ; il n'écrit
      * rien en base. L'envoi lui-même n'est pas un outil d'agent : il part d'un
@@ -188,7 +201,7 @@ export function isReadOnly(agent: AgentDefinition): boolean {
  * son nom d'usine.
  */
 export function systemPromptFor(agent: AgentDefinition, identity: PromptIdentity): string {
-  return buildSystemPrompt(agent.persona, identity);
+  return buildSystemPrompt(agent.persona, identity, agent.rules);
 }
 
 /**

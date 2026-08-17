@@ -345,6 +345,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 30 | **La fiche close se lit « Perdu »** — le cycle de vie devient le statut affiché, en gris, trié en fin | **livré, à valider** |
 | 31 | **« Déjà contactés » retirée** — six puces, la valeur reste valide pour l'entonnoir | **livré, à valider** |
 | 32 | **Emails** — conseil réduit à Alex et Sabrina, SMTP IONOS, mise en forme fidèle, rédaction depuis un échange | **livré, à valider** |
+| 33 | **Les agents dans le rail** — panneau latéral, contexte entreprise, signature imposée, reprise du brouillon | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -4179,3 +4180,161 @@ panneau le dit.
 posture défensive que `prisma` et `tsx` (voir § Déploiement) : un élagage des
 dépendances de développement avant le build casserait le typecheck. C'est
 quelques kilo-octets inutiles en production, assumés.
+
+---
+
+## Jalon 33 — le conseil sort de sa page, et Alex apprend le métier
+
+### La signature : le défaut signalé
+
+Le premier vrai brouillon d'Alex se terminait par « Alex ». Le message part de
+la boîte de l'utilisateur, sous son adresse : une signature au nom d'un agent
+est une contradiction visible **dans le message lui-même**, et elle apprend au
+destinataire qu'il ne parle pas à un humain.
+
+La règle est posée à **trois** endroits, parce qu'une seule ne suffisait pas :
+
+1. **le prompt** l'exige, avec le texte exact de la signature ;
+2. **`enforceSignature()`** l'impose quoi qu'ait rendu le modèle. Une consigne
+   de prompt est une intention : elle tient presque toujours, et « presque »
+   n'est pas assez ici ;
+3. **`email-signature.test.ts`** échoue si la dernière ligne d'un brouillon
+   porte un nom d'agent — sur les neuf noms du registre, pas seulement Alex.
+
+**Un second défaut est sorti de la vérification** : un brouillon signé « Yanis »
+ne portait aucun nom d'agent, la signature était donc **ajoutée** plutôt que
+substituée, et le message partait avec deux signatures l'une sous l'autre. Le
+nom d'expédition configuré (nom complet **et** prénom seul) rejoint donc la
+liste des signataires interdits — c'est littéralement la règle « jamais ton
+prénom, jamais celui de l'utilisateur », et il se lit là où il est déjà réglé.
+
+`enforceSignature()` ne confond pas une mention avec une signature : « je
+transmets à Alex dès demain matin » est une phrase, pas un paraphe. La garde
+porte sur la dernière ligne **et** sur sa brièveté.
+
+### Le contexte entreprise, en un seul fichier
+
+`lib/agents/prompts/company.ts` porte trois blocs et rien d'autre :
+
+| Constante | Contenu | Injecté dans |
+|---|---|---|
+| `COMPANY_CONTEXT` | ce qu'on vend, à qui, quel problème | **tous** les agents |
+| `SALES_WRITING_RULES` | jamais de prix, jamais d'affirmation inventée | Alex seul |
+| `SIGNATURE_RULE` / `EMAIL_SIGNATURE` | « L'équipe AuraFLOW AI » | Alex seul |
+
+Le positionnement est injecté **pour tous**, pas seulement pour Alex : Sabrina
+arbitre sur le même métier, et deux descriptions finiraient par se contredire —
+même raison que le nom d'un agent, écrit à un seul endroit. Les interdits de
+rédaction, eux, n'appartiennent qu'à Alex : imposer une signature de courriel à
+Sabrina serait du bruit dans son prompt, et un test le vérifie.
+
+`AgentDefinition` gagne un champ `rules`, **séparé de `persona`** : la
+personnalité décrit un métier et un ton, et son budget de 200 à 400 mots est
+vérifié par un test depuis le jalon 2. Coller des règles partagées dedans aurait
+fait exploser ce budget sans qu'une ligne de personnalité soit écrite.
+
+Le bloc n'est pas en base, et c'est un choix assumé : un positionnement change
+deux fois par an. Le jour où il bougera souvent, il rejoindra `/reglages` — le
+point d'injection unique fait que cela ne coûtera qu'une lecture de plus.
+
+### Les agents dans le rail, en panneau latéral
+
+L'entrée « Alfred & Associés » disparaît de `lib/navigation.ts` : **un agent
+n'est pas un écran**. Le rail rend les agents depuis la base, sous le titre
+`CONSEIL`, avec leur portrait rond et leur rôle — même traitement que le roster
+de `/conseil`, même composant `Portrait`, même repli initiales.
+
+Cliquer **n'ouvre pas une page** : un panneau de 480 px glisse par-dessus
+l'écran courant. On travaille dans le CRM et on pose une question sur ce qu'on
+regarde ; renvoyer vers `/conseil` faisait perdre la liste filtrée ou le
+pipeline qu'on avait sous les yeux.
+
+- Échap, ✕ et clic extérieur ferment — mêmes règles que le tiroir de fiche du
+  jalon 28, pour que deux surfaces modales ne se comportent pas différemment ;
+- **le voile ne bloque pas le défilement** de la page derrière : pouvoir faire
+  défiler sa liste tout en questionnant l'agent est la raison d'être de l'écran ;
+- l'état du panneau vit dans le **rail**, seul composant présent sur toutes les
+  pages : porté par une page, il disparaîtrait à chaque navigation ;
+- une flèche mène à `/conseil` pour la vue pleine largeur, qui reste entière.
+
+**Une seule source, littéralement.** `useAgentChat` est extrait de `Console` :
+création de fil, envoi, lecture du flux, outils, confirmation, réouverture. Les
+deux surfaces l'appellent. Deux implémentations du streaming auraient divergé —
+c'est la leçon du test de parité SQL/mémoire du jalon 12. Effet secondaire utile :
+`Console` passe de **339 à 186 lignes**, sous la limite de 250 qu'elle dépassait
+depuis le jalon 18.
+
+Le fil ouvert est mémorisé par agent le temps de la session : rouvrir le panneau
+reprend où l'on s'était arrêté.
+
+### La reprise du brouillon
+
+Sous le brouillon, une saisie : « insiste sur le SAV », « fais plus court ».
+Alex rend un objet et un corps révisés qui remplacent les champs.
+
+**Le point qui compte : la reprise part du texte affiché, pas du brouillon
+d'origine.** Quelqu'un qui a réécrit un paragraphe puis demande « fais plus
+court » veut *son* paragraphe raccourci ; repartir de l'original jetterait son
+travail sans le dire, et il ne s'en apercevrait qu'après l'envoi. Le panneau
+l'affiche, et le dit plus fort dès qu'une retouche est détectée.
+
+`draft-revisions.ts` (pur, testé) tient la pile : **cinq versions**, plus que les
+trois demandées, avec deux règles — une version identique à la précédente n'est
+pas empilée (demander deux fois la même chose ne doit pas consommer un cran), et
+la version restaurée est celle **d'avant la reprise**, retouches manuelles
+comprises.
+
+`reviseEmail()` et `draftEmail()` partagent `complete()` : mêmes garanties de
+forme, même imposition de signature. Les écrire deux fois, c'était se garantir
+qu'une reprise finirait par oublier la signature ou laisser passer un prix.
+
+### Jalon 33 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (154 fiches) et le serveur standalone :
+
+- **prompts** : Alex et Sabrina portent tous deux « assistants virtuels »,
+  « e-commerçants », « Shopify » ; **seul Alex** porte « Jamais de prix » et la
+  signature ;
+- **brouillon** : dernière ligne = « L'équipe AuraFLOW AI », **une seule
+  occurrence**, « Yanis » remplacé et non doublé ;
+- **reprise** : après remplacement du corps par un texte écrit à la main, la
+  révision **contient la phrase manuelle** et pas le brouillon d'origine ;
+- **rail** : titre `Conseil`, Alex (photo, cadre rond 28 px) et Sabrina
+  (initiales, cadre rond 28 px) avec leur rôle ; « Alfred & Associés » absent ;
+- **panneau** : `aria-label` « Conversation avec Alex », **480 px**, URL
+  **inchangée** (`/contacts`), **107 lignes de contacts toujours visibles
+  derrière** ; Échap ferme ; réouverture → la question précédente est là ; les
+  deux agents sont présents aussi sur `/pipeline` ;
+- **panneau de rédaction** : bouton « Revenir au brouillon précédent » absent
+  tant qu'il n'y a qu'une version, présent après retouche ; le retour restaure
+  **exactement** la version retouchée à la main ; l'échange reste affiché ;
+- **0 réponse HTTP ≥ 400, 0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**666 tests**) verts.
+
+### Jalon 33 — ce qui n'est pas vérifié
+
+**Aucun appel Anthropic réel**, comme aux jalons précédents. Le substitut
+`scripts/mock-anthropic.ts` a été étendu pour la reprise : il **renvoie le corps
+qu'il a reçu**, préfixé de l'instruction. C'est ce qui prouve qu'Alex repart du
+texte affiché — mais un substitut qui réécrirait joliment ne prouverait rien, et
+celui-ci ne prouve rien sur la *qualité* de la reprise. Que « fais plus court »
+produise effectivement un texte plus court relève du modèle.
+
+**La réponse de l'agent dans le panneau n'a pas été jugée** : le substitut ne
+sait pas tenir une conversation libre et rend son JSON de vacation. Ce qui est
+vérifié, c'est que la question part, que le flux revient, que le fil s'affiche et
+qu'il est retrouvé à la réouverture.
+
+**La persistance du fil ouvert est en mémoire de page**, pas en base : recharger
+l'onglet repart d'un fil neuf. Les conversations, elles, sont bien en base et
+restent accessibles depuis `/conseil` et depuis la liste du panneau plein écran.
+Mémoriser le dernier fil par agent demanderait un stockage local ou une colonne ;
+ce n'était pas demandé.
+
+**Un piège de méthode, à retenir.** La première vérification en navigateur a
+montré un brouillon signé « Yanis » **après** le correctif : le serveur de
+vérification n'était pas mort et la nouvelle instance échouait silencieusement
+sur `EADDRINUSE`, si bien que le navigateur testait l'ancien binaire. Le
+correctif était juste, la mesure était fausse. Toujours lire les deux premières
+lignes du journal du serveur avant de conclure, et vérifier qu'un `kill` a
+réellement libéré le port.

@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import { Drawer } from "@/components/ui/drawer";
 import { paragraphCount } from "@/lib/domain/email-format";
+import { isEdited, popVersion, pushVersion, type DraftVersion } from "./draft-revisions";
+import { ReviseBox, type Exchange } from "./revise-box";
 
 /**
  * Rédiger et envoyer un courriel.
@@ -62,6 +64,9 @@ export function ComposePanel({
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Versions successives, la plus récente en dernier. Voir `draft-revisions.ts`. */
+  const [history, setHistory] = useState<readonly DraftVersion[]>([]);
+  const [exchanges, setExchanges] = useState<readonly Exchange[]>([]);
 
   // Le brouillon se demande une fois par ouverture. Sans ce garde-fou, chaque
   // rendu du parent relancerait un appel au modèle — payant, et il écraserait
@@ -82,6 +87,8 @@ export function ComposePanel({
     setSubject("");
     setBody("");
     setError(null);
+    setHistory([]);
+    setExchanges([]);
     setBusy(true);
 
     void requestJson(
@@ -94,9 +101,68 @@ export function ComposePanel({
         setDraft(result.data.draft);
         setSubject(result.data.draft.subject);
         setBody(result.data.draft.body);
+        setHistory([{ subject: result.data.draft.subject, body: result.data.draft.body }]);
       } else setError(result.message);
     });
   }, [open, contactId, fromActivityId]);
+
+  /**
+   * Demander une reprise.
+   *
+   * **On envoie `subject` et `body` tels qu'ils sont à l'écran**, pas le
+   * brouillon d'origine : quelqu'un qui a réécrit un paragraphe puis demande
+   * « fais plus court » veut *son* paragraphe raccourci. Repartir de l'original
+   * jetterait son travail sans le dire.
+   */
+  const revise = async (instruction: string) => {
+    if (contactId === null) return;
+    setBusy(true);
+    setError(null);
+
+    const result = await requestJson(
+      "/api/emails",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          mode: "revise",
+          contactId,
+          subject,
+          body,
+          instruction,
+          fromActivityId,
+        }),
+      },
+      isDraft,
+    );
+    setBusy(false);
+
+    if (!result.ok) {
+      setExchanges((current) => [
+        ...current,
+        { instruction, outcome: result.message, failed: true },
+      ]);
+      return;
+    }
+
+    // La version d'avant reprise est empilée **avant** d'écrire la nouvelle :
+    // c'est elle que « revenir au brouillon précédent » restaure, retouches
+    // manuelles comprises.
+    setHistory((current) => pushVersion(current, { subject, body }));
+    setSubject(result.data.draft.subject);
+    setBody(result.data.draft.body);
+    setExchanges((current) => [
+      ...current,
+      { instruction, outcome: "Brouillon repris.", failed: false },
+    ]);
+  };
+
+  const undo = () => {
+    const popped = popVersion(history);
+    if (popped === null) return;
+    setSubject(popped.restored.subject);
+    setBody(popped.restored.body);
+    setHistory(popped.rest);
+  };
 
   const send = async () => {
     if (contactId === null) return;
@@ -197,9 +263,18 @@ export function ComposePanel({
             */}
             <span className="mt-1 block text-[11.5px] text-muted">
               {blocks} paragraphe{blocks > 1 ? "s" : ""} — séparés par une ligne vide, comme dans
-              le message reçu. Aucune signature ni mention n'est ajoutée.
+              le message reçu. Le message se termine par « L'équipe AuraFLOW AI ».
             </span>
           </label>
+
+          <ReviseBox
+            exchanges={exchanges}
+            busy={busy}
+            edited={isEdited(history, { subject, body })}
+            canUndo={history.length > 1 || isEdited(history, { subject, body })}
+            onSubmit={(instruction) => void revise(instruction)}
+            onUndo={undo}
+          />
         </div>
       )}
     </Drawer>

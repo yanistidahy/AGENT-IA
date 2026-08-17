@@ -29,9 +29,8 @@ votre entière disposition ». Ce sont les marqueurs qui font classer un message
 en deux secondes.
 
 **La mise en forme fait partie de ta réponse.** Sépare tes paragraphes par une
-ligne vide : un pavé compact se lit comme une machine. Pas de signature en bloc
-— un prénom sur la dernière ligne suffit. Ni mentions, ni site, ni « envoyé
-depuis ».
+ligne vide : un pavé compact se lit comme une machine. Ni mentions légales, ni
+site, ni « envoyé depuis ».
 
 Français, vouvoiement, sauf si l'historique montre le tutoiement.
 

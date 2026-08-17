@@ -120,3 +120,77 @@ export function formatSender(name: string, address: string): string {
 export function paragraphCount(body: string): number {
   return splitParagraphs(body).length;
 }
+
+/** La dernière ligne non vide du corps — celle qui porte la signature. */
+export function lastLine(body: string): string {
+  const lines = body.replace(/\r\n/g, "\n").split("\n");
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = (lines[index] ?? "").trim();
+    if (line !== "") return line;
+  }
+  return "";
+}
+
+/**
+ * Le corps se termine-t-il par le nom d'une personne qui ne doit pas signer ?
+ *
+ * La comparaison porte sur la **dernière ligne**, et seulement si elle est
+ * courte : « Alex » signe, « je transmets à Alex dès demain » est une phrase.
+ * Sans ce garde-fou de longueur, une mention légitime dans le texte serait
+ * prise pour une signature et remplacée.
+ */
+export function signsWithName(body: string, forbidden: readonly string[]): boolean {
+  const line = lastLine(body);
+  if (line === "" || line.length > 40) return false;
+
+  const normalized = line.toLowerCase().replace(/[.,;!·—-]+$/g, "").trim();
+  return forbidden.some((name) => {
+    const needle = name.toLowerCase();
+    return normalized === needle || normalized.startsWith(`${needle} `) || normalized.endsWith(` ${needle}`);
+  });
+}
+
+/**
+ * Impose la signature, quoi qu'ait rendu le modèle.
+ *
+ * **Le prompt le demande, le code le garantit.** Une consigne de prompt est une
+ * intention ; elle tient presque toujours, et « presque » n'est pas assez quand
+ * la conséquence est qu'un prospect découvre le nom d'un agent dans un message
+ * censé venir d'un humain. Trois cas :
+ *
+ * 1. la signature est déjà là → on ne touche à rien ;
+ * 2. la dernière ligne est un nom d'agent → elle est **remplacée** ;
+ * 3. il n'y a pas de signature → elle est **ajoutée** en dernier paragraphe.
+ */
+export function enforceSignature(
+  body: string,
+  signature: string,
+  forbidden: readonly string[],
+): string {
+  const blocks = splitParagraphs(body);
+  if (blocks.length === 0) return signature;
+
+  const last = blocks[blocks.length - 1] ?? "";
+  if (last.trim() === signature) return blocks.join("\n\n");
+
+  // Le dernier paragraphe est-il une signature à remplacer ? Soit il porte un
+  // nom interdit, soit c'est une ligne courte isolée juste après une formule de
+  // politesse — « Bien à vous, » puis « Alex ».
+  const lines = last.split("\n");
+  const tail = (lines[lines.length - 1] ?? "").trim();
+
+  if (signsWithName(last, forbidden)) {
+    if (lines.length > 1) {
+      lines[lines.length - 1] = signature;
+      blocks[blocks.length - 1] = lines.join("\n");
+      return blocks.join("\n\n");
+    }
+    blocks[blocks.length - 1] = signature;
+    return blocks.join("\n\n");
+  }
+
+  if (tail === signature) return blocks.join("\n\n");
+
+  blocks.push(signature);
+  return blocks.join("\n\n");
+}

@@ -10,7 +10,10 @@ import { getPilotage } from "@/lib/api/reference";
 import { ACTIVITY_LABELS, type ActivityType } from "@/lib/domain/types";
 import { OUTCOME_LABELS, isOutcome } from "@/lib/domain/status";
 import { formatDate } from "@/lib/format";
-import { sanitizeSubject } from "@/lib/domain/email-format";
+import { enforceSignature, sanitizeSubject } from "@/lib/domain/email-format";
+import { EMAIL_SIGNATURE } from "./prompts/company";
+import { AGENTS } from "./registry";
+import { readMailConfig } from "@/lib/api/mail";
 
 /**
  * Le brouillon d'Alex.
@@ -31,6 +34,38 @@ import { sanitizeSubject } from "@/lib/domain/email-format";
  */
 
 const ALEX_SLUG = "alex";
+
+/**
+ * Les noms qui ne doivent jamais signer un email.
+ *
+ * Tirés du registre plutôt qu'écrits en dur : ajouter un agent demain le fait
+ * entrer dans la garde sans que personne ait à y penser. Un agent renommé à
+ * l'écran garde son nom de registre ici — c'est celui que le modèle voit dans
+ * son prompt, donc celui qu'il risque d'employer.
+ */
+const AGENT_NAMES: readonly string[] = AGENTS.map((agent) => agent.name);
+
+/**
+ * Les noms qui ne doivent pas signer, **y compris celui de l'utilisateur**.
+ *
+ * Défaut trouvé à la vérification : un brouillon terminé par « Yanis » ne
+ * portait pas de nom d'agent, donc la signature était **ajoutée** au lieu de
+ * remplacer — et le message partait avec deux signatures l'une sous l'autre.
+ * Le nom d'expédition configuré est donc joint à la liste : c'est exactement la
+ * règle « jamais ton prénom, jamais celui de l'utilisateur », et il se lit là où
+ * il est déjà réglé plutôt que d'être deviné.
+ */
+async function forbiddenSigners(): Promise<readonly string[]> {
+  const config = await readMailConfig().catch(() => null);
+  const sender = config?.fromName.trim() ?? "";
+  if (sender === "") return AGENT_NAMES;
+
+  // Le nom complet **et** le prénom seul : on signe rarement « Yanis Tidahy ».
+  const first = sender.split(/\s+/)[0] ?? "";
+  return first === "" || first === sender
+    ? [...AGENT_NAMES, sender]
+    : [...AGENT_NAMES, sender, first];
+}
 
 /** Ce que le modèle doit rendre, et rien d'autre. */
 const draftSchema = z.object({
@@ -151,8 +186,80 @@ Contraintes de forme, non négociables :
 - \`body\` sépare ses paragraphes par une ligne vide (\\n\\n). Trois paragraphes courts valent mieux qu'un bloc.
 - Trois à six phrases au total.
 - Une seule demande, à la fin, à laquelle on peut répondre en une ligne.
-- Pas de signature en bloc : un prénom sur la dernière ligne suffit.
+- La dernière ligne du corps est exactement : ${EMAIL_SIGNATURE}
+- Aucun prix, aucun nom d'offre, aucun montant.
 - N'invente aucun fait qui ne soit pas dans le dossier.`;
+
+/**
+ * La consigne de reprise.
+ *
+ * Elle rappelle **toutes** les contraintes de forme plutôt que de renvoyer à la
+ * demande initiale : le modèle ne voit pas le premier échange, et une reprise
+ * qui perdrait la signature ou laisserait passer un prix serait exactement le
+ * genre de régression qu'on ne remarque qu'à la réception.
+ */
+const REVISE_INSTRUCTION = `Réécris ce message en appliquant la demande ci-dessus.
+
+Rends exclusivement un objet JSON, sans texte autour, sans bloc de code :
+{"subject": "...", "body": "..."}
+
+- Pars du message **tel qu'il est ci-dessus** : il a pu être retouché à la main, et ces retouches sont voulues. Ne reviens pas à une version antérieure.
+- Ne change que ce que la demande implique. Le reste du texte est conservé mot pour mot.
+- \`body\` sépare ses paragraphes par une ligne vide (\\n\\n).
+- La dernière ligne du corps est exactement : ${EMAIL_SIGNATURE}
+- Aucun prix, aucun nom d'offre, aucun montant.
+- N'invente aucun fait qui ne soit pas dans le dossier.`;
+
+/**
+ * Reprendre un brouillon sur instruction.
+ *
+ * **Le point qui compte : on repart du texte que l'utilisateur a sous les yeux**,
+ * pas de ce qu'Alex avait produit. Quelqu'un qui a réécrit un paragraphe puis
+ * demande « fais plus court » veut son paragraphe raccourci, pas l'original
+ * raccourci. Repartir du brouillon d'origine jetterait silencieusement son
+ * travail — et il ne s'en apercevrait qu'après l'envoi.
+ *
+ * Le contexte du contact est renvoyé aussi : sans lui, la reprise perdrait la
+ * connaissance du dossier au deuxième tour et retomberait sur du générique.
+ */
+export async function reviseEmail(
+  contactId: string,
+  current: { readonly subject: string; readonly body: string },
+  instruction: string,
+  focusActivityId?: string,
+): Promise<DraftResult> {
+  const contact = await prisma.contact.findUnique({
+    where: { id: contactId },
+    select: { firstName: true, lastName: true, email: true },
+  });
+  if (contact === null) return { ok: false, message: "Contact introuvable." };
+
+  const to = contact.email.trim();
+  if (to === "") return { ok: false, message: "Ce contact n'a pas d'adresse électronique." };
+
+  const context = await contextFor(contactId, focusActivityId);
+  if (context === null) return { ok: false, message: "Contact introuvable." };
+
+  const system = await promptForAgent(ALEX_SLUG);
+  if (system === null) return { ok: false, message: "L'agent Alex est introuvable." };
+
+  const ask = [
+    context,
+    "---",
+    "Voici le message **dans son état actuel**. Il a pu être modifié à la main :",
+    "",
+    `Objet : ${current.subject}`,
+    "",
+    current.body,
+    "",
+    "---",
+    `Demande de l'utilisateur : ${instruction}`,
+    "",
+    REVISE_INSTRUCTION,
+  ].join("\n");
+
+  return complete(system, ask, to, contact.firstName, contact.lastName);
+}
 
 export async function draftEmail(
   contactId: string,
@@ -179,6 +286,26 @@ export async function draftEmail(
   const system = await promptForAgent(ALEX_SLUG);
   if (system === null) return { ok: false, message: "L'agent Alex est introuvable." };
 
+  return complete(system, `${context}\n\n---\n\n${INSTRUCTION}`, to, contact.firstName, contact.lastName);
+}
+
+/**
+ * L'appel au modèle, et les garanties de forme — **partagés** par la rédaction
+ * et la reprise.
+ *
+ * Les écrire deux fois, c'est se garantir qu'une reprise finira par oublier la
+ * signature ou l'échappement du bloc de code, le jour où l'une des deux sera
+ * corrigée seule.
+ */
+async function complete(
+  system: string,
+  ask: string,
+  to: string,
+  firstName: string,
+  lastName: string,
+): Promise<DraftResult> {
+  const forbidden = await forbiddenSigners();
+
   try {
     const response = await anthropic().messages.create({
       model: MODEL,
@@ -186,7 +313,7 @@ export async function draftEmail(
       thinking: { type: "adaptive", display: "omitted" },
       output_config: { effort: "medium" },
       system,
-      messages: [{ role: "user", content: `${context}\n\n---\n\n${INSTRUCTION}` }],
+      messages: [{ role: "user", content: ask }],
     });
 
     const text = response.content
@@ -214,9 +341,13 @@ export async function draftEmail(
       ok: true,
       draft: {
         subject: sanitizeSubject(checked.data.subject),
-        body: checked.data.body.trim(),
+        // La signature est **imposée ici**, pas seulement demandée dans le
+        // prompt : une consigne tient presque toujours, et « presque » n'est
+        // pas assez quand la conséquence est qu'un prospect lit le prénom d'un
+        // agent dans un message censé venir d'un humain.
+        body: enforceSignature(checked.data.body.trim(), EMAIL_SIGNATURE, forbidden),
         to,
-        contactName: `${contact.firstName} ${contact.lastName}`.trim(),
+        contactName: `${firstName} ${lastName}`.trim(),
       },
     };
   } catch (error) {
