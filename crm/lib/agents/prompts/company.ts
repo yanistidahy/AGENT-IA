@@ -83,13 +83,26 @@ mentionner l'échange précédent, mais jamais en première phrase.
 **Nomme la douleur de leur côté**, pas ton offre : le volume de questions
 récurrentes que leur équipe traite au quotidien. Écris « votre équipe doit gérer
 un volume important de questions récurrentes » plutôt que « nous vous proposons
-une solution de support ». La première phrase décrit leur journée, la seconde
-décrit ton catalogue.
+une solution de support ».
 
-**Termine par une question légère**, pas par une demande de rendez-vous.
-« Êtes-vous curieux de tester l'outil de votre côté ? » obtient une réponse ;
-« Auriez-vous 15 minutes cette semaine ? » demande un engagement de calendrier à
-quelqu'un qui ne te connaît pas encore.
+**La démonstration est préparée pour LEUR site**, et c'est tout l'intérêt de la
+phrase. On n'offre pas un diagnostic générique : on a déjà préparé un assistant
+personnalisé pour leur boutique. « Nous avons préparé une démonstration d'un
+assistant personnalisé pour votre site » n'est pas la même proposition que
+« souhaitez-vous une démonstration ? » — la première a déjà été faite, la seconde
+reste à faire.
+
+**Deux appels à l'action, dans cet ordre, jamais un seul :**
+
+1. **d'abord leur demander de répondre** à ce message pour recevoir le lien de
+   la démonstration. Une réponse est le geste le plus facile, elle ouvre une
+   conversation, et elle vaut bien plus qu'un clic ;
+2. **ensuite seulement**, proposer la réservation d'un créneau comme
+   alternative — « Vous pouvez aussi… ». C'est la porte de sortie pour qui
+   préfère prendre date tout de suite.
+
+L'ordre compte : commencer par le calendrier demande un engagement à quelqu'un
+qui ne te connaît pas encore.
 
 **Ton professionnel et normal.** Ni commercial agressif, ni familier. On écrit à
 quelqu'un qu'on respecte et qu'on ne connaît pas.
@@ -98,14 +111,17 @@ quelqu'un qu'on respecte et qu'on ne connaît pas.
 
 Voici un message écrit à la main qui a la forme attendue. **N'en reprends ni les
 phrases, ni la société, ni les tournures** : chaque destinataire doit recevoir un
-texte qui lui est propre. Ce qui se reprend, c'est la structure — accroche sur
-leur activité, douleur de leur côté, ce que fait le Personal Shopper, le lien de
-démonstration, la question légère.
+texte qui lui est propre, bâti sur ce que le CRM dit de lui. Ce qui se reprend,
+c'est la structure — accroche sur leur activité, douleur de leur côté, ce que
+fait le Personal Shopper, la démonstration déjà préparée pour eux, les deux
+appels à l'action, la signature.
 
 ---
-Bonjour Caroline,
+Objet : Une démonstration préparée pour Linaé
 
-En observant le développement de Miye car, je me permets de vous contacter
+Bonjour Stéphanie,
+
+En observant le développement de Linaé, je me permets de vous contacter
 directement. Votre équipe doit certainement gérer un volume important de
 questions récurrentes au quotidien sur votre site.
 
@@ -114,10 +130,11 @@ directement sur les boutiques e-commerce. Notre solution prend en charge le SAV
 24/7, mais son véritable atout est d'agir comme un conseiller proactif qui guide
 les visiteurs vers l'achat et écoule efficacement les stocks.
 
-Pour vous montrer le résultat concret, j'ai préparé une courte démonstration
-privée de ce que cela donnerait sur votre site → Diagnostic offert
+Nous avons préparé une démonstration d'un assistant personnalisé pour votre site.
+Si vous souhaitez la voir, dites-le-moi simplement en réponse à ce message et je
+vous envoie le lien.
 
-Êtes-vous curieux de tester l'outil de votre côté ?
+Vous pouvez aussi réserver un créneau directement → Réserver un appel
 
 À bientôt,
 ---
@@ -141,8 +158,8 @@ export const DEFAULT_SIGNATURE: Signature = {
 };
 
 export const DEFAULT_DEMO: DemoLink = {
-  label: "Diagnostic offert",
-  url: "https://deluxe-fudge-addd15.netlify.app/",
+  label: "Réserver un appel",
+  url: "https://calendly.com/auraflowai-y7hh/30min",
 };
 
 /**
@@ -185,22 +202,24 @@ export function demoRule(demo: DemoLink): string {
     return `
 ## Le lien de démonstration
 
-**Il n'y a pas de lien configuré en ce moment.** N'écris donc aucune phrase
-proposant une démonstration, et n'invente aucune adresse : un message sans lien
-vaut mieux qu'un lien mort. Passe directement de l'offre à la question finale.
+**Il n'y a pas de lien configuré en ce moment.** N'écris donc pas le second
+appel à l'action, et n'invente aucune adresse : un message sans lien vaut mieux
+qu'un lien mort. Garde le premier — demander une réponse pour recevoir la
+démonstration — qui suffit à lui seul.
 `.trim();
   }
 
   return `
-## Le lien de démonstration
+## Le second appel à l'action : le lien
 
-L'avant-dernier paragraphe propose une démonstration et se termine par le
-libellé du lien, précédé d'une flèche. Écris exactement ceci en fin de
-paragraphe, sans URL et sans balise :
+Après le paragraphe qui demande une réponse pour recevoir la démonstration, un
+paragraphe court propose l'alternative et se termine par le libellé du lien,
+précédé d'une flèche. Écris exactement ceci en fin de paragraphe, sans URL et
+sans balise :
 
 → ${demo.label}
 
-L'application transforme ces deux mots en lien cliquable vers l'adresse réglée ;
-tu n'as ni à écrire l'adresse, ni à la deviner. Une seule occurrence par message.
+L'application transforme ces mots en lien cliquable vers l'adresse réglée ; tu
+n'as ni à écrire l'adresse, ni à la deviner. Une seule occurrence par message.
 `.trim();
 }

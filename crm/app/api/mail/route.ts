@@ -2,6 +2,7 @@ import { badRequest, invalidPayload, jsonOk, serverError } from "@/lib/api/error
 import { readJson } from "@/lib/api/request";
 import { prisma } from "@/lib/db";
 import { readMailStatus, sendMail, PASSWORD_ENV } from "@/lib/api/mail";
+import { listSignatories, saveSignatories, signatoriesSchema } from "@/lib/api/signatories";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -24,8 +25,6 @@ const configSchema = z.object({
   user: z.string().trim().max(200),
   from: z.union([z.literal(""), z.email("Adresse d'expédition invalide")]),
   fromName: z.string().trim().max(120),
-  signName: z.string().trim().max(80),
-  signTitle: z.string().trim().max(120),
   demoLabel: z.string().trim().max(80),
   /**
    * Vide **est** une valeur valide : elle demande à Alex de supprimer la phrase
@@ -36,7 +35,11 @@ const configSchema = z.object({
 
 export async function GET() {
   try {
-    return jsonOk({ mail: await readMailStatus(), passwordEnv: PASSWORD_ENV });
+    return jsonOk({
+      mail: await readMailStatus(),
+      passwordEnv: PASSWORD_ENV,
+      signatories: await listSignatories(),
+    });
   } catch (error) {
     return serverError("GET /api/mail", error);
   }
@@ -57,8 +60,6 @@ export async function PATCH(request: Request) {
       smtpUser: parsed.data.user,
       smtpFrom: parsed.data.from,
       smtpFromName: parsed.data.fromName,
-      signName: parsed.data.signName,
-      signTitle: parsed.data.signTitle,
       demoLabel: parsed.data.demoLabel,
       demoUrl: parsed.data.demoUrl,
     };
@@ -69,9 +70,34 @@ export async function PATCH(request: Request) {
       create: { id: "singleton", ...data },
     });
 
-    return jsonOk({ mail: await readMailStatus(), passwordEnv: PASSWORD_ENV });
+    return jsonOk({
+      mail: await readMailStatus(),
+      passwordEnv: PASSWORD_ENV,
+      signatories: await listSignatories(),
+    });
   } catch (error) {
     return serverError("PATCH /api/mail", error);
+  }
+}
+
+/**
+ * La liste des signataires, remplacée d'un bloc.
+ *
+ * `PUT` et non `PATCH` : c'est la liste entière qui est posée, pas un champ
+ * modifié. Une mise à jour partielle demanderait de décrire des suppressions,
+ * et l'écran manipule de toute façon la liste complète.
+ */
+export async function PUT(request: Request) {
+  const body = await readJson(request);
+  if (body.ok === false) return badRequest("Corps de requête JSON illisible.");
+
+  const parsed = signatoriesSchema.safeParse(body.value);
+  if (!parsed.success) return invalidPayload(parsed.error);
+
+  try {
+    return jsonOk({ signatories: await saveSignatories(parsed.data) });
+  } catch (error) {
+    return serverError("PUT /api/mail", error);
   }
 }
 

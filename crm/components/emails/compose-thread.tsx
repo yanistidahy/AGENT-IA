@@ -25,6 +25,7 @@ export function ComposeThread({
   contactName,
   subject,
   body,
+  signature,
   onRevised,
 }: {
   readonly contactId: string;
@@ -32,6 +33,8 @@ export function ComposeThread({
   /** L'état courant des champs — retouches à la main comprises. */
   readonly subject: string;
   readonly body: string;
+  /** Le signataire choisi : il voyage avec chaque demande. */
+  readonly signature: string;
   readonly onRevised: (draft: DraftVersion, summary: string) => void;
 }) {
   const [text, setText] = useState("");
@@ -70,7 +73,9 @@ export function ComposeThread({
     const instruction = text.trim();
     if (instruction === "" || chat.streaming) return;
     setText("");
-    void chat.send(composeMessage({ id: contactId, name: contactName }, { subject, body }, instruction));
+    void chat.send(
+      composeMessage({ id: contactId, name: contactName }, { subject, body }, instruction, signature),
+    );
   };
 
   return (

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import { Drawer } from "@/components/ui/drawer";
-import { paragraphCount } from "@/lib/domain/email-format";
+import { paragraphCount, replaceSignature } from "@/lib/domain/email-format";
 import { isEdited, popVersion, pushVersion, type DraftVersion } from "./draft-revisions";
 import { ComposeThread } from "./compose-thread";
 
@@ -19,11 +19,20 @@ import { ComposeThread } from "./compose-thread";
  * annulation ne rattrape : un courriel parti est parti. Le reste — objet, corps
  * — se corrige par un second message ; le destinataire, non.
  */
+interface Signatory {
+  id: string;
+  name: string;
+  title: string;
+  isDefault: boolean;
+}
+
 interface Draft {
   subject: string;
   body: string;
   to: string;
   contactName: string;
+  signatories: Signatory[];
+  signatoryId: string | null;
 }
 
 interface Sent {
@@ -40,6 +49,12 @@ function isDraft(value: unknown): value is { draft: Draft } {
 
 function isSent(value: unknown): value is { sent: Sent } {
   return typeof value === "object" && value !== null && "sent" in value;
+}
+
+/** Le bloc de signature d'une personne : nom, puis titre. */
+function blockOf(signatory: Signatory): string {
+  const title = signatory.title.trim();
+  return title === "" ? signatory.name.trim() : `${signatory.name.trim()}\n${title}`;
 }
 
 const FIELD =
@@ -66,6 +81,8 @@ export function ComposePanel({
   const [error, setError] = useState<string | null>(null);
   /** Versions successives, la plus récente en dernier. Voir `draft-revisions.ts`. */
   const [history, setHistory] = useState<readonly DraftVersion[]>([]);
+  /** Le signataire retenu pour ce message. Voir le sélecteur plus bas. */
+  const [signatoryId, setSignatoryId] = useState<string | null>(null);
 
   // Le brouillon se demande une fois par ouverture. Sans ce garde-fou, chaque
   // rendu du parent relancerait un appel au modèle — payant, et il écraserait
@@ -100,6 +117,7 @@ export function ComposePanel({
         setSubject(result.data.draft.subject);
         setBody(result.data.draft.body);
         setHistory([{ subject: result.data.draft.subject, body: result.data.draft.body }]);
+        setSignatoryId(result.data.draft.signatoryId);
       } else setError(result.message);
     });
   }, [open, contactId, fromActivityId]);
@@ -148,6 +166,22 @@ export function ComposePanel({
   };
 
   const blocks = paragraphCount(body);
+  const signatories = draft?.signatories ?? [];
+  const signatory = signatories.find((entry) => entry.id === signatoryId) ?? null;
+
+  /**
+   * Changer de signataire réécrit **les deux dernières lignes**, rien d'autre.
+   *
+   * Régénérer le message entier jetterait tout ce qui a été relu, retouché et
+   * discuté avec Alex — pour un changement qui ne concerne que la signature.
+   */
+  const switchSignatory = (id: string) => {
+    const next = signatories.find((entry) => entry.id === id);
+    if (next === undefined) return;
+    const known = signatories.map((entry) => blockOf(entry));
+    setBody((current) => replaceSignature(current, known, blockOf(next)));
+    setSignatoryId(id);
+  };
 
   return (
     <Drawer
@@ -189,6 +223,28 @@ export function ComposePanel({
           </p>
           <p className="mt-0.5 text-[12.5px] text-brand-d">{draft.contactName}</p>
         </div>
+      )}
+
+      {/*
+        Le sélecteur de signataire, au-dessus du texte : c'est une décision qui
+        se prend avant de relire, pas après.
+      */}
+      {draft !== null && signatories.length > 0 && (
+        <label className="mb-3 block">
+          <span className="block text-[12px] font-semibold text-muted">Signé par</span>
+          <select
+            className={FIELD}
+            value={signatoryId ?? ""}
+            onChange={(event) => switchSignatory(event.target.value)}
+          >
+            {signatories.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.name}
+                {entry.title === "" ? "" : ` — ${entry.title}`}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
 
       {error !== null && (
@@ -243,6 +299,7 @@ export function ComposePanel({
             contactName={draft.contactName}
             subject={subject}
             body={body}
+            signature={signatory === null ? "" : blockOf(signatory)}
             onRevised={applyRevision}
           />
         </div>

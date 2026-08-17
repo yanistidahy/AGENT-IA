@@ -347,6 +347,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 32 | **Emails** — conseil réduit à Alex et Sabrina, SMTP IONOS, mise en forme fidèle, rédaction depuis un échange | **livré, à valider** |
 | 33 | **Les agents dans le rail** — panneau latéral, contexte entreprise, signature imposée, reprise du brouillon | **livré, à valider** |
 | 34 | **Le vrai pitch** — Personal Shoppers, signature et lien réglables, conversation avec Alex | **livré, à valider** |
+| 35 | **Deux signataires** — sélecteur Yanis/Mohamed, nouveau mail de référence, reprise fidèle | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -4510,3 +4511,138 @@ contenus de type chaîne (les messages de conversation sont des tableaux de bloc
 donc son briefing était vide et il retombait sur sa réponse de vacation), et il
 lisait la **première** occurrence de `[Demande]` au lieu de la dernière, faisant
 passer tout l'historique pour la demande courante.
+
+---
+
+## Jalon 35 — deux signataires, deux appels à l'action, une reprise fidèle
+
+### Le signataire est une propriété de l'envoi, pas un réglage
+
+Le couple « nom / titre » unique du jalon 34 ne savait décrire qu'une personne.
+Deux personnes envoient depuis ce CRM, et la conséquence n'était pas cosmétique :
+la moitié des messages seraient partis sous la mauvaise identité, l'erreur ne se
+voyant qu'à la réception.
+
+Table `signatories` (migration `13_signatories`), semée avec Yanis Tidahy et
+Mohamed Targani. Le choix se fait **message par message**, dans un sélecteur
+au-dessus du brouillon.
+
+**Le propriétaire de la fiche décide par défaut.** Si « Yanis » suit ce prospect,
+c'est lui qui écrit ; le signataire marqué par défaut ne sert que lorsque le
+propriétaire ne correspond à personne. `pickSignatory()` compare des **mots
+entiers** — « Marc » ne correspond pas à « Marceau ».
+
+**Changer de signataire réécrit les deux dernières lignes, rien d'autre.**
+Régénérer le message jetterait tout ce qui a été relu, retouché et discuté avec
+Alex, pour un changement qui ne concerne que la signature. `replaceSignature()`
+cherche les signatures **connues** plutôt que « les deux dernières lignes » : un
+message terminé par un post-scriptum n'a pas de signature à cet endroit, et
+couper à l'aveugle le mutilerait.
+
+### Un angle mort de la garde, trouvé en écrivant le test
+
+`signsWithName()` n'examinait que la **dernière ligne**. Depuis que les
+signatures font deux lignes, cette ligne est le *titre* — « Fondateur, Aura Flow
+AI » — et la garde était donc **aveugle au nom**. Un brouillon destiné à partir
+sous le nom de Mohamed mais signé Yanis passait sans être détecté.
+
+Elle examine désormais **tout le dernier paragraphe**, ligne par ligne, avec le
+garde-fou de longueur qui empêche de prendre « je transmets à Alex dès demain
+matin » pour un paraphe.
+
+### Le nouveau mail de référence, et deux appels à l'action
+
+L'exemple de Linaé remplace celui de Miye car — un seul exemple, sinon deux
+formes se contrediraient. Un test vérifie que l'ancien a bien disparu.
+
+Deux règles structurelles en sortent :
+
+**La démonstration est préparée pour LEUR site.** « Nous avons préparé une
+démonstration d'un assistant personnalisé pour votre site » n'est pas la même
+proposition que « souhaitez-vous une démonstration ? » — la première a déjà été
+faite, la seconde reste à faire.
+
+**Deux appels à l'action, dans cet ordre, jamais un seul :**
+
+1. **répondre à ce message** pour recevoir le lien — le geste le plus facile, et
+   il ouvre une conversation ;
+2. **puis** la réservation d'un créneau, en alternative.
+
+L'ordre est vérifié par un test sur les positions dans le texte : commencer par
+le calendrier demande un engagement à quelqu'un qui ne nous connaît pas encore.
+Le lien devient « Réserver un appel » vers Calendly ; une URL vide supprime le
+**second** appel seulement — le premier ne dépend d'aucun lien.
+
+### La reprise doit suivre l'instruction, pas produire une variante
+
+C'est le point qui décide de l'usage de la fonction. Quatre consignes ajoutées au
+protocole, avec leurs contre-exemples :
+
+| Consigne | Ce qu'elle empêche |
+|---|---|
+| Applique la demande **littéralement** | « insiste sur le SAV » qui réécrit le message dans un autre style |
+| **Ne touche à rien d'autre**, mot pour mot | une formulation travaillée dix minutes, remplacée parce qu'elle plaisait moins |
+| Lis **tout l'échange** | « fais plus court » puis « garde la phrase sur les stocks » traités séparément |
+| **Demande si c'est ambigu**, ne devine pas | « rends-le plus direct » interprété comme un tutoiement |
+
+La ligne d'explication doit **nommer le changement et l'endroit** — « j'ai ajouté
+une phrase sur le SAV au deuxième paragraphe », pas « voici une nouvelle
+version », qui oblige à comparer les deux textes ligne à ligne.
+
+**Le fil entier parvient déjà au modèle**, et c'était vrai avant ce jalon :
+`loadMessages()` lit toutes les lignes de la conversation, sans `take`. Vérifié
+plutôt que supposé, et un test le fixe.
+
+### Un défaut de conception corrigé en vérifiant
+
+La signature était d'abord transmise **entre le corps et la demande**. Elle se
+lisait alors comme la fin du message et se retrouvait recopiée dans le brouillon.
+Elle est passée dans l'en-tête, avant le brouillon ; un test fixe cet ordre.
+
+### Jalon 35 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, migration `13_signatories` appliquée :
+
+- **base** : deux signataires, Yanis par défaut ; lien passé à « Réserver un
+  appel » → Calendly ;
+- **prompt** : `Linaé` ✓, `Miye car` **absent** ✓, les deux appels à l'action ✓,
+  « préparée pour LEUR site » ✓, le signataire **injecté** (Mohamed présent,
+  Yanis absent quand c'est Mohamed qui signe) ✓ ;
+- **brouillon** : `signatoryId` = le propriétaire de la fiche (`Yanis` →
+  `sig_yanis`), les deux signataires renvoyés au panneau ;
+- **bascule** : dernière ligne « Co-Fondateur, Aura Flow AI », corps préservé,
+  aucune trace de l'autre nom ; aller-retour sans dérive ; un post-scriptum n'est
+  pas pris pour une signature ;
+- **navigateur** : `/reglages` → section Signataires avec les deux lignes et deux
+  boutons radio ; sélecteur du panneau avec les deux entrées, Yanis présélectionné ;
+  bascule vers Mohamed → **tout sauf la signature est identique** (comparaison
+  chaîne à chaîne) ; « insiste sur le SAV » → le fil affiche « J'ai appliqué
+  « insiste sur le SAV » » et « ✓ brouillon mis à jour », signataire conservé ;
+- **lien** : `<a href="https://calendly.com/auraflowai-y7hh/30min">Réserver un
+  appel</a>` en HTML, `Réserver un appel : https://…` en texte ;
+- **0 réponse HTTP ≥ 400, 0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**708 tests**) verts.
+
+### Jalon 35 — ce qui n'est pas vérifié
+
+**Aucun appel Anthropic réel.** Les consignes de fidélité sont vérifiables ;
+**leur application ne l'est pas**. Que « insiste sur le SAV » rende réellement le
+SAV plus présent sans toucher au reste relève du modèle, et c'est précisément le
+point qui décidera de l'usage de la fonction. Le substitut renvoie le corps qu'il
+a reçu : il prouve la plomberie, pas le jugement.
+
+**Le risque de recopie du mail de référence reste entier.** L'exemple est
+qualifié « à imiter, jamais à recopier » et le test vérifie que la mise en garde
+est là — mais rien ne garantit qu'elle soit suivie. À regarder sur les trois
+premiers brouillons réels : si deux prospects reçoivent « En observant le
+développement de… » mot pour mot, il faudra durcir.
+
+**Le titre de Mohamed est une supposition.** « Co-Fondateur, Aura Flow AI » a été
+semé faute d'information exacte, et l'écran permet de le corriger — c'est ce qui
+avait été demandé.
+
+**La conversation du rail ne connaît pas le signataire choisi.** `alexDynamicRules()`
+y est appelé sans signataire et retombe sur le défaut réglé. Sans conséquence
+aujourd'hui — la rédaction passe par le panneau, qui transmet la signature dans
+chaque message — mais un email rédigé depuis le panneau du rail signerait le
+défaut.

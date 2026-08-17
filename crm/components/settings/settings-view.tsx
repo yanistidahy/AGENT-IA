@@ -13,7 +13,7 @@ import { SequenceEditor, type SequenceEditable } from "./sequence-editor";
 import { TagsEditor } from "./tags-editor";
 import { MaintenancePanel } from "./maintenance-panel";
 import { ApiDiagnostic } from "./api-diagnostic";
-import { MailPanel, type MailStatus } from "./mail-panel";
+import { MailPanel, type MailStatus, type Signatory } from "./mail-panel";
 import { SnapshotsPanel } from "./snapshots-panel";
 import { CouncilPanel } from "./council-panel";
 import { ShiftsPanel } from "./shifts-panel";
@@ -27,6 +27,7 @@ interface SettingsViewProps {
   readonly tokenBudget: number;
   readonly mail: MailStatus;
   readonly passwordEnv: string;
+  readonly signatories: readonly Signatory[];
   readonly delays: ReminderDelays;
   readonly lists: Record<SettingsListKind, readonly string[]>;
   readonly tags: ReadonlyArray<{ value: string; count: number }>;
@@ -48,6 +49,7 @@ export function SettingsView({
   tokenBudget,
   mail,
   passwordEnv,
+  signatories,
   delays,
   lists,
   tags,
@@ -77,7 +79,7 @@ export function SettingsView({
         title="Messagerie"
         hint="envoi des emails par SMTP — la réception n'est pas gérée par cette version"
       >
-        <MailPanel initial={mail} passwordEnv={passwordEnv} />
+        <MailPanel initial={mail} passwordEnv={passwordEnv} initialSignatories={signatories} />
       </Section>
 
       <Section

@@ -206,13 +206,30 @@ export function lastLine(body: string): string {
  * prise pour une signature et remplacée.
  */
 export function signsWithName(body: string, forbidden: readonly string[]): boolean {
-  const line = lastLine(body);
-  if (line === "" || line.length > 40) return false;
+  // **Le dernier paragraphe entier, pas seulement la dernière ligne.** Depuis
+  // que les signatures font deux lignes — « Yanis Tidahy » puis « Fondateur,
+  // Aura Flow AI » — la dernière ligne est le *titre* : ne regarder qu'elle
+  // rendait la garde aveugle au nom, donc incapable de repérer un message signé
+  // du mauvais collègue.
+  const blocks = splitParagraphs(body);
+  const last = blocks[blocks.length - 1] ?? "";
 
-  const normalized = line.toLowerCase().replace(/[.,;!·—-]+$/g, "").trim();
-  return forbidden.some((name) => {
-    const needle = name.toLowerCase();
-    return normalized === needle || normalized.startsWith(`${needle} `) || normalized.endsWith(` ${needle}`);
+  return last.split("\n").some((raw) => {
+    const line = raw.trim();
+    // Une ligne longue est une phrase, pas un paraphe : « je transmets à Alex
+    // dès demain matin » ne doit pas être pris pour une signature.
+    if (line === "" || line.length > 40) return false;
+
+    const normalized = line.toLowerCase().replace(/[.,;!·—-]+$/g, "").trim();
+    return forbidden.some((name) => {
+      const needle = name.toLowerCase().trim();
+      if (needle === "") return false;
+      return (
+        normalized === needle ||
+        normalized.startsWith(`${needle} `) ||
+        normalized.endsWith(` ${needle}`)
+      );
+    });
   });
 }
 
@@ -258,5 +275,44 @@ export function enforceSignature(
   if (tail === signature) return blocks.join("\n\n");
 
   blocks.push(signature);
+  return blocks.join("\n\n");
+}
+
+/**
+ * Remplace le bloc de signature, **et rien d'autre**.
+ *
+ * Changer de signataire ne doit pas régénérer le message : le texte a pu être
+ * relu, retouché, discuté avec Alex. Seules les dernières lignes bougent.
+ *
+ * La recherche se fait sur les signatures **connues** plutôt que sur « les deux
+ * dernières lignes » : un message qui se termine par une question suivie d'un
+ * post-scriptum n'a pas de signature à cet endroit, et couper à l'aveugle
+ * mutilerait le texte. Si aucune signature connue n'est trouvée, la nouvelle est
+ * simplement ajoutée — même règle que `enforceSignature()`.
+ */
+export function replaceSignature(
+  body: string,
+  known: readonly string[],
+  next: string,
+): string {
+  const blocks = splitParagraphs(body);
+  if (blocks.length === 0) return next;
+
+  const target = next.trim();
+
+  // Du dernier paragraphe vers le premier : une signature est en fin de message,
+  // et remonter évite de confondre avec une mention plus haut dans le texte.
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = (blocks[index] ?? "").trim();
+    if (block === target) return blocks.join("\n\n");
+
+    const match = known.find((candidate) => candidate.trim() !== "" && block === candidate.trim());
+    if (match !== undefined) {
+      blocks[index] = target;
+      return blocks.join("\n\n");
+    }
+  }
+
+  blocks.push(target);
   return blocks.join("\n\n");
 }
