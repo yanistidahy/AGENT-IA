@@ -26,6 +26,12 @@ export interface MailStatus {
   passwordSet: boolean;
   ready: boolean;
   missing: readonly string[];
+  /** Signature des brouillons — l'associé signe la sienne. */
+  signName: string;
+  signTitle: string;
+  /** Lien de démonstration. URL vide = Alex supprime la phrase entière. */
+  demoLabel: string;
+  demoUrl: string;
 }
 
 function isPayload(value: unknown): value is { mail: MailStatus; passwordEnv: string } {
@@ -72,6 +78,10 @@ export function MailPanel({
           user: mail.user,
           from: mail.from,
           fromName: mail.fromName,
+          signName: mail.signName,
+          signTitle: mail.signTitle,
+          demoLabel: mail.demoLabel,
+          demoUrl: mail.demoUrl,
         }),
       },
       isPayload,
@@ -166,6 +176,67 @@ export function MailPanel({
             Ce que le destinataire voit à la place de l'adresse.
           </span>
         </label>
+      </div>
+
+      {/*
+        Signature et lien : de la donnée, pas du code. Le jalon 33 avait figé
+        « L'équipe AuraFLOW AI » dans un fichier de prompt — une valeur écrite en
+        dur qui contredit l'écran le jour où on la change.
+      */}
+      <div className="mt-4 border-t border-line pt-3">
+        <h4 className="text-[13px] font-semibold">Signature des brouillons</h4>
+        <p className="mt-0.5 text-[11.5px] text-muted">
+          Les deux dernières lignes de chaque email rédigé par Alex.
+        </p>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <label>
+            <span className={LABEL}>Nom</span>
+            <input
+              className={FIELD}
+              value={mail.signName}
+              placeholder="Yanis Tidahy"
+              onChange={(event) => set("signName", event.target.value)}
+            />
+          </label>
+          <label>
+            <span className={LABEL}>Titre</span>
+            <input
+              className={FIELD}
+              value={mail.signTitle}
+              placeholder="Fondateur, Aura Flow AI"
+              onChange={(event) => set("signTitle", event.target.value)}
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="mt-4 border-t border-line pt-3">
+        <h4 className="text-[13px] font-semibold">Lien de démonstration</h4>
+        <p className="mt-0.5 text-[11.5px] text-muted">
+          Le libellé devient un lien cliquable dans le message ; l'adresse reste visible dans la
+          version texte. <b className="font-semibold text-ink">Laissez l'adresse vide et Alex
+          supprimera la phrase</b> plutôt que d'inventer un lien.
+        </p>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <label>
+            <span className={LABEL}>Libellé du lien</span>
+            <input
+              className={FIELD}
+              value={mail.demoLabel}
+              placeholder="Diagnostic offert"
+              onChange={(event) => set("demoLabel", event.target.value)}
+            />
+          </label>
+          <label>
+            <span className={LABEL}>URL du lien</span>
+            <input
+              className={FIELD}
+              value={mail.demoUrl}
+              placeholder="https://…"
+              onChange={(event) => set("demoUrl", event.target.value)}
+            />
+          </label>
+        </div>
       </div>
 
       {/* Le mot de passe : un état, jamais une valeur. */}

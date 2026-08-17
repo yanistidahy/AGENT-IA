@@ -7,7 +7,9 @@ import {
   sanitizeSubject,
   toHtml,
   toPlainText,
+  type DemoLink,
 } from "../domain/email-format";
+import { DEFAULT_DEMO, DEFAULT_SIGNATURE } from "../agents/prompts/company";
 
 /**
  * Envoi de courriels, par SMTP.
@@ -36,6 +38,12 @@ export interface MailConfig {
   readonly user: string;
   readonly from: string;
   readonly fromName: string;
+  /** Signature des brouillons : réglable pour que l'associé signe son nom. */
+  readonly signName: string;
+  readonly signTitle: string;
+  /** Lien de démonstration. `demoUrl` vide supprime la phrase entière. */
+  readonly demoLabel: string;
+  readonly demoUrl: string;
 }
 
 /** Ce que l'écran a le droit de savoir du mot de passe : s'il existe. */
@@ -67,6 +75,10 @@ export async function readMailConfig(): Promise<MailConfig> {
       smtpUser: true,
       smtpFrom: true,
       smtpFromName: true,
+      signName: true,
+      signTitle: true,
+      demoLabel: true,
+      demoUrl: true,
     },
   });
 
@@ -77,7 +89,16 @@ export async function readMailConfig(): Promise<MailConfig> {
     user: row?.smtpUser ?? "",
     from: row?.smtpFrom ?? "",
     fromName: row?.smtpFromName ?? "",
+    signName: row?.signName ?? DEFAULT_SIGNATURE.name,
+    signTitle: row?.signTitle ?? DEFAULT_SIGNATURE.title,
+    demoLabel: row?.demoLabel ?? DEFAULT_DEMO.label,
+    demoUrl: row?.demoUrl ?? DEFAULT_DEMO.url,
   };
+}
+
+/** Le lien de démonstration tel que le formateur l'attend. */
+export function demoLinkOf(config: MailConfig): DemoLink {
+  return { label: config.demoLabel, url: config.demoUrl };
 }
 
 /** Ce qui empêche d'envoyer, nommé champ par champ. */
@@ -198,8 +219,11 @@ export async function sendMail(input: SendInput): Promise<SendResult> {
       subject,
       messageId: id,
       date: new Date(),
-      text: toPlainText(input.body),
-      html: toHtml(input.body),
+      // Le lien passe ici, pas dans le brouillon : le corps stocké reste du
+      // texte lisible, et c'est au moment de l'envoi que « Diagnostic offert »
+      // devient une ancre en HTML et une adresse visible en texte.
+      text: toPlainText(input.body, demoLinkOf(config)),
+      html: toHtml(input.body, demoLinkOf(config)),
       // `format=fixed` : sans cela, un client peut recoller deux lignes
       // consécutives et détruire une adresse ou une liste tapée à la main.
       textEncoding: "quoted-printable",

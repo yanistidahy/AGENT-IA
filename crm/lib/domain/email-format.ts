@@ -48,8 +48,8 @@ export function splitParagraphs(body: string): string[] {
  * format, et la réduction des blancs multiples à une seule ligne vide, qui rend
  * la version texte et la version HTML identiques à la lecture.
  */
-export function toPlainText(body: string): string {
-  return splitParagraphs(body).join("\n\n");
+export function toPlainText(body: string, link?: DemoLink): string {
+  return expandLink(splitParagraphs(body).join("\n\n"), link);
 }
 
 const ESCAPES: Record<string, string> = {
@@ -75,11 +75,77 @@ function escapeHtml(value: string): string {
  * c'est ce qui préserve une adresse postale ou une liste tapée à la main. Les
  * séparations de paragraphe, elles, restent des `<p>`.
  */
-export function toHtml(body: string): string {
-  const paragraphs = splitParagraphs(body).map(
-    (block) => `<p>${escapeHtml(block).replace(/\n/g, "<br>")}</p>`,
-  );
+export function toHtml(body: string, link?: DemoLink): string {
+  // `done` porte sur **tout le message**, pas sur un paragraphe : la version
+  // texte ne développe elle aussi que la première occurrence, et deux rendus qui
+  // ne posent pas le lien au même endroit se contrediraient selon le client.
+  let done = false;
+
+  const paragraphs = splitParagraphs(body).map((block) => {
+    const escaped = escapeHtml(block);
+    const linked = done ? escaped : linkify(escaped, link);
+    if (linked !== escaped) done = true;
+    return `<p>${linked.replace(/\n/g, "<br>")}</p>`;
+  });
+
   return `<html><body>${paragraphs.join("")}</body></html>`;
+}
+
+/** Le lien de démonstration, tel qu'il est réglé. `url` vide = pas de lien. */
+export interface DemoLink {
+  readonly label: string;
+  readonly url: string;
+}
+
+/**
+ * Le libellé du lien devient une **vraie ancre**, et rien de plus.
+ *
+ * Ni bouton, ni style, ni paramètre de suivi : un lien maquillé en bouton dans
+ * un premier contact se voit, et un `?utm_` ajouté à une adresse qu'on présente
+ * comme une démonstration privée dit exactement le contraire de ce que le
+ * message affirme.
+ *
+ * Le remplacement porte sur le libellé **échappé**, donc après `escapeHtml()` :
+ * on injecte du balisage dans un texte déjà neutralisé, jamais l'inverse.
+ */
+function linkify(escaped: string, link?: DemoLink): string {
+  if (link === undefined) return escaped;
+  const label = link.label.trim();
+  const url = link.url.trim();
+  if (label === "" || url === "") return escaped;
+
+  const needle = escapeHtmlText(label);
+  const index = escaped.indexOf(needle);
+  if (index === -1) return escaped;
+
+  // Une seule occurrence : le libellé peut apparaître ailleurs dans une phrase,
+  // et transformer chaque mention en lien produirait un message truffé d'ancres.
+  return (
+    escaped.slice(0, index) +
+    `<a href="${escapeHtmlText(url)}">${needle}</a>` +
+    escaped.slice(index + needle.length)
+  );
+}
+
+function escapeHtmlText(value: string): string {
+  return value.replace(/[&<>"]/g, (char) => ESCAPES[char] ?? char);
+}
+
+/**
+ * En texte brut, **l'adresse doit être visible** : un client texte ne sait pas
+ * rendre un lien, et « → Diagnostic offert » seul ne mène nulle part. On écrit
+ * donc « Diagnostic offert : https://… », qui reste lisible dans les deux
+ * versions et cliquable dans la plupart des clients texte.
+ */
+function expandLink(text: string, link?: DemoLink): string {
+  if (link === undefined) return text;
+  const label = link.label.trim();
+  const url = link.url.trim();
+  if (label === "" || url === "") return text;
+
+  const index = text.indexOf(label);
+  if (index === -1) return text;
+  return `${text.slice(0, index)}${label} : ${url}${text.slice(index + label.length)}`;
 }
 
 /**

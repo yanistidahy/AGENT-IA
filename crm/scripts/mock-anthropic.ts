@@ -105,6 +105,41 @@ function draftAnswer(brief: string): string {
    * retouches manuelles comprises — et non de son brouillon d'origine. Un
    * substitut qui réécrirait joliment ne prouverait rien sur son entrée.
    */
+  /**
+   * Conversation du panneau de rédaction (jalon 34).
+   *
+   * Deux cas à distinguer, exactement comme le vrai modèle : une **question**
+   * se répond en texte sans bloc, une **demande de modification** rend le
+   * brouillon reçu dans un bloc marqué. Le substitut renvoie le corps qu'il a
+   * reçu, ce qui prouve qu'Alex repart bien du texte affiché.
+   */
+  if (brief.includes("[Brouillon actuel")) {
+    // **Le dernier tour, pas le premier.** Le briefing contient tout l'historique
+    // de la conversation : lire depuis la première occurrence ferait passer
+    // l'échange entier pour la demande courante.
+    const dernier = brief.slice(brief.lastIndexOf("[Contact]"));
+    const demande = /\[Demande\]\n([\s\S]*)$/.exec(dernier)?.[1]?.trim() ?? "";
+    const objet = /\[Brouillon actuel[^\n]*\]\nObjet : ([^\n]*)/.exec(dernier)?.[1] ?? "";
+    const corps = /\[Brouillon actuel[^\n]*\]\nObjet : [^\n]*\n\n([\s\S]*?)\n\n\[Demande\]/.exec(dernier)?.[1] ?? "";
+    const question = /\?\s*$/.test(demande) || /qu'est-ce|pourquoi|que sais|combien/i.test(demande);
+
+    if (question) {
+      // Réponse sans bloc : les champs ne doivent pas bouger.
+      return `Réponse du substitut à « ${demande} » — aucun brouillon rendu.`;
+    }
+
+    return [
+      `J'ai appliqué « ${demande} ».`,
+      "",
+      "<<<BROUILLON>>>",
+      `Objet : ${objet}`,
+      `[repris: ${demande}]`,
+      "",
+      corps,
+      "<<</BROUILLON>>>",
+    ].join("\n");
+  }
+
   if (brief.includes("Réécris ce message en appliquant la demande")) {
     const demande = /Demande de l'utilisateur : ([^\n]+)/.exec(brief);
     const recu = /Objet : ([^\n]*)\n\n([\s\S]*?)\n\n---/.exec(brief);
@@ -203,8 +238,24 @@ createServer((req, res) => {
     }
 
     const messages = body.messages as { content?: unknown }[];
+    /**
+     * Le contenu d'un message est **soit une chaîne, soit un tableau de blocs**.
+     * Le chemin de conversation envoie des blocs ; ne lire que les chaînes
+     * rendait le briefing vide, si bien que le substitut retombait sur sa
+     * réponse de vacation — et le protocole de brouillon n'était jamais exercé.
+     */
     const brief = messages
-      .map((message) => (typeof message.content === "string" ? message.content : ""))
+      .map((message) => {
+        if (typeof message.content === "string") return message.content;
+        if (!Array.isArray(message.content)) return "";
+        return message.content
+          .map((block: unknown) =>
+            typeof block === "object" && block !== null && "text" in block
+              ? String((block as { text: unknown }).text)
+              : "",
+          )
+          .join("\n");
+      })
       .join("\n");
     const text = draftAnswer(brief);
 

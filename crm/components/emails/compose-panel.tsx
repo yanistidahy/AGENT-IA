@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import { Drawer } from "@/components/ui/drawer";
 import { paragraphCount } from "@/lib/domain/email-format";
 import { isEdited, popVersion, pushVersion, type DraftVersion } from "./draft-revisions";
-import { ReviseBox, type Exchange } from "./revise-box";
+import { ComposeThread } from "./compose-thread";
 
 /**
  * Rédiger et envoyer un courriel.
@@ -66,7 +66,6 @@ export function ComposePanel({
   const [error, setError] = useState<string | null>(null);
   /** Versions successives, la plus récente en dernier. Voir `draft-revisions.ts`. */
   const [history, setHistory] = useState<readonly DraftVersion[]>([]);
-  const [exchanges, setExchanges] = useState<readonly Exchange[]>([]);
 
   // Le brouillon se demande une fois par ouverture. Sans ce garde-fou, chaque
   // rendu du parent relancerait un appel au modèle — payant, et il écraserait
@@ -88,7 +87,6 @@ export function ComposePanel({
     setBody("");
     setError(null);
     setHistory([]);
-    setExchanges([]);
     setBusy(true);
 
     void requestJson(
@@ -107,54 +105,17 @@ export function ComposePanel({
   }, [open, contactId, fromActivityId]);
 
   /**
-   * Demander une reprise.
+   * Appliquer un brouillon rendu par Alex dans le fil.
    *
-   * **On envoie `subject` et `body` tels qu'ils sont à l'écran**, pas le
-   * brouillon d'origine : quelqu'un qui a réécrit un paragraphe puis demande
-   * « fais plus court » veut *son* paragraphe raccourci. Repartir de l'original
-   * jetterait son travail sans le dire.
+   * La version d'avant est empilée **avant** d'écrire la nouvelle : c'est elle
+   * que « revenir au brouillon précédent » restaure, retouches manuelles
+   * comprises.
    */
-  const revise = async (instruction: string) => {
-    if (contactId === null) return;
-    setBusy(true);
-    setError(null);
-
-    const result = await requestJson(
-      "/api/emails",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          mode: "revise",
-          contactId,
-          subject,
-          body,
-          instruction,
-          fromActivityId,
-        }),
-      },
-      isDraft,
-    );
-    setBusy(false);
-
-    if (!result.ok) {
-      setExchanges((current) => [
-        ...current,
-        { instruction, outcome: result.message, failed: true },
-      ]);
-      return;
-    }
-
-    // La version d'avant reprise est empilée **avant** d'écrire la nouvelle :
-    // c'est elle que « revenir au brouillon précédent » restaure, retouches
-    // manuelles comprises.
+  const applyRevision = useCallback((revised: DraftVersion) => {
     setHistory((current) => pushVersion(current, { subject, body }));
-    setSubject(result.data.draft.subject);
-    setBody(result.data.draft.body);
-    setExchanges((current) => [
-      ...current,
-      { instruction, outcome: "Brouillon repris.", failed: false },
-    ]);
-  };
+    setSubject(revised.subject);
+    setBody(revised.body);
+  }, [subject, body]);
 
   const undo = () => {
     const popped = popVersion(history);
@@ -267,13 +228,22 @@ export function ComposePanel({
             </span>
           </label>
 
-          <ReviseBox
-            exchanges={exchanges}
-            busy={busy}
-            edited={isEdited(history, { subject, body })}
-            canUndo={history.length > 1 || isEdited(history, { subject, body })}
-            onSubmit={(instruction) => void revise(instruction)}
-            onUndo={undo}
+          {(history.length > 1 || isEdited(history, { subject, body })) && (
+            <button
+              type="button"
+              onClick={undo}
+              className="mt-2 self-start rounded-control border border-line px-2.5 py-1 text-[11.5px] font-semibold text-muted transition-colors hover:bg-surface-2"
+            >
+              ← Revenir au brouillon précédent
+            </button>
+          )}
+
+          <ComposeThread
+            contactId={contactId ?? ""}
+            contactName={draft.contactName}
+            subject={subject}
+            body={body}
+            onRevised={applyRevision}
           />
         </div>
       )}

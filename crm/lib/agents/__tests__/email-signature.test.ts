@@ -1,28 +1,39 @@
 import { describe, expect, it } from "vitest";
 import { AGENTS } from "../registry";
-import { COMPANY_CONTEXT, EMAIL_SIGNATURE, SALES_WRITING_RULES } from "../prompts/company";
+import {
+  COMPANY_CONTEXT,
+  DEFAULT_DEMO,
+  DEFAULT_SIGNATURE,
+  demoRule,
+  SALES_WRITING_RULES,
+  signatureBlock,
+  signatureRule,
+  WRITING_SHAPE,
+} from "../prompts/company";
 import { buildSystemPrompt } from "../prompts/shared";
 import { enforceSignature, lastLine, signsWithName } from "@/lib/domain/email-format";
 
 /**
  * **Aucun prospect ne doit lire le nom d'un agent.**
  *
- * Le défaut signalé : le premier vrai brouillon d'Alex se terminait par
+ * Le défaut d'origine : le premier vrai brouillon d'Alex se terminait par
  * « Alex ». Le message part de la boîte de l'utilisateur, sous son adresse : une
  * signature au nom d'un agent est une contradiction visible dans le message
- * lui-même, et elle apprend au destinataire qu'il ne parle pas à un humain.
+ * lui-même.
  *
- * La règle est posée à trois endroits, et ce test couvre les trois : le prompt
- * la demande, `enforceSignature()` la garantit quoi qu'ait rendu le modèle, et
- * les tests ci-dessous échouent si la dernière ligne d'un brouillon porte un nom
- * d'agent.
+ * **Révisé au jalon 34.** La signature n'est plus une constante mais un réglage
+ * — deux lignes, nom et titre, pour que l'associé signe le sien. Le test change
+ * donc de forme sans changer d'intention : il refuse toujours un nom d'agent en
+ * dernière ligne, et **accepte désormais le signataire configuré**, quel qu'il
+ * soit.
  */
 const AGENT_NAMES = AGENTS.map((agent) => agent.name);
+const SIGNATURE = signatureBlock(DEFAULT_SIGNATURE);
 
 /** Ce qu'un modèle rend quand il oublie la consigne — observé en production. */
 const DRAFTS_SIGNED_WRONG = [
   "Bonjour Marc,\n\nJ'ai essayé de vous joindre.\n\nJeudi vous irait ?\n\nAlex",
-  "Bonjour,\n\nUne question rapide.\n\nBien à vous,\nAlex",
+  "Bonjour,\n\nUne question rapide.\n\nÀ bientôt,\nAlex",
   "Bonjour,\n\nUne question rapide.\n\nCordialement,\nSabrina",
   "Bonjour,\n\nUne question.\n\nAlex.",
 ];
@@ -38,84 +49,107 @@ describe("un brouillon ne signe jamais du nom d'un agent", () => {
 
   it("corrige chacun de ces brouillons", () => {
     for (const draft of DRAFTS_SIGNED_WRONG) {
-      const fixed = enforceSignature(draft, EMAIL_SIGNATURE, AGENT_NAMES);
-      expect(lastLine(fixed), `corrigé : « ${lastLine(draft)} »`).toBe(EMAIL_SIGNATURE);
+      const fixed = enforceSignature(draft, SIGNATURE, AGENT_NAMES);
+      expect(lastLine(fixed), `corrigé : « ${lastLine(draft)} »`).toBe(DEFAULT_SIGNATURE.title);
+      expect(fixed).toContain(DEFAULT_SIGNATURE.name);
       expect(signsWithName(fixed, AGENT_NAMES)).toBe(false);
     }
   });
 
+  it("**accepte le signataire configuré** et n'y touche pas", () => {
+    // Le cœur du changement du jalon 34 : « Yanis Tidahy / Fondateur, Aura Flow
+    // AI » est la bonne signature, pas une anomalie à corriger.
+    const good = `Bonjour Caroline,\n\nÊtes-vous curieux de tester l'outil ?\n\nÀ bientôt,\n\n${SIGNATURE}`;
+    expect(enforceSignature(good, SIGNATURE, AGENT_NAMES)).toBe(good);
+    expect(signsWithName(good, AGENT_NAMES)).toBe(false);
+  });
+
+  it("accepte un signataire différent — l'associé signe le sien", () => {
+    const other = signatureBlock({ name: "Camille Roux", title: "Associée, Aura Flow AI" });
+    const draft = `Bonjour,\n\nUne question.\n\nÀ bientôt,\n\n${other}`;
+    expect(enforceSignature(draft, other, AGENT_NAMES)).toBe(draft);
+  });
+
   it("garde la formule de politesse qui précède", () => {
-    // Remplacer « Alex » ne doit pas emporter « Bien à vous, » avec lui : c'est
-    // la ligne du dessus, elle appartient au message.
     const fixed = enforceSignature(
-      "Bonjour,\n\nUne question rapide.\n\nBien à vous,\nAlex",
-      EMAIL_SIGNATURE,
+      "Bonjour,\n\nUne question rapide.\n\nÀ bientôt,\nAlex",
+      SIGNATURE,
       AGENT_NAMES,
     );
-    expect(fixed).toContain("Bien à vous,\nL'équipe AuraFLOW AI");
+    expect(fixed).toContain("À bientôt,");
+    expect(fixed).toContain(DEFAULT_SIGNATURE.name);
   });
 
   it("ajoute la signature quand il n'y en a aucune", () => {
-    const fixed = enforceSignature("Bonjour,\n\nJeudi vous irait ?", EMAIL_SIGNATURE, AGENT_NAMES);
-    expect(lastLine(fixed)).toBe(EMAIL_SIGNATURE);
-    expect(fixed).toContain("Jeudi vous irait ?\n\nL'équipe AuraFLOW AI");
-  });
-
-  it("ne touche pas à un brouillon déjà correct", () => {
-    const good = `Bonjour Marc,\n\nJeudi vous irait ?\n\n${EMAIL_SIGNATURE}`;
-    expect(enforceSignature(good, EMAIL_SIGNATURE, AGENT_NAMES)).toBe(good);
+    const fixed = enforceSignature("Bonjour,\n\nJeudi vous irait ?", SIGNATURE, AGENT_NAMES);
+    expect(lastLine(fixed)).toBe(DEFAULT_SIGNATURE.title);
   });
 
   it("ne confond pas une mention dans une phrase avec une signature", () => {
-    // « Alex » cité au milieu d'une phrase longue est du texte, pas une
-    // signature : le remplacer mutilerait le message.
     const phrase = "Bonjour,\n\nJe transmets votre demande à Alex dès demain matin sans faute";
     expect(signsWithName(phrase, AGENT_NAMES)).toBe(false);
-    expect(enforceSignature(phrase, EMAIL_SIGNATURE, AGENT_NAMES)).toContain(
-      "à Alex dès demain matin sans faute\n\nL'équipe AuraFLOW AI",
-    );
   });
 
-  it("remplace aussi le nom de l'utilisateur, sans doubler la signature", () => {
-    // Défaut trouvé à la vérification du jalon 33 : un brouillon signé « Yanis »
-    // ne portait aucun nom d'agent, la signature était donc **ajoutée**, et le
-    // message partait avec deux signatures l'une sous l'autre.
+  it("remplace le nom du signataire au lieu d'empiler deux signatures", () => {
+    // Régression réintroduite puis rattrapée au jalon 34 : quand la liste des
+    // signataires interdits ne portait que les noms d'agents, un brouillon
+    // terminé par « Yanis » faisait **ajouter** la signature — et le message
+    // partait avec « Yanis » puis « Yanis Tidahy / Fondateur ».
     const forbidden = [...AGENT_NAMES, "Yanis Tidahy", "Yanis"];
     const draft = "Bonjour,\n\nJeudi vous irait ?\n\nYanis";
-    const fixed = enforceSignature(draft, EMAIL_SIGNATURE, forbidden);
+    const fixed = enforceSignature(draft, SIGNATURE, forbidden);
 
-    expect(lastLine(fixed)).toBe(EMAIL_SIGNATURE);
-    expect(fixed).not.toContain("Yanis");
-    // Une seule signature, pas deux empilées.
-    expect(fixed.split(EMAIL_SIGNATURE)).toHaveLength(2);
+    expect(lastLine(fixed)).toBe(DEFAULT_SIGNATURE.title);
+    // Une seule fois le nom, pas deux blocs empilés.
+    expect(fixed.split(DEFAULT_SIGNATURE.name)).toHaveLength(2);
   });
 
   it("couvre tous les agents du registre, pas seulement Alex", () => {
-    // Un agent ajouté demain entre dans la garde sans qu'on y pense.
     for (const name of AGENT_NAMES) {
       expect(signsWithName(`Bonjour,\n\nUne question.\n\n${name}`, AGENT_NAMES)).toBe(true);
     }
   });
 });
 
-describe("le prompt porte la règle", () => {
-  it("Alex reçoit la signature et les interdits commerciaux", () => {
-    const alex = AGENTS.find((agent) => agent.slug === "alex");
-    expect(alex).toBeDefined();
-    const prompt = buildSystemPrompt(alex!.persona, {
-      name: "Alex",
-      role: "Emails",
-      colleagues: [],
-    }, alex!.rules);
+describe("le prompt porte le pitch et les règles", () => {
+  const alex = AGENTS.find((agent) => agent.slug === "alex");
 
-    expect(prompt).toContain(EMAIL_SIGNATURE);
+  it("Alex reçoit la forme attendue et les interdits", () => {
+    expect(alex).toBeDefined();
+    const prompt = buildSystemPrompt(
+      alex!.persona,
+      { name: "Alex", role: "Emails", colleagues: [] },
+      alex!.rules,
+    );
+
     expect(prompt).toContain("Jamais de prix");
     expect(prompt).toContain("Jamais d'affirmation inventée");
+    // Les trois règles de forme, tirées du mail de référence.
+    expect(prompt).toContain("Ouvre sur quelque chose de concret sur leur activité");
+    expect(prompt).toContain("Nomme la douleur de leur côté");
+    expect(prompt).toContain("Termine par une question légère");
   });
 
-  it("tous les agents reçoivent le contexte entreprise", () => {
-    // Sabrina raisonne sur le même métier : deux descriptions du positionnement
-    // finiraient par se contredire.
+  it("le mail de référence est donné comme exemple, jamais comme gabarit", () => {
+    // Un modèle à qui l'on montre un texte sans le qualifier le recopie mot pour
+    // mot, et cinquante prospects reçoivent la même lettre.
+    expect(WRITING_SHAPE).toContain("à imiter, jamais à recopier");
+    expect(WRITING_SHAPE).toContain("N'en reprends ni les");
+    expect(WRITING_SHAPE).toContain("chaque destinataire doit recevoir un");
+    expect(WRITING_SHAPE).toContain("Miye car");
+  });
+
+  it("le positionnement décrit le conseiller proactif, pas le ticket de support", () => {
+    // La version faible du discours — « traite les tickets » — vendait un centre
+    // de coûts. Ce test fixe le pitch réel.
+    expect(COMPANY_CONTEXT).toContain("Personal Shoppers");
+    expect(COMPANY_CONTEXT).toContain("conseiller proactif");
+    expect(COMPANY_CONTEXT).toContain("guide les visiteurs vers l'achat");
+    expect(COMPANY_CONTEXT).toContain("Shopify");
+    expect(COMPANY_CONTEXT).not.toContain("assistants virtuels qui traitent les tickets");
+  });
+
+  it("tous les agents reçoivent le positionnement", () => {
     for (const agent of AGENTS) {
       const prompt = buildSystemPrompt(
         agent.persona,
@@ -123,14 +157,36 @@ describe("le prompt porte la règle", () => {
         agent.rules,
       );
       expect(prompt, `${agent.slug} ignore le positionnement`).toContain(COMPANY_CONTEXT);
-      expect(prompt, `${agent.slug} ignore l'offre`).toContain("assistants virtuels");
     }
   });
 
   it("seul Alex porte les interdits de rédaction", () => {
-    // Sabrina n'écrit pas d'email : lui imposer une signature de courriel serait
-    // du bruit dans son prompt.
     const carriers = AGENTS.filter((agent) => agent.rules?.includes(SALES_WRITING_RULES) === true);
     expect(carriers.map((agent) => agent.slug)).toEqual(["alex"]);
+  });
+});
+
+describe("les consignes calculées depuis les réglages", () => {
+  it("la signature annonce le nom réglé, pas une valeur figée", () => {
+    const rule = signatureRule({ name: "Camille Roux", title: "Associée, Aura Flow AI" });
+    expect(rule).toContain("Camille Roux\nAssociée, Aura Flow AI");
+    expect(rule).not.toContain("Yanis");
+  });
+
+  it("un titre vide ne laisse pas de ligne orpheline", () => {
+    expect(signatureBlock({ name: "Yanis Tidahy", title: "" })).toBe("Yanis Tidahy");
+  });
+
+  it("le lien est annoncé avec son libellé, sans URL à écrire", () => {
+    const rule = demoRule(DEFAULT_DEMO);
+    expect(rule).toContain(`→ ${DEFAULT_DEMO.label}`);
+    // Alex n'écrit jamais l'adresse : l'application la pose au rendu.
+    expect(rule).not.toContain(DEFAULT_DEMO.url);
+  });
+
+  it("une URL vide fait supprimer la phrase, pas inventer un lien", () => {
+    const rule = demoRule({ label: "Diagnostic offert", url: "" });
+    expect(rule).toContain("n'invente aucune adresse");
+    expect(rule).toContain("N'écris donc aucune phrase");
   });
 });
