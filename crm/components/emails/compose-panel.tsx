@@ -41,6 +41,10 @@ interface Sent {
   subject: string;
   activityId: string;
   suggestedReminder: string;
+  /** L'état de la copie « Envoyés » — voir `SentNotice`. */
+  copied: boolean;
+  copyError: string | null;
+  tracked: boolean;
 }
 
 function isDraft(value: unknown): value is { draft: Draft } {
@@ -83,6 +87,15 @@ export function ComposePanel({
   const [history, setHistory] = useState<readonly DraftVersion[]>([]);
   /** Le signataire retenu pour ce message. Voir le sélecteur plus bas. */
   const [signatoryId, setSignatoryId] = useState<string | null>(null);
+  /**
+   * Suivi d'ouverture pour **ce** message.
+   *
+   * Initialisé au réglage global et modifiable ici : un pixel rend le message
+   * détectable comme de la prospection en masse, et il y a des destinataires
+   * pour lesquels le savoir ne vaut pas ce risque. Le réglage global reste le
+   * maître — coupé là-bas, cette case ne rallume rien.
+   */
+  const [track, setTrack] = useState(true);
 
   // Le brouillon se demande une fois par ouverture. Sans ce garde-fou, chaque
   // rendu du parent relancerait un appel au modèle — payant, et il écraserait
@@ -152,7 +165,16 @@ export function ComposePanel({
       "/api/emails",
       {
         method: "POST",
-        body: JSON.stringify({ mode: "send", contactId, subject, body, fromActivityId }),
+        body: JSON.stringify({
+          mode: "send",
+          contactId,
+          subject,
+          body,
+          fromActivityId,
+          track,
+          signatoryId: signatory?.id ?? "",
+          signatoryName: signatory?.name ?? "",
+        }),
       },
       isSent,
     );
@@ -244,6 +266,23 @@ export function ComposePanel({
               </option>
             ))}
           </select>
+        </label>
+      )}
+
+      {draft !== null && (
+        <label className="mb-3 flex items-start gap-2">
+          <input
+            type="checkbox"
+            checked={track}
+            onChange={(event) => setTrack(event.target.checked)}
+          />
+          <span className="text-[12.5px] text-muted">
+            Suivre l'ouverture{" "}
+            <span className="text-[11.5px]">
+              — un pixel invisible, estimation surestimée, et un signal de plus pour les
+              filtres. Décochez pour un message qui compte.
+            </span>
+          </span>
         </label>
       )}
 

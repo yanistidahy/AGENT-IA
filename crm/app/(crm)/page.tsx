@@ -10,6 +10,9 @@ import { findAgentProfile } from "@/lib/api/agents";
 import { snapshotHealth, type SnapshotHealth } from "@/lib/api/snapshots";
 import { readBudget } from "@/lib/api/usage";
 import { BudgetBanner } from "@/components/dashboard/budget-banner";
+import { schedulerHealth, type SchedulerHealth } from "@/lib/api/scheduler-health";
+import { readLimitNotice, type LimitNotice } from "@/lib/api/send-rate";
+import { SchedulerBanner, SendLimitBanner } from "@/components/dashboard/scheduler-banner";
 import type { BudgetState } from "@/lib/domain/model-pricing";
 import { describeAge } from "@/lib/domain/snapshots";
 import { RecommendationCard } from "@/components/recommendations/recommendation-card";
@@ -76,10 +79,14 @@ export default async function HomePage({
   // anticipés. Un plafond franchi ne cesse pas d'être vrai parce que la base
   // est vide.
   const budget = await readBudget(renderedAt);
+  // Mêmes raisons, même endroit : ces deux états restent vrais quand la base
+  // est vide ou injoignable, donc ils sont calculés avant les retours anticipés.
+  const scheduler = await schedulerHealth(renderedAt);
+  const sendLimit = await readLimitNotice();
 
   if (!status.ok) {
     return (
-      <Shell deploy={deploy} renderedAt={renderedAt} backup={backup} budget={budget}>
+      <Shell deploy={deploy} renderedAt={renderedAt} backup={backup} budget={budget} scheduler={scheduler} sendLimit={sendLimit}>
         <section className="rounded-card border border-line bg-surface p-5 shadow-card">
           <div className="flex items-center gap-2.5">
             <span aria-hidden className="size-2 rounded-full bg-pulse" />
@@ -95,7 +102,7 @@ export default async function HomePage({
 
   if (status.total === 0) {
     return (
-      <Shell deploy={deploy} renderedAt={renderedAt} backup={backup} budget={budget}>
+      <Shell deploy={deploy} renderedAt={renderedAt} backup={backup} budget={budget} scheduler={scheduler} sendLimit={sendLimit}>
         <section className="rounded-card border border-line bg-surface p-5 shadow-card">
           <div className="flex items-center gap-2.5">
             <span aria-hidden className="size-2 rounded-full bg-brand" />
@@ -148,7 +155,7 @@ export default async function HomePage({
   );
 
   return (
-    <Shell deploy={deploy} renderedAt={renderedAt} backup={backup} budget={budget}>
+    <Shell deploy={deploy} renderedAt={renderedAt} backup={backup} budget={budget} scheduler={scheduler} sendLimit={sendLimit}>
       {recommendations.length > 0 && (
         <Block
           title={`Le point de ${arbiter?.name ?? "l'arbitre"}`}
@@ -250,6 +257,8 @@ function Shell({
   renderedAt,
   backup,
   budget,
+  scheduler,
+  sendLimit,
   children,
 }: {
   deploy: ReturnType<typeof readDeployInfo>;
@@ -257,6 +266,9 @@ function Shell({
   backup: SnapshotHealth;
   /** `null` quand aucun plafond n'est réglé — pas de jauge sans dénominateur. */
   budget: BudgetState | null;
+  scheduler: SchedulerHealth;
+  /** `null` quand le serveur d'envoi n'a rien opposé. */
+  sendLimit: LimitNotice | null;
   children: React.ReactNode;
 }) {
   return (
@@ -270,6 +282,8 @@ function Shell({
           lastSuccessAt={backup.lastSuccessAt?.toISOString() ?? null}
         />
       )}
+      {scheduler.stale && <SchedulerBanner health={scheduler} />}
+      {sendLimit !== null && <SendLimitBanner notice={sendLimit} />}
       {budget !== null && budget.level !== "ok" && <BudgetBanner budget={budget} />}
       {children}
       <p className="mt-8 border-t border-line pt-3 font-mono text-[10.5px] text-muted">

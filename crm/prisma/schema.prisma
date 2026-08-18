@@ -134,9 +134,21 @@ model Contact {
   companyId String?
   company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
 
+  /// Compteurs d'emails, **dénormalisés à l'envoi**.
+  ///
+  /// Un agrégat calculé à la lecture ne se trie pas en SQL : les colonnes
+  /// « Emails envoyés » et « Dernier email » de /contacts doivent être
+  /// triables, et promettre un tri qui ne trierait rien serait pire que ne rien
+  /// promettre (jalon 22). Ils sont écrits dans la même transaction que
+  /// l'enregistrement de l'envoi, donc ils ne peuvent pas dériver de `emailSends`.
+  emailCount  Int       @default(0)
+  lastEmailAt DateTime?
+
   deals      Deal[]
   activities Activity[]
-  tasks      Task[]
+  tasks       Task[]
+  emailSends  EmailSend[]
+  enrollments SequenceEnrollment[]
 
   @@index([companyId])
   @@index([lifecycle])
@@ -357,6 +369,59 @@ model Settings {
   modelRevision String @default("claude-sonnet-5")
   modelChat     String @default("claude-sonnet-5")
   modelShift    String @default("claude-opus-5")
+
+  /// Réception IMAP — **uniquement pour déposer une copie dans « Envoyés »**.
+  ///
+  /// Ni identifiant ni mot de passe ici : ce sont ceux du SMTP. Deux jeux
+  /// d'identifiants pour la même boîte, ce serait deux occasions de se tromper
+  /// et un secret de plus à ne pas laisser fuir.
+  ///
+  /// `imapSentMailbox` n'est qu'un **repli** : le dossier se cherche par son
+  /// drapeau special-use `\\Sent`, parce qu'il s'appelle « Sent », « Envoyés »
+  /// ou « INBOX.Sent » selon le serveur et la langue du compte.
+  imapHost        String  @default("")
+  imapPort        Int     @default(993)
+  /// tls | starttls — `tls` pour le port 993, `starttls` pour le 143.
+  imapEncryption  String  @default("tls")
+  imapSentMailbox String  @default("")
+  imapCopyEnabled Boolean @default(true)
+
+  /// Suivi d'ouverture — interrupteur global.
+  ///
+  /// Coupé, aucun pixel n'est posé et aucun jeton n'est émis. C'est un
+  /// interrupteur, pas un masquage d'affichage : un pixel posé mais non compté
+  /// coûterait la délivrabilité sans rien rapporter.
+  trackOpens Boolean @default(true)
+
+  /// Durée de conservation des ouvertures, en mois.
+  ///
+  /// Une ouverture est une donnée de comportement : le RGPD ne tolère pas
+  /// qu'on la garde indéfiniment. L'envoi, lui, est un fait de gestion et
+  /// reste — c'est la purge des jetons et des horodatages qui est planifiée.
+  openRetentionMonths Int @default(12)
+
+  /// Plafonds d'envoi, volontairement bas au départ.
+  ///
+  /// **Le serveur connaît la vraie limite ; ces valeurs ne sont qu'une
+  /// estimation prudente en attendant qu'il parle.** Un `450 Mail send limit
+  /// exceeded` d'IONOS abaisse `sendPerHour` à ce qui vient réellement de
+  /// passer, et le dit sur l'accueil — voir `sendLimitNotice`.
+  sendPerHour Int @default(30)
+  sendPerDay  Int @default(150)
+
+  /// Ce que le serveur d'envoi a opposé, en français, pour le bandeau d'accueil.
+  /// Vide = rien à signaler. Effacé quand on relève le plafond à la main.
+  sendLimitNotice   String    @default("")
+  sendLimitNoticeAt DateTime?
+
+  /// Dernier passage quotidien **réussi**.
+  ///
+  /// Un planificateur qui s'arrête en silence est pire que pas de
+  /// planificateur : on croit ses relances parties alors que rien ne bouge. Le
+  /// journal ne peut montrer que les passages qui ont eu lieu ; c'est donc
+  /// l'absence de passage qu'il faut rendre visible, et il n'y a qu'un
+  /// horodatage à tenir pour cela.
+  lastCronAt DateTime?
 
   /// Plafond de dépense mensuelle, en cents. `0` désactive le plafond.
   ///
@@ -677,4 +742,166 @@ model Signatory {
   position  Int     @default(0)
 
   @@map("signatories")
+}
+
+/// Un email réellement parti.
+///
+/// **Distinct de l'interaction consignée**, qui reste la trace lisible dans la
+/// chronologie. Cette table-ci porte les faits qu'on veut compter : quand, à
+/// qui, sous quelle signature, avec quel `Message-ID`, la copie IMAP a-t-elle
+/// abouti, et le jeton de suivi s'il y en a un. Compter depuis les interactions
+/// aurait mélangé les envois avec les notes de correction et les appels — c'est
+/// le piège du jalon 22, déjà payé une fois.
+model EmailSend {
+  id     String   @id @default(cuid())
+  sentAt DateTime @default(now())
+
+  contactId String?
+  /// `SetNull` : supprimer une fiche ne doit pas effacer l'historique d'envoi,
+  /// même règle qu'au jalon 3 pour les affaires et les interactions.
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  toAddress String
+  subject   String
+  /// Le corps tel qu'envoyé, pour pouvoir relire ce qu'on a écrit.
+  body      String @default("")
+  messageId String @default("")
+
+  /// Qui signait. Le nom est **copié**, pas seulement référencé : un signataire
+  /// renommé ou supprimé plus tard ne doit pas réécrire l'histoire.
+  signatoryId   String @default("")
+  signatoryName String @default("")
+
+  /// Suivi d'ouverture. `tracked = false` quand l'expéditeur l'a coupé pour cet
+  /// envoi ou globalement — auquel cas `trackToken` est nul et rien n'est mesuré.
+  tracked     Boolean   @default(false)
+  /// Jeton opaque du pixel. **C'est tout ce qu'on stocke du destinataire** :
+  /// pas d'adresse IP, pas d'agent utilisateur, pas de profil.
+  trackToken  String?   @unique
+  firstOpenAt DateTime?
+  lastOpenAt  DateTime?
+  openCount   Int       @default(0)
+  /// Vidé par la purge de rétention, sans supprimer l'envoi lui-même.
+  purgedAt    DateTime?
+
+  /// De quelle séquence vient ce message, et de quelle étape.
+  ///
+  /// **Le nom est copié, pas seulement référencé** : une séquence renommée ou
+  /// supprimée plus tard ne doit pas réécrire l'histoire. Quand un prospect
+  /// finit par répondre, il faut savoir à quoi il répond — et « séquence 2,
+  /// étape 3 » ne se reconstitue pas après coup.
+  sequenceId   String @default("")
+  sequenceName String @default("")
+  sequenceStep Int?
+
+  /// copied | failed | disabled | unconfigured — l'état de la copie « Envoyés ».
+  copyStatus String @default("disabled")
+  /// L'erreur IMAP exacte, telle que le serveur l'a dite. Jamais d'identifiant.
+  copyError  String @default("")
+
+  @@index([sentAt])
+  @@index([contactId])
+  @@map("email_sends")
+}
+
+/// Une séquence d'emails — **distincte des séquences de tâches** du jalon 4.
+///
+/// Celles-ci envoient des messages ; celles-là créent des tâches à faire à la
+/// main. Les fondre aurait produit un objet dont la moitié des champs n'aurait
+/// eu de sens qu'une fois sur deux, et un écran qui aurait dû demander
+/// « celle-ci envoie-t-elle vraiment ? » à chaque ligne.
+model EmailSequence {
+  id        String   @id @default(cuid())
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  /// Mode automatique : les étapes **à partir de la deuxième** partent sans
+  /// validation. Il ne se déverrouille qu'à deux conditions, vérifiées au
+  /// serveur et pas seulement à l'écran — voir `lib/domain/sequence-rules.ts`.
+  autoMode Boolean @default(false)
+
+  steps       EmailSequenceStep[]
+  enrollments SequenceEnrollment[]
+
+  @@map("email_sequences")
+}
+
+/// Trois étapes au maximum, et c'est une décision, pas une limite technique.
+///
+/// Une séquence qui s'arrête d'elle-même au bout de trois messages limite les
+/// dégâts d'une réponse non détectée mieux que n'importe quel mécanisme.
+model EmailSequenceStep {
+  id         String @id @default(cuid())
+  sequenceId String
+  sequence   EmailSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  /// 1, 2 ou 3.
+  position Int
+  /// Jours après l'étape précédente. L'étape 1 part le jour de l'inscription.
+  delayDays Int @default(0)
+  /// Ce qu'Alex doit faire de cette étape, en une phrase.
+  brief String @default("")
+
+  @@unique([sequenceId, position])
+  @@map("email_sequence_steps")
+}
+
+/// L'inscription d'un contact à une séquence.
+model SequenceEnrollment {
+  id         String   @id @default(cuid())
+  sequenceId String
+  sequence   EmailSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  contactId  String
+  contact    Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  enrolledAt DateTime @default(now())
+
+  /// active | done | stopped
+  status String @default("active")
+  /// Pourquoi elle s'est arrêtée, en français.
+  ///
+  /// **Une séquence qui s'arrête sans dire pourquoi ressemble à une panne.**
+  stopReason String @default("")
+
+  /// Dernière étape réellement envoyée. `0` = aucune.
+  lastStep   Int       @default(0)
+  lastSentAt DateTime?
+
+  departures SequenceDeparture[]
+
+  @@unique([sequenceId, contactId])
+  @@index([status])
+  @@map("sequence_enrollments")
+}
+
+/// Un départ proposé pour la file du matin.
+///
+/// **Composé le matin même, jamais la veille.** Un brouillon écrit vendredi soir
+/// et envoyé lundi matin décrit l'état de vendredi : la réponse arrivée samedi
+/// ne l'aurait pas arrêté. La file du lundi se construit lundi.
+model SequenceDeparture {
+  id           String   @id @default(cuid())
+  enrollmentId String
+  enrollment   SequenceEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  step         Int
+  createdAt    DateTime @default(now())
+  /// Le jour pour lequel il a été composé, `YYYY-MM-DD`.
+  day          String
+
+  /// pending | sent | skipped | postponed | failed
+  status  String @default("pending")
+  subject String @default("")
+  body    String @default("")
+
+  /// Parti sans validation humaine — seulement possible en mode automatique,
+  /// et jamais pour l'étape 1. C'est aussi le compteur qui déverrouille ce mode :
+  /// on compte les départs validés **à la main**.
+  auto Boolean @default(false)
+
+  decidedAt DateTime?
+  detail    String    @default("")
+
+  @@unique([enrollmentId, step])
+  @@index([day, status])
+  @@map("sequence_departures")
 }

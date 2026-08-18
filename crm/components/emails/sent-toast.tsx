@@ -21,6 +21,16 @@ export interface SentNotice {
   readonly subject: string;
   readonly activityId: string;
   readonly suggestedReminder: string;
+  /**
+   * La copie « Envoyés » a-t-elle abouti ?
+   *
+   * Affichée **ici et pas ailleurs**, parce que c'est le seul instant où l'on
+   * regarde cet envoi précis. Et affichée comme un avertissement, jamais comme
+   * une erreur : le message est parti, il n'y a rien à réessayer.
+   */
+  readonly copied: boolean;
+  readonly copyError: string | null;
+  readonly tracked: boolean;
 }
 
 function isOk(value: unknown): value is Record<string, unknown> {
@@ -70,6 +80,12 @@ export function SentToast({
         <span className="font-mono text-[12px] break-all text-muted">({sent.to})</span>
       </p>
       <p className="mt-0.5 truncate text-[12px] text-muted">Objet : {sent.subject}</p>
+      {!sent.copied && sent.copyError !== null && (
+        <p className="mt-1.5 rounded-control border border-[#F0DFB8] bg-gold-l px-2.5 py-1.5 text-[11.5px] leading-relaxed text-[#9A6410]">
+          <b className="font-semibold">Le message est bien parti</b>, mais il n'a pas pu être
+          copié dans « Envoyés » : {sent.copyError}
+        </p>
+      )}
 
       {planned ? (
         <p className="mt-2 text-[12.5px] text-win-d">

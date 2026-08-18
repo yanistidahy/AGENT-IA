@@ -107,6 +107,10 @@ export const CONTACT_SORT_KEYS = [
   "lastContact",
   "createdAt",
   "tag",
+  // Dénormalisés sur la fiche à l'envoi, donc triables en SQL — contrairement
+  // aux agrégats du jalon 22, qui restent volontairement non triables.
+  "emailCount",
+  "lastEmailAt",
   // Dérivés : triés en mémoire, voir lib/api/contacts.ts.
   "followUp",
   "nextReminder",

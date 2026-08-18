@@ -70,6 +70,30 @@ beforeEach(() => {
   process.env.WORKSPACE_PASSWORD = PASSWORD;
 });
 
+/**
+ * Les seules routes d'API délibérément publiques, en plus de `PUBLIC_PATHS`.
+ *
+ * **Une par une, avec sa raison.** Une liste de préfixes serait exactement le
+ * défaut que ce test existe pour empêcher : ouvrir un chemin et tout ce qui
+ * viendra dessous sans que personne le décide.
+ *
+ * `/api/t/[token]` — le pixel de suivi d'ouverture. Il est chargé par le client
+ * de messagerie d'un prospect, qui ne présente aucun cookie. Il ne lit aucune
+ * donnée métier et rend la même image quel que soit le jeton, donc il ne peut
+ * ni divulguer ni énumérer quoi que ce soit.
+ */
+const PUBLIC_API_EXCEPTIONS: readonly string[] = ["/api/t/[token]"];
+
+function isPublicApi(route: string): boolean {
+  if (PUBLIC_PATHS.includes(route)) return true;
+  // Les segments dynamiques sont rendus par `apiRoutes()` sous une valeur
+  // d'exemple : on compare donc sur le préfixe du segment fixe.
+  return PUBLIC_API_EXCEPTIONS.some((pattern) => {
+    const prefix = pattern.slice(0, pattern.indexOf("["));
+    return route.startsWith(prefix);
+  });
+}
+
 describe("aucune route n'est lisible sans session", () => {
   it("toutes les routes d'API répondent 401, sauf les publiques", async () => {
     const routes = await apiRoutes();
@@ -77,7 +101,7 @@ describe("aucune route n'est lisible sans session", () => {
 
     const leaks: string[] = [];
     for (const route of routes) {
-      if (PUBLIC_PATHS.includes(route)) continue;
+      if (isPublicApi(route)) continue;
       const response = await middleware(request(route));
       if (response.status !== 401) leaks.push(`${route} → ${response.status}`);
     }

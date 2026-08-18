@@ -43,6 +43,12 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         desc: "Kanban glisser-déposer, fluxbar en tête.",
       },
       {
+        label: "Départs du jour",
+        href: "/departs",
+        icon: "mail",
+        desc: "Les emails de séquence à valider ce matin, un geste par ligne.",
+      },
+      {
         label: "Tâches",
         href: "/taches",
         icon: "task",
@@ -82,6 +88,12 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     title: "Analyse",
     entries: [
+      {
+        label: "Emails",
+        href: "/emails",
+        icon: "mail",
+        desc: "Envois par semaine, par signataire, réponses et ouvertures estimées.",
+      },
       {
         label: "Rapports",
         href: "/rapports",

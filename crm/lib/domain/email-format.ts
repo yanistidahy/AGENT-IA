@@ -91,6 +91,32 @@ export function toHtml(body: string, link?: DemoLink): string {
   return `<html><body>${paragraphs.join("")}</body></html>`;
 }
 
+/**
+ * Insère le pixel de suivi d'ouverture dans la partie HTML.
+ *
+ * **Séparé de `toHtml()`, et ce n'est pas un détail d'organisation.** La règle
+ * du jalon 32 — « aucune image, aucun pixel de suivi » — porte sur la mise en
+ * forme du corps, et elle tient toujours : un message sans suivi est
+ * *exactement* le message qu'un humain aurait tapé. Le pixel est une décision
+ * d'envoi, prise à l'envoi, révocable à l'envoi, et le test de mise en forme
+ * continue de refuser toute image dans `toHtml()`.
+ *
+ * Il est posé juste avant `</body>` : un client qui tronque un message long
+ * coupe par la fin, donc un pixel en tête serait chargé même sur un message
+ * jamais déroulé — ce qui gonflerait encore un chiffre déjà surestimé.
+ */
+export function withTrackingPixel(html: string, url: string): string {
+  const src = url.trim();
+  if (src === "") return html;
+
+  // `alt=""` et `display:none` : ce n'est pas une image à décrire, et un
+  // lecteur d'écran n'a rien à en dire. `width`/`height` en attributs, parce
+  // qu'un client qui ignore le style doit quand même ne rien afficher de
+  // visible.
+  const pixel = `<img src="${escapeHtml(src)}" width="1" height="1" alt="" style="display:none;border:0" />`;
+  return html.replace("</body>", `${pixel}</body>`);
+}
+
 /** Le lien de démonstration, tel qu'il est réglé. `url` vide = pas de lien. */
 export interface DemoLink {
   readonly label: string;

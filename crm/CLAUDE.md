@@ -246,7 +246,8 @@ disponible localement.
 | `DATABASE_URL` | phase 1 | connexion PostgreSQL |
 | `WORKSPACE_PASSWORD` | **jalon 9, obligatoire** | mot de passe unique de l'espace + clé de signature des sessions |
 | `ANTHROPIC_API_KEY` | phase 3 | conseil d'agents — **serveur uniquement** |
-| `SMTP_PASSWORD` | **jalon 32** | mot de passe de la boîte d'envoi — **serveur uniquement**, jamais en base |
+| `SMTP_PASSWORD` | **jalon 32** | mot de passe de la boîte d'envoi — **serveur uniquement**, jamais en base. **Sert aussi à IMAP** depuis le jalon 37 : c'est la même boîte |
+| `CRM_PUBLIC_URL` | jalon 37 | adresse publique du CRM, pour composer l'URL du pixel de suivi. À défaut, `RAILWAY_PUBLIC_DOMAIN`. Absente, **aucun pixel n'est posé** |
 | `AGENT_ETIENNE_ENABLED` | phase 4 | drapeau de l'agent verrouillé |
 
 Aucune clé n'est lue côté client. Tout appel Anthropic passe par une route
@@ -349,6 +350,8 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 34 | **Le vrai pitch** — Personal Shoppers, signature et lien réglables, conversation avec Alex | **livré, à valider** |
 | 35 | **Deux signataires** — sélecteur Yanis/Mohamed, nouveau mail de référence, reprise fidèle | **livré, à valider** |
 | 36 | **Le coût de l'API, mesuré puis coupé** — compteur par appel, un modèle par usage, plafond mensuel | **livré, à valider** |
+| 37 | **Les emails laissent une trace** — copie IMAP dans « Envoyés », journal des envois, section Emails, suivi d'ouverture assumé comme estimation | **livré, à valider** |
+| 38 | **Séquences d'emails** — trois étapes, file du matin, mode automatique à double verrou, plafonds qui apprennent du refus | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -4848,3 +4851,388 @@ d'Alex fait 2 754 jetons identiques à chaque tour de reprise : c'est le candida
 à 00:30 à Paris tombe dans le mois précédent si le serveur est en UTC. Sans
 conséquence sur un plafond mensuel, et à savoir avant de croire un total à la
 minute près.
+
+
+---
+
+## Jalon 37 — les emails laissent une trace
+
+### 1. La copie dans « Envoyés »
+
+**SMTP envoie ; il ne dépose rien dans la boîte de l'expéditeur.** Conséquence
+vécue : un message parti du CRM n'existait nulle part dans la messagerie, et une
+réponse du prospect arrivait dans un fil orphelin, sans le message auquel elle
+répond.
+
+`lib/api/imap.ts` dépose donc une copie par IMAP, **avec les identifiants du
+SMTP** — même boîte, même secret, rien à saisir deux fois.
+
+**Le dossier se trouve par son drapeau, pas par son nom.** Il s'appelle « Sent »,
+« Envoyés », « Sent Items », « INBOX.Sent » ou « [Gmail]/Messages envoyés » selon
+le serveur, la langue du compte et le séparateur de hiérarchie. La RFC 6154
+(SPECIAL-USE) donne la réponse sans deviner : le serveur marque lui-même le
+dossier `\Sent`. Le nom réglé n'est qu'un **repli**, et l'absence des deux est
+dite — avec la liste des dossiers vus — plutôt que devinée. Déposer un message
+important dans un dossier choisi au hasard serait pire que ne pas le déposer :
+on le croirait rangé.
+
+**Un échec de copie ne fait jamais échouer l'envoi.** Le courriel est parti ;
+le rattraper est impossible, et remonter l'échec comme une erreur d'envoi ferait
+croire qu'on peut réessayer — un second message partirait. L'échec est journalisé,
+consigné sur la ligne d'envoi, affiché dans le bandeau de confirmation, sur la
+fiche du contact et en tête de `/emails`.
+
+« Tester la copie » suit le motif de « Tester l'envoi » du jalon 32 : il **cite
+la réponse du serveur**, et dit en plus *comment* le dossier a été trouvé — par
+son drapeau, ou par le nom de repli, ce second cas méritant d'être su parce
+qu'il cassera le jour où le compte changera de langue. Le message d'essai ne
+passe pas par SMTP : il n'est envoyé à personne, seulement déposé.
+
+### Un défaut réel, trouvé en comparant les octets
+
+`MailComposer.build()` rend un corps quoted-printable dont les fins de ligne
+sont des **LF nus** ; le transport SMTP de nodemailer les convertit en CRLF au
+moment d'écrire sur le fil. Les octets « construits » et les octets « envoyés »
+différaient donc de sept caractères sur un message de sept lignes — et c'est la
+version construite qu'on déposait dans « Envoyés ».
+
+Deux conséquences, dont une seule est visible : la copie n'était pas l'original,
+et surtout **la RFC 3501 exige le CRLF dans un `APPEND`**. Un serveur tolérant
+l'accepte, un serveur strict refuse, et un client de messagerie peut afficher le
+message d'un bloc.
+
+`toCrlf()` normalise **une fois**, et les deux chemins partent des mêmes octets.
+Trois tests fixent le comportement, dont l'idempotence — appliquer deux fois la
+normalisation ne doit rien changer, sinon chaque passage ajouterait une ligne
+vide entre chaque ligne du message.
+
+Le défaut était invisible à la lecture. Il n'est sorti que parce que la
+vérification compare `cmp` en main les deux fichiers écrits sur disque, et non
+« les deux messages se ressemblent ».
+
+### 2. Le journal des envois, distinct des interactions
+
+Table `email_sends` (migration `15_emails`). **Distincte de l'interaction
+consignée**, qui reste la trace lisible de la chronologie : compter les envois
+depuis les interactions les aurait mélangés aux appels et aux notes de
+correction — c'est le piège du jalon 22, déjà payé une fois.
+
+`Contact.emailCount` et `Contact.lastEmailAt` sont **dénormalisés dans la
+transaction d'envoi**. C'est ce qui rend les colonnes « Emails envoyés » et
+« Dernier email » triables en SQL : un agrégat calculé à la lecture ne se trie
+pas, et promettre un tri qui ne trierait rien serait pire que ne rien promettre.
+Écrits dans la même transaction que la ligne d'envoi, ils ne peuvent pas dériver.
+
+### 3. Le suivi d'ouverture, et ce qu'il vaut
+
+Un GIF transparent de 1×1 servi depuis **notre propre domaine**, un jeton
+opaque par message, aucun service tiers.
+
+**Le chiffre est systématiquement surestimé, et l'écran le dit.** Apple Mail
+Privacy Protection charge toutes les images d'un message à la réception, que
+quiconque l'ait lu ou non ; Gmail les fait passer par un proxy qui les met en
+cache, ce qui écrase les ouvertures suivantes. La métrique s'appelle donc
+**« Ouvertures (estimation) »** partout, et `OPEN_RATE_CAVEAT` — une constante
+unique, affichée avec le taux — nomme les deux causes. Un test refuse un libellé
+qui ne dirait pas « estimation » et une mise en garde qui ne citerait pas les
+deux fournisseurs.
+
+**Les faits passent devant l'estimation.** `/emails` affiche dans cet ordre :
+envois, réponses, rendez-vous obtenus, puis le taux d'ouverture — ce dernier sur
+un fond distinct, en encadré pointillé. Les trois premiers sont constatés ou
+saisis à la main ; le quatrième est estimé. Les aligner sans les hiérarchiser
+laisserait le plus gros nombre passer pour le plus solide.
+
+**La réponse se compte par personne, pas par envoi.** Quelqu'un qui a reçu trois
+messages et répond une fois a répondu une fois : compter la réponse pour chacun
+des trois gonflerait le taux d'un facteur trois, et d'autant plus qu'on relance.
+Elle doit aussi être **postérieure** au premier envoi, sinon on compterait comme
+réponse à un email une conversation antérieure.
+
+**Trois garanties de vie privée, portées par le code :**
+
+| Exigence | Comment |
+|---|---|
+| Stocker le jeton, pas un profil | La table porte `trackToken`, `firstOpenAt`, `lastOpenAt`, `openCount`. **Ni adresse IP, ni agent utilisateur.** La route ne les lit même pas |
+| Aucun service tiers | Le pixel est servi par `/api/t/[token]`, sur notre domaine |
+| Rétention configurable, 12 mois par défaut | `purgeOpens()` efface jeton et horodatages dans le passage quotidien. **L'envoi reste** : c'est un fait de gestion, pas une donnée de comportement |
+
+**Deux interrupteurs, pas un.** Le réglage global coupe le suivi pour tout le
+monde ; la case « Suivre l'ouverture » du panneau de rédaction le coupe pour un
+message précis. Coupé, **aucun pixel n'est posé et aucun jeton n'est émis** :
+c'est un interrupteur, pas un masquage d'affichage — un pixel posé mais non
+compté coûterait la délivrabilité sans rien rapporter. Le global est le maître :
+coupé là-bas, la case ne rallume rien.
+
+**Sans adresse publique connue, aucun pixel.** `CRM_PUBLIC_URL` ou
+`RAILWAY_PUBLIC_DOMAIN` ; à défaut, le panneau le dit et le suivi ne s'active
+pas. Une adresse devinée produirait une image cassée dans chaque message.
+
+**La route du pixel est publique, et ne divulgue rien.** Elle est chargée par le
+client de messagerie d'un prospect, qui ne présente aucun cookie. Elle rend
+**exactement la même image** qu'un jeton soit connu, inconnu, purgé ou malformé :
+répondre différemment en ferait un oracle permettant d'énumérer les envois.
+`tests/auth-routes.test.ts` a d'ailleurs attrapé l'ouverture au premier essai —
+l'exception y est désormais déclarée **une par une, avec sa raison**, jamais par
+préfixe.
+
+Le pixel est inséré par `withTrackingPixel()`, **hors de `toHtml()`**. La règle
+du jalon 32 — le corps ne porte ni image ni pixel — tient donc toujours, et un
+test le vérifie : un message non suivi est exactement ce qu'un humain aurait
+tapé. Il est posé juste avant `</body>` : un client qui tronque un message long
+coupe par la fin, donc un pixel en tête serait chargé même sur un message jamais
+déroulé — ce qui gonflerait encore un chiffre déjà surestimé.
+
+### Jalon 37 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `15_emails` appliquée puis `migrate
+diff` **vide**), le serveur standalone de production, un **puits SMTP avec
+STARTTLS** et un **serveur IMAP sur TLS**, tous deux versionnés
+(`scripts/mock-smtp.ts`, `scripts/mock-imap.ts`) :
+
+- **copie identique à l'octet près** : `cmp` sur les deux fichiers écrits par le
+  puits SMTP et par le serveur IMAP → identiques, `Message-ID` compris
+  (`<1787063966791.wwgrjicb@aura.test>`), sur les deux messages envoyés par
+  l'API HTTP réelle ;
+- **dossier trouvé par son drapeau** : « Envoyés », `bySpecialUse: true`, et le
+  bouton « Tester la copie » l'annonce en toutes lettres dans le navigateur ;
+- **réglage IMAP faux** (port 9996) → l'envoi **réussit**, `copied: false`, et le
+  message cite la cause : « Connexion IMAP refusée… ECONNREFUSED 127.0.0.1:9996
+  (code ECONNREFUSED) ». La ligne d'envoi est écrite quand même ;
+- **journal** : `Yanis Tidahy | copied | tracked`, `Mohamed Targani | copied |
+  non suivi` ; compteurs de la fiche à 1 et `lastEmailAt` posé ;
+- **pixel** : présent dans la partie HTML du message suivi (`grep -c "img src"`
+  → 1), **absent** du message non suivi (→ 0) ; trois requêtes sur `/api/t/<jeton>`
+  → `openCount: 3` ; un jeton inconnu répond le **même** GIF de 42 octets,
+  `no-store` ;
+- **rétention** : envois vieillis de treize mois → `purgeOpens()` en efface 1,
+  jeton `null`, `openCount` 0, **et l'objet de l'envoi reste** ;
+- **`/emails`** : « Envoyés 2 », « Réponses 1 — 50 % des personnes écrites »,
+  « Rendez-vous obtenus 1 », « Ouvertures (estimation) 100 % · 1 sur 1 » suivi de
+  la mise en garde Apple Mail / Gmail ; graphiques par semaine, par jour, par
+  signataire ;
+- **fiche contact** : « 1 email envoyé · dernier le 18 août 26 », puis l'objet,
+  la date, le signataire, et « Ouvert le 18 août 26 (3 chargements du pixel —
+  estimation) » ;
+- **colonnes** : « Emails envoyés » et « Dernier email » proposées par le
+  sélecteur, tri `?sort=emailCount&dir=desc` appliqué en SQL ;
+- **`/reglages`** : section « Copie dans « Envoyés » (IMAP) », champ hôte,
+  bouton d'essai, suivi d'ouverture, rétention, **0 champ de mot de passe** ;
+- **0 réponse HTTP ≥ 400, 0 erreur console** sur le parcours complet ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**750 tests**) verts.
+
+### Jalon 37 — ce qui n'est pas vérifié
+
+**Rien n'a touché IONOS depuis cet environnement.** Ni SMTP, ni IMAP : les deux
+substituts parlent le protocole et écrivent sur disque ce qu'ils reçoivent, mais
+ils ne disent rien de ce que `imap.ionos.fr` acceptera. Ce qui reste à établir au
+premier clic en production : que les identifiants passent, et **sous quel nom
+IONOS marque le dossier des envoyés** — c'est précisément ce que le bouton
+« Tester la copie » répondra, drapeau ou repli.
+
+**Le fil de discussion n'est pas encore prouvé.** L'identité octet pour octet et
+le `Message-ID` commun sont la condition nécessaire du rattachement ; que Gmail,
+Outlook ou Thunderbird rattachent effectivement la réponse relève du client, et
+ne se verra qu'à la première réponse réelle.
+
+**Le taux d'ouverture ne sera jamais juste**, et ce n'est pas un défaut à
+corriger : c'est la nature de la mesure. Ce qui est vérifié, c'est que le chiffre
+ne s'affiche jamais sans sa mise en garde.
+
+**Deux défauts venaient du substitut IMAP, pas du produit** — et les deux
+ressemblaient à des pannes : il comparait le nom de dossier brut alors qu'un
+client encode « Envoyés » en UTF-7 modifié (`Envoy&AOk-s`), et il répondait la
+même liste à chaque interrogation de hiérarchie, ce qui faisait construire au
+client des chemins imbriqués (« Corbeille.Envoyés »). C'est la troisième fois
+qu'un substitut produit un faux défaut : **lire le journal du substitut avant de
+conclure quoi que ce soit sur le produit.**
+
+**Les réponses restent saisies à la main.** Le CRM ne lit aucune boîte : une
+réponse n'entre dans les chiffres que si quelqu'un consigne l'interaction. C'est
+le périmètre demandé, et c'est aussi la question centrale des séquences
+automatisées — voir la note de conception qui accompagne ce jalon.
+
+
+---
+
+## Jalon 38 — les séquences d'emails, et ce qui les empêche de nuire
+
+### La décision de conception, et son prix
+
+**La détection des réponses reste manuelle** (option A de la note de conception).
+Le CRM ne lit aucune boîte : une réponse n'arrête une séquence que si quelqu'un
+consigne l'interaction. C'est un choix assumé, et il a un défaut connu — le
+**décalage du week-end** : une réponse arrivée samedi n'est vue que lundi.
+
+Deux garde-fous, demandés et construits dès le premier jour :
+
+1. **Rien n'est composé ni envoyé le samedi ou le dimanche.** La file du lundi
+   se construit **lundi matin, à partir de l'état de lundi**. Un brouillon écrit
+   vendredi soir décrirait l'état de vendredi, et la réponse du samedi ne
+   l'aurait pas arrêté ;
+2. **chaque ligne de la file affiche l'ancienneté de la dernière interaction**
+   consignée avec ce contact. Au-delà de deux jours, la mention passe en ambre
+   et ajoute « ouvrez votre boîte avant d'envoyer ».
+
+Le relevé IMAP de la boîte de réception (option B) reste pour le jalon suivant.
+
+### Ce qui décide, et où ça vit
+
+`lib/domain/sequence-rules.ts`, pur et testé. Un envoi automatique est la moins
+réversible des écritures du produit : la règle qui l'autorise ne doit dépendre
+ni d'un écran, ni d'un ordre d'appel, ni d'un `if` recopié dans une route.
+
+**Vérifiée à l'envoi, jamais à l'inscription.** Entre l'inscription et le
+troisième message il peut s'écouler trois semaines — et c'est exactement dans
+cet intervalle que le prospect répond, se désabonne ou passe en `Perdu`.
+
+| Motif | Effet |
+|---|---|
+| `terminal` — `Perdu`, `Ancien Client` | arrête l'inscription |
+| `optout` — « Ne souhaite plus être contacté » | arrête, quel que soit le cycle de vie |
+| `no-email` | arrête |
+| `replied` — une interaction à issue « a répondu » | **arrête** — la sécurité du système |
+| `finished` — trois étapes envoyées | termine |
+| `too-soon`, `weekend` | met en pause, ne ferme rien |
+
+Chaque motif porte une phrase lisible, écrite sur l'inscription : **une séquence
+qui s'arrête sans dire pourquoi ressemble à une panne**, et on la relance.
+
+### Un défaut de conception trouvé à la vérification
+
+La première version cherchait « une réponse consignée » **sans borne de temps**
+sur une inscription neuve. Conséquence : tout contact à qui l'on avait jamais
+parlé — c'est-à-dire la moitié d'un CRM — était arrêté avant son premier
+message. Ce n'est pas ce qu'« arrêter sur réponse » veut dire.
+
+La borne est désormais le dernier envoi **ou, à défaut, la date d'inscription**.
+Le défaut ne se voyait pas à la lecture ; il est sorti d'un `composed: 1,
+stopped: 1` inattendu sur deux contacts identiques.
+
+### Trois étapes, et pourquoi c'est une décision
+
+`MAX_STEPS = 3`, refusé par le schéma Zod **et** par l'écran. Une séquence qui
+s'arrête d'elle-même au bout de trois messages limite les dégâts d'une réponse
+non détectée mieux que n'importe quel mécanisme.
+
+Le délai d'une étape court depuis **l'envoi précédent**, pas depuis
+l'inscription : reporter un départ d'un jour décale la suite d'un jour, sinon
+trois reports feraient partir deux messages le même matin.
+
+### Le mode automatique, à double verrou
+
+| Condition | Pourquoi |
+|---|---|
+| **20 départs validés à la main** sur cette séquence | on ne délègue pas ce qu'on n'a pas fait |
+| **au moins une réponse obtenue** par cette séquence | une séquence validée vingt fois mais jamais répondue n'est pas éprouvée, elle est **tolérée** |
+| **jamais la première étape** | un premier message froid engage la réputation du domaine ; les relances s'adressent à quelqu'un qu'on a déjà approché |
+
+**Le compteur ne compte que les départs `auto: false`.** Compter les envois
+automatiques le ferait grandir tout seul une fois le mode activé : la séquence
+se justifierait elle-même.
+
+Les trois conditions sont revérifiées **au moment de composer**, pas seulement
+au moment de cocher : l'interrupteur exprime une intention, les conditions
+expriment un fait, et un fait peut cesser d'être vrai. L'écran verrouille et
+**dit ce qui manque** — « Il manque 19 départs validés à la main et au moins une
+réponse » — parce qu'un interrupteur grisé sans explication se lit comme une
+panne et donne envie de le forcer.
+
+### Les plafonds apprennent du refus
+
+30 par heure et 150 par jour, configurables. **Ces valeurs ne sont qu'une
+estimation prudente : le serveur connaît la vraie limite.**
+
+Un `450 … Mail send limit exceeded` abaisse le plafond horaire à **ce qui vient
+réellement de passer** — la seule valeur dont on ait la preuve — et le dit **sur
+l'accueil**, pas seulement dans un journal. Relever le plafond à la main
+acquitte le bandeau : c'est le seul geste qui vaut « j'ai compris ».
+
+**Un 450 n'est pas toujours une limite de débit** : c'est un refus temporaire
+qui couvre aussi le greylisting. `isRateRefusal()` exige le code **et** la
+formule, sinon chaque greylisting ferait baisser le plafond pour une raison qui
+n'a rien à voir. Un test fixe les deux cas.
+
+Le comptage se fait depuis `email_sends`, pas depuis un compteur entretenu à
+côté : un compteur finirait par diverger, et il divergerait dans le mauvais
+sens, en autorisant plus que le réel.
+
+### Le planificateur muet
+
+**C'est l'absence de passage qu'il faut rendre visible.** Un cron qui cesse de
+se déclencher ne produit ni erreur, ni ligne de journal, ni changement à
+l'écran : il produit du silence, et le silence ressemble à « tout va bien ».
+Avec des séquences en cours, c'est le pire des états.
+
+`Settings.lastCronAt` est écrit **en dernier et seulement en cas de succès** :
+l'écrire d'entrée ferait d'un passage à moitié échoué un passage réussi.
+Au-delà de 36 heures — pas 24, pour qu'un décalage d'une heure n'allume pas un
+bandeau qu'on apprendrait à ignorer — l'accueil le dit. **Jamais exécuté est un
+état à signaler**, pas un état neutre : c'est la situation d'un déploiement dont
+les secrets du workflow n'ont pas été posés.
+
+### Chaque email de séquence est identifiable
+
+`EmailSend.sequenceId`, `sequenceName` (**copié**, pas seulement référencé) et
+`sequenceStep`. L'interaction consignée s'ouvre sur `[Séquence « … », étape N]`,
+la fiche l'affiche, et `/emails` porte un graphique par séquence et par étape.
+Quand un prospect finit par répondre, il faut savoir **à quoi** il répond — et
+« séquence Prospection froide, étape 2 » ne se reconstitue pas après coup.
+
+### Jalon 38 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, migration `16_sequences` appliquée puis `migrate
+diff` **vide**, le serveur standalone, les substituts SMTP/IMAP/Anthropic :
+
+- **trois étapes** créées ; le mode automatique refusé d'emblée sur une séquence
+  neuve, avec sa raison ;
+- **samedi** → `skipped`, **0 départ composé** ; mardi → 2 composés ; rejoué →
+  0 de plus (contrainte d'unicité, pas vérification) ;
+- **file** : deux lignes portant « Prospection froide · étape 1 » et
+  « dernière interaction aujourd'hui », trois boutons chacune ;
+- **envoi depuis le navigateur** → « Étape 1 envoyée à Laure Favre
+  (laure.favre@teledyne.com) », la ligne disparaît ; `email_sends` porte
+  `sequenceName` et `sequenceStep`, l'interaction s'ouvre sur
+  `[Séquence « Prospection froide », étape 1]` ;
+- **report** → le départ est supprimé et sera recomposé demain, pas déplacé ;
+- **réponse consignée** → l'inscription passe à `stopped`, motif « Le contact a
+  répondu », **et l'étape 2 n'est jamais composée** ;
+- **verrou** affiché : « Il manque 19 départs validés à la main et au moins une
+  réponse obtenue par cette séquence » ;
+- **débit** : plafond à 1 avec un envoi dans l'heure → refus nommant le plafond ;
+  greylisting → **aucun changement** ; vrai 450 → plafond 30 → 1, bandeau écrit ;
+- **bandeau planificateur** : absent après un passage réussi, présent à 40 h
+  (« n'a pas eu lieu depuis 40 heures »), présent aussi si aucun passage n'a
+  jamais eu lieu ;
+- **passage quotidien réel** par HTTP : `composed: 2`, `lastCronAt` écrit ;
+- **0 réponse HTTP ≥ 400, 0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**772 tests**) verts.
+
+### Jalon 38 — ce qui n'est pas vérifié
+
+**Le mode automatique n'a jamais tourné.** Ses conditions sont vérifiées par les
+tests, et le chemin d'envoi automatique partage tout son code avec l'envoi
+manuel — mais aucune séquence n'a atteint 20 validations et une réponse dans cet
+environnement. Ce qui reste à voir en production : que le premier envoi
+automatique parte bien, et qu'il parte à l'étape 2.
+
+**Les quotas IONOS restent à confirmer.** Les pages officielles sont bloquées
+par le proxy sortant de cet environnement ; les valeurs par défaut viennent d'un
+résumé de recherche (montée de 50/h à 500/h selon l'âge de la boîte). La
+conception ne dépend pas de leur justesse — c'est le 450 qui fait autorité —
+mais les chiffres réglés au départ, eux, sont une supposition.
+
+**L'espacement entre envois automatiques est écrit et testé, jamais appliqué.**
+`spacingSeconds()` existe et est couvert, mais la boucle de composition envoie
+les départs automatiques à la suite : il n'y a pas encore de file temporisée. À
+faible volume c'est sans conséquence ; au-delà d'une dizaine de départs
+automatiques par matin, il faudra l'appliquer.
+
+**Le décalage du week-end n'est pas supprimé, il est encadré.** Une réponse
+arrivée samedi reste invisible jusqu'à lundi matin. Les deux garde-fous
+réduisent le risque ; seul le relevé IMAP de la boîte de réception le supprimera.
+
+**La composition appelle le modèle une fois par départ**, dans le passage
+quotidien. À vingt inscriptions actives, c'est vingt brouillons chaque matin —
+le compteur de coûts du jalon 36 les verra, et le plafond mensuel les arrêtera
+si besoin, mais aucun plafond propre aux séquences n'existe.
