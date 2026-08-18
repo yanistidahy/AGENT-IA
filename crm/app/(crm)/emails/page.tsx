@@ -128,6 +128,20 @@ export default async function EmailsPage() {
             />
           </section>
 
+          {stats.perSequence.length > 0 && (
+            <section className="mb-6">
+              <h2 className="mb-2 font-display text-sm font-semibold">Par séquence et étape</h2>
+              <BarChart
+                points={stats.perSequence.map((bucket) => ({
+                  label: bucket.label,
+                  value: bucket.count,
+                }))}
+                format={(value) => String(value)}
+                empty="Aucun email de séquence sur la période."
+              />
+            </section>
+          )}
+
           <section>
             <h2 className="mb-2 font-display text-sm font-semibold">Par signataire</h2>
             <BarChart

@@ -16,6 +16,8 @@ import { listAgentProfiles } from "@/lib/api/agents";
 import { readMailStatus, PASSWORD_ENV } from "@/lib/api/mail";
 import { readImapStatus } from "@/lib/api/imap";
 import { readTrackingConfig } from "@/lib/api/email-sends";
+import { readLimits } from "@/lib/api/send-rate";
+import { listSequences as listEmailSequences } from "@/lib/api/email-sequences";
 import { listSignatories } from "@/lib/api/signatories";
 import { LIFECYCLES } from "@/lib/domain/types";
 import { readUsageReport } from "@/lib/api/usage";
@@ -66,6 +68,14 @@ export default async function ReglagesPage() {
   // Lus après `mail` : l'état IMAP dépend de l'identifiant et du secret SMTP.
   const imap = await readImapStatus(mail, mail.passwordSet);
   const tracking = await readTrackingConfig();
+  const limits = await readLimits();
+  // Recopié en structures muables : le panneau édite la liste sur place, et un
+  // `readonly` du service n'a pas à imposer sa forme au formulaire.
+  const emailSequences = (await listEmailSequences()).map((sequence) => ({
+    ...sequence,
+    steps: sequence.steps.map((step) => ({ ...step })),
+    unlock: { ...sequence.unlock },
+  }));
 
   const lifecycles = lifecycleRows.map((row) => row.value);
 
@@ -88,6 +98,8 @@ export default async function ReglagesPage() {
       signatories={signatories}
       imap={imap}
       tracking={tracking}
+      limits={limits}
+      emailSequences={emailSequences}
       stages={stages}
       dealCounts={dealCounts}
       settings={settings}

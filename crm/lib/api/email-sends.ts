@@ -91,6 +91,9 @@ export interface RecordSendInput {
   readonly signatoryId: string;
   readonly signatoryName: string;
   readonly trackToken: string | null;
+  readonly sequenceId: string;
+  readonly sequenceName: string;
+  readonly sequenceStep: number | null;
   readonly copyStatus: "copied" | "failed" | "disabled" | "unconfigured";
   readonly copyError: string;
 }
@@ -117,6 +120,9 @@ export async function recordSend(input: RecordSendInput, now: Date): Promise<str
         signatoryName: input.signatoryName,
         tracked: input.trackToken !== null,
         trackToken: input.trackToken,
+        sequenceId: input.sequenceId,
+        sequenceName: input.sequenceName,
+        sequenceStep: input.sequenceStep,
         copyStatus: input.copyStatus,
         copyError: input.copyError,
       },
@@ -183,6 +189,8 @@ export async function purgeOpens(now = new Date()): Promise<number> {
 
 export interface ContactEmail {
   readonly id: string;
+  readonly sequenceName: string;
+  readonly sequenceStep: number | null;
   readonly sentAt: Date;
   readonly subject: string;
   readonly signatoryName: string;
@@ -200,6 +208,8 @@ export async function listContactEmails(contactId: string): Promise<ContactEmail
     orderBy: { sentAt: "desc" },
     select: {
       id: true,
+      sequenceName: true,
+      sequenceStep: true,
       sentAt: true,
       subject: true,
       signatoryName: true,

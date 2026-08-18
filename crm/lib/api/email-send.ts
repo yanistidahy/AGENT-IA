@@ -43,6 +43,16 @@ export const sendEmailSchema = z.object({
   signatoryId: z.string().optional(),
   signatoryName: z.string().optional(),
   /**
+   * De quelle séquence vient ce message, s'il en vient une.
+   *
+   * Recopié sur la ligne d'envoi **et** dans l'interaction : quand un prospect
+   * finit par répondre, il faut savoir à quoi il répond, et « séquence
+   * Prospection froide, étape 2 » ne se reconstitue pas après coup.
+   */
+  sequenceId: z.string().optional(),
+  sequenceName: z.string().optional(),
+  sequenceStep: z.number().int().min(1).max(3).optional(),
+  /**
    * Suivi d'ouverture pour **cet** envoi.
    *
    * Absent vaut « suis le réglage global ». Un pixel rend le message
@@ -137,7 +147,11 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
     contactId: contact.id,
     // Objet **et** corps : « je lui ai écrit quoi, déjà ? » se répond depuis la
     // chronologie, sans aller chercher dans la messagerie.
-    notes: `Objet : ${subject}\n\n${input.body}`,
+    notes: `${
+      input.sequenceName === undefined || input.sequenceName === ""
+        ? ""
+        : `[Séquence « ${input.sequenceName} », étape ${input.sequenceStep ?? "?"}]\n`
+    }Objet : ${subject}\n\n${input.body}`,
     // **Pas d'issue.** On vient d'écrire ; on ne sait pas encore si l'on a été
     // lu. Renseigner une issue ferait entrer cet envoi dans le taux de réponse,
     // qui ne compte que les échanges dont le résultat est connu (jalon 20).
@@ -159,6 +173,9 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
       signatoryId: input.signatoryId ?? "",
       signatoryName: input.signatoryName ?? "",
       trackToken,
+      sequenceId: input.sequenceId ?? "",
+      sequenceName: input.sequenceName ?? "",
+      sequenceStep: input.sequenceStep ?? null,
       copyStatus: copy.ok ? "copied" : "failed",
       copyError: copy.ok ? "" : copy.message,
     },

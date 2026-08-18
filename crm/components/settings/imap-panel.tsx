@@ -33,7 +33,14 @@ export interface TrackingStatus {
   baseUrl: string;
 }
 
-function isPayload(value: unknown): value is { imap: ImapStatus; tracking: TrackingStatus } {
+export interface SendLimits {
+  perHour: number;
+  perDay: number;
+}
+
+function isPayload(
+  value: unknown,
+): value is { imap: ImapStatus; tracking: TrackingStatus; limits: SendLimits } {
   return typeof value === "object" && value !== null && "imap" in value;
 }
 
@@ -50,12 +57,15 @@ const BUTTON =
 export function ImapPanel({
   initial,
   initialTracking,
+  initialLimits,
 }: {
   readonly initial: ImapStatus;
   readonly initialTracking: TrackingStatus;
+  readonly initialLimits: SendLimits;
 }) {
   const [imap, setImap] = useState(initial);
   const [tracking, setTracking] = useState(initialTracking);
+  const [limits, setLimits] = useState(initialLimits);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -76,6 +86,8 @@ export function ImapPanel({
           imapCopyEnabled: imap.enabled,
           trackOpens: tracking.enabled,
           openRetentionMonths: tracking.retentionMonths,
+          sendPerHour: limits.perHour,
+          sendPerDay: limits.perDay,
         }),
       },
       isPayload,
@@ -84,6 +96,7 @@ export function ImapPanel({
     if (result.ok) {
       setImap(result.data.imap);
       setTracking(result.data.tracking);
+      setLimits(result.data.limits);
       setDone("Enregistré.");
     } else setError(result.message);
   };
@@ -216,6 +229,34 @@ export function ImapPanel({
             Passé ce délai, jeton et horodatages sont effacés. L'envoi lui-même reste : c'est un
             fait de gestion, pas une donnée de comportement.
           </span>
+        </label>
+      </div>
+
+      <h4 className="mt-5 font-display text-[13.5px] font-semibold">Plafonds d'envoi</h4>
+      <p className="mt-1 text-[12.5px] text-muted">
+        Volontairement bas au départ. <b className="font-semibold text-ink">C'est le serveur qui
+        connaît la vraie limite</b> : s'il oppose un refus de débit, le plafond horaire descend
+        automatiquement à ce qui vient de passer et l'accueil vous le dit. Relever la valeur ici
+        acquitte ce bandeau.
+      </p>
+      <div className="mt-2 grid gap-3 sm:grid-cols-2">
+        <label>
+          <span className={LABEL}>Envois par heure</span>
+          <input
+            className={FIELD}
+            type="number"
+            value={limits.perHour}
+            onChange={(event) => setLimits({ ...limits, perHour: Number(event.target.value) })}
+          />
+        </label>
+        <label>
+          <span className={LABEL}>Envois par jour</span>
+          <input
+            className={FIELD}
+            type="number"
+            value={limits.perDay}
+            onChange={(event) => setLimits({ ...limits, perDay: Number(event.target.value) })}
+          />
         </label>
       </div>
 

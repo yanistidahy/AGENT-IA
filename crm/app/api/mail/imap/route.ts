@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { readMailStatus } from "@/lib/api/mail";
 import { readImapStatus } from "@/lib/api/imap";
 import { readTrackingConfig } from "@/lib/api/email-sends";
+import { readLimits } from "@/lib/api/send-rate";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,23 @@ const schema = z.object({
     .int()
     .min(1, "Au moins un mois")
     .max(60, "Cinq ans au maximum"),
+
+  /**
+   * Plafonds d'envoi. Le maximum accepté reste bas volontairement : au-delà,
+   * ce n'est plus de la prospection, c'est de l'emailing de masse, et ce n'est
+   * pas ce que cette boîte est faite pour porter.
+   */
+  sendPerHour: z.number().int().min(1, "Au moins un envoi par heure").max(500),
+  sendPerDay: z.number().int().min(1, "Au moins un envoi par jour").max(2000),
 });
+
+async function currentHourlyCeiling(): Promise<number> {
+  const row = await prisma.settings.findUnique({
+    where: { id: "singleton" },
+    select: { sendPerHour: true },
+  });
+  return row?.sendPerHour ?? 30;
+}
 
 export async function PATCH(request: Request) {
   const body = await readJson(request);
@@ -50,9 +67,17 @@ export async function PATCH(request: Request) {
   if (!parsed.success) return invalidPayload(parsed.error);
 
   try {
+    // **Relever le plafond à la main acquitte le bandeau.** C'est le seul
+    // geste qui vaut « j'ai compris ce que le serveur m'a opposé » ; l'effacer
+    // tout seul au bout d'un moment le ferait disparaître sans qu'on l'ait lu.
+    const clearing =
+      parsed.data.sendPerHour > (await currentHourlyCeiling())
+        ? { sendLimitNotice: "", sendLimitNoticeAt: null }
+        : {};
+
     await prisma.settings.upsert({
       where: { id: "singleton" },
-      update: parsed.data,
+      update: { ...parsed.data, ...clearing },
       create: { id: "singleton", ...parsed.data },
     });
 
@@ -60,6 +85,7 @@ export async function PATCH(request: Request) {
     return jsonOk({
       imap: await readImapStatus(mail, mail.passwordSet),
       tracking: await readTrackingConfig(),
+      limits: await readLimits(),
     });
   } catch (error) {
     return serverError("PATCH /api/mail/imap", error);

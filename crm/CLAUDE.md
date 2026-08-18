@@ -351,6 +351,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 35 | **Deux signataires** — sélecteur Yanis/Mohamed, nouveau mail de référence, reprise fidèle | **livré, à valider** |
 | 36 | **Le coût de l'API, mesuré puis coupé** — compteur par appel, un modèle par usage, plafond mensuel | **livré, à valider** |
 | 37 | **Les emails laissent une trace** — copie IMAP dans « Envoyés », journal des envois, section Emails, suivi d'ouverture assumé comme estimation | **livré, à valider** |
+| 38 | **Séquences d'emails** — trois étapes, file du matin, mode automatique à double verrou, plafonds qui apprennent du refus | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -5050,3 +5051,188 @@ conclure quoi que ce soit sur le produit.**
 réponse n'entre dans les chiffres que si quelqu'un consigne l'interaction. C'est
 le périmètre demandé, et c'est aussi la question centrale des séquences
 automatisées — voir la note de conception qui accompagne ce jalon.
+
+
+---
+
+## Jalon 38 — les séquences d'emails, et ce qui les empêche de nuire
+
+### La décision de conception, et son prix
+
+**La détection des réponses reste manuelle** (option A de la note de conception).
+Le CRM ne lit aucune boîte : une réponse n'arrête une séquence que si quelqu'un
+consigne l'interaction. C'est un choix assumé, et il a un défaut connu — le
+**décalage du week-end** : une réponse arrivée samedi n'est vue que lundi.
+
+Deux garde-fous, demandés et construits dès le premier jour :
+
+1. **Rien n'est composé ni envoyé le samedi ou le dimanche.** La file du lundi
+   se construit **lundi matin, à partir de l'état de lundi**. Un brouillon écrit
+   vendredi soir décrirait l'état de vendredi, et la réponse du samedi ne
+   l'aurait pas arrêté ;
+2. **chaque ligne de la file affiche l'ancienneté de la dernière interaction**
+   consignée avec ce contact. Au-delà de deux jours, la mention passe en ambre
+   et ajoute « ouvrez votre boîte avant d'envoyer ».
+
+Le relevé IMAP de la boîte de réception (option B) reste pour le jalon suivant.
+
+### Ce qui décide, et où ça vit
+
+`lib/domain/sequence-rules.ts`, pur et testé. Un envoi automatique est la moins
+réversible des écritures du produit : la règle qui l'autorise ne doit dépendre
+ni d'un écran, ni d'un ordre d'appel, ni d'un `if` recopié dans une route.
+
+**Vérifiée à l'envoi, jamais à l'inscription.** Entre l'inscription et le
+troisième message il peut s'écouler trois semaines — et c'est exactement dans
+cet intervalle que le prospect répond, se désabonne ou passe en `Perdu`.
+
+| Motif | Effet |
+|---|---|
+| `terminal` — `Perdu`, `Ancien Client` | arrête l'inscription |
+| `optout` — « Ne souhaite plus être contacté » | arrête, quel que soit le cycle de vie |
+| `no-email` | arrête |
+| `replied` — une interaction à issue « a répondu » | **arrête** — la sécurité du système |
+| `finished` — trois étapes envoyées | termine |
+| `too-soon`, `weekend` | met en pause, ne ferme rien |
+
+Chaque motif porte une phrase lisible, écrite sur l'inscription : **une séquence
+qui s'arrête sans dire pourquoi ressemble à une panne**, et on la relance.
+
+### Un défaut de conception trouvé à la vérification
+
+La première version cherchait « une réponse consignée » **sans borne de temps**
+sur une inscription neuve. Conséquence : tout contact à qui l'on avait jamais
+parlé — c'est-à-dire la moitié d'un CRM — était arrêté avant son premier
+message. Ce n'est pas ce qu'« arrêter sur réponse » veut dire.
+
+La borne est désormais le dernier envoi **ou, à défaut, la date d'inscription**.
+Le défaut ne se voyait pas à la lecture ; il est sorti d'un `composed: 1,
+stopped: 1` inattendu sur deux contacts identiques.
+
+### Trois étapes, et pourquoi c'est une décision
+
+`MAX_STEPS = 3`, refusé par le schéma Zod **et** par l'écran. Une séquence qui
+s'arrête d'elle-même au bout de trois messages limite les dégâts d'une réponse
+non détectée mieux que n'importe quel mécanisme.
+
+Le délai d'une étape court depuis **l'envoi précédent**, pas depuis
+l'inscription : reporter un départ d'un jour décale la suite d'un jour, sinon
+trois reports feraient partir deux messages le même matin.
+
+### Le mode automatique, à double verrou
+
+| Condition | Pourquoi |
+|---|---|
+| **20 départs validés à la main** sur cette séquence | on ne délègue pas ce qu'on n'a pas fait |
+| **au moins une réponse obtenue** par cette séquence | une séquence validée vingt fois mais jamais répondue n'est pas éprouvée, elle est **tolérée** |
+| **jamais la première étape** | un premier message froid engage la réputation du domaine ; les relances s'adressent à quelqu'un qu'on a déjà approché |
+
+**Le compteur ne compte que les départs `auto: false`.** Compter les envois
+automatiques le ferait grandir tout seul une fois le mode activé : la séquence
+se justifierait elle-même.
+
+Les trois conditions sont revérifiées **au moment de composer**, pas seulement
+au moment de cocher : l'interrupteur exprime une intention, les conditions
+expriment un fait, et un fait peut cesser d'être vrai. L'écran verrouille et
+**dit ce qui manque** — « Il manque 19 départs validés à la main et au moins une
+réponse » — parce qu'un interrupteur grisé sans explication se lit comme une
+panne et donne envie de le forcer.
+
+### Les plafonds apprennent du refus
+
+30 par heure et 150 par jour, configurables. **Ces valeurs ne sont qu'une
+estimation prudente : le serveur connaît la vraie limite.**
+
+Un `450 … Mail send limit exceeded` abaisse le plafond horaire à **ce qui vient
+réellement de passer** — la seule valeur dont on ait la preuve — et le dit **sur
+l'accueil**, pas seulement dans un journal. Relever le plafond à la main
+acquitte le bandeau : c'est le seul geste qui vaut « j'ai compris ».
+
+**Un 450 n'est pas toujours une limite de débit** : c'est un refus temporaire
+qui couvre aussi le greylisting. `isRateRefusal()` exige le code **et** la
+formule, sinon chaque greylisting ferait baisser le plafond pour une raison qui
+n'a rien à voir. Un test fixe les deux cas.
+
+Le comptage se fait depuis `email_sends`, pas depuis un compteur entretenu à
+côté : un compteur finirait par diverger, et il divergerait dans le mauvais
+sens, en autorisant plus que le réel.
+
+### Le planificateur muet
+
+**C'est l'absence de passage qu'il faut rendre visible.** Un cron qui cesse de
+se déclencher ne produit ni erreur, ni ligne de journal, ni changement à
+l'écran : il produit du silence, et le silence ressemble à « tout va bien ».
+Avec des séquences en cours, c'est le pire des états.
+
+`Settings.lastCronAt` est écrit **en dernier et seulement en cas de succès** :
+l'écrire d'entrée ferait d'un passage à moitié échoué un passage réussi.
+Au-delà de 36 heures — pas 24, pour qu'un décalage d'une heure n'allume pas un
+bandeau qu'on apprendrait à ignorer — l'accueil le dit. **Jamais exécuté est un
+état à signaler**, pas un état neutre : c'est la situation d'un déploiement dont
+les secrets du workflow n'ont pas été posés.
+
+### Chaque email de séquence est identifiable
+
+`EmailSend.sequenceId`, `sequenceName` (**copié**, pas seulement référencé) et
+`sequenceStep`. L'interaction consignée s'ouvre sur `[Séquence « … », étape N]`,
+la fiche l'affiche, et `/emails` porte un graphique par séquence et par étape.
+Quand un prospect finit par répondre, il faut savoir **à quoi** il répond — et
+« séquence Prospection froide, étape 2 » ne se reconstitue pas après coup.
+
+### Jalon 38 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, migration `16_sequences` appliquée puis `migrate
+diff` **vide**, le serveur standalone, les substituts SMTP/IMAP/Anthropic :
+
+- **trois étapes** créées ; le mode automatique refusé d'emblée sur une séquence
+  neuve, avec sa raison ;
+- **samedi** → `skipped`, **0 départ composé** ; mardi → 2 composés ; rejoué →
+  0 de plus (contrainte d'unicité, pas vérification) ;
+- **file** : deux lignes portant « Prospection froide · étape 1 » et
+  « dernière interaction aujourd'hui », trois boutons chacune ;
+- **envoi depuis le navigateur** → « Étape 1 envoyée à Laure Favre
+  (laure.favre@teledyne.com) », la ligne disparaît ; `email_sends` porte
+  `sequenceName` et `sequenceStep`, l'interaction s'ouvre sur
+  `[Séquence « Prospection froide », étape 1]` ;
+- **report** → le départ est supprimé et sera recomposé demain, pas déplacé ;
+- **réponse consignée** → l'inscription passe à `stopped`, motif « Le contact a
+  répondu », **et l'étape 2 n'est jamais composée** ;
+- **verrou** affiché : « Il manque 19 départs validés à la main et au moins une
+  réponse obtenue par cette séquence » ;
+- **débit** : plafond à 1 avec un envoi dans l'heure → refus nommant le plafond ;
+  greylisting → **aucun changement** ; vrai 450 → plafond 30 → 1, bandeau écrit ;
+- **bandeau planificateur** : absent après un passage réussi, présent à 40 h
+  (« n'a pas eu lieu depuis 40 heures »), présent aussi si aucun passage n'a
+  jamais eu lieu ;
+- **passage quotidien réel** par HTTP : `composed: 2`, `lastCronAt` écrit ;
+- **0 réponse HTTP ≥ 400, 0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**772 tests**) verts.
+
+### Jalon 38 — ce qui n'est pas vérifié
+
+**Le mode automatique n'a jamais tourné.** Ses conditions sont vérifiées par les
+tests, et le chemin d'envoi automatique partage tout son code avec l'envoi
+manuel — mais aucune séquence n'a atteint 20 validations et une réponse dans cet
+environnement. Ce qui reste à voir en production : que le premier envoi
+automatique parte bien, et qu'il parte à l'étape 2.
+
+**Les quotas IONOS restent à confirmer.** Les pages officielles sont bloquées
+par le proxy sortant de cet environnement ; les valeurs par défaut viennent d'un
+résumé de recherche (montée de 50/h à 500/h selon l'âge de la boîte). La
+conception ne dépend pas de leur justesse — c'est le 450 qui fait autorité —
+mais les chiffres réglés au départ, eux, sont une supposition.
+
+**L'espacement entre envois automatiques est écrit et testé, jamais appliqué.**
+`spacingSeconds()` existe et est couvert, mais la boucle de composition envoie
+les départs automatiques à la suite : il n'y a pas encore de file temporisée. À
+faible volume c'est sans conséquence ; au-delà d'une dizaine de départs
+automatiques par matin, il faudra l'appliquer.
+
+**Le décalage du week-end n'est pas supprimé, il est encadré.** Une réponse
+arrivée samedi reste invisible jusqu'à lundi matin. Les deux garde-fous
+réduisent le risque ; seul le relevé IMAP de la boîte de réception le supprimera.
+
+**La composition appelle le modèle une fois par départ**, dans le passage
+quotidien. À vingt inscriptions actives, c'est vingt brouillons chaque matin —
+le compteur de coûts du jalon 36 les verra, et le plafond mensuel les arrêtera
+si besoin, mais aucun plafond propre aux séquences n'existe.

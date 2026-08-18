@@ -138,6 +138,29 @@ export function bySignatory(
     .sort((a, b) => b.count - a.count);
 }
 
+/**
+ * Par séquence **et par étape**, les envois hors séquence exclus.
+ *
+ * Exclus et non rangés sous « (aucune) » : contrairement au signataire, où le
+ * total des barres doit égaler le total des envois, ce graphique répond à « que
+ * font mes séquences ». Y mêler les messages écrits à la main noierait la
+ * réponse sous la colonne la plus haute.
+ */
+export function bySequence(
+  rows: ReadonlyArray<{ readonly sequenceName: string; readonly sequenceStep: number | null }>,
+): Bucket[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const name = row.sequenceName.trim();
+    if (name === "") continue;
+    const key = `${name} · étape ${row.sequenceStep ?? "?"}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([key, count]) => ({ key, label: key, count }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+}
+
 /** Le mois d'un envoi, pour les regroupements longs. Réutilise `dates.ts`. */
 export function sendMonth(date: Date): string {
   return monthKey(date);

@@ -146,8 +146,9 @@ model Contact {
 
   deals      Deal[]
   activities Activity[]
-  tasks      Task[]
-  emailSends EmailSend[]
+  tasks       Task[]
+  emailSends  EmailSend[]
+  enrollments SequenceEnrollment[]
 
   @@index([companyId])
   @@index([lifecycle])
@@ -398,6 +399,29 @@ model Settings {
   /// qu'on la garde indéfiniment. L'envoi, lui, est un fait de gestion et
   /// reste — c'est la purge des jetons et des horodatages qui est planifiée.
   openRetentionMonths Int @default(12)
+
+  /// Plafonds d'envoi, volontairement bas au départ.
+  ///
+  /// **Le serveur connaît la vraie limite ; ces valeurs ne sont qu'une
+  /// estimation prudente en attendant qu'il parle.** Un `450 Mail send limit
+  /// exceeded` d'IONOS abaisse `sendPerHour` à ce qui vient réellement de
+  /// passer, et le dit sur l'accueil — voir `sendLimitNotice`.
+  sendPerHour Int @default(30)
+  sendPerDay  Int @default(150)
+
+  /// Ce que le serveur d'envoi a opposé, en français, pour le bandeau d'accueil.
+  /// Vide = rien à signaler. Effacé quand on relève le plafond à la main.
+  sendLimitNotice   String    @default("")
+  sendLimitNoticeAt DateTime?
+
+  /// Dernier passage quotidien **réussi**.
+  ///
+  /// Un planificateur qui s'arrête en silence est pire que pas de
+  /// planificateur : on croit ses relances parties alors que rien ne bouge. Le
+  /// journal ne peut montrer que les passages qui ont eu lieu ; c'est donc
+  /// l'absence de passage qu'il faut rendre visible, et il n'y a qu'un
+  /// horodatage à tenir pour cela.
+  lastCronAt DateTime?
 
   /// Plafond de dépense mensuelle, en cents. `0` désactive le plafond.
   ///
@@ -760,6 +784,16 @@ model EmailSend {
   /// Vidé par la purge de rétention, sans supprimer l'envoi lui-même.
   purgedAt    DateTime?
 
+  /// De quelle séquence vient ce message, et de quelle étape.
+  ///
+  /// **Le nom est copié, pas seulement référencé** : une séquence renommée ou
+  /// supprimée plus tard ne doit pas réécrire l'histoire. Quand un prospect
+  /// finit par répondre, il faut savoir à quoi il répond — et « séquence 2,
+  /// étape 3 » ne se reconstitue pas après coup.
+  sequenceId   String @default("")
+  sequenceName String @default("")
+  sequenceStep Int?
+
   /// copied | failed | disabled | unconfigured — l'état de la copie « Envoyés ».
   copyStatus String @default("disabled")
   /// L'erreur IMAP exacte, telle que le serveur l'a dite. Jamais d'identifiant.
@@ -768,4 +802,106 @@ model EmailSend {
   @@index([sentAt])
   @@index([contactId])
   @@map("email_sends")
+}
+
+/// Une séquence d'emails — **distincte des séquences de tâches** du jalon 4.
+///
+/// Celles-ci envoient des messages ; celles-là créent des tâches à faire à la
+/// main. Les fondre aurait produit un objet dont la moitié des champs n'aurait
+/// eu de sens qu'une fois sur deux, et un écran qui aurait dû demander
+/// « celle-ci envoie-t-elle vraiment ? » à chaque ligne.
+model EmailSequence {
+  id        String   @id @default(cuid())
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  /// Mode automatique : les étapes **à partir de la deuxième** partent sans
+  /// validation. Il ne se déverrouille qu'à deux conditions, vérifiées au
+  /// serveur et pas seulement à l'écran — voir `lib/domain/sequence-rules.ts`.
+  autoMode Boolean @default(false)
+
+  steps       EmailSequenceStep[]
+  enrollments SequenceEnrollment[]
+
+  @@map("email_sequences")
+}
+
+/// Trois étapes au maximum, et c'est une décision, pas une limite technique.
+///
+/// Une séquence qui s'arrête d'elle-même au bout de trois messages limite les
+/// dégâts d'une réponse non détectée mieux que n'importe quel mécanisme.
+model EmailSequenceStep {
+  id         String @id @default(cuid())
+  sequenceId String
+  sequence   EmailSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  /// 1, 2 ou 3.
+  position Int
+  /// Jours après l'étape précédente. L'étape 1 part le jour de l'inscription.
+  delayDays Int @default(0)
+  /// Ce qu'Alex doit faire de cette étape, en une phrase.
+  brief String @default("")
+
+  @@unique([sequenceId, position])
+  @@map("email_sequence_steps")
+}
+
+/// L'inscription d'un contact à une séquence.
+model SequenceEnrollment {
+  id         String   @id @default(cuid())
+  sequenceId String
+  sequence   EmailSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  contactId  String
+  contact    Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  enrolledAt DateTime @default(now())
+
+  /// active | done | stopped
+  status String @default("active")
+  /// Pourquoi elle s'est arrêtée, en français.
+  ///
+  /// **Une séquence qui s'arrête sans dire pourquoi ressemble à une panne.**
+  stopReason String @default("")
+
+  /// Dernière étape réellement envoyée. `0` = aucune.
+  lastStep   Int       @default(0)
+  lastSentAt DateTime?
+
+  departures SequenceDeparture[]
+
+  @@unique([sequenceId, contactId])
+  @@index([status])
+  @@map("sequence_enrollments")
+}
+
+/// Un départ proposé pour la file du matin.
+///
+/// **Composé le matin même, jamais la veille.** Un brouillon écrit vendredi soir
+/// et envoyé lundi matin décrit l'état de vendredi : la réponse arrivée samedi
+/// ne l'aurait pas arrêté. La file du lundi se construit lundi.
+model SequenceDeparture {
+  id           String   @id @default(cuid())
+  enrollmentId String
+  enrollment   SequenceEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  step         Int
+  createdAt    DateTime @default(now())
+  /// Le jour pour lequel il a été composé, `YYYY-MM-DD`.
+  day          String
+
+  /// pending | sent | skipped | postponed | failed
+  status  String @default("pending")
+  subject String @default("")
+  body    String @default("")
+
+  /// Parti sans validation humaine — seulement possible en mode automatique,
+  /// et jamais pour l'étape 1. C'est aussi le compteur qui déverrouille ce mode :
+  /// on compte les départs validés **à la main**.
+  auto Boolean @default(false)
+
+  decidedAt DateTime?
+  detail    String    @default("")
+
+  @@unique([enrollmentId, step])
+  @@index([day, status])
+  @@map("sequence_departures")
 }

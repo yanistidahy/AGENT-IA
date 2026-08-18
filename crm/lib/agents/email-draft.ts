@@ -235,6 +235,15 @@ Deux points propres à cette forme :
 export async function draftEmail(
   contactId: string,
   focusActivityId?: string,
+  /**
+   * Consigne propre à une étape de séquence.
+   *
+   * Passée telle quelle **après** les règles générales : une étape de relance
+   * ne change pas la forme d'un email, elle change ce qu'il doit dire. Écrire
+   * une seconde instruction de rédaction ici aurait recréé la duplication que
+   * le jalon 36 vient de supprimer.
+   */
+  stepBrief?: string,
 ): Promise<DraftResult> {
   const contact = await prisma.contact.findUnique({
     where: { id: contactId },
@@ -265,7 +274,11 @@ export async function draftEmail(
 
   return complete(
     system,
-    `${context}\n\n---\n\n${draftInstruction()}`,
+    `${context}\n\n---\n\n${draftInstruction()}${
+      stepBrief === undefined || stepBrief.trim() === ""
+        ? ""
+        : `\n\nConsigne propre à ce message : ${stepBrief.trim()}`
+    }`,
     to,
     contact.firstName,
     contact.lastName,

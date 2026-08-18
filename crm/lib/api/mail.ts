@@ -1,6 +1,7 @@
 import "server-only";
 import nodemailer from "nodemailer";
 import MailComposer from "nodemailer/lib/mail-composer";
+import { noteRateRefusal } from "./send-rate";
 import type Mail from "nodemailer/lib/mailer";
 import { prisma } from "../db";
 import {
@@ -318,6 +319,13 @@ export async function sendMail(input: SendInput): Promise<SendResult> {
   } catch (error) {
     // Jamais la configuration ni le secret dans le journal : seulement la cause.
     console.error("[mail] envoi refusé :", describeSmtpError(error));
+
+    // **Un refus de débit s'apprend, il ne se subit pas.** Traité ici plutôt
+    // que chez l'appelant : tous les chemins d'envoi passent par cette fonction,
+    // et le plafond doit descendre quel que soit celui qui a rencontré la
+    // limite — un envoi de séquence comme un message écrit à la main.
+    await noteRateRefusal(error);
+
     return { ok: false, message: describeSmtpError(error) };
   } finally {
     transport.close();

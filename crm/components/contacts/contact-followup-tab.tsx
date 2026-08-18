@@ -1,5 +1,7 @@
 "use client";
 
+import { EnrollBox } from "@/components/sequences/enroll-box";
+
 import { Eyebrow, StatusTag } from "@/components/ui/primitives";
 import type { ContactDealSummary } from "@/lib/api/contacts";
 import { money } from "@/lib/format";
@@ -76,6 +78,7 @@ export function FollowUpTab({
       )}
 
       <LinkDeal contactId={contactId} deals={linkableDeals} onChanged={onChanged} />
+      <EnrollBox contactId={contactId} onChanged={onChanged} />
     </>
   );
 }

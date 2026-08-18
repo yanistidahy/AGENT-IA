@@ -4,6 +4,7 @@ import { REAL_ACTIVITY } from "./real-activity";
 import { ANSWERED_OUTCOMES } from "../domain/status";
 import {
   byDay,
+  bySequence,
   bySignatory,
   byWeek,
   rate,
@@ -39,6 +40,15 @@ export interface EmailStats {
   readonly meetings: number;
   /** Envois dont la copie IMAP a échoué — visible, jamais avalé. */
   readonly copyFailures: number;
+  /**
+   * Par séquence et par étape.
+   *
+   * **Quand un prospect finit par répondre, il faut savoir à quoi.** Une
+   * séquence dont l'étape 1 part cent fois et l'étape 3 jamais ne dit pas la
+   * même chose qu'une séquence qui va au bout : le détail par étape est ce qui
+   * distingue « la séquence tourne » de « la séquence s'arrête toute seule ».
+   */
+  readonly perSequence: readonly Bucket[];
 }
 
 const WINDOW_DAYS = 90;
@@ -52,6 +62,8 @@ export async function readEmailStats(now = new Date()): Promise<EmailStats> {
     select: {
       sentAt: true,
       signatoryName: true,
+      sequenceName: true,
+      sequenceStep: true,
       contactId: true,
       tracked: true,
       firstOpenAt: true,
@@ -106,6 +118,7 @@ export async function readEmailStats(now = new Date()): Promise<EmailStats> {
     perDay: byDay(dates, now, 30),
     perWeek: byWeek(dates, now, 12),
     perSignatory: bySignatory(sends),
+    perSequence: bySequence(sends),
     tracked,
     opened,
     openRate: rate(opened, tracked),
