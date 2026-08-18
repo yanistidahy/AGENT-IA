@@ -47,6 +47,8 @@ function contact(overrides: Partial<ContactRecord> = {}): ContactRecord {
     activityCount: 3,
     followUp: "planned",
     idleDays: 5,
+    emailCount: 0,
+    lastEmailAt: null,
     attempts: 3,
     unanswered: 1,
     lastChannel: "call",

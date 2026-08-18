@@ -4,7 +4,14 @@ import { prisma } from "../db";
 import { logActivity } from "./activities";
 import { ownerOrDefault } from "./automation";
 import { prisma as db } from "../db";
-import { readMailStatus, sendMail } from "./mail";
+import { readMailConfig, readMailStatus, sendMail, PASSWORD_ENV } from "./mail";
+import { copyToSent } from "./imap";
+import {
+  newTrackToken,
+  pixelUrl,
+  readTrackingConfig,
+  recordSend,
+} from "./email-sends";
 import { sanitizeSubject } from "../domain/email-format";
 import { addDays } from "../domain/dates";
 import { getReminderDelays } from "./reference";
@@ -32,6 +39,18 @@ export const sendEmailSchema = z.object({
   body: z.string().trim().min(1, "Le message ne peut pas être vide"),
   /** L'interaction d'où part la rédaction, s'il y en a une. Pour le journal. */
   fromActivityId: z.string().optional(),
+  /** Le signataire retenu, pour que le journal sache qui a écrit. */
+  signatoryId: z.string().optional(),
+  signatoryName: z.string().optional(),
+  /**
+   * Suivi d'ouverture pour **cet** envoi.
+   *
+   * Absent vaut « suis le réglage global ». Un pixel rend le message
+   * détectable comme de la prospection en masse et peut coûter la
+   * délivrabilité : le choix se fait donc message par message, en plus de
+   * l'interrupteur global.
+   */
+  track: z.boolean().optional(),
 });
 
 export type SendEmailInput = z.infer<typeof sendEmailSchema>;
@@ -43,6 +62,18 @@ export interface SentEmail {
   readonly activityId: string;
   /** Date pré-remplie de la relance proposée après l'envoi. */
   readonly suggestedReminder: Date;
+  /** Le message a-t-il été déposé dans « Envoyés » ? */
+  readonly copied: boolean;
+  /**
+   * L'erreur de copie, s'il y en a une.
+   *
+   * **Elle n'empêche jamais l'envoi de réussir.** Le courriel est parti ; le
+   * rattraper est impossible. Remonter l'échec comme une erreur d'envoi ferait
+   * croire qu'on peut réessayer, et un second message partirait.
+   */
+  readonly copyError: string | null;
+  /** Le suivi d'ouverture a-t-il été posé sur ce message ? */
+  readonly tracked: boolean;
 }
 
 export type SendEmailResult =
@@ -74,7 +105,22 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
   }
 
   const subject = sanitizeSubject(input.subject);
-  const sent = await sendMail({ to, subject, body: input.body });
+
+  // Le jeton est **émis avant l'envoi**, parce que l'URL du pixel doit se
+  // trouver dans le message lui-même. Il n'est écrit en base qu'après un envoi
+  // réussi : un jeton orphelin ne servirait qu'à compter des ouvertures d'un
+  // message jamais parti.
+  const tracking = await readTrackingConfig();
+  const wanted = input.track ?? tracking.enabled;
+  const trackToken =
+    wanted && tracking.enabled && tracking.baseUrl !== "" ? newTrackToken() : null;
+
+  const sent = await sendMail({
+    to,
+    subject,
+    body: input.body,
+    trackingUrl: trackToken === null ? "" : pixelUrl(tracking.baseUrl, trackToken),
+  });
   if (!sent.ok) return { ok: false, message: sent.message };
 
   // Envoyé pour de bon à partir d'ici : la consignation ne peut plus mentir.
@@ -97,6 +143,28 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
     // qui ne compte que les échanges dont le résultat est connu (jalon 20).
   });
 
+  // **La copie « Envoyés » vient après**, et son échec ne remonte jamais comme
+  // un échec d'envoi. Le message est parti : ce qui reste à faire, c'est le
+  // dire.
+  const config = await readMailConfig();
+  const copy = await copyToSent(sent.raw, config, process.env[PASSWORD_ENV] ?? "", now);
+
+  await recordSend(
+    {
+      contactId: contact.id,
+      toAddress: to,
+      subject,
+      body: input.body,
+      messageId: sent.messageId,
+      signatoryId: input.signatoryId ?? "",
+      signatoryName: input.signatoryName ?? "",
+      trackToken,
+      copyStatus: copy.ok ? "copied" : "failed",
+      copyError: copy.ok ? "" : copy.message,
+    },
+    now,
+  );
+
   const delays = await getReminderDelays();
 
   return {
@@ -107,6 +175,9 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
       subject,
       activityId: logged.activity.id,
       suggestedReminder: addDays(now, delays.email),
+      copied: copy.ok,
+      copyError: copy.ok ? null : copy.message,
+      tracked: trackToken !== null,
     },
   };
 }

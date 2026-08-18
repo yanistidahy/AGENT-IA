@@ -31,7 +31,9 @@ export type ContactSortKey =
   | "tag"
   | "followUp"
   | "nextReminder"
-  | "createdAt";
+  | "createdAt"
+  | "emailCount"
+  | "lastEmailAt";
 
 export interface ContactColumn {
   /** Clé stable : elle est conservée dans le stockage local. */

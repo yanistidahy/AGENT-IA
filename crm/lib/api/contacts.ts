@@ -89,6 +89,16 @@ export interface ContactRecord {
   readonly followUp: FollowUpStatus;
   /** Jours depuis la dernière touche, `null` si elle n'a jamais eu lieu. */
   readonly idleDays: number | null;
+  /**
+   * Emails envoyés depuis ce CRM, et le dernier d'entre eux.
+   *
+   * **Dénormalisés à l'envoi**, dans la transaction qui écrit `email_sends` :
+   * c'est ce qui les rend triables en SQL. Un agrégat calculé à la lecture ne
+   * se trie pas, et promettre un tri qui ne trierait rien serait pire que ne
+   * rien promettre (jalon 22).
+   */
+  readonly emailCount: number;
+  readonly lastEmailAt: Date | null;
 
   /**
    * De quoi juger l'effort fourni, sans ouvrir la chronologie.
@@ -215,6 +225,8 @@ function toRecord(
     createdAt: row.createdAt,
     lastContact: row.lastContact,
     nextReminder: row.nextReminder,
+    emailCount: row.emailCount,
+    lastEmailAt: row.lastEmailAt,
     companyId: row.companyId,
     company: row.company === null ? null : { id: row.company.id, name: row.company.name },
     deals: row.deals.map((deal) => ({
@@ -268,6 +280,12 @@ function orderBy(query: ListContactsQuery): Prisma.ContactOrderByWithRelationInp
       return [{ lastContact: { sort: dir, nulls: "first" } }];
     case "createdAt":
       return [{ createdAt: dir }];
+    case "emailCount":
+      return [{ emailCount: dir }, { lastName: "asc" }];
+    case "lastEmailAt":
+      // Jamais écrit = en fin de liste : une absence d'envoi n'est pas un envoi
+      // très ancien, et la remonter en tête d'un tri par fraîcheur mentirait.
+      return [{ lastEmailAt: { sort: dir, nulls: "last" } }];
     case "tag":
       // Les fiches sans étiquette en fin de liste : une absence n'est pas une
       // valeur qui se classe avant « À rappeler ».

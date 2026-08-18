@@ -246,7 +246,8 @@ disponible localement.
 | `DATABASE_URL` | phase 1 | connexion PostgreSQL |
 | `WORKSPACE_PASSWORD` | **jalon 9, obligatoire** | mot de passe unique de l'espace + clé de signature des sessions |
 | `ANTHROPIC_API_KEY` | phase 3 | conseil d'agents — **serveur uniquement** |
-| `SMTP_PASSWORD` | **jalon 32** | mot de passe de la boîte d'envoi — **serveur uniquement**, jamais en base |
+| `SMTP_PASSWORD` | **jalon 32** | mot de passe de la boîte d'envoi — **serveur uniquement**, jamais en base. **Sert aussi à IMAP** depuis le jalon 37 : c'est la même boîte |
+| `CRM_PUBLIC_URL` | jalon 37 | adresse publique du CRM, pour composer l'URL du pixel de suivi. À défaut, `RAILWAY_PUBLIC_DOMAIN`. Absente, **aucun pixel n'est posé** |
 | `AGENT_ETIENNE_ENABLED` | phase 4 | drapeau de l'agent verrouillé |
 
 Aucune clé n'est lue côté client. Tout appel Anthropic passe par une route
@@ -349,6 +350,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 34 | **Le vrai pitch** — Personal Shoppers, signature et lien réglables, conversation avec Alex | **livré, à valider** |
 | 35 | **Deux signataires** — sélecteur Yanis/Mohamed, nouveau mail de référence, reprise fidèle | **livré, à valider** |
 | 36 | **Le coût de l'API, mesuré puis coupé** — compteur par appel, un modèle par usage, plafond mensuel | **livré, à valider** |
+| 37 | **Les emails laissent une trace** — copie IMAP dans « Envoyés », journal des envois, section Emails, suivi d'ouverture assumé comme estimation | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -4848,3 +4850,203 @@ d'Alex fait 2 754 jetons identiques à chaque tour de reprise : c'est le candida
 à 00:30 à Paris tombe dans le mois précédent si le serveur est en UTC. Sans
 conséquence sur un plafond mensuel, et à savoir avant de croire un total à la
 minute près.
+
+
+---
+
+## Jalon 37 — les emails laissent une trace
+
+### 1. La copie dans « Envoyés »
+
+**SMTP envoie ; il ne dépose rien dans la boîte de l'expéditeur.** Conséquence
+vécue : un message parti du CRM n'existait nulle part dans la messagerie, et une
+réponse du prospect arrivait dans un fil orphelin, sans le message auquel elle
+répond.
+
+`lib/api/imap.ts` dépose donc une copie par IMAP, **avec les identifiants du
+SMTP** — même boîte, même secret, rien à saisir deux fois.
+
+**Le dossier se trouve par son drapeau, pas par son nom.** Il s'appelle « Sent »,
+« Envoyés », « Sent Items », « INBOX.Sent » ou « [Gmail]/Messages envoyés » selon
+le serveur, la langue du compte et le séparateur de hiérarchie. La RFC 6154
+(SPECIAL-USE) donne la réponse sans deviner : le serveur marque lui-même le
+dossier `\Sent`. Le nom réglé n'est qu'un **repli**, et l'absence des deux est
+dite — avec la liste des dossiers vus — plutôt que devinée. Déposer un message
+important dans un dossier choisi au hasard serait pire que ne pas le déposer :
+on le croirait rangé.
+
+**Un échec de copie ne fait jamais échouer l'envoi.** Le courriel est parti ;
+le rattraper est impossible, et remonter l'échec comme une erreur d'envoi ferait
+croire qu'on peut réessayer — un second message partirait. L'échec est journalisé,
+consigné sur la ligne d'envoi, affiché dans le bandeau de confirmation, sur la
+fiche du contact et en tête de `/emails`.
+
+« Tester la copie » suit le motif de « Tester l'envoi » du jalon 32 : il **cite
+la réponse du serveur**, et dit en plus *comment* le dossier a été trouvé — par
+son drapeau, ou par le nom de repli, ce second cas méritant d'être su parce
+qu'il cassera le jour où le compte changera de langue. Le message d'essai ne
+passe pas par SMTP : il n'est envoyé à personne, seulement déposé.
+
+### Un défaut réel, trouvé en comparant les octets
+
+`MailComposer.build()` rend un corps quoted-printable dont les fins de ligne
+sont des **LF nus** ; le transport SMTP de nodemailer les convertit en CRLF au
+moment d'écrire sur le fil. Les octets « construits » et les octets « envoyés »
+différaient donc de sept caractères sur un message de sept lignes — et c'est la
+version construite qu'on déposait dans « Envoyés ».
+
+Deux conséquences, dont une seule est visible : la copie n'était pas l'original,
+et surtout **la RFC 3501 exige le CRLF dans un `APPEND`**. Un serveur tolérant
+l'accepte, un serveur strict refuse, et un client de messagerie peut afficher le
+message d'un bloc.
+
+`toCrlf()` normalise **une fois**, et les deux chemins partent des mêmes octets.
+Trois tests fixent le comportement, dont l'idempotence — appliquer deux fois la
+normalisation ne doit rien changer, sinon chaque passage ajouterait une ligne
+vide entre chaque ligne du message.
+
+Le défaut était invisible à la lecture. Il n'est sorti que parce que la
+vérification compare `cmp` en main les deux fichiers écrits sur disque, et non
+« les deux messages se ressemblent ».
+
+### 2. Le journal des envois, distinct des interactions
+
+Table `email_sends` (migration `15_emails`). **Distincte de l'interaction
+consignée**, qui reste la trace lisible de la chronologie : compter les envois
+depuis les interactions les aurait mélangés aux appels et aux notes de
+correction — c'est le piège du jalon 22, déjà payé une fois.
+
+`Contact.emailCount` et `Contact.lastEmailAt` sont **dénormalisés dans la
+transaction d'envoi**. C'est ce qui rend les colonnes « Emails envoyés » et
+« Dernier email » triables en SQL : un agrégat calculé à la lecture ne se trie
+pas, et promettre un tri qui ne trierait rien serait pire que ne rien promettre.
+Écrits dans la même transaction que la ligne d'envoi, ils ne peuvent pas dériver.
+
+### 3. Le suivi d'ouverture, et ce qu'il vaut
+
+Un GIF transparent de 1×1 servi depuis **notre propre domaine**, un jeton
+opaque par message, aucun service tiers.
+
+**Le chiffre est systématiquement surestimé, et l'écran le dit.** Apple Mail
+Privacy Protection charge toutes les images d'un message à la réception, que
+quiconque l'ait lu ou non ; Gmail les fait passer par un proxy qui les met en
+cache, ce qui écrase les ouvertures suivantes. La métrique s'appelle donc
+**« Ouvertures (estimation) »** partout, et `OPEN_RATE_CAVEAT` — une constante
+unique, affichée avec le taux — nomme les deux causes. Un test refuse un libellé
+qui ne dirait pas « estimation » et une mise en garde qui ne citerait pas les
+deux fournisseurs.
+
+**Les faits passent devant l'estimation.** `/emails` affiche dans cet ordre :
+envois, réponses, rendez-vous obtenus, puis le taux d'ouverture — ce dernier sur
+un fond distinct, en encadré pointillé. Les trois premiers sont constatés ou
+saisis à la main ; le quatrième est estimé. Les aligner sans les hiérarchiser
+laisserait le plus gros nombre passer pour le plus solide.
+
+**La réponse se compte par personne, pas par envoi.** Quelqu'un qui a reçu trois
+messages et répond une fois a répondu une fois : compter la réponse pour chacun
+des trois gonflerait le taux d'un facteur trois, et d'autant plus qu'on relance.
+Elle doit aussi être **postérieure** au premier envoi, sinon on compterait comme
+réponse à un email une conversation antérieure.
+
+**Trois garanties de vie privée, portées par le code :**
+
+| Exigence | Comment |
+|---|---|
+| Stocker le jeton, pas un profil | La table porte `trackToken`, `firstOpenAt`, `lastOpenAt`, `openCount`. **Ni adresse IP, ni agent utilisateur.** La route ne les lit même pas |
+| Aucun service tiers | Le pixel est servi par `/api/t/[token]`, sur notre domaine |
+| Rétention configurable, 12 mois par défaut | `purgeOpens()` efface jeton et horodatages dans le passage quotidien. **L'envoi reste** : c'est un fait de gestion, pas une donnée de comportement |
+
+**Deux interrupteurs, pas un.** Le réglage global coupe le suivi pour tout le
+monde ; la case « Suivre l'ouverture » du panneau de rédaction le coupe pour un
+message précis. Coupé, **aucun pixel n'est posé et aucun jeton n'est émis** :
+c'est un interrupteur, pas un masquage d'affichage — un pixel posé mais non
+compté coûterait la délivrabilité sans rien rapporter. Le global est le maître :
+coupé là-bas, la case ne rallume rien.
+
+**Sans adresse publique connue, aucun pixel.** `CRM_PUBLIC_URL` ou
+`RAILWAY_PUBLIC_DOMAIN` ; à défaut, le panneau le dit et le suivi ne s'active
+pas. Une adresse devinée produirait une image cassée dans chaque message.
+
+**La route du pixel est publique, et ne divulgue rien.** Elle est chargée par le
+client de messagerie d'un prospect, qui ne présente aucun cookie. Elle rend
+**exactement la même image** qu'un jeton soit connu, inconnu, purgé ou malformé :
+répondre différemment en ferait un oracle permettant d'énumérer les envois.
+`tests/auth-routes.test.ts` a d'ailleurs attrapé l'ouverture au premier essai —
+l'exception y est désormais déclarée **une par une, avec sa raison**, jamais par
+préfixe.
+
+Le pixel est inséré par `withTrackingPixel()`, **hors de `toHtml()`**. La règle
+du jalon 32 — le corps ne porte ni image ni pixel — tient donc toujours, et un
+test le vérifie : un message non suivi est exactement ce qu'un humain aurait
+tapé. Il est posé juste avant `</body>` : un client qui tronque un message long
+coupe par la fin, donc un pixel en tête serait chargé même sur un message jamais
+déroulé — ce qui gonflerait encore un chiffre déjà surestimé.
+
+### Jalon 37 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `15_emails` appliquée puis `migrate
+diff` **vide**), le serveur standalone de production, un **puits SMTP avec
+STARTTLS** et un **serveur IMAP sur TLS**, tous deux versionnés
+(`scripts/mock-smtp.ts`, `scripts/mock-imap.ts`) :
+
+- **copie identique à l'octet près** : `cmp` sur les deux fichiers écrits par le
+  puits SMTP et par le serveur IMAP → identiques, `Message-ID` compris
+  (`<1787063966791.wwgrjicb@aura.test>`), sur les deux messages envoyés par
+  l'API HTTP réelle ;
+- **dossier trouvé par son drapeau** : « Envoyés », `bySpecialUse: true`, et le
+  bouton « Tester la copie » l'annonce en toutes lettres dans le navigateur ;
+- **réglage IMAP faux** (port 9996) → l'envoi **réussit**, `copied: false`, et le
+  message cite la cause : « Connexion IMAP refusée… ECONNREFUSED 127.0.0.1:9996
+  (code ECONNREFUSED) ». La ligne d'envoi est écrite quand même ;
+- **journal** : `Yanis Tidahy | copied | tracked`, `Mohamed Targani | copied |
+  non suivi` ; compteurs de la fiche à 1 et `lastEmailAt` posé ;
+- **pixel** : présent dans la partie HTML du message suivi (`grep -c "img src"`
+  → 1), **absent** du message non suivi (→ 0) ; trois requêtes sur `/api/t/<jeton>`
+  → `openCount: 3` ; un jeton inconnu répond le **même** GIF de 42 octets,
+  `no-store` ;
+- **rétention** : envois vieillis de treize mois → `purgeOpens()` en efface 1,
+  jeton `null`, `openCount` 0, **et l'objet de l'envoi reste** ;
+- **`/emails`** : « Envoyés 2 », « Réponses 1 — 50 % des personnes écrites »,
+  « Rendez-vous obtenus 1 », « Ouvertures (estimation) 100 % · 1 sur 1 » suivi de
+  la mise en garde Apple Mail / Gmail ; graphiques par semaine, par jour, par
+  signataire ;
+- **fiche contact** : « 1 email envoyé · dernier le 18 août 26 », puis l'objet,
+  la date, le signataire, et « Ouvert le 18 août 26 (3 chargements du pixel —
+  estimation) » ;
+- **colonnes** : « Emails envoyés » et « Dernier email » proposées par le
+  sélecteur, tri `?sort=emailCount&dir=desc` appliqué en SQL ;
+- **`/reglages`** : section « Copie dans « Envoyés » (IMAP) », champ hôte,
+  bouton d'essai, suivi d'ouverture, rétention, **0 champ de mot de passe** ;
+- **0 réponse HTTP ≥ 400, 0 erreur console** sur le parcours complet ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**750 tests**) verts.
+
+### Jalon 37 — ce qui n'est pas vérifié
+
+**Rien n'a touché IONOS depuis cet environnement.** Ni SMTP, ni IMAP : les deux
+substituts parlent le protocole et écrivent sur disque ce qu'ils reçoivent, mais
+ils ne disent rien de ce que `imap.ionos.fr` acceptera. Ce qui reste à établir au
+premier clic en production : que les identifiants passent, et **sous quel nom
+IONOS marque le dossier des envoyés** — c'est précisément ce que le bouton
+« Tester la copie » répondra, drapeau ou repli.
+
+**Le fil de discussion n'est pas encore prouvé.** L'identité octet pour octet et
+le `Message-ID` commun sont la condition nécessaire du rattachement ; que Gmail,
+Outlook ou Thunderbird rattachent effectivement la réponse relève du client, et
+ne se verra qu'à la première réponse réelle.
+
+**Le taux d'ouverture ne sera jamais juste**, et ce n'est pas un défaut à
+corriger : c'est la nature de la mesure. Ce qui est vérifié, c'est que le chiffre
+ne s'affiche jamais sans sa mise en garde.
+
+**Deux défauts venaient du substitut IMAP, pas du produit** — et les deux
+ressemblaient à des pannes : il comparait le nom de dossier brut alors qu'un
+client encode « Envoyés » en UTF-7 modifié (`Envoy&AOk-s`), et il répondait la
+même liste à chaque interrogation de hiérarchie, ce qui faisait construire au
+client des chemins imbriqués (« Corbeille.Envoyés »). C'est la troisième fois
+qu'un substitut produit un faux défaut : **lire le journal du substitut avant de
+conclure quoi que ce soit sur le produit.**
+
+**Les réponses restent saisies à la main.** Le CRM ne lit aucune boîte : une
+réponse n'entre dans les chiffres que si quelqu'un consigne l'interaction. C'est
+le périmètre demandé, et c'est aussi la question centrale des séquences
+automatisées — voir la note de conception qui accompagne ce jalon.

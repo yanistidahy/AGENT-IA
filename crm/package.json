@@ -23,6 +23,7 @@
     "@anthropic-ai/sdk": "^0.115.0",
     "@prisma/client": "^6.19.3",
     "@types/nodemailer": "^8.0.1",
+    "imapflow": "^1.7.1",
     "next": "^15.5.23",
     "nodemailer": "^9.0.5",
     "prisma": "^6.19.3",

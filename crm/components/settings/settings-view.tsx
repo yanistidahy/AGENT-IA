@@ -14,6 +14,7 @@ import { TagsEditor } from "./tags-editor";
 import { MaintenancePanel } from "./maintenance-panel";
 import { ApiDiagnostic } from "./api-diagnostic";
 import { MailPanel, type MailStatus, type Signatory } from "./mail-panel";
+import { ImapPanel, type ImapStatus, type TrackingStatus } from "./imap-panel";
 import { SnapshotsPanel } from "./snapshots-panel";
 import { CouncilPanel } from "./council-panel";
 import { ShiftsPanel } from "./shifts-panel";
@@ -29,6 +30,8 @@ interface SettingsViewProps {
   readonly mail: MailStatus;
   readonly passwordEnv: string;
   readonly signatories: readonly Signatory[];
+  readonly imap: ImapStatus;
+  readonly tracking: TrackingStatus;
   readonly delays: ReminderDelays;
   readonly lists: Record<SettingsListKind, readonly string[]>;
   readonly tags: ReadonlyArray<{ value: string; count: number }>;
@@ -59,6 +62,8 @@ export function SettingsView({
   mail,
   passwordEnv,
   signatories,
+  imap,
+  tracking,
   delays,
   lists,
   tags,
@@ -90,7 +95,10 @@ export function SettingsView({
         title="Messagerie"
         hint="envoi des emails par SMTP — la réception n'est pas gérée par cette version"
       >
-        <MailPanel initial={mail} passwordEnv={passwordEnv} initialSignatories={signatories} />
+        <div className="space-y-4">
+          <MailPanel initial={mail} passwordEnv={passwordEnv} initialSignatories={signatories} />
+          <ImapPanel initial={imap} initialTracking={tracking} />
+        </div>
       </Section>
 
       <Section

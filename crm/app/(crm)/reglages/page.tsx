@@ -14,6 +14,8 @@ import { stageDealCounts } from "@/lib/api/settings";
 import { prisma } from "@/lib/db";
 import { listAgentProfiles } from "@/lib/api/agents";
 import { readMailStatus, PASSWORD_ENV } from "@/lib/api/mail";
+import { readImapStatus } from "@/lib/api/imap";
+import { readTrackingConfig } from "@/lib/api/email-sends";
 import { listSignatories } from "@/lib/api/signatories";
 import { LIFECYCLES } from "@/lib/domain/types";
 import { readUsageReport } from "@/lib/api/usage";
@@ -61,6 +63,10 @@ export default async function ReglagesPage() {
       readUsageReport(),
     ]);
 
+  // Lus après `mail` : l'état IMAP dépend de l'identifiant et du secret SMTP.
+  const imap = await readImapStatus(mail, mail.passwordSet);
+  const tracking = await readTrackingConfig();
+
   const lifecycles = lifecycleRows.map((row) => row.value);
 
   return (
@@ -80,6 +86,8 @@ export default async function ReglagesPage() {
       mail={mail}
       passwordEnv={PASSWORD_ENV}
       signatories={signatories}
+      imap={imap}
+      tracking={tracking}
       stages={stages}
       dealCounts={dealCounts}
       settings={settings}

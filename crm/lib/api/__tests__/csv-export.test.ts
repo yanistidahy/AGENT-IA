@@ -38,6 +38,8 @@ const contact: ContactRecord = {
   activityCount: 3,
   followUp: "waiting",
   idleDays: 9,
+  emailCount: 0,
+  lastEmailAt: null,
 };
 
 describe("contactsToCsv", () => {

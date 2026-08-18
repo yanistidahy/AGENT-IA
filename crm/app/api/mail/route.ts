@@ -3,6 +3,8 @@ import { readJson } from "@/lib/api/request";
 import { prisma } from "@/lib/db";
 import { readMailStatus, sendMail, PASSWORD_ENV } from "@/lib/api/mail";
 import { listSignatories, saveSignatories, signatoriesSchema } from "@/lib/api/signatories";
+import { readImapStatus } from "@/lib/api/imap";
+import { readTrackingConfig } from "@/lib/api/email-sends";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -31,15 +33,24 @@ const configSchema = z.object({
    * de démonstration. Exiger une URL forcerait à en inventer une.
    */
   demoUrl: z.union([z.literal(""), z.url("Adresse du lien invalide")]),
+
 });
+
+/** L'état complet lu par le panneau — jamais un secret, seulement son existence. */
+async function mailState() {
+  const mail = await readMailStatus();
+  return {
+    mail,
+    passwordEnv: PASSWORD_ENV,
+    signatories: await listSignatories(),
+    imap: await readImapStatus(mail, mail.passwordSet),
+    tracking: await readTrackingConfig(),
+  };
+}
 
 export async function GET() {
   try {
-    return jsonOk({
-      mail: await readMailStatus(),
-      passwordEnv: PASSWORD_ENV,
-      signatories: await listSignatories(),
-    });
+    return jsonOk(await mailState());
   } catch (error) {
     return serverError("GET /api/mail", error);
   }
@@ -70,11 +81,7 @@ export async function PATCH(request: Request) {
       create: { id: "singleton", ...data },
     });
 
-    return jsonOk({
-      mail: await readMailStatus(),
-      passwordEnv: PASSWORD_ENV,
-      signatories: await listSignatories(),
-    });
+    return jsonOk(await mailState());
   } catch (error) {
     return serverError("PATCH /api/mail", error);
   }

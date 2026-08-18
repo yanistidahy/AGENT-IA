@@ -2,6 +2,7 @@
 
 import { ExternalLink } from "@/components/ui/external-link";
 import { ACTIVITY_LABELS } from "@/lib/domain/types";
+import { formatDate } from "@/lib/format";
 import type { ContactColumn } from "./contact-table-columns";
 
 /**
@@ -19,6 +20,34 @@ import type { ContactColumn } from "./contact-table-columns";
 const MUTED = <span className="text-muted">—</span>;
 
 export const EXTRA_COLUMNS: readonly ContactColumn[] = [
+  /**
+   * Les deux seules colonnes de ce fichier qui **se trient**, et c'est voulu.
+   *
+   * Elles ne sont pas des agrégats calculés à la lecture comme leurs voisines :
+   * `emailCount` et `lastEmailAt` sont écrits sur la fiche dans la transaction
+   * d'envoi. Ce sont donc de vraies colonnes de la table `contacts`, que
+   * PostgreSQL sait ordonner — d'où le tri promis et tenu.
+   */
+  {
+    key: "emailCount",
+    label: "Emails envoyés",
+    sort: "emailCount",
+    filterKey: null,
+    cell: (contact) =>
+      contact.emailCount === 0 ? (
+        MUTED
+      ) : (
+        <span className="font-mono tabular-nums">{contact.emailCount}</span>
+      ),
+  },
+  {
+    key: "lastEmailAt",
+    label: "Dernier email",
+    sort: "lastEmailAt",
+    filterKey: null,
+    cell: (contact) =>
+      contact.lastEmailAt === null ? MUTED : <span>{formatDate(contact.lastEmailAt)}</span>,
+  },
   {
     key: "attempts",
     label: "Tentatives",

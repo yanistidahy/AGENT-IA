@@ -41,7 +41,20 @@ export const PUBLIC_PATHS: readonly string[] = [
 ];
 
 /** Ressources servies par Next lui-même, jamais porteuses de données métier. */
-const PUBLIC_PREFIXES: readonly string[] = ["/_next/", "/favicon", "/fonts/"];
+const PUBLIC_PREFIXES: readonly string[] = [
+  "/_next/",
+  "/favicon",
+  "/fonts/",
+  /**
+   * Le pixel de suivi d'ouverture.
+   *
+   * **Publique par nécessité** : elle est chargée par le client de messagerie
+   * d'un prospect, qui ne présente aucun cookie. Elle ne divulgue rien — la
+   * même image est rendue qu'un jeton soit connu, inconnu ou purgé — et ne lit
+   * aucune donnée métier. Voir `app/api/t/[token]/route.ts`.
+   */
+  "/api/t/",
+];
 
 export function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;

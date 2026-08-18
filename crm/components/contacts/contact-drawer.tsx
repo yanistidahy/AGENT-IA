@@ -14,6 +14,7 @@ import { ContactForm, type ContactFormOptions } from "./contact-form";
 import { ContactFields } from "./contact-fields";
 import { ContactHeader } from "./contact-header";
 import { ComposePanel } from "@/components/emails/compose-panel";
+import { ContactEmails } from "@/components/emails/contact-emails";
 import { SentToast, type SentNotice } from "@/components/emails/sent-toast";
 import type { LinkableDeal } from "./link-deal";
 import { FollowUpTab } from "./contact-followup-tab";
@@ -218,6 +219,7 @@ export function ContactDrawer({
             exactement les mêmes lignes.
           */}
           <div className={tab === "fiche" ? "hidden" : ""}>
+            {tab === "historique" && <ContactEmails contactId={contact.id} />}
             <RecordPanel
               link={{ contactId: contact.id }}
               owners={options.owners}

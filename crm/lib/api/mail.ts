@@ -1,5 +1,7 @@
 import "server-only";
 import nodemailer from "nodemailer";
+import MailComposer from "nodemailer/lib/mail-composer";
+import type Mail from "nodemailer/lib/mailer";
 import { prisma } from "../db";
 import {
   formatSender,
@@ -7,6 +9,7 @@ import {
   sanitizeSubject,
   toHtml,
   toPlainText,
+  withTrackingPixel,
   type DemoLink,
 } from "../domain/email-format";
 import { DEFAULT_DEMO, DEFAULT_SIGNATURE } from "../agents/prompts/company";
@@ -132,14 +135,76 @@ export function messageId(from: string, now: Date, random: string): string {
   return `<${now.getTime()}.${random}@${domain}>`;
 }
 
+/**
+ * Normalise les fins de ligne en CRLF.
+ *
+ * **Trouvé à la vérification, pas à la lecture.** `MailComposer.build()` rend
+ * un corps quoted-printable dont les fins de ligne sont des LF nus ; le
+ * transport SMTP de nodemailer les convertit en CRLF au moment d'écrire sur le
+ * fil. Les octets « construits » et les octets « envoyés » différaient donc de
+ * sept caractères sur un message de sept lignes — et c'est la version construite
+ * qu'on déposait dans « Envoyés ».
+ *
+ * Deux conséquences, dont une seule est visible : la copie n'était pas
+ * l'original, et surtout la RFC 3501 exige le CRLF dans un `APPEND`. Un serveur
+ * tolérant l'accepte, un serveur strict le refuse, et un client de messagerie
+ * peut afficher le message d'un bloc.
+ *
+ * On normalise donc **une fois**, et les deux chemins partent des mêmes octets.
+ */
+export function toCrlf(raw: Buffer): Buffer {
+  // `latin1` : un aller-retour octet pour octet, sans réinterpréter l'UTF-8
+  // déjà encodé par le compositeur.
+  const text = raw.toString("latin1").replace(/\r?\n/g, "\r\n");
+  return Buffer.from(text, "latin1");
+}
+
+/**
+ * Compose le message MIME, **une seule fois**, en octets définitifs.
+ *
+ * Exporté parce que deux appelants en ont besoin : l'envoi, et le bouton
+ * « Tester la copie » qui dépose sans passer par SMTP. Deux compositions
+ * finiraient par diverger sur un en-tête.
+ */
+export async function buildMime(message: Mail.Options): Promise<Buffer> {
+  const built = await new Promise<Buffer>((resolve, reject) => {
+    new MailComposer(message).compile().build((error, output) => {
+      if (error !== null && error !== undefined) reject(error);
+      else resolve(output);
+    });
+  });
+  return toCrlf(built);
+}
+
 export interface SendInput {
   readonly to: string;
   readonly subject: string;
   readonly body: string;
+  /**
+   * Adresse du pixel d'ouverture. Vide ou absente = **aucun pixel posé**.
+   *
+   * Décidé par l'appelant, envoi par envoi : le suivi se coupe pour un message
+   * précis comme il se coupe globalement, et dans les deux cas rien n'est
+   * inséré — pas d'image chargée puis ignorée, ce qui coûterait la
+   * délivrabilité sans rien rapporter.
+   */
+  readonly trackingUrl?: string;
 }
 
 export type SendResult =
-  | { readonly ok: true; readonly messageId: string; readonly accepted: readonly string[] }
+  | {
+      readonly ok: true;
+      readonly messageId: string;
+      readonly accepted: readonly string[];
+      /**
+       * Le message **tel qu'il est parti**, octet pour octet.
+       *
+       * C'est ce qui est déposé dans « Envoyés » : recomposer un message
+       * équivalent produirait un autre `Message-ID`, donc un fil cassé chez
+       * l'expéditeur — et le défaut ne se verrait qu'à la première réponse.
+       */
+      readonly raw: Buffer;
+    }
   | { readonly ok: false; readonly message: string };
 
 /**
@@ -208,31 +273,47 @@ export async function sendMail(input: SendInput): Promise<SendResult> {
   });
 
   const id = messageId(config.from, new Date(), Math.random().toString(36).slice(2, 10));
+  const sentAt = new Date();
+  const demo = demoLinkOf(config);
+  const html = toHtml(input.body, demo);
+
+  const message = {
+    from: formatSender(config.fromName, config.from),
+    to: input.to,
+    // Les réponses reviennent dans la messagerie de l'utilisateur, pas dans le
+    // CRM — la réception est hors périmètre, et l'écran le dit.
+    replyTo: config.from,
+    subject,
+    messageId: id,
+    date: sentAt,
+    // Le lien passe ici, pas dans le brouillon : le corps stocké reste du
+    // texte lisible, et c'est au moment de l'envoi que « Réserver un appel »
+    // devient une ancre en HTML et une adresse visible en texte.
+    text: toPlainText(input.body, demo),
+    html: withTrackingPixel(html, input.trackingUrl ?? ""),
+    // `format=fixed` : sans cela, un client peut recoller deux lignes
+    // consécutives et détruire une adresse ou une liste tapée à la main.
+    textEncoding: "quoted-printable" as const,
+  };
 
   try {
+    // **Le MIME est composé une seule fois, puis envoyé tel quel.** Nodemailer
+    // sait composer et envoyer en un geste, mais on ne récupère alors que ce
+    // qu'il veut bien rendre. Ici on tient les octets exacts : ce sont eux
+    // qu'IMAP dépose dans « Envoyés », et l'identité des deux copies est ce qui
+    // fait qu'une réponse se rattache au bon fil.
+    const raw = await buildMime(message);
+
     const info = await transport.sendMail({
-      from: formatSender(config.fromName, config.from),
-      to: input.to,
-      // Les réponses reviennent dans la messagerie de l'utilisateur, pas dans le
-      // CRM — la réception est hors périmètre, et l'écran le dit.
-      replyTo: config.from,
-      subject,
-      messageId: id,
-      date: new Date(),
-      // Le lien passe ici, pas dans le brouillon : le corps stocké reste du
-      // texte lisible, et c'est au moment de l'envoi que « Diagnostic offert »
-      // devient une ancre en HTML et une adresse visible en texte.
-      text: toPlainText(input.body, demoLinkOf(config)),
-      html: toHtml(input.body, demoLinkOf(config)),
-      // `format=fixed` : sans cela, un client peut recoller deux lignes
-      // consécutives et détruire une adresse ou une liste tapée à la main.
-      textEncoding: "quoted-printable",
+      envelope: { from: config.from, to: [input.to] },
+      raw,
     });
 
     return {
       ok: true,
       messageId: info.messageId ?? id,
       accepted: info.accepted.map((entry) => (typeof entry === "string" ? entry : entry.address)),
+      raw,
     };
   } catch (error) {
     // Jamais la configuration ni le secret dans le journal : seulement la cause.

@@ -83,6 +83,12 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     title: "Analyse",
     entries: [
       {
+        label: "Emails",
+        href: "/emails",
+        icon: "mail",
+        desc: "Envois par semaine, par signataire, réponses et ouvertures estimées.",
+      },
+      {
         label: "Rapports",
         href: "/rapports",
         icon: "chart",
