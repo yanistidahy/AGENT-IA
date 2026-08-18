@@ -3,6 +3,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { anthropic, describeAnthropicError, logAnthropicError } from "@/lib/agents/runtime/client";
 import { shiftRequest } from "@/lib/agents/runtime/request";
+import { modelFor } from "@/lib/api/reference";
+import { budgetRefusal, recordUsage, usageOf } from "@/lib/api/usage";
 import { findAgent } from "@/lib/agents/registry";
 import { listAgentProfiles, promptForAgent } from "@/lib/api/agents";
 import { findTool } from "@/lib/agents/tools";
@@ -297,12 +299,31 @@ export async function runShift(
       });
     }
 
+    // Le plafond de jetons du briefing ne dit rien de la facture du mois : le
+    // second garde-fou porte sur l'argent déjà dépensé, pas sur la taille de
+    // cette requête-ci.
+    const refusal = await budgetRefusal(now);
+    if (refusal !== null) {
+      return finish({ ...nothing, outcome: "skipped", detail: refusal });
+    }
+
+    const model = await modelFor("shift");
     const client = anthropic();
     const response = await client.messages.create({
-      ...shiftRequest(budget),
+      ...shiftRequest(budget, model),
       system,
       messages: [{ role: "user", content: body }],
     });
+
+    await recordUsage(
+      {
+        agentId: shift.agentId,
+        purpose: "shift",
+        model,
+        usage: usageOf(response.usage),
+      },
+      now,
+    );
 
     const text = response.content
       .map((block) => (block.type === "text" ? block.text : ""))

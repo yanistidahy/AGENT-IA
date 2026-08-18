@@ -348,6 +348,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 33 | **Les agents dans le rail** — panneau latéral, contexte entreprise, signature imposée, reprise du brouillon | **livré, à valider** |
 | 34 | **Le vrai pitch** — Personal Shoppers, signature et lien réglables, conversation avec Alex | **livré, à valider** |
 | 35 | **Deux signataires** — sélecteur Yanis/Mohamed, nouveau mail de référence, reprise fidèle | **livré, à valider** |
+| 36 | **Le coût de l'API, mesuré puis coupé** — compteur par appel, un modèle par usage, plafond mensuel | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -4646,3 +4647,204 @@ y est appelé sans signataire et retombe sur le défaut réglé. Sans conséquen
 aujourd'hui — la rédaction passe par le panneau, qui transmet la signature dans
 chaque message — mais un email rédigé depuis le panneau du rail signerait le
 défaut.
+
+
+---
+
+## Jalon 36 — le coût de l'API, mesuré puis coupé
+
+### Ce qu'on savait avant, et ce que ça valait
+
+« Environ 20 cents par email rédigé », obtenu en regardant une facture. Le CRM,
+lui, ne comptait que deux nombres de jetons sur les vacations — donc **rien sur
+la rédaction d'emails, qui est justement ce qui coûte**. Toute réduction décidée
+là-dessus aurait été une conviction : on n'aurait pas su après si elle avait
+servi.
+
+D'où l'ordre du jalon, qui est celui de la demande : **mesurer, puis couper.**
+
+### Une ligne de facture par appel
+
+Table `api_usage` (migration `14_usage`) : jour, mois, agent, usage, modèle,
+jetons d'entrée et de sortie, coût en **micro-dollars entiers** — une somme de
+flottants dérive sur un mois — et un drapeau d'anomalie.
+
+`lib/domain/model-pricing.ts` est pur et porte les tarifs, **relus dans la
+référence de l'API le 18 août 2026**, pas de mémoire. La date est écrite dans le
+fichier (`PRICING_READ_AT`) pour qu'on sache quand elle cesse d'être fraîche.
+
+| Modèle | Entrée $/M | Sortie $/M | Réflexion adaptative | `effort` |
+|---|---|---|---|---|
+| Haiku 4.5 | 1 | 5 | **non** | non |
+| Sonnet 5 | 2 | 10 | oui | oui |
+| Opus 5 | 5 | 25 | oui | oui |
+| Fable 5 | 10 | 50 | oui | oui |
+
+**La réflexion n'est pas un troisième terme du coût.** Elle fait partie de la
+sortie et est facturée comme elle ; l'API ne la ventile pas quand `display` vaut
+`omitted`. `thinkingTokens` est donc **nullable**, et `null` veut dire « non
+ventilé par l'API » — pas « zéro ». Un zéro ferait croire qu'il n'y en a pas.
+
+### La garde qui ferme le chemin par lequel c'est arrivé
+
+`request.ts` prétendait depuis le jalon 16 être le seul endroit où le modèle, le
+plafond, la réflexion et l'effort se décident. Au jalon 32, `email-draft.ts`
+s'est mis à appeler l'API directement, avec ses propres valeurs : **le chemin le
+plus cher du produit était le seul que rien ne gouvernait**, et personne ne l'a
+vu parce que rien ne regardait.
+
+`cost-single-source.test.ts` balaie `lib/` et `app/` et exige, de tout fichier
+qui appelle `messages.create` ou `messages.stream`, qu'il compose sa requête
+avec le socle commun, consigne son coût, et vérifie le plafond. Une seule
+exception, nommée : le diagnostic de `/reglages`, dont les cinq sondes sont
+**délibérément** minimales — les faire passer par le socle supprimerait ce
+qu'elles mesurent.
+
+**Éprouvée en réintroduisant le défaut exact** : `email-draft.ts` remis à un
+appel direct → deux tests tombent en le nommant par fichier.
+
+### Un modèle par usage
+
+| Usage | Défaut | Pourquoi |
+|---|---|---|
+| Rédaction d'email | **Sonnet 5** | Écrire depuis un dossier fourni et des règles écrites n'est pas du raisonnement, c'est de la mise en forme. 2,5 fois moins cher qu'Opus des deux côtés, pour une prose annoncée proche |
+| Reprise de brouillon | **Sonnet 5** | Même travail |
+| Conversation | **Sonnet 5** | Le milieu de gamme demandé |
+| Vacation | **Opus 5** | Une vacation *juge* : une erreur de jugement quotidienne coûte plus que l'écart de tarif |
+
+**Haiku 4.5 reste dans le sélecteur, à moitié prix, et n'est pas le défaut.** Ces
+messages partent à de vrais prospects sous le nom d'une vraie personne : c'est le
+dernier endroit où rogner sur la prose. Trois brouillons suffiront à en juger,
+et c'est la seule façon d'en juger.
+
+**Le sélecteur est conscient des capacités.** Haiku 4.5 ne connaît pas la
+réflexion adaptative : lui envoyer `thinking` renvoie un 400. `requestFor()` lit
+la table de capacités et n'envoie que ce que le modèle accepte — sans quoi le
+sélecteur casserait au premier essai du modèle le moins cher, c'est-à-dire
+exactement celui qu'on veut pouvoir essayer.
+
+Un identifiant inconnu est refusé par le schéma Zod **et** retombe sur le défaut
+à la lecture : une faute de frappe dans un réglage ne doit pas devenir une panne
+totale qui ne se voit qu'au moment d'écrire un email.
+
+### Ce qui a été coupé
+
+**L'effort, posé explicitement partout.** Sur Opus 5 et Sonnet 5, le défaut de
+l'API est `high` : ne rien poser, c'est payer tous les jours un raisonnement
+approfondi que personne n'a demandé. `low` pour écrire et reprendre, `medium`
+pour converser, `low` pour les vacations, `xhigh` réservé au mode approfondi.
+
+**Le plafond de sortie, par usage.** 32000 pour un email de 200 mots était
+absurde : draft 2000, reprise 3000, conversation 8000. Le plafond n'est pas
+facturé — seule la sortie réelle l'est — mais c'est le seul garde-fou qui
+empêche une réponse partie en boucle de coûter le prix d'un livre. Le plancher
+`MIN_OUTPUT_TOKENS` ne s'applique **qu'aux modèles qui réfléchissent** : sur un
+modèle sans réflexion il ne ferait que masquer le plafond qu'on vient de choisir.
+
+**La duplication prompt système / message.** `draftInstruction()` redonnait sept
+règles déjà écrites quelques lignes plus haut dans la même requête — l'ouverture
+sur leur activité, la douleur de leur côté, le conseiller proactif, la
+démonstration préparée, les deux appels à l'action, la signature, le libellé du
+lien. Le risque n'était pas seulement le coût : **deux formulations d'une même
+règle finissent par se contredire**, et c'est alors le modèle qui arbitre. Ne
+reste que ce que le prompt système ne peut pas porter, la forme de la réponse.
+
+### La ventilation, mesurée
+
+Contre un vrai PostgreSQL et le substitut, dont la consommation renvoyée est
+désormais **dérivée de la charge reçue** (4 caractères par jeton, la convention
+d'`estimateTokens`) et non plus une constante de 1234 :
+
+| | Avant | Après |
+|---|---|---|
+| Entrée d'un brouillon | 3 111 jetons | **2 939** — 172 retirés |
+| Entrée d'un tour de reprise | — | **5 029** |
+
+Le contexte d'un tour de reprise se décompose ainsi : prompt système d'Alex
+2 754 jetons, protocole de brouillon 694, **schémas des 14 outils 1 562**, plus
+le fil. Les schémas d'outils sont donc renvoyés en entier **à chaque tour** :
+c'est le premier poste du coût d'une reprise, avant le fil lui-même. Ils sont
+conservés — Alex doit pouvoir lire la fiche quand on lui demande « qu'est-ce
+qu'on sait d'elle ? » — mais c'est là qu'il faudra revenir si la reprise reste
+chère.
+
+**Le brouillon n'envoie aucun schéma d'outil** : il n'en a pas besoin, tout son
+contexte est collecté par le serveur.
+
+### Le plafond, et ce qu'il arrête
+
+Plafond mensuel réglable en dollars, `0` valant « pas de plafond » — sans cette
+convention on ne pourrait plus le désactiver. Bandeau sur `/accueil` à partir de
+80 %, calculé **avant les retours anticipés** de la page, comme celui des
+sauvegardes : un plafond franchi ne cesse pas d'être vrai parce que la base est
+vide.
+
+Le bandeau n'est **pas acquittable**, contrairement à celui des sauvegardes.
+Une sauvegarde périmée est un incident dont on peut décider qu'il attendra
+demain ; un plafond franchi arrête la rédaction d'emails séance tenante.
+
+`budgetRefusal()` est vérifié **avant l'appel** sur les quatre chemins — on
+n'interrompt pas une complétion en cours, on refuse de la lancer, et on le dit.
+Le garde-fou ne couvrait que les vacations depuis le jalon 14.
+
+**Une anomalie est signalée, pas avalée.** Au-delà de quatre fois le coût
+ordinaire de son usage, l'appel est marqué en base et journalisé côté serveur
+avec son modèle, ses jetons et son agent. Un appel qui coûte dix fois son
+ordinaire est soit un contexte qui a gonflé, soit une boucle d'outils qui
+tourne : dans les deux cas c'est un défaut.
+
+### Jalon 36 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, migration `14_usage` appliquée puis `migrate diff`
+**vide**, le serveur standalone de production et le substitut Anthropic :
+
+- **une ligne par appel**, avec le bon usage, le bon agent et le bon modèle :
+  `draft | claude-sonnet-5 | alex`, `revision | claude-sonnet-5 | alex`,
+  `shift | claude-opus-5` ;
+- **la reprise est bien facturée comme telle** : `purpose=revision`, 5 029
+  jetons d'entrée — le chiffre prédit par l'audit du contexte à 20 jetons près ;
+- **rapport** : agrégats par jour, par agent et par usage, total du mois,
+  ventilation du dernier brouillon ;
+- **plafond** : sans plafond → aucun refus ; plafond dépassé → refus nommant les
+  deux montants, **et le brouillon suivant est refusé sans qu'aucun appel
+  parte** (la table ne gagne pas de ligne) ;
+- **anomalie** : un appel à 2,50 $ marqué en base et journalisé ;
+- **réglages** : modèle inconnu → 400 nommant le champ (`modelDraft: Modèle
+  inconnu`) ; modèle valide → écrit en base ;
+- **navigateur** : section « Coûts de l'API » avec les quatre usages, le total
+  du mois, le plafond et la ventilation du dernier brouillon ; bandeau **absent**
+  sous le seuil, « 82 % du plafond mensuel de l'API consommés » à 82 %, « Plafond
+  mensuel de l'API atteint » au-delà ; **0 réponse HTTP ≥ 400, 0 erreur
+  console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**729 tests**) verts.
+
+### Jalon 36 — ce qui ne l'est pas
+
+**Les 20 cents n'ont pas été reproduits, et le calcul dit pourquoi.** Au tarif
+Opus 5, un brouillon à 3 111 jetons d'entrée et 1 500 de sortie coûte **environ
+5 cents**, pas 20. Ce qui explique le reste, sans que je puisse le prouver ici :
+chaque tour du fil de reprise renvoyait le prompt système, les 14 schémas
+d'outils et tout l'historique, à `max_tokens: 32000` et effort hérité `high`.
+Trois allers-retours de reprise sur un brouillon suffisent à quadrupler la
+facture d'un email. **La mesure réelle s'affichera dans `/reglages` après le
+premier brouillon en production** — c'est précisément à cela que sert la table.
+
+**Les jetons mesurés en local sont une estimation à quatre caractères par
+jeton**, celle du substitut. Les vrais comptes viennent de l'API et ne seront
+exacts qu'en production. L'écart avant/après (172 jetons) est donc un écart de
+caractères, honnêtement proportionnel, pas un compte de jetons.
+
+**La qualité de Sonnet 5 sur ces emails n'est pas établie.** Le substitut prouve
+la plomberie, pas la prose. Si les trois premiers brouillons sont moins bons
+qu'avec Opus 5, le sélecteur permet de revenir en un clic — et c'est la raison
+pour laquelle c'est un réglage et non une constante.
+
+**Rien n'est mis en cache.** `costMicros()` sait facturer la lecture et
+l'écriture de cache, mais aucun appel ne pose `cache_control`. Le prompt système
+d'Alex fait 2 754 jetons identiques à chaque tour de reprise : c'est le candidat
+évident, et ce n'est pas fait dans ce jalon.
+
+**Le mois est calculé dans le fuseau du serveur.** Un appel passé le 1er du mois
+à 00:30 à Paris tombe dans le mois précédent si le serveur est en UTC. Sans
+conséquence sur un plafond mensuel, et à savoir avant de croire un total à la
+minute près.

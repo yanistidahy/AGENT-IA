@@ -13,6 +13,8 @@ const chatSchema = z.object({
   conversationId: z.string(),
   /** Absent = reprise après confirmation, sans nouveau message utilisateur. */
   message: z.string().trim().min(1).optional(),
+  /** Ce que cet appel sert — voir `Purpose`. Absent vaut « conversation ». */
+  purpose: z.enum(["chat", "revision"]).optional(),
 });
 
 /**
@@ -31,7 +33,7 @@ export async function POST(request: Request) {
   const parsed = chatSchema.safeParse(body.value);
   if (!parsed.success) return invalidPayload(parsed.error);
 
-  const { conversationId, message } = parsed.data;
+  const { conversationId, message, purpose = "chat" } = parsed.data;
 
   try {
     const conversation = await prisma.conversation.findUnique({
@@ -61,7 +63,12 @@ export async function POST(request: Request) {
     }
 
     inFlight.add(conversationId);
-    const stream = streamConversation(conversationId, conversation.agentId, conversation.deep);
+    const stream = streamConversation(
+      conversationId,
+      conversation.agentId,
+      conversation.deep,
+      purpose,
+    );
 
     return new Response(
       stream.pipeThrough(

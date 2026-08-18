@@ -17,6 +17,7 @@ import { MailPanel, type MailStatus, type Signatory } from "./mail-panel";
 import { SnapshotsPanel } from "./snapshots-panel";
 import { CouncilPanel } from "./council-panel";
 import { ShiftsPanel } from "./shifts-panel";
+import { ModelsForm, type ModelsSettings } from "./models-form";
 import { StagesEditor } from "./stages-editor";
 
 interface SettingsViewProps {
@@ -32,6 +33,14 @@ interface SettingsViewProps {
   readonly lists: Record<SettingsListKind, readonly string[]>;
   readonly tags: ReadonlyArray<{ value: string; count: number }>;
   readonly agents: readonly AgentProfile[];
+  readonly modelSettings: ModelsSettings;
+  /**
+   * Le rapport de coûts, rendu **côté serveur** et passé en enfant.
+   *
+   * Un tableau de chiffres déjà agrégés n'a aucune raison de traverser la
+   * frontière client : il est composé dans la page et posé ici.
+   */
+  readonly costs: React.ReactNode;
 }
 
 const LIST_LABELS: Array<{ kind: SettingsListKind; label: string }> = [
@@ -54,6 +63,8 @@ export function SettingsView({
   lists,
   tags,
   agents,
+  modelSettings,
+  costs,
 }: SettingsViewProps) {
   const router = useRouter();
   const refresh = () => router.refresh();
@@ -80,6 +91,16 @@ export function SettingsView({
         hint="envoi des emails par SMTP — la réception n'est pas gérée par cette version"
       >
         <MailPanel initial={mail} passwordEnv={passwordEnv} initialSignatories={signatories} />
+      </Section>
+
+      <Section
+        title="Coûts de l'API"
+        hint="ce que le mois a coûté, et quel modèle sert à quoi"
+      >
+        <div className="space-y-5">
+          {costs}
+          <ModelsForm initial={modelSettings} onSaved={refresh} />
+        </div>
       </Section>
 
       <Section

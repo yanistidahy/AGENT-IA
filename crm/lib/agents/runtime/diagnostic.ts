@@ -1,6 +1,7 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
-import { anthropic, anthropicFailure, effortFor, MODEL, thinkingFor } from "./client";
+import { anthropic, anthropicFailure, effortFor, thinkingFor } from "./client";
+import { modelFor } from "@/lib/api/reference";
 import { toolsFor } from "@/lib/agents/tools";
 import { findAgent } from "@/lib/agents/registry";
 import { promptForAgent } from "@/lib/api/agents";
@@ -54,8 +55,14 @@ interface Probe {
  * champ**. Il faut donc les exécuter dans l'ordre et s'arrêter au premier
  * échec — continuer après une rupture ne prouverait plus rien.
  */
-function probes(agentSlug: string): Probe[] {
-  const base = { model: MODEL, max_tokens: PROBE_TOKENS, messages: PROBE } as const;
+/**
+ * Le diagnostic porte sur le modèle **réellement réglé** pour la conversation,
+ * pas sur une constante. Depuis que le modèle est un réglage, sonder Opus 5
+ * pendant que la conversation tourne sur Sonnet 5 dirait « tout va bien » d'un
+ * chemin qui n'est pas celui qui échoue.
+ */
+function probes(agentSlug: string, model: string): Probe[] {
+  const base = { model, max_tokens: PROBE_TOKENS, messages: PROBE } as const;
 
   return [
     {
@@ -119,7 +126,9 @@ export async function runDiagnostic(agentSlug: string): Promise<DiagnosticReport
   const steps: DiagnosticStep[] = [];
   let broken = false;
 
-  for (const probe of probes(agentSlug)) {
+  const model = await modelFor("chat");
+
+  for (const probe of probes(agentSlug, model)) {
     if (broken) {
       steps.push({
         adds: probe.adds,
@@ -160,7 +169,7 @@ export async function runDiagnostic(agentSlug: string): Promise<DiagnosticReport
     }
   }
 
-  return { model: MODEL, steps, verdict: verdictFor(steps) };
+  return { model, steps, verdict: verdictFor(steps) };
 }
 
 function verdictFor(steps: readonly DiagnosticStep[]): string {

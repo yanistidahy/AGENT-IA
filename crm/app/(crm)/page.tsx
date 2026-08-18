@@ -8,6 +8,9 @@ import { readAlerts } from "@/lib/api/alerts";
 import { listRecommendations } from "@/lib/api/recommendations";
 import { findAgentProfile } from "@/lib/api/agents";
 import { snapshotHealth, type SnapshotHealth } from "@/lib/api/snapshots";
+import { readBudget } from "@/lib/api/usage";
+import { BudgetBanner } from "@/components/dashboard/budget-banner";
+import type { BudgetState } from "@/lib/domain/model-pricing";
 import { describeAge } from "@/lib/domain/snapshots";
 import { RecommendationCard } from "@/components/recommendations/recommendation-card";
 import {
@@ -69,10 +72,14 @@ export default async function HomePage({
   // à chaque visite, un aller-retour réseau y serait payé pour une information
   // qui change une fois par jour.
   const backup = await snapshotHealth(renderedAt);
+  // Même raison que le bandeau de sauvegarde : calculé **avant** les retours
+  // anticipés. Un plafond franchi ne cesse pas d'être vrai parce que la base
+  // est vide.
+  const budget = await readBudget(renderedAt);
 
   if (!status.ok) {
     return (
-      <Shell deploy={deploy} renderedAt={renderedAt} backup={backup}>
+      <Shell deploy={deploy} renderedAt={renderedAt} backup={backup} budget={budget}>
         <section className="rounded-card border border-line bg-surface p-5 shadow-card">
           <div className="flex items-center gap-2.5">
             <span aria-hidden className="size-2 rounded-full bg-pulse" />
@@ -88,7 +95,7 @@ export default async function HomePage({
 
   if (status.total === 0) {
     return (
-      <Shell deploy={deploy} renderedAt={renderedAt} backup={backup}>
+      <Shell deploy={deploy} renderedAt={renderedAt} backup={backup} budget={budget}>
         <section className="rounded-card border border-line bg-surface p-5 shadow-card">
           <div className="flex items-center gap-2.5">
             <span aria-hidden className="size-2 rounded-full bg-brand" />
@@ -141,7 +148,7 @@ export default async function HomePage({
   );
 
   return (
-    <Shell deploy={deploy} renderedAt={renderedAt} backup={backup}>
+    <Shell deploy={deploy} renderedAt={renderedAt} backup={backup} budget={budget}>
       {recommendations.length > 0 && (
         <Block
           title={`Le point de ${arbiter?.name ?? "l'arbitre"}`}
@@ -242,11 +249,14 @@ function Shell({
   deploy,
   renderedAt,
   backup,
+  budget,
   children,
 }: {
   deploy: ReturnType<typeof readDeployInfo>;
   renderedAt: Date;
   backup: SnapshotHealth;
+  /** `null` quand aucun plafond n'est réglé — pas de jauge sans dénominateur. */
+  budget: BudgetState | null;
   children: React.ReactNode;
 }) {
   return (
@@ -260,6 +270,7 @@ function Shell({
           lastSuccessAt={backup.lastSuccessAt?.toISOString() ?? null}
         />
       )}
+      {budget !== null && budget.level !== "ok" && <BudgetBanner budget={budget} />}
       {children}
       <p className="mt-8 border-t border-line pt-3 font-mono text-[10.5px] text-muted">
         {deploy.commit !== null && (

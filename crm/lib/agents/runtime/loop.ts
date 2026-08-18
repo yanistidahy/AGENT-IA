@@ -12,7 +12,10 @@ import { findAgentProfile, promptForAgent } from "@/lib/api/agents";
 import { alexDynamicRules, DRAFT_PROTOCOL } from "@/lib/agents/alex-rules";
 import { findTool, toolsFor } from "../tools";
 import { anthropic, describeAnthropicError, logAnthropicError } from "./client";
-import { conversationRequest } from "./request";
+import { requestFor } from "./request";
+import { modelFor } from "@/lib/api/reference";
+import { budgetRefusal, recordUsage, usageOf } from "@/lib/api/usage";
+import type { Purpose } from "@/lib/domain/model-pricing";
 
 import { encodeEvent, toolLabel, type ChatEvent } from "./events";
 
@@ -50,6 +53,10 @@ interface RunOptions {
   readonly systemPrompt: string;
   /** Nom affiché, pour les messages destinés à l'utilisateur. */
   readonly agentName: string;
+  /** `chat` ou `revision` — décide du modèle et de la ligne de facture. */
+  readonly purpose: Purpose;
+  /** Résolu une fois à l'ouverture du flux, comme le prompt système. */
+  readonly model: string;
 }
 
 function toolUseBlocks(blocks: readonly Anthropic.ContentBlockParam[]) {
@@ -183,7 +190,7 @@ async function runTurn(options: RunOptions): Promise<"continue" | "stop"> {
   }));
 
   const stream = anthropic().messages.stream({
-    ...conversationRequest(options.deep),
+    ...requestFor(options.purpose, options.model, { deep: options.deep }),
     system: options.systemPrompt,
     messages: toAnthropicMessages(stored),
     ...(tools.length > 0 ? { tools } : {}),
@@ -200,6 +207,17 @@ async function runTurn(options: RunOptions): Promise<"continue" | "stop"> {
 
   const message = await stream.finalMessage();
   await appendMessage(options.conversationId, "assistant", message.content);
+
+  // Une ligne de facture **par tour**, pas par conversation : une réponse qui
+  // enchaîne trois lectures d'outils coûte trois appels, et n'en compter qu'un
+  // ferait passer la boucle d'outils — le mécanisme le plus cher du produit —
+  // pour le moins cher.
+  await recordUsage({
+    agentId: options.agent.slug,
+    purpose: options.purpose,
+    model: options.model,
+    usage: usageOf(message.usage),
+  });
 
   if (message.stop_reason !== "tool_use") return "stop";
 
@@ -218,6 +236,7 @@ export function streamConversation(
   conversationId: string,
   agentId: string,
   deep: boolean,
+  purpose: Purpose = "chat",
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
 
@@ -230,6 +249,15 @@ export function streamConversation(
       try {
         const agent = findAgent(agentId);
         if (agent === undefined) throw new Error(`Agent inconnu : ${agentId}`);
+
+        // Le plafond mensuel est vérifié **avant** d'ouvrir le flux : on ne
+        // coupe pas une réponse en cours, on refuse de la commencer, et on le
+        // dit dans le fil plutôt que de laisser le silence.
+        const refusal = await budgetRefusal();
+        if (refusal !== null) {
+          emit({ type: "error", message: refusal });
+          return;
+        }
 
         const profile = await findAgentProfile(agentId);
         const agentName = profile?.name ?? agent.name;
@@ -255,6 +283,8 @@ export function streamConversation(
           emit,
           systemPrompt,
           agentName,
+          purpose,
+          model: await modelFor(purpose),
         };
         for (let turn = 0; turn < MAX_TURNS; turn += 1) {
           const outcome = await runTurn(options);

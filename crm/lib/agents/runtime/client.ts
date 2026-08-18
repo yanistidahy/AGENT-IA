@@ -10,22 +10,16 @@ import Anthropic from "@anthropic-ai/sdk";
  * `lib/agents/__tests__/no-key-in-bundle.test.ts` vérifie la sortie de build.
  */
 
-export const MODEL = "claude-opus-5";
-
 /**
- * Plafond de sortie par réponse.
+ * **Le modèle ne se décide plus ici.**
  *
- * **Ce plafond couvre la réflexion *et* le texte**, pas seulement le texte.
- * Sur Claude Opus 5 la réflexion est active par défaut : un plafond serré ne
- * produit pas une réponse courte, il produit une réponse *tronquée* — le modèle
- * dépense son budget à réfléchir et se fait couper au milieu de sa phrase, avec
- * `stop_reason: "max_tokens"`. 4096 était la valeur d'un modèle sans réflexion ;
- * elle ne convient plus.
- *
- * Le garde-fou de coût reste ce plafond ; le mode approfondi relève l'effort,
- * jamais le plafond.
+ * Il vivait dans cette constante, et le plafond de sortie juste en dessous.
+ * Depuis le jalon 36, les deux sont des réglages par usage : rédiger un email
+ * et juger un briefing ne sont pas la même tâche, et les payer au même tarif
+ * revenait à payer le plus fort des deux pour les deux. Voir
+ * `lib/domain/model-pricing.ts` pour les modèles et leurs tarifs, et
+ * `runtime/request.ts` pour la composition d'une requête.
  */
-export const MAX_TOKENS = 32000;
 
 /** Effort de raisonnement selon le mode. */
 export function effortFor(deep: boolean): "medium" | "xhigh" {

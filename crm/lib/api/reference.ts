@@ -1,6 +1,7 @@
 import { prisma } from "../db";
 import { DEFAULT_REMINDER_DELAYS, type ReminderDelays } from "../domain/automation";
 import { DEFAULT_PILOTAGE, type PilotageSettings, type StageLike } from "../domain/types";
+import { DEFAULT_MODELS, isKnownModel, type Purpose } from "../domain/model-pricing";
 
 /** Données de référence : étapes, réglages, listes éditables. */
 
@@ -64,6 +65,31 @@ export async function getPilotage(): Promise<PilotageSettings> {
     coldDays: row.coldDays,
     objectifMensuel: row.objectifMensuel,
   };
+}
+
+/**
+ * Le modèle retenu pour chaque usage.
+ *
+ * Une valeur inconnue — modèle retiré, réglage écrit à la main — retombe sur le
+ * défaut plutôt que de partir à l'API : un identifiant invalide se traduirait
+ * par un 400 à chaque appel, c'est-à-dire une panne totale de la fonction pour
+ * une faute de frappe dans un réglage.
+ */
+export async function modelFor(purpose: Purpose): Promise<string> {
+  const row = await prisma.settings.findUnique({ where: { id: "singleton" } });
+  const stored =
+    row === null
+      ? null
+      : {
+          draft: row.modelDraft,
+          revision: row.modelRevision,
+          chat: row.modelChat,
+          shift: row.modelShift,
+        }[purpose];
+
+  return stored !== null && stored !== undefined && isKnownModel(stored)
+    ? stored
+    : DEFAULT_MODELS[purpose];
 }
 
 async function listOf(kind: string): Promise<string[]> {
