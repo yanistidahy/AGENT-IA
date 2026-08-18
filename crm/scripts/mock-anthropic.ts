@@ -49,6 +49,23 @@ interface Body {
  * Le message imite le format réel — c'est ce que la bissection du diagnostic
  * affiche, donc un message approximatif rendrait le diagnostic trompeur.
  */
+/**
+ * Une consommation **dérivée de la charge reçue**, pas une constante.
+ *
+ * Le substitut renvoyait 1234 jetons d'entrée quelle que soit la requête : de
+ * quoi vérifier que le compteur écrit une ligne, de quoi ne rien vérifier du
+ * tout sur ce qu'il compte. Une estimation à quatre caractères par jeton — la
+ * même convention que `estimateTokens()` des vacations — rend la taille réelle
+ * du contexte observable en local, ce qui est exactement ce qu'on veut mesurer
+ * avant de couper.
+ */
+function estimatedInput(body: Body): number {
+  const system = typeof body.system === "string" ? body.system : "";
+  const messages = JSON.stringify(body.messages ?? []);
+  const tools = JSON.stringify(body.tools ?? []);
+  return Math.ceil((system.length + messages.length + tools.length) / 4);
+}
+
 function validate(body: Body): string | null {
   if (typeof body.model !== "string" || body.model === "") {
     return "model: field required";
@@ -280,7 +297,7 @@ createServer((req, res) => {
           model: body.model,
           content: [],
           stop_reason: null,
-          usage: { input_tokens: 1234, output_tokens: 0 },
+          usage: { input_tokens: estimatedInput(body), output_tokens: 0 },
         },
       });
       send("content_block_start", {
@@ -297,7 +314,7 @@ createServer((req, res) => {
       send("message_delta", {
         type: "message_delta",
         delta: { stop_reason: "end_turn", stop_sequence: null },
-        usage: { output_tokens: 210 },
+        usage: { output_tokens: Math.ceil(text.length / 4) },
       });
       send("message_stop", { type: "message_stop" });
       res.end();
@@ -313,7 +330,7 @@ createServer((req, res) => {
         model: body.model,
         content: [{ type: "text", text }],
         stop_reason: "end_turn",
-        usage: { input_tokens: 1234, output_tokens: 210 },
+        usage: { input_tokens: estimatedInput(body), output_tokens: Math.ceil(text.length / 4) },
       }),
     );
   });

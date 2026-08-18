@@ -56,6 +56,14 @@ export async function* readChatStream(
 export interface StartChatInput {
   readonly conversationId: string;
   readonly message?: string;
+  /**
+   * À quoi sert cet appel — pour que la facture se lise par usage.
+   *
+   * `revision` quand le fil est celui du panneau de rédaction : c'est la même
+   * mécanique et le même agent qu'une conversation, mais pas le même travail,
+   * donc pas le même modèle ni le même coût attendu. Absent vaut `chat`.
+   */
+  readonly purpose?: "chat" | "revision";
 }
 
 export async function startChat(input: StartChatInput): Promise<Response> {

@@ -82,6 +82,13 @@ vi.mock("@/lib/db", () => ({
         ),
     },
     settings: { findUnique: () => Promise.resolve(null) },
+    // Aucun appel au modèle consigné : le bandeau de budget ne doit donc pas
+    // apparaître, et c'est ce que le test « aucun bandeau » vérifie plus bas.
+    apiUsage: {
+      aggregate: () => Promise.resolve({ _sum: { costMicros: null } }),
+      findMany: empty,
+      findFirst: () => Promise.resolve(null),
+    },
     // L'anneau d'avancement lit les marques du jour et la taille figée de la
     // file. Sans ces deux mocks, `readQueueProgress` retombait sur son chemin
     // d'erreur et le test validait le repli au lieu du comportement.

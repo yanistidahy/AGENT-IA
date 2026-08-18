@@ -37,6 +37,8 @@ export interface AgentChat {
 export interface AgentChatOptions {
   readonly agentId: string;
   readonly deep?: boolean;
+  /** `revision` depuis le panneau de rédaction — voir `StartChatInput`. */
+  readonly purpose?: "chat" | "revision";
   /** Prévenu à la création d'un fil, pour que la liste des conversations suive. */
   readonly onCreated?: (conversation: { id: string; agentId: string; title: string; deep: boolean; updatedAt: Date }) => void;
   /** Prévenu quand l'ouverture d'un fil révèle un autre agent ou un autre mode. */
@@ -46,6 +48,7 @@ export interface AgentChatOptions {
 export function useAgentChat({
   agentId,
   deep = false,
+  purpose = "chat",
   onCreated,
   onOpened,
 }: AgentChatOptions): AgentChat {
@@ -74,7 +77,9 @@ export function useAgentChat({
 
       try {
         const response = await startChat(
-          message === undefined ? { conversationId } : { conversationId, message },
+          message === undefined
+            ? { conversationId, purpose }
+            : { conversationId, message, purpose },
         );
 
         if (!response.ok) {

@@ -347,7 +347,69 @@ model Settings {
   demoLabel String @default("Diagnostic offert")
   demoUrl   String @default("https://deluxe-fudge-addd15.netlify.app/")
 
+  /// Un modèle par usage, plutôt qu'un modèle pour tout.
+  ///
+  /// Rédiger un email à partir d'un dossier fourni n'est pas la même tâche que
+  /// juger un briefing : les payer au même tarif, c'est payer le plus fort des
+  /// deux pour les deux. Les valeurs sont validées contre `MODELS` — un
+  /// identifiant inconnu serait un 400 à chaque appel, pas un réglage.
+  modelDraft    String @default("claude-sonnet-5")
+  modelRevision String @default("claude-sonnet-5")
+  modelChat     String @default("claude-sonnet-5")
+  modelShift    String @default("claude-opus-5")
+
+  /// Plafond de dépense mensuelle, en cents. `0` désactive le plafond.
+  ///
+  /// En cents et non en micro-dollars : c'est un montant qu'on saisit à
+  /// l'écran, pas une somme qu'on accumule. L'accumulation, elle, se fait en
+  /// micro-dollars dans `api_usage`.
+  monthlyBudgetCents Int @default(2000)
+
   @@map("settings")
+}
+
+/// Ce qu'a coûté chaque appel au modèle.
+///
+/// **Une ligne par requête, écrite après la réponse.** Mesurer d'abord et
+/// couper ensuite : sans cette table, toute réduction de coût serait une
+/// conviction, et l'on ne saurait pas davantage après qu'avant si elle a servi.
+///
+/// Les jetons de réflexion ne sont pas un troisième terme du coût : ils font
+/// partie de la sortie et sont facturés comme elle. `thinkingTokens` reste donc
+/// nullable — `null` veut dire « non ventilé par l'API », ce qui est le cas dès
+/// que la réflexion n'est pas renvoyée en résumé.
+model ApiUsage {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  /// `YYYY-MM-DD` dans le fuseau du serveur — pour grouper par jour sans
+  /// dépendre du fuseau de celui qui lit.
+  day       String
+  /// `YYYY-MM`, la fenêtre du plafond mensuel.
+  month     String
+
+  agentId String
+  /// draft | revision | chat | shift
+  purpose String
+  model   String
+
+  inputTokens      Int  @default(0)
+  outputTokens     Int  @default(0)
+  thinkingTokens   Int?
+  cacheReadTokens  Int  @default(0)
+  cacheWriteTokens Int  @default(0)
+
+  /// Coût en micro-dollars entiers. Une somme de flottants dérive sur un mois.
+  costMicros Int @default(0)
+
+  /// L'appel a coûté un multiple de ce que son usage coûte d'ordinaire.
+  anomaly Boolean @default(false)
+  detail  String  @default("")
+
+  @@index([month])
+  @@index([day])
+  @@index([agentId])
+  @@index([purpose])
+  @@map("api_usage")
 }
 
 /// Listes éditables des réglages, en table plutôt qu'en tableau scalaire.

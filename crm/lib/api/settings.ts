@@ -3,6 +3,7 @@ import { prisma } from "../db";
 import { DEFAULT_REMINDER_DELAYS } from "../domain/automation";
 import { SETTINGS_LIST_KINDS, type SettingsListKind } from "../domain/types";
 import { MIN_OUTPUT_TOKENS } from "../domain/model-budget";
+import { DEFAULT_MODELS, isKnownModel } from "../domain/model-pricing";
 
 /** Réglages : seuils de pilotage, listes éditables, étapes du pipeline. */
 
@@ -14,6 +15,11 @@ import { MIN_OUTPUT_TOKENS } from "../domain/model-budget";
  * n'est plus une relance.
  */
 const delayField = z.number().int().min(0, "Un délai ne peut être négatif").max(365).optional();
+
+const modelField = z
+  .string()
+  .refine(isKnownModel, { message: "Modèle inconnu" })
+  .optional();
 
 export const updateSettingsSchema = z
   .object({
@@ -33,6 +39,28 @@ export const updateSettingsSchema = z
      * réglage que le runtime relèverait en silence serait mentir à l'écran.
      */
     shiftTokenBudget: z.number().int().min(MIN_OUTPUT_TOKENS).max(32000).optional(),
+    /**
+     * Un modèle par usage.
+     *
+     * Validés contre la liste connue plutôt que laissés libres : un
+     * identifiant inconnu ne serait pas un réglage exotique mais un 400 à
+     * chaque appel, c'est-à-dire une panne totale de la fonction — et elle ne
+     * se verrait qu'au moment d'écrire un email.
+     */
+    modelDraft: modelField,
+    modelRevision: modelField,
+    modelChat: modelField,
+    modelShift: modelField,
+    /**
+     * Plafond mensuel en cents. `0` vaut « pas de plafond », pas « zéro
+     * dollar » : sans cette convention, on ne pourrait plus le désactiver.
+     */
+    monthlyBudgetCents: z
+      .number()
+      .int()
+      .min(0, "Un plafond ne peut être négatif")
+      .max(1_000_000)
+      .optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: "Aucun champ à mettre à jour" })
   .refine(
@@ -83,6 +111,11 @@ export async function updateSettings(
     relanceApresNote:
       input.relanceApresNote ?? current?.relanceApresNote ?? DEFAULT_REMINDER_DELAYS.note,
     shiftTokenBudget: input.shiftTokenBudget ?? current?.shiftTokenBudget ?? 4000,
+    modelDraft: input.modelDraft ?? current?.modelDraft ?? DEFAULT_MODELS.draft,
+    modelRevision: input.modelRevision ?? current?.modelRevision ?? DEFAULT_MODELS.revision,
+    modelChat: input.modelChat ?? current?.modelChat ?? DEFAULT_MODELS.chat,
+    modelShift: input.modelShift ?? current?.modelShift ?? DEFAULT_MODELS.shift,
+    monthlyBudgetCents: input.monthlyBudgetCents ?? current?.monthlyBudgetCents ?? 2000,
   };
 
   await prisma.settings.upsert({

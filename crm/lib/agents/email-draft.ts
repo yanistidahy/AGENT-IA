@@ -1,7 +1,10 @@
 import "server-only";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { anthropic, describeAnthropicError, MODEL } from "./runtime/client";
+import { anthropic, describeAnthropicError } from "./runtime/client";
+import { requestFor } from "./runtime/request";
+import { modelFor } from "@/lib/api/reference";
+import { budgetRefusal, recordUsage, usageOf } from "@/lib/api/usage";
 import { promptForAgent } from "@/lib/api/agents";
 import { REAL_ACTIVITY } from "@/lib/api/real-activity";
 import { resolveContactStatus } from "@/lib/domain/contact-status";
@@ -202,35 +205,31 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
 }
 
 /**
- * Les consignes de rédaction, construites depuis les réglages.
+ * Les consignes de rédaction.
  *
- * Elles répètent la signature et le lien plutôt que de renvoyer au prompt
- * système : ce sont les deux points sur lesquels un modèle dérive le plus, et
- * les rappeler à l'endroit où il produit coûte trois lignes.
+ * **Elles ne répètent plus le prompt système, et c'est le sujet.** Jusqu'au
+ * jalon 35, ce bloc redonnait l'ouverture sur leur activité, la douleur de leur
+ * côté, le conseiller proactif, la démonstration préparée, les deux appels à
+ * l'action, la signature et le libellé du lien — soit sept règles déjà écrites
+ * dans `WRITING_SHAPE`, `COMPANY_CONTEXT`, `signatureRule()` et `demoRule()`,
+ * quelques lignes plus haut dans la même requête. On payait deux fois pour
+ * chaque brouillon le même texte, et le risque n'était pas seulement le coût :
+ * deux formulations d'une même règle finissent par se contredire, et c'est
+ * alors le modèle qui arbitre.
+ *
+ * Ne reste ici que ce que le prompt système ne peut pas porter : **la forme de
+ * la réponse**. Le reste est au-dessus.
  */
-function draftInstruction(config: MailConfig, signatory: Signatory | null): string {
-  const signature =
-    signatory === null
-      ? signatureBlock({ name: config.signName, title: config.signTitle })
-      : signatureBlock(signatory);
-  const demo = config.demoUrl.trim() === "" ? "" : `\n- Second appel à l'action : un paragraphe court se terminant par « → ${config.demoLabel} », sans URL.`;
-
-  return `Rédige **un** email à partir du dossier ci-dessus.
+function draftInstruction(): string {
+  return `Rédige **un** email à partir du dossier ci-dessus, en appliquant les
+règles de forme, de signature et de lien données plus haut.
 
 Rends exclusivement un objet JSON, sans texte autour, sans bloc de code :
 {"subject": "...", "body": "..."}
 
-Contraintes, non négociables :
-- \`body\` sépare ses paragraphes par une ligne vide (\\n\\n).
-- Ouvre sur quelque chose de concret concernant **leur** activité, jamais sur toi ni sur un message précédent.
-- Nomme le volume de questions récurrentes que **leur équipe** traite, avant de parler de l'offre.
-- Présente le Personal Shopper comme un conseiller proactif qui guide vers l'achat, le SAV 24/7 venant ensuite.
-- Annonce une démonstration **déjà préparée pour leur site**, pas un diagnostic générique.
-- Premier appel à l'action : leur demander de répondre à ce message pour recevoir le lien de la démonstration.${demo}
-- Les deux dernières lignes du corps sont exactement :
-${signature}
-- Aucun prix, aucun nom d'offre, aucun montant.
-- N'invente aucun fait qui ne soit pas dans le dossier.`;
+Deux points propres à cette forme :
+- \`body\` sépare ses paragraphes par une ligne vide (\\n\\n) ;
+- n'invente aucun fait qui ne soit pas dans le dossier.`;
 }
 
 export async function draftEmail(
@@ -266,7 +265,7 @@ export async function draftEmail(
 
   return complete(
     system,
-    `${context}\n\n---\n\n${draftInstruction(config, signatory)}`,
+    `${context}\n\n---\n\n${draftInstruction()}`,
     to,
     contact.firstName,
     contact.lastName,
@@ -300,14 +299,26 @@ async function complete(
       ? signatureBlock({ name: config.signName, title: config.signTitle })
       : signatureBlock(signatory);
 
+  // **Le plafond est vérifié avant l'appel, pas pendant.** Le garde-fou
+  // existait pour les vacations depuis le jalon 14 ; il couvre désormais la
+  // rédaction, qui est ce qui coûte réellement.
+  const refusal = await budgetRefusal();
+  if (refusal !== null) return { ok: false, message: refusal };
+
+  const model = await modelFor("draft");
+
   try {
     const response = await anthropic().messages.create({
-      model: MODEL,
-      max_tokens: 2000,
-      thinking: { type: "adaptive", display: "omitted" },
-      output_config: { effort: "medium" },
+      ...requestFor("draft", model),
       system,
       messages: [{ role: "user", content: ask }],
+    });
+
+    await recordUsage({
+      agentId: ALEX_SLUG,
+      purpose: "draft",
+      model,
+      usage: usageOf(response.usage),
     });
 
     const text = response.content

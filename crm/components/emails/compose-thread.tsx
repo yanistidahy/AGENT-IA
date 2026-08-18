@@ -39,7 +39,7 @@ export function ComposeThread({
 }) {
   const [text, setText] = useState("");
 
-  const chat = useAgentChat({ agentId: "alex" });
+  const chat = useAgentChat({ agentId: "alex", purpose: "revision" });
 
   // Le dernier tour appliqué : sans ce garde-fou, chaque rendu réappliquerait
   // le même brouillon et écraserait une retouche faite entre-temps.
