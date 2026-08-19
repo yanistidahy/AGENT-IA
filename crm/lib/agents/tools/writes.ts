@@ -131,6 +131,7 @@ const LABELS: Record<(typeof ACTIVITY_TYPES)[number], string> = {
   email: "un email",
   meeting: "une réunion",
   demo: "une démo",
+  linkedin: "un message LinkedIn",
   note: "une note",
 };
 

@@ -26,6 +26,7 @@ const API_FIELD: Record<ActivityType, string> = {
   email: "relanceApresEmail",
   demo: "relanceApresDemo",
   meeting: "relanceApresReunion",
+  linkedin: "relanceApresLinkedin",
   note: "relanceApresNote",
 };
 
@@ -74,7 +75,7 @@ export function RelancesForm({
 
   return (
     <section className="rounded-card border border-line bg-surface p-4 shadow-card">
-      <div className="grid gap-2.5 sm:grid-cols-5">
+      <div className="grid gap-2.5 sm:grid-cols-6">
         {FIELDS.map((field) => (
           <label key={field.key} className="block">
             <span className="mb-1 block font-mono text-[10px] tracking-[0.1em] text-muted uppercase">

@@ -13,7 +13,9 @@ export type DealStatus = (typeof DEAL_STATUSES)[number];
 export const DEAL_HEATS = ["hot", "warm", "cold"] as const;
 export type DealHeat = (typeof DEAL_HEATS)[number];
 
-export const ACTIVITY_TYPES = ["call", "email", "meeting", "demo", "note"] as const;
+// « linkedin » rejoint les canaux au jalon 40 : les messages LinkedIn étaient
+// consignés en « note » et disparaissaient de toute mesure par canal.
+export const ACTIVITY_TYPES = ["call", "email", "meeting", "demo", "linkedin", "note"] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
 /** Libellés d'affichage des types d'interaction. Une seule table pour tout l'app. */
@@ -22,6 +24,7 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   email: "Email",
   meeting: "Réunion",
   demo: "Démo",
+  linkedin: "LinkedIn",
   note: "Note",
 };
 

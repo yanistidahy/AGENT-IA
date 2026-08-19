@@ -15,6 +15,7 @@ const TYPE_TONES: Record<ActivityType, Tone> = {
   email: "sky",
   meeting: "violet",
   demo: "gold",
+  linkedin: "sky",
   note: "mute",
 };
 

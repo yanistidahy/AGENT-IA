@@ -353,6 +353,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 37 | **Les emails laissent une trace** — copie IMAP dans « Envoyés », journal des envois, section Emails, suivi d'ouverture assumé comme estimation | **livré, à valider** |
 | 38 | **Séquences d'emails** — trois étapes, file du matin, mode automatique à double verrou, plafonds qui apprennent du refus | **livré, à valider** |
 | 39 | **`/emails` refondu** — graphiques conditionnés à l'histoire, entonnoir, journal des envois, « Sans réponse », par signataire | **livré, à valider** |
+| 40 | **« Ma performance »** — activité par canal et par jour, comparée ; réponses par canal ; Yanis/Mohamed côte à côte ; régularité et objectifs | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -5361,3 +5362,100 @@ aggravée ici) ; `contact-form.tsx` à 276 — les deux au-dessus de la limite d
 **L'état vide (0 envoi) n'a pas été revu dans le navigateur** ce jalon : la
 branche est celle du jalon 37 (un `EmptyChart` qui renvoie vers `/contacts`),
 seul l'en-tête a changé.
+
+
+---
+
+## Jalon 40 — « Ma performance » : la personne, pas les fiches
+
+### Ce que l'écran mesure, et la phrase qui l'encadre
+
+`/performance` mesure le rythme de travail : le volume par canal et par jour,
+ce qu'il produit, et sa régularité. **La ligne d'honnêteté est dans l'en-tête,
+pas en pied de page** : cet écran mesure ce qui est *consigné*, pas ce qui est
+fait — il faut l'avoir lue avant les chiffres, sinon une baisse de saisie se
+lit comme une baisse de travail.
+
+**Une seule source : les interactions.** Chaque envoi d'email consigne déjà une
+interaction `email` (jalon 32) : compter aussi `email_sends` les compterait
+deux fois. L'attribution suit le propriétaire de l'interaction. Les notes de
+correction sont exclues partout (`CORRECTION_OWNER`, jalon 27) — vérifié : une
+note de correction posée le lundi ne change ni le volume, ni les jours actifs,
+ni l'entonnoir.
+
+### Le canal LinkedIn existe enfin
+
+`"linkedin"` rejoint `ACTIVITY_TYPES`. Le changement s'est propagé **par le
+compilateur** : chaque `Record<ActivityType, …>` (couleurs de chronologie,
+libellés, délais de relance, formulaires) a refusé de compiler jusqu'à être
+complété — c'est la raison d'être de ces `Record` plutôt que des tableaux.
+Migration `17_performance` : `relanceApresLinkedin` (défaut 4 j, comme
+l'email) + les deux objectifs hebdomadaires.
+
+### Les périodes, et la comparaison honnête
+
+`lib/domain/performance.ts` (pur, 18 tests) : aujourd'hui · cette semaine · ce
+mois · 90 jours · période libre, tout dans l'URL. **Une période calendaire
+entamée se compare à la précédente *complète*** — comparer deux jours de
+semaine à sept jours pleins ferait de chaque lundi un effondrement — et la
+légende le dit : « +8 vs la semaine dernière (complète) ». Une période libre
+invalide retombe sur la semaine : un lien vieilli ouvre l'écran, pas une 404.
+
+### Le graphique empilé, et la régularité
+
+`StackedBars` (SVG serveur) : un canal = une couleur, la même que la
+chronologie des fiches ; **les jours à zéro restent dessinés** — c'est eux
+qu'on veut voir. La régularité se compte **en jours ouvrés** : un samedi
+travaillé ne gonfle pas le ratio, un week-end ne casse pas une série, et la
+journée en cours non plus (elle n'est pas finie). Relances tenues/manquées :
+même définition qu'au jalon 22 — « tenue » = terminée au plus tard le jour de
+l'échéance, sur les tâches automatiques.
+
+### Objectifs hebdomadaires
+
+Deux réglages (`/reglages` → Objectifs hebdomadaires), `0` = pas d'objectif —
+l'écran n'affiche alors **aucune** barre plutôt qu'un « 4 sur 0 ». La barre
+mesure **toujours la semaine en cours**, quel que soit le sélecteur :
+l'objectif est hebdomadaire, le rapporter à 90 jours ne signifierait rien.
+
+### L'entonnoir inter-canaux, et le côte à côte
+
+Contactés → répondu → RDV → qualifiés, en personnes, rendu par le même
+`FunnelRow` que `/emails` (sa clé d'étape est devenue une chaîne libre). La
+dernière étape compte des **affaires ouvertes** (`Deal.createdAt` = date de
+qualification depuis le jalon 22) et le dit. « Mauvais interlocuteur » compte
+comme réponse : quelqu'un a décroché — seule « pas de réponse » est exclue.
+Le tableau Yanis/Mohamed donne volume et résultat par personne, le taux de
+réponse **par personne contactée**.
+
+### Jalon 40 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `17_performance` appliquée puis
+`migrate diff` **vide**), le serveur standalone et le navigateur à 1440×900,
+sur le scénario des cinq tests d'acceptation (2 personnes, 2 semaines, tous
+les canaux) :
+
+- **volume comparé** : 5 appels « = vs la semaine dernière (complète) » avec la
+  ventilation des issues sous la carte ; filtré Yanis → « 3 · −2 » en rouge ;
+- **taux par canal** : Appel 60 % (3 réponses sur 5 issues connues), LinkedIn
+  100 %, Email « — » (aucune issue connue — pas de taux inventé) ;
+- **côte à côte** : Mohamed 3 interactions / 1 RDV / 50 %, Yanis 5 / 1
+  qualifié / 60 % ;
+- **régularité** : 1 jour actif sur 3 ouvrés, objectifs 5/20 et 1/10 affichés
+  en barres, 1 relance tenue · 1 manquée ;
+- **correction** : la note `Correction` ne compte nulle part, l'entonnoir dit
+  7 personnes (p9 touché deux fois ne compte qu'une) ;
+- **réglage rond** : objectif changé à 25 depuis `/reglages` → « 5 / 25 » sur
+  `/performance` au rechargement ; le champ « Après LinkedIn » est apparu dans
+  les délais de relance, et « LinkedIn » dans le formulaire d'interaction ;
+- **0 débordement, 0 erreur console, 0 réponse ≥ 400** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**822 tests**) verts.
+
+### Jalon 40 — ce qui ne l'est pas
+
+**Les qualifications antérieures au jalon 22 portent leur date de saisie**, pas
+de qualification — la carte « Qualifiés » n'est juste que pour les affaires
+ouvertes depuis. **Le graphique à 90 jours** n'a été vu qu'avec des fixtures
+d'une semaine : les étiquettes s'espacent (1 jour sur 7) mais l'allure à
+volume réel reste à voir. **La période libre** passe par un formulaire GET
+natif ; le format de date affiché dépend de la langue du navigateur.
