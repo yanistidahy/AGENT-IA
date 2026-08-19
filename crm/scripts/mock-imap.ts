@@ -21,9 +21,17 @@ import { join } from "node:path";
  * faire pour une vérification. Le certificat est auto-signé et le processus qui
  * teste le fait confiance par `NODE_EXTRA_CA_CERTS`.
  *
+ * Depuis le jalon 41 il sert aussi le **relevé de la boîte de réception** :
+ * `EXAMINE`, `UID SEARCH SINCE` et `UID FETCH … BODY.PEEK[HEADER.FIELDS (…)]`.
+ * Le contenu d'INBOX vient d'un fichier JSON (`IMAP_INBOX`) : un tableau
+ * d'objets `{ headers: string }`, où `headers` est le bloc d'en-têtes brut du
+ * message. **Aucun corps** — c'est tout ce que le produit demande, et le
+ * substitut n'en sait pas plus que le vrai serveur n'en dirait.
+ *
  * Variables : `IMAP_PORT`, `IMAP_USER`, `IMAP_PASS`, `IMAP_CERT`, `IMAP_KEY`,
  * `IMAP_OUT` (dossier où déposer les messages), `IMAP_NO_SENT_FLAG` (pour
- * rejouer le cas « aucun dossier ne porte \Sent »).
+ * rejouer le cas « aucun dossier ne porte \Sent »), `IMAP_INBOX` (fichier JSON
+ * des messages d'INBOX).
  */
 
 const PORT = Number(process.env.IMAP_PORT ?? 9993);
@@ -31,8 +39,48 @@ const USER = process.env.IMAP_USER ?? "yanis@aura.test";
 const PASS = process.env.IMAP_PASS ?? "secret";
 const OUT = process.env.IMAP_OUT ?? "/tmp/imap-out";
 const NO_SENT_FLAG = process.env.IMAP_NO_SENT_FLAG === "1";
+const INBOX_FILE = process.env.IMAP_INBOX ?? "";
 
 mkdirSync(OUT, { recursive: true });
+
+interface InboxMessage {
+  readonly headers: string;
+}
+
+/**
+ * Le contenu d'INBOX, relu **à chaque connexion**.
+ *
+ * Relire plutôt que charger au démarrage permet à une vérification d'ajouter un
+ * message entre deux relevés sans redémarrer le substitut — c'est exactement ce
+ * qu'il faut pour éprouver l'idempotence et l'arrivée d'une réponse tardive.
+ */
+function readInbox(): readonly InboxMessage[] {
+  if (INBOX_FILE === "") return [];
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(INBOX_FILE, "utf8"));
+    return Array.isArray(parsed) ? (parsed as InboxMessage[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Les lignes d'en-tête demandées, filtrées comme le ferait HEADER.FIELDS. */
+function selectFields(block: string, fields: readonly string[]): string {
+  const wanted = new Set(fields.map((field) => field.toLowerCase()));
+  const out: string[] = [];
+  let keeping = false;
+  for (const line of block.split(/\r?\n/)) {
+    if (/^[ \t]/.test(line)) {
+      // Ligne de repli : elle appartient à l'en-tête précédent.
+      if (keeping) out.push(line);
+      continue;
+    }
+    const colon = line.indexOf(":");
+    keeping = colon > 0 && wanted.has(line.slice(0, colon).trim().toLowerCase());
+    if (keeping) out.push(line);
+  }
+  return `${out.join("\r\n")}\r\n\r\n`;
+}
 
 let appended = 0;
 
@@ -72,6 +120,7 @@ createServer(
     let pending = 0;
     let literal = "";
     let literalTag = "";
+    let inbox: readonly InboxMessage[] = [];
 
     const send = (line: string) => socket.write(`${line}\r\n`);
 
@@ -156,6 +205,56 @@ createServer(
           pending = Number(match[1]);
           literal = "";
           send("+ Envoyez le message");
+        } else if (verb === "SELECT" || verb === "EXAMINE") {
+          const box = decodeUtf7((rest[0] ?? "").replace(/^"|"$/g, ""));
+          if (box.toUpperCase() !== "INBOX") {
+            send(`${tag} NO [NONEXISTENT] Mailbox doesn't exist: ${box}`);
+            continue;
+          }
+          inbox = readInbox();
+          send("* FLAGS (\\Seen \\Answered \\Flagged \\Deleted \\Draft)");
+          send(`* ${inbox.length} EXISTS`);
+          send("* 0 RECENT");
+          send("* OK [UIDVALIDITY 1] UIDs valides");
+          send(`* OK [UIDNEXT ${inbox.length + 1}] Prochain UID`);
+          // `[READ-ONLY]` sur EXAMINE : le client doit voir que la boîte n'est
+          // pas modifiable, sinon la lecture seule ne serait pas éprouvée.
+          console.log(`${verb} INBOX — ${inbox.length} message(s), ${verb === "EXAMINE" ? "lecture seule" : "LECTURE-ÉCRITURE"}`);
+          send(`${tag} OK [${verb === "EXAMINE" ? "READ-ONLY" : "READ-WRITE"}] ${verb} terminé`);
+        } else if (verb === "UID" && (rest[0] ?? "").toUpperCase() === "SEARCH") {
+          // Tous les UID : le `SINCE` du vrai serveur filtre par jour, et le
+          // substitut n'a pas à être plus fin — le produit doit de toute façon
+          // supporter de revoir des messages déjà traités.
+          send(`* SEARCH ${inbox.map((_message, index) => index + 1).join(" ")}`.trimEnd());
+          send(`${tag} OK UID SEARCH terminé`);
+        } else if (verb === "UID" && (rest[0] ?? "").toUpperCase() === "FETCH") {
+          const fields = /HEADER\.FIELDS \(([^)]*)\)/i.exec(line);
+          if (fields === null) {
+            // Le produit ne demande **que** des en-têtes : un FETCH qui
+            // réclamerait autre chose est un défaut à faire échouer bruyamment,
+            // pas à servir.
+            send(`${tag} NO Ce serveur ne sert que BODY.PEEK[HEADER.FIELDS (…)]`);
+            continue;
+          }
+          const wanted = (fields[1] ?? "").split(/\s+/).filter((field) => field !== "");
+          console.log(`UID FETCH — en-têtes demandés : ${wanted.join(" ")}`);
+          const peek = /BODY\.PEEK\[/i.test(line);
+          if (!peek) {
+            // Sans PEEK, le serveur armerait `\Seen` : refuser plutôt que de
+            // laisser passer un relevé qui marquerait la boîte comme lue.
+            send(`${tag} NO BODY sans PEEK refusé : ce relevé doit être en lecture seule`);
+            continue;
+          }
+          inbox.forEach((message, index) => {
+            const block = selectFields(message.headers, wanted);
+            const size = Buffer.byteLength(block, "utf8");
+            send(
+              `* ${index + 1} FETCH (UID ${index + 1} BODY[HEADER.FIELDS (${(fields[1] ?? "").trim()})] {${size}}`,
+            );
+            socket.write(block);
+            send(")");
+          });
+          send(`${tag} OK UID FETCH terminé`);
         } else if (verb === "LOGOUT") {
           send("* BYE mock-imap ferme");
           send(`${tag} OK LOGOUT terminé`);

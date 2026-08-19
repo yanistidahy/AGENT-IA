@@ -28,6 +28,16 @@ import type { Lifecycle } from "./types";
  */
 export const OUTCOMES = [
   "no-answer",
+  /**
+   * Le prospect a répondu, et on ne sait pas encore ce qu'il dit.
+   *
+   * Ajoutée au jalon 41 pour le relevé automatique : la détection lit des
+   * **en-têtes**, jamais un corps de message — elle sait donc qu'il y a une
+   * réponse, et rien de plus. Lui faire choisir « intéressé » ou « pas
+   * intéressé » serait inventer. Elle vaut réponse pour tous les taux, comme
+   * les autres issues hors « pas de réponse ».
+   */
+  "replied",
   "interested",
   "later",
   "not-interested",
@@ -38,6 +48,7 @@ export type Outcome = (typeof OUTCOMES)[number];
 
 export const OUTCOME_LABELS: Record<Outcome, string> = {
   "no-answer": "Pas de réponse",
+  replied: "Répondu",
   interested: "Répondu — intéressé",
   later: "Répondu — à relancer plus tard",
   "not-interested": "Répondu — pas intéressé",
@@ -75,6 +86,9 @@ export const STATUS_SUGGESTIONS: readonly string[] = [
   FOLLOW_UP_LABELS.silent,
   FOLLOW_UP_LABELS.never,
   "Contacté — en attente",
+  // Posé par le relevé automatique du jalon 41, qui sait qu'une réponse est
+  // arrivée sans savoir ce qu'elle dit.
+  "A répondu",
   "Intéressé",
   "RDV pris",
   "Ne répond plus",
@@ -218,6 +232,12 @@ export function proposalFor(outcome: Outcome): OutcomeProposal {
   switch (outcome) {
     case "no-answer":
       return { ...base, status: "Ne répond plus" };
+    case "replied":
+      // On sait qu'il a répondu, pas ce qu'il dit : aucun cycle de vie n'est
+      // proposé, et le curseur va sur l'échéance parce que la suite se décide
+      // maintenant. C'est ce que le relevé automatique peut affirmer, et rien
+      // de plus.
+      return { ...base, status: "A répondu", focusReminder: true };
     case "interested":
       return { ...base, status: "Intéressé", lifecycle: "Prospect" };
     case "later":

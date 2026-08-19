@@ -11,8 +11,9 @@ import { snapshotHealth, type SnapshotHealth } from "@/lib/api/snapshots";
 import { readBudget } from "@/lib/api/usage";
 import { BudgetBanner } from "@/components/dashboard/budget-banner";
 import { schedulerHealth, type SchedulerHealth } from "@/lib/api/scheduler-health";
+import { inboxHealth, type InboxHealth } from "@/lib/api/inbox-health";
 import { readLimitNotice, type LimitNotice } from "@/lib/api/send-rate";
-import { SchedulerBanner, SendLimitBanner } from "@/components/dashboard/scheduler-banner";
+import { InboxBanner, SchedulerBanner, SendLimitBanner } from "@/components/dashboard/scheduler-banner";
 import type { BudgetState } from "@/lib/domain/model-pricing";
 import { describeAge } from "@/lib/domain/snapshots";
 import { RecommendationCard } from "@/components/recommendations/recommendation-card";
@@ -34,6 +35,8 @@ import { listOwners } from "@/lib/api/reference";
 import { staleDealsWithoutTask } from "@/lib/api/automation";
 import { WakeStaleDeals } from "@/components/activities/wake-stale";
 import { readDashboard } from "@/lib/api/dashboard";
+import { readMailStatus } from "@/lib/api/mail";
+import { readImapStatus } from "@/lib/api/imap";
 import { readDbStatus, type Counts } from "@/lib/db-status";
 import { readDeployInfo } from "@/lib/deploy-info";
 
@@ -82,11 +85,17 @@ export default async function HomePage({
   // Mêmes raisons, même endroit : ces deux états restent vrais quand la base
   // est vide ou injoignable, donc ils sont calculés avant les retours anticipés.
   const scheduler = await schedulerHealth(renderedAt);
+  // Calculé **avant** les retours anticipés de la page, comme les bandeaux de
+  // sauvegarde et de budget : un relevé en panne ne cesse pas de l'être parce
+  // que la base est vide.
+  const mailStatus = await readMailStatus();
+  const imapStatus = await readImapStatus(mailStatus, mailStatus.passwordSet);
+  const inbox = await inboxHealth(imapStatus.ready, renderedAt);
   const sendLimit = await readLimitNotice();
 
   if (!status.ok) {
     return (
-      <Shell deploy={deploy} renderedAt={renderedAt} backup={backup} budget={budget} scheduler={scheduler} sendLimit={sendLimit}>
+      <Shell deploy={deploy} renderedAt={renderedAt} backup={backup} budget={budget} scheduler={scheduler} inbox={inbox} sendLimit={sendLimit}>
         <section className="rounded-card border border-line bg-surface p-5 shadow-card">
           <div className="flex items-center gap-2.5">
             <span aria-hidden className="size-2 rounded-full bg-pulse" />
@@ -102,7 +111,7 @@ export default async function HomePage({
 
   if (status.total === 0) {
     return (
-      <Shell deploy={deploy} renderedAt={renderedAt} backup={backup} budget={budget} scheduler={scheduler} sendLimit={sendLimit}>
+      <Shell deploy={deploy} renderedAt={renderedAt} backup={backup} budget={budget} scheduler={scheduler} inbox={inbox} sendLimit={sendLimit}>
         <section className="rounded-card border border-line bg-surface p-5 shadow-card">
           <div className="flex items-center gap-2.5">
             <span aria-hidden className="size-2 rounded-full bg-brand" />
@@ -155,7 +164,7 @@ export default async function HomePage({
   );
 
   return (
-    <Shell deploy={deploy} renderedAt={renderedAt} backup={backup} budget={budget} scheduler={scheduler} sendLimit={sendLimit}>
+    <Shell deploy={deploy} renderedAt={renderedAt} backup={backup} budget={budget} scheduler={scheduler} inbox={inbox} sendLimit={sendLimit}>
       {recommendations.length > 0 && (
         <Block
           title={`Le point de ${arbiter?.name ?? "l'arbitre"}`}
@@ -258,6 +267,7 @@ function Shell({
   backup,
   budget,
   scheduler,
+  inbox,
   sendLimit,
   children,
 }: {
@@ -267,6 +277,7 @@ function Shell({
   /** `null` quand aucun plafond n'est réglé — pas de jauge sans dénominateur. */
   budget: BudgetState | null;
   scheduler: SchedulerHealth;
+  inbox: InboxHealth;
   /** `null` quand le serveur d'envoi n'a rien opposé. */
   sendLimit: LimitNotice | null;
   children: React.ReactNode;
@@ -283,6 +294,7 @@ function Shell({
         />
       )}
       {scheduler.stale && <SchedulerBanner health={scheduler} />}
+      {inbox.stale && <InboxBanner health={inbox} />}
       {sendLimit !== null && <SendLimitBanner notice={sendLimit} />}
       {budget !== null && budget.level !== "ok" && <BudgetBanner budget={budget} />}
       {children}

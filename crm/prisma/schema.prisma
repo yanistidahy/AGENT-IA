@@ -148,6 +148,7 @@ model Contact {
   activities Activity[]
   tasks       Task[]
   emailSends  EmailSend[]
+  emailReplies EmailReply[]
   enrollments SequenceEnrollment[]
 
   @@index([companyId])
@@ -329,6 +330,13 @@ model Settings {
   /// sans objectif, l'écran n'affiche pas de progression plutôt qu'un « 4 sur 0 ».
   objectifAppelsSemaine Int @default(0)
   objectifEmailsSemaine Int @default(0)
+
+  /// Relevé de la boîte de réception (jalon 41).
+  ///
+  /// `lastInboxPollAt` est écrit **en dernier et seulement en cas de succès** :
+  /// c'est son absence qui doit alerter. Même règle que `lastCronAt`.
+  inboxPollEnabled Boolean   @default(true)
+  lastInboxPollAt  DateTime?
 
   /// Plafond de jetons de sortie par vacation. Bas par défaut : une vacation qui
   /// dépasserait s'arrête et le dit, plutôt que de faire monter la facture.
@@ -800,6 +808,9 @@ model EmailSend {
   sequenceName String @default("")
   sequenceStep Int?
 
+  /// Les réponses détectées comme rattachées à ce message.
+  replies EmailReply[]
+
   /// copied | failed | disabled | unconfigured — l'état de la copie « Envoyés ».
   copyStatus String @default("disabled")
   /// L'erreur IMAP exacte, telle que le serveur l'a dite. Jamais d'identifiant.
@@ -910,4 +921,41 @@ model SequenceDeparture {
   @@unique([enrollmentId, step])
   @@index([day, status])
   @@map("sequence_departures")
+}
+
+/// Une réponse détectée dans la boîte de réception.
+///
+/// **La table existe pour l'idempotence.** `replyMessageId` est unique : un
+/// second relevé qui revoit le même message ne peut pas créer une seconde
+/// interaction, et c'est une contrainte de base, pas une vérification
+/// applicative — une course ne contourne pas une contrainte.
+///
+/// Elle ne porte **aucun contenu** : ni corps, ni sujet, ni expéditeur. Le
+/// relevé ne lit que des en-têtes de fil, et ce qu'il en garde se limite à ce
+/// qui prouve le rattachement.
+model EmailReply {
+  id String @id @default(cuid())
+
+  /// Le `Message-ID` du message reçu — la clé d'idempotence.
+  replyMessageId String @unique
+  /// Le `Message-ID` de **notre** envoi auquel il répond.
+  sentMessageId  String
+
+  emailSendId String?
+  emailSend   EmailSend? @relation(fields: [emailSendId], references: [id], onDelete: SetNull)
+
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  /// Date du message reçu, telle que son en-tête `Date` la porte.
+  receivedAt DateTime
+  detectedAt DateTime @default(now())
+
+  /// L'interaction créée, s'il en a fallu une. Nulle quand la réponse était
+  /// **déjà consignée à la main** : le relevé la reconnaît et n'en ajoute pas
+  /// une seconde.
+  activityId String?
+
+  @@index([sentMessageId])
+  @@map("email_replies")
 }

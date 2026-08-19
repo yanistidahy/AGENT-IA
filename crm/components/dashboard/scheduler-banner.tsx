@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { SchedulerHealth } from "@/lib/api/scheduler-health";
 import type { LimitNotice } from "@/lib/api/send-rate";
+import type { InboxHealth } from "@/lib/api/inbox-health";
 
 /**
  * Deux bandeaux que rien d'autre ne dirait.
@@ -47,6 +48,36 @@ export function SendLimitBanner({ notice }: { readonly notice: LimitNotice }) {
         Réglages → Messagerie
       </Link>{" "}
       pour relever le plafond une fois la cause comprise.
+    </p>
+  );
+}
+
+/**
+ * Le relevé des réponses, muet.
+ *
+ * **Pire que pas de détection du tout.** Sans relevé, on sait qu'il faut ouvrir
+ * sa boîte ; avec un relevé en panne, on croit le CRM à jour et on relance
+ * quelqu'un qui a répondu il y a trois jours — sous le nom d'une vraie
+ * personne, à un vrai prospect. Le seuil est à deux heures pour un passage
+ * tous les quarts d'heure : huit passages manqués.
+ */
+export function InboxBanner({ health }: { readonly health: InboxHealth }) {
+  return (
+    <p className="mb-4 rounded-control border border-[#F5D5CF] bg-pulse-l px-3.5 py-3 text-[12.5px] leading-relaxed text-[#B2311F]">
+      <strong>
+        {health.hours === null
+          ? "Le relevé des réponses n'a jamais eu lieu."
+          : `Le relevé des réponses n'a pas eu lieu depuis ${health.hours} heures.`}
+      </strong>{" "}
+      Les réponses arrivées depuis ne sont pas dans le CRM, et les séquences en cours
+      continuent de partir sur des gens qui ont peut-être répondu.{" "}
+      {health.hours === null
+        ? "Vérifiez que le workflow GitHub est actif et que ses deux secrets sont posés."
+        : "Vérifiez l'onglet Actions du dépôt, ou relevez à la main."}{" "}
+      <Link className="font-semibold underline" href="/reglages">
+        Réglages → Messagerie
+      </Link>
+      .
     </p>
   );
 }
