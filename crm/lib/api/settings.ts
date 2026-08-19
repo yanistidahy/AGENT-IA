@@ -30,7 +30,11 @@ export const updateSettingsSchema = z
     relanceApresEmail: delayField,
     relanceApresDemo: delayField,
     relanceApresReunion: delayField,
+    relanceApresLinkedin: delayField,
     relanceApresNote: delayField,
+    /** Objectifs hebdomadaires de « Ma performance ». `0` = pas d'objectif. */
+    objectifAppelsSemaine: z.number().int().min(0).max(1000).optional(),
+    objectifEmailsSemaine: z.number().int().min(0).max(1000).optional(),
     /**
      * Plafond de jetons de sortie par vacation.
      *
@@ -108,8 +112,12 @@ export async function updateSettings(
       input.relanceApresDemo ?? current?.relanceApresDemo ?? DEFAULT_REMINDER_DELAYS.demo,
     relanceApresReunion:
       input.relanceApresReunion ?? current?.relanceApresReunion ?? DEFAULT_REMINDER_DELAYS.meeting,
+    relanceApresLinkedin:
+      input.relanceApresLinkedin ?? current?.relanceApresLinkedin ?? DEFAULT_REMINDER_DELAYS.linkedin,
     relanceApresNote:
       input.relanceApresNote ?? current?.relanceApresNote ?? DEFAULT_REMINDER_DELAYS.note,
+    objectifAppelsSemaine: input.objectifAppelsSemaine ?? current?.objectifAppelsSemaine ?? 0,
+    objectifEmailsSemaine: input.objectifEmailsSemaine ?? current?.objectifEmailsSemaine ?? 0,
     shiftTokenBudget: input.shiftTokenBudget ?? current?.shiftTokenBudget ?? 4000,
     modelDraft: input.modelDraft ?? current?.modelDraft ?? DEFAULT_MODELS.draft,
     modelRevision: input.modelRevision ?? current?.modelRevision ?? DEFAULT_MODELS.revision,

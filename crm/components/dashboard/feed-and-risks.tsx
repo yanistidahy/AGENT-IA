@@ -9,6 +9,7 @@ const TYPE_LABELS: Record<ActivityType, string> = {
   email: "Email",
   meeting: "Réunion",
   demo: "Démo",
+  linkedin: "LinkedIn",
   note: "Note",
 };
 
@@ -17,6 +18,7 @@ const TYPE_TONES: Record<ActivityType, Tone> = {
   email: "sky",
   meeting: "violet",
   demo: "gold",
+  linkedin: "sky",
   note: "mute",
 };
 

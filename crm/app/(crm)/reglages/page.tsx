@@ -113,6 +113,10 @@ export default async function ReglagesPage() {
       }}
       costs={<CostPanel report={usage} />}
       delays={delays}
+      targets={{
+        calls: settingsRow?.objectifAppelsSemaine ?? 0,
+        emails: settingsRow?.objectifEmailsSemaine ?? 0,
+      }}
       tags={tags}
       lists={{
         owners,

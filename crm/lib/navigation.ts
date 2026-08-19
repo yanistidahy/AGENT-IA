@@ -95,6 +95,12 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         desc: "Envois par semaine, par signataire, réponses et ouvertures estimées.",
       },
       {
+        label: "Ma performance",
+        href: "/performance",
+        icon: "chart",
+        desc: "Mon rythme par canal, ce qu'il produit, et sa régularité.",
+      },
+      {
         label: "Rapports",
         href: "/rapports",
         icon: "chart",

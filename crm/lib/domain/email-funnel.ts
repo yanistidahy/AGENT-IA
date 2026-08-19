@@ -38,8 +38,14 @@ export const OPEN_RATE_SHORT = "Surestimé : l'image se charge sans qu'on ait lu
 
 export type FunnelKey = "sent" | "opened" | "replied" | "meetings";
 
+/**
+ * Une étape d'entonnoir, telle que `FunnelRow` la rend.
+ *
+ * `key` est une chaîne libre depuis le jalon 40 : l'entonnoir inter-canaux de
+ * « Ma performance » réutilise le même composant, avec ses propres étapes.
+ */
 export interface FunnelStep {
-  readonly key: FunnelKey;
+  readonly key: string;
   readonly label: string;
   /** Nombre de **personnes** à cette étape. */
   readonly count: number;

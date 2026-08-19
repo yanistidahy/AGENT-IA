@@ -9,6 +9,7 @@ import { BackupPanel } from "./backup-panel";
 import { ListEditor } from "./list-editor";
 import { PilotageForm } from "./pilotage-form";
 import { RelancesForm } from "./relances-form";
+import { TargetsForm } from "./targets-form";
 import { SequenceEditor, type SequenceEditable } from "./sequence-editor";
 import { TagsEditor } from "./tags-editor";
 import { MaintenancePanel } from "./maintenance-panel";
@@ -36,6 +37,8 @@ interface SettingsViewProps {
   readonly limits: SendLimits;
   readonly emailSequences: readonly SequenceView[];
   readonly delays: ReminderDelays;
+  /** Objectifs hebdomadaires de « Ma performance ». `0` = pas d'objectif. */
+  readonly targets: { readonly calls: number; readonly emails: number };
   readonly lists: Record<SettingsListKind, readonly string[]>;
   readonly tags: ReadonlyArray<{ value: string; count: number }>;
   readonly agents: readonly AgentProfile[];
@@ -70,6 +73,7 @@ export function SettingsView({
   limits,
   emailSequences,
   delays,
+  targets,
   lists,
   tags,
   agents,
@@ -142,6 +146,13 @@ export function SettingsView({
         hint="pré-remplissent la date proposée après une interaction — rien n'est écrit sans vous"
       >
         <RelancesForm delays={delays} onSaved={refresh} />
+      </Section>
+
+      <Section
+        title="Objectifs hebdomadaires"
+        hint="la progression s'affiche sur « Ma performance »"
+      >
+        <TargetsForm calls={targets.calls} emails={targets.emails} onSaved={refresh} />
       </Section>
 
       <Section title="Étapes du pipeline" hint="l'ordre ici est l'ordre des colonnes du Kanban">

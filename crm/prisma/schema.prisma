@@ -322,7 +322,13 @@ model Settings {
   relanceApresEmail   Int @default(4)
   relanceApresDemo    Int @default(2)
   relanceApresReunion Int @default(3)
+  relanceApresLinkedin Int @default(4)
   relanceApresNote    Int @default(7)
+
+  /// Objectifs hebdomadaires de « Ma performance ». `0` = pas d'objectif —
+  /// sans objectif, l'écran n'affiche pas de progression plutôt qu'un « 4 sur 0 ».
+  objectifAppelsSemaine Int @default(0)
+  objectifEmailsSemaine Int @default(0)
 
   /// Plafond de jetons de sortie par vacation. Bas par défaut : une vacation qui
   /// dépasserait s'arrête et le dit, plutôt que de faire monter la facture.
