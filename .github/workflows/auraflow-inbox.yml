@@ -1,0 +1,61 @@
+name: AuraFLOW — relevé des réponses
+
+# Détection automatique des réponses : le CRM ouvre INBOX en lecture seule,
+# lit sept en-têtes par message et rapproche les réponses de ses propres envois.
+#
+# Workflow **séparé** du passage quotidien, et ce n'est pas de la dispersion :
+# leurs cadences n'ont rien à voir (quatre fois par heure contre une fois par
+# jour), et surtout un relevé qui échoue ne doit pas emporter la sauvegarde.
+on:
+  schedule:
+    # Toutes les quinze minutes. GitHub ne garantit pas la ponctualité d'un
+    # cron — la file peut décaler l'exécution de plusieurs minutes aux heures
+    # chargées — d'où le seuil d'alerte à deux heures et non à trente minutes :
+    # il signale une panne, pas un retard.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+# Aucune permission sur le dépôt : ce workflow ne fait qu'un appel sortant.
+permissions: {}
+
+concurrency:
+  # Deux relevés simultanés ouvriraient deux sessions IMAP sur la même boîte et
+  # se disputeraient la contrainte d'unicité des réponses. Le second est annulé
+  # plutôt que mis en file : à quinze minutes d'intervalle, le suivant fera le
+  # travail.
+  group: auraflow-inbox
+  cancel-in-progress: true
+
+jobs:
+  inbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Relevé de la boîte de réception
+        env:
+          CRM_URL: ${{ secrets.CRM_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRM_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::Les secrets CRM_URL et CRON_SECRET doivent être posés sur le dépôt."
+            exit 1
+          fi
+
+          # --fail-with-body : sans lui, curl masque le corps sur une erreur
+          # HTTP, et le message qui nomme la cause serait perdu.
+          http_code=$(curl --silent --show-error --fail-with-body \
+            --max-time 180 \
+            --retry 1 --retry-delay 20 --retry-all-errors \
+            --output response.json --write-out '%{http_code}' \
+            --request POST "${CRM_URL%/}/api/cron/inbox" \
+            --header "Authorization: Bearer ${CRON_SECRET}" \
+            --header "Content-Type: application/json") || {
+              echo "::error::Le relevé de la boîte a échoué (HTTP ${http_code:-?})."
+              cat response.json || true
+              exit 1
+            }
+
+          echo "HTTP $http_code"
+          cat response.json

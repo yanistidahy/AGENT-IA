@@ -16,6 +16,7 @@ import { MaintenancePanel } from "./maintenance-panel";
 import { ApiDiagnostic } from "./api-diagnostic";
 import { MailPanel, type MailStatus, type Signatory } from "./mail-panel";
 import { ImapPanel, type ImapStatus, type TrackingStatus, type SendLimits } from "./imap-panel";
+import { InboxPanel, type InboxStatus } from "./inbox-panel";
 import { EmailSequencesPanel, type SequenceView } from "./email-sequences-panel";
 import { SnapshotsPanel } from "./snapshots-panel";
 import { CouncilPanel } from "./council-panel";
@@ -33,6 +34,7 @@ interface SettingsViewProps {
   readonly passwordEnv: string;
   readonly signatories: readonly Signatory[];
   readonly imap: ImapStatus;
+  readonly inbox: InboxStatus;
   readonly tracking: TrackingStatus;
   readonly limits: SendLimits;
   readonly emailSequences: readonly SequenceView[];
@@ -69,6 +71,7 @@ export function SettingsView({
   passwordEnv,
   signatories,
   imap,
+  inbox,
   tracking,
   limits,
   emailSequences,
@@ -107,6 +110,7 @@ export function SettingsView({
         <div className="space-y-4">
           <MailPanel initial={mail} passwordEnv={passwordEnv} initialSignatories={signatories} />
           <ImapPanel initial={imap} initialTracking={tracking} initialLimits={limits} />
+          <InboxPanel initial={inbox} />
         </div>
       </Section>
 

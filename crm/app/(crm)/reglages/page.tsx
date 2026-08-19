@@ -15,6 +15,7 @@ import { prisma } from "@/lib/db";
 import { listAgentProfiles } from "@/lib/api/agents";
 import { readMailStatus, PASSWORD_ENV } from "@/lib/api/mail";
 import { readImapStatus } from "@/lib/api/imap";
+import { inboxHealth } from "@/lib/api/inbox-health";
 import { readTrackingConfig } from "@/lib/api/email-sends";
 import { readLimits } from "@/lib/api/send-rate";
 import { listSequences as listEmailSequences } from "@/lib/api/email-sequences";
@@ -67,6 +68,9 @@ export default async function ReglagesPage() {
 
   // Lus après `mail` : l'état IMAP dépend de l'identifiant et du secret SMTP.
   const imap = await readImapStatus(mail, mail.passwordSet);
+  // Lu après `imap` : « configuré » veut dire que le relevé pourrait tourner,
+  // ce qui dépend de l'hôte, de l'identifiant et du secret.
+  const inbox = await inboxHealth(imap.ready);
   const tracking = await readTrackingConfig();
   const limits = await readLimits();
   // Recopié en structures muables : le panneau édite la liste sur place, et un
@@ -97,6 +101,13 @@ export default async function ReglagesPage() {
       passwordEnv={PASSWORD_ENV}
       signatories={signatories}
       imap={imap}
+      inbox={{
+        enabled: inbox.enabled,
+        configured: inbox.configured,
+        lastPollAt: inbox.lastPollAt?.toISOString() ?? null,
+        stale: inbox.stale,
+        hours: inbox.hours,
+      }}
       tracking={tracking}
       limits={limits}
       emailSequences={emailSequences}

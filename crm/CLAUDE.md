@@ -354,6 +354,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 38 | **Séquences d'emails** — trois étapes, file du matin, mode automatique à double verrou, plafonds qui apprennent du refus | **livré, à valider** |
 | 39 | **`/emails` refondu** — graphiques conditionnés à l'histoire, entonnoir, journal des envois, « Sans réponse », par signataire | **livré, à valider** |
 | 40 | **« Ma performance »** — activité par canal et par jour, comparée ; réponses par canal ; Yanis/Mohamed côte à côte ; régularité et objectifs | **livré, à valider** |
+| 41 | **Détection automatique des réponses** — relevé IMAP d'INBOX toutes les 15 min, en-têtes seuls, rapprochement exact, séquences arrêtées | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -5459,3 +5460,148 @@ ouvertes depuis. **Le graphique à 90 jours** n'a été vu qu'avec des fixtures
 d'une semaine : les étiquettes s'espacent (1 jour sur 7) mais l'allure à
 volume réel reste à voir. **La période libre** passe par un formulaire GET
 natif ; le format de date affiché dépend de la langue du navigateur.
+
+
+---
+
+## Jalon 41 — les réponses se détectent toutes seules
+
+C'est l'**option B** de la note de conception du jalon 38, dont la moitié était
+déjà payée : la connexion IMAP, le `Message-ID` conservé sur chaque envoi et la
+copie dans « Envoyés » existaient depuis le jalon 37.
+
+### Ce que le relevé lit, et ce qu'il ne lit pas
+
+`lib/api/inbox.ts` ouvre `INBOX` **en lecture seule** (`EXAMINE`) et demande
+**sept en-têtes** — `Message-ID`, `In-Reply-To`, `References`,
+`Auto-Submitted`, `X-Autoreply`, `From`, `Date` — par
+`BODY.PEEK[HEADER.FIELDS (…)]`. Jamais un corps, jamais le sujet du message
+reçu, aucun drapeau touché. La boîte n'est pas recopiée dans le CRM, et c'est
+vérifiable au protocole : le substitut **refuse** un `FETCH` sans `PEEK` et un
+`FETCH` qui demanderait autre chose que des en-têtes, si bien qu'un relevé qui
+dériverait échouerait bruyamment au lieu de passer.
+
+### Le rapprochement est exact, ou il n'a pas lieu
+
+`lib/domain/inbox-replies.ts` (pur) compare `In-Reply-To` puis `References`
+— **du plus récent au plus ancien**, c'est au dernier message du fil qu'on
+répond — aux `Message-ID` de nos propres envois. Aucune heuristique sur
+l'expéditeur ni sur le sujet : **une fausse correspondance est pire qu'une
+réponse manquée**. La première consigne une réponse sur la mauvaise fiche et
+arrête la mauvaise séquence ; la seconde ne coûte qu'un relevé de retard sur la
+saisie manuelle.
+
+**L'automate est écarté avant le rapprochement**, et l'ordre est le sujet : un
+« absent du bureau » recopie fidèlement `In-Reply-To`, donc il correspondrait
+parfaitement. `Auto-Submitted` (RFC 3834, `no` désignant un humain) et
+`X-Autoreply` l'écartent ; `MAILER-DAEMON` / `postmaster@` écartent les rebonds.
+
+### Ne jamais consigner deux fois — deux garde-fous
+
+1. **`EmailReply.replyMessageId` est unique en base.** Un second relevé bute sur
+   la contrainte ; il ne la contourne pas. Une course non plus.
+2. **Une réponse déjà consignée à la main est reconnue.** Si une interaction à
+   issue « répondu » existe pour ce contact **postérieurement à l'envoi
+   rapproché**, la détection est enregistrée sans créer de seconde interaction.
+   L'ancre est l'envoi, pas « à un moment quelconque » : une réponse à un
+   message plus récent trouve une ancre plus récente et sera donc bien
+   consignée.
+
+Une réponse détectée écrit une interaction `email` d'issue **« Répondu »**
+(nouvelle valeur d'`OUTCOMES`, ajoutée parce que le relevé lit des en-têtes et
+sait donc qu'il y a une réponse **sans savoir ce qu'elle dit** — lui faire
+choisir « intéressé » serait inventer), datée du message reçu, et **arrête les
+séquences** du contact en écartant leurs départs en attente.
+
+### Sa propre route, son propre déclencheur, son propre bandeau
+
+`POST /api/cron/inbox` fermée par `CRON_SECRET`, appelée par
+`.github/workflows/auraflow-inbox.yml` toutes les 15 minutes —
+**séparé du passage quotidien** : les cadences n'ont rien à voir, et surtout un
+relevé qui échoue ne doit pas emporter la sauvegarde. `concurrency` avec
+`cancel-in-progress` : deux relevés simultanés se disputeraient la boîte, et à
+un quart d'heure d'intervalle le suivant fera le travail.
+
+`lastInboxPollAt` est écrit **en dernier et seulement en cas de succès**, comme
+`lastCronAt`. Au-delà de **2 heures** — huit passages manqués — `/accueil`
+affiche un bandeau : une détection qui s'arrête en silence est pire que pas de
+détection, parce qu'on croit alors le CRM à jour. Désactivé ou non configuré
+n'allume rien : ce n'est pas une panne.
+
+### Jalon 41 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `18_inbox` puis `migrate diff` **vide**),
+le serveur standalone et le substitut IMAP étendu (`EXAMINE`, `UID SEARCH`,
+`UID FETCH … BODY.PEEK[HEADER.FIELDS]`) :
+
+- **au protocole** : `EXAMINE INBOX — lecture seule`, et
+  `UID FETCH — en-têtes demandés : message-id in-reply-to references
+  auto-submitted x-autoreply from date` — rien d'autre n'a transité ;
+- **réponse détectée** : interaction `email` / `replied` datée de la réponse
+  (pas du relevé), notes citant **le sujet de notre envoi** et rien du message
+  reçu ; inscription passée à `stopped` avec « Le contact a répondu » ; départ
+  en attente passé à `skipped` ;
+- **idempotence** : second relevé → `replies: 0`, 1 seule ligne
+  `email_replies`, aucune interaction de plus ;
+- **bruit écarté** : répondeur d'absence citant `In-Reply-To` → ignoré, rebond
+  `MAILER-DAEMON` citant `References` → ignoré, lettre d'information → sans
+  rapport ; **zéro interaction** créée ;
+- **déjà consigné à la main** → `alreadyLogged: 1`, `replies: 0`, compteur
+  d'interactions du contact **inchangé**, et la ligne de détection écrite avec
+  `activityId: null` ;
+- **copie « Envoyés » en échec** → la réponse est quand même rapprochée : le
+  rapprochement lit `email_sends.messageId` en base, jamais le dossier ;
+- **cron** : sans en-tête et avec un mauvais secret → 401 ; avec le bon →
+  `{"examined":1,"replies":1}` et l'interaction en base ;
+- **navigateur** : panneau « Détection des réponses » avec sa mise en garde,
+  « Relever maintenant » → « 1 message examiné · 1 déjà consignée à la main »,
+  interrupteur dans les deux sens ; `/emails` montre 5 réponses sur 5 personnes
+  écrites et 5 lignes « oui » ; bandeau `/accueil` absent à chaud, présent à
+  5 heures, présent si jamais exécuté, **absent si désactivé** ;
+- **0 réponse ≥ 400, 0 erreur console** ; `build` / `tsc` / `vitest`
+  (**834 tests**) verts.
+
+**Un défaut trouvé au navigateur, pas à la lecture** : l'interrupteur du relevé
+était piloté par la réponse du serveur et restait donc immobile le temps de
+l'aller-retour — une case qui ignore le clic se lit comme une panne. Il est
+désormais optimiste et réversible, comme la file d'accueil du jalon 20.
+
+### Jalon 41 — ce qui n'est pas vérifié, et deux questions rendues
+
+**Rien n'a touché IONOS.** Le substitut parle le protocole, il ne dit rien de ce
+que `imap.ionos.fr` acceptera. Ce qui reste à établir au premier relevé réel :
+que les identifiants passent en IMAP en lecture, et que `SEARCH SINCE` se
+comporte comme prévu.
+
+**Question 1 — un relevé tous les quarts d'heure risque-t-il de heurter les
+limites IMAP d'IONOS ?** Je n'ai pas pu le confirmer : les pages d'aide d'IONOS
+restent bloquées par le proxy sortant de cet environnement, et aucune source
+consultable ne publie de nombre. Ce que je peux dire : IONOS limite les
+**connexions simultanées** par boîte, pas la fréquence, et le relevé ouvre
+**une** connexion courte puis se déconnecte (`logout` en `finally`), quatre fois
+par heure — soit 96 sessions par jour, jamais concurrentes grâce au
+`cancel-in-progress`. Un client de messagerie ordinaire est bien plus exigeant :
+Thunderbird ou Apple Mail maintiennent une connexion `IDLE` **permanente** sur
+la même boîte. Le risque réel n'est donc pas le quota mais la coexistence : si
+plusieurs clients sont déjà connectés, une session de plus peut être refusée.
+Dans ce cas le relevé renvoie l'erreur du serveur, le bandeau s'allume au bout
+de deux heures, et rien n'est perdu — le relevé suivant relit la même fenêtre.
+Si le refus devenait fréquent, passer à 30 minutes ne coûterait qu'une ligne du
+workflow.
+
+**Question 2 — une réponse arrivée avant que la copie « Envoyés » soit écrite ?**
+Elle est détectée normalement, et c'est structurel : **le rapprochement ne lit
+jamais le dossier « Envoyés »**, il lit `email_sends.messageId` en base, écrit
+dans la transaction d'envoi — donc avant la copie IMAP, et même quand celle-ci
+échoue (vérifié). Le seul cas résiduel serait une réponse relevée avant que la
+ligne d'envoi existe, c'est-à-dire dans les millisecondes qui suivent
+l'acceptation par SMTP. Elle serait alors classée « sans rapport » pour ce
+relevé, puis **rattrapée au suivant** : le `SINCE` reprend deux jours en
+arrière et rien n'est marqué comme traité côté serveur. Vérifié en supprimant
+la ligne d'envoi, en relevant, puis en la recréant — la réponse est consignée au
+relevé suivant.
+
+**Le workflow vit hors de `crm/`**, comme celui du jalon 19 et pour la même
+raison : le cron de Railway ne sait pas émettre de requête HTTP. C'est la seule
+exception à la règle « aucun fichier hors de `crm/` », et elle est assumée
+depuis le filet de sécurité.

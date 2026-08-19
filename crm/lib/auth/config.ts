@@ -38,6 +38,12 @@ export const PUBLIC_PATHS: readonly string[] = [
    */
   "/api/cron/shifts",
   "/api/cron/daily",
+  /**
+   * Le relevé de la boîte de réception, appelé toutes les quinze minutes par
+   * son propre workflow. Même régime que les deux autres : pas de session, son
+   * propre `CRON_SECRET` vérifié par la route à temps constant.
+   */
+  "/api/cron/inbox",
 ];
 
 /** Ressources servies par Next lui-même, jamais porteuses de données métier. */
