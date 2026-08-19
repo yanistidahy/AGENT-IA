@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   byDay,
-  bySignatory,
   byWeek,
   formatRate,
   OPEN_RATE_CAVEAT,
   OPEN_RATE_LABEL,
   rate,
+  signatoryLines,
+  UNKNOWN_SIGNATORY,
   weekKey,
   weekStart,
 } from "../email-stats";
@@ -73,18 +74,56 @@ describe("le découpage", () => {
     expect(buckets.map((bucket) => bucket.count)).toEqual([0, 1, 1]);
   });
 
+});
+
+describe("par signataire", () => {
+  const YANIS = "Yanis Tidahy";
+  const MOHAMED = "Mohamed Targani";
+  const sends = [
+    { contactId: "c1", signatoryName: YANIS, sentAt: new Date(2026, 7, 10) },
+    { contactId: "c1", signatoryName: MOHAMED, sentAt: new Date(2026, 7, 14) },
+    { contactId: "c2", signatoryName: YANIS, sentAt: new Date(2026, 7, 11) },
+    { contactId: "c3", signatoryName: "", sentAt: new Date(2026, 7, 12) },
+  ];
+
   it("ne perd aucun envoi quand le signataire manque", () => {
-    // Le total des barres doit rester égal au total des envois : écarter les
-    // envois antérieurs au sélecteur ferait un graphique qui ne s'additionne pas.
-    const rows = [
-      { signatoryName: "Yanis Tidahy" },
-      { signatoryName: "" },
-      { signatoryName: "Yanis Tidahy" },
-      { signatoryName: "Mohamed Targani" },
-    ];
-    const buckets = bySignatory(rows);
-    expect(buckets.reduce((total, bucket) => total + bucket.count, 0)).toBe(rows.length);
-    expect(buckets[0]).toMatchObject({ key: "Yanis Tidahy", count: 2 });
-    expect(buckets.map((bucket) => bucket.key)).toContain("(non renseigné)");
+    // Le total par signataire doit rester égal au total des envois : écarter
+    // les envois antérieurs au sélecteur ferait un tableau qui ne s'additionne
+    // pas avec le chiffre affiché en tête de page.
+    const lines = signatoryLines(sends, new Map());
+    expect(lines.reduce((total, line) => total + line.messages, 0)).toBe(sends.length);
+    expect(lines.map((line) => line.name)).toContain(UNKNOWN_SIGNATORY);
+    expect(lines[0]).toMatchObject({ name: YANIS, messages: 2, people: 2 });
+  });
+
+  it("**crédite la réponse au dernier message qui la précède**", () => {
+    // C'est à celui-là qu'on répond. Créditer le premier donnerait tout le
+    // mérite à qui a ouvert la conversation ; créditer les deux compterait la
+    // même réponse deux fois.
+    const lines = signatoryLines(sends, new Map([["c1", new Date(2026, 7, 15)]]));
+    expect(lines.find((line) => line.name === MOHAMED)?.replies).toBe(1);
+    expect(lines.find((line) => line.name === YANIS)?.replies).toBe(0);
+    expect(lines.reduce((total, line) => total + line.replies, 0)).toBe(1);
+  });
+
+  it("ignore un envoi postérieur à la réponse", () => {
+    // On ne répond pas à un message qui n'était pas encore parti.
+    const lines = signatoryLines(sends, new Map([["c1", new Date(2026, 7, 12)]]));
+    expect(lines.find((line) => line.name === YANIS)?.replies).toBe(1);
+    expect(lines.find((line) => line.name === MOHAMED)?.replies).toBe(0);
+  });
+
+  it("compte le taux sur les personnes écrites, jamais sur les messages", () => {
+    const lines = signatoryLines(sends, new Map([["c2", new Date(2026, 7, 13)]]));
+    const yanis = lines.find((line) => line.name === YANIS);
+    expect(yanis?.people).toBe(2);
+    expect(formatRate(yanis?.replyRate ?? rate(0, 0))).toBe("50 %");
+  });
+
+  it("une fiche supprimée reste une personne écrite", () => {
+    // L'envoi survit à la suppression du contact (`SetNull`) : le compter pour
+    // personne ferait mentir le taux dans le sens flatteur.
+    const orphan = [{ contactId: null, signatoryName: YANIS, sentAt: new Date(2026, 7, 10) }];
+    expect(signatoryLines(orphan, new Map())[0]?.people).toBe(1);
   });
 });

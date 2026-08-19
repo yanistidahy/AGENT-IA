@@ -31,6 +31,17 @@ export const queueBatchSchema = z.object({
   owner: z.string().trim().min(1).optional(),
   reason: z.string().trim().max(120).optional(),
   sequenceId: z.string().trim().min(1).optional(),
+  /**
+   * Compter ces lignes dans l'avancement du jour.
+   *
+   * Vrai pour la file d'accueil, dont l'anneau mesure exactement cela. Faux
+   * pour les autres surfaces qui empruntent ce chemin d'écriture — le bloc
+   * « sans réponse » de `/emails` depuis le jalon 39 : marquer perdu quelqu'un
+   * qui n'avait aucune échéance aujourd'hui ferait apparaître dans l'anneau
+   * une ligne qui n'a jamais été au programme, et le dénominateur ne
+   * redescend jamais.
+   */
+  mark: z.boolean().optional(),
 });
 
 export type QueueBatchInput = z.infer<typeof queueBatchSchema>;
@@ -140,7 +151,7 @@ export async function runQueueBatch(
     }
   }
 
-  await markHandled(handled, input.action, now);
+  if (input.mark !== false) await markHandled(handled, input.action, now);
 
   return {
     done: handled.length,

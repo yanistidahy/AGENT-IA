@@ -1,160 +1,117 @@
 import { readEmailStats } from "@/lib/api/email-stats";
-import { BarChart } from "@/components/charts/primitives";
+import { parseSentQuery, readSentEmails, readSilentContacts } from "@/lib/api/email-list";
+import { listOwners } from "@/lib/api/reference";
 import { EmptyChart } from "@/components/charts/empty-chart";
-import {
-  formatRate,
-  OPEN_RATE_CAVEAT,
-  OPEN_RATE_LABEL,
-  type Rate,
-} from "@/lib/domain/email-stats";
+import { FunnelRow } from "@/components/emails/funnel-row";
+import { SentTable } from "@/components/emails/sent-table";
+import { NoReplyBlock } from "@/components/emails/no-reply-block";
+import { EmailCharts } from "@/components/emails/email-charts";
+import { SignatoryTable } from "@/components/emails/signatory-table";
 
 export const dynamic = "force-dynamic";
 
 /**
  * La section « Emails ».
  *
- * **Trois faits, puis une estimation, dans cet ordre.** Envois, réponses,
- * rendez-vous sont saisis ou constatés ; le taux d'ouverture est estimé et
- * surestimé. Les afficher sur la même ligne sans les distinguer laisserait le
- * plus gros nombre passer pour le plus solide.
+ * **L'ordre de la page est son argument.** Le reproche auquel elle répond était
+ * une affaire de proportions : quatre cartes, puis deux graphiques presque vides
+ * occupant le reste de l'écran — onze messages envoyés, et une page qui montrait
+ * surtout du vide. La substance passe donc devant, et les graphiques ne
+ * s'affichent que lorsqu'ils portent quelque chose :
  *
- * Composant serveur de bout en bout : les graphiques sont des `<svg>` écrits à
- * la main, aucune ligne de JavaScript ne part au navigateur.
+ * 1. **l'entonnoir** — les quatre nombres lus comme une suite, avec la chute ;
+ * 2. **ce qui est parti**, et **qui n'a pas répondu**, côte à côte : le journal
+ *    et la file de travail, qui sont les deux raisons d'ouvrir cette page ;
+ * 3. **par signataire**, depuis qu'ils sont deux ;
+ * 4. **les graphiques en dernier**, et seulement quand l'histoire existe.
+ *
+ * Composant serveur de bout en bout, sauf le bloc « sans réponse » — il écrit.
  */
-
-function Stat({
-  label,
-  value,
-  hint,
-  estimate = false,
+export default async function EmailsPage({
+  searchParams,
 }: {
-  readonly label: string;
-  readonly value: string;
-  readonly hint?: string;
-  readonly estimate?: boolean;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  return (
-    <div
-      className={
-        estimate
-          ? "rounded-card border border-dashed border-line bg-surface-2 px-4 py-3"
-          : "rounded-card border border-line bg-surface px-4 py-3 shadow-card"
-      }
-    >
-      <p className="text-[12px] font-medium uppercase tracking-wide text-muted">{label}</p>
-      <p className="mt-0.5 font-display text-2xl font-semibold tabular-nums">{value}</p>
-      {hint !== undefined && (
-        <p className="mt-1 max-w-[46ch] text-[11.5px] leading-relaxed text-muted">{hint}</p>
-      )}
-    </div>
-  );
-}
+  const query = parseSentQuery(await searchParams);
 
-function rateHint(value: Rate): string {
-  return value.value === null
-    ? "Aucun envoi suivi sur la période."
-    : `${value.numerator} sur ${value.denominator}`;
-}
+  const [stats, list, silent, owners] = await Promise.all([
+    readEmailStats(),
+    readSentEmails(query),
+    readSilentContacts(),
+    listOwners(),
+  ]);
 
-export default async function EmailsPage() {
-  const stats = await readEmailStats();
-
-  return (
-    <div className="px-6 py-6">
-      <header className="mb-5">
-        <h1 className="font-display text-2xl font-semibold tracking-tight">Emails</h1>
-        <p className="mt-0.5 text-[13px] text-muted">
-          Ce qui est réellement parti depuis ce CRM sur les {stats.windowDays} derniers
-          jours, et ce que cela a produit.
-        </p>
-      </header>
-
-      {stats.total === 0 ? (
+  if (stats.total === 0) {
+    return (
+      <div className="px-6 py-5">
+        <Header windowDays={stats.windowDays} spanDays={0} />
         <EmptyChart
           title="Aucun email envoyé"
           reason={`Aucun message n'est parti depuis ce CRM sur les ${stats.windowDays} derniers jours.`}
           action="Ouvrez une fiche contact et cliquez « Rédiger un email »"
           href="/contacts"
         />
-      ) : (
-        <>
-          <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="Envoyés" value={String(stats.total)} hint="Fait : messages partis." />
-            <Stat
-              label="Réponses"
-              value={String(stats.replies)}
-              hint={`Fait : ${formatRate(stats.replyRate)} des personnes écrites. Compté par personne, depuis les interactions consignées.`}
-            />
-            <Stat
-              label="Rendez-vous obtenus"
-              value={String(stats.meetings)}
-              hint="Fait : interactions d'issue « RDV obtenu » postérieures à un envoi."
-            />
-            <Stat
-              label={OPEN_RATE_LABEL}
-              value={formatRate(stats.openRate)}
-              hint={`${rateHint(stats.openRate)}. ${OPEN_RATE_CAVEAT}`}
-              estimate
-            />
-          </section>
+      </div>
+    );
+  }
 
-          {stats.copyFailures > 0 && (
-            <p className="mb-5 rounded-control border border-[#F0DFB8] bg-gold-l px-3.5 py-3 text-[12.5px] leading-relaxed text-[#9A6410]">
-              <strong>
-                {stats.copyFailures} message{stats.copyFailures > 1 ? "s" : ""} n'
-                {stats.copyFailures > 1 ? "ont" : "a"} pas été copié
-                {stats.copyFailures > 1 ? "s" : ""} dans « Envoyés ».
-              </strong>{" "}
-              Ils sont bien partis — seule la copie IMAP a échoué. Le détail figure sur la
-              fiche du contact, et la cause dans Réglages → Messagerie.
-            </p>
-          )}
+  return (
+    <div className="px-6 py-5">
+      <Header windowDays={stats.windowDays} spanDays={stats.depth.spanDays} />
 
-          <section className="mb-6">
-            <h2 className="mb-2 font-display text-sm font-semibold">Par semaine</h2>
-            <BarChart
-              points={stats.perWeek.map((bucket) => ({ label: bucket.label, value: bucket.count }))}
-              format={(value) => String(value)}
-              empty="Aucun envoi sur les douze dernières semaines."
-            />
-          </section>
+      <section className="mb-4">
+        <FunnelRow steps={stats.funnel} />
+      </section>
 
-          <section className="mb-6">
-            <h2 className="mb-2 font-display text-sm font-semibold">Par jour, sur 30 jours</h2>
-            <BarChart
-              points={stats.perDay.map((bucket) => ({ label: bucket.label, value: bucket.count }))}
-              format={(value) => String(value)}
-              empty="Aucun envoi sur les trente derniers jours."
-            />
-          </section>
-
-          {stats.perSequence.length > 0 && (
-            <section className="mb-6">
-              <h2 className="mb-2 font-display text-sm font-semibold">Par séquence et étape</h2>
-              <BarChart
-                points={stats.perSequence.map((bucket) => ({
-                  label: bucket.label,
-                  value: bucket.count,
-                }))}
-                format={(value) => String(value)}
-                empty="Aucun email de séquence sur la période."
-              />
-            </section>
-          )}
-
-          <section>
-            <h2 className="mb-2 font-display text-sm font-semibold">Par signataire</h2>
-            <BarChart
-              points={stats.perSignatory.map((bucket) => ({
-                label: bucket.label,
-                value: bucket.count,
-              }))}
-              format={(value) => String(value)}
-              empty="Aucun signataire renseigné sur la période."
-            />
-          </section>
-        </>
+      {stats.copyFailures > 0 && (
+        <p className="mb-4 rounded-control border border-[#F0DFB8] bg-gold-l px-3.5 py-2.5 text-[12.5px] leading-relaxed text-[#9A6410]">
+          <strong>
+            {stats.copyFailures} message{stats.copyFailures > 1 ? "s" : ""} n'
+            {stats.copyFailures > 1 ? "ont" : "a"} pas été copié
+            {stats.copyFailures > 1 ? "s" : ""} dans « Envoyés ».
+          </strong>{" "}
+          Ils sont bien partis — seule la copie IMAP a échoué. La cause figure dans Réglages →
+          Messagerie.
+        </p>
       )}
+
+      {/* Le journal et la file de travail côte à côte : on lit ce qui est parti
+          à gauche, on agit à droite, sans changer d'écran ni perdre le tri. */}
+      <section className="mb-4 grid gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <SentTable list={list} query={query} />
+        <NoReplyBlock rows={silent} owners={owners} defaultOwner={owners[0] ?? ""} />
+      </section>
+
+      <section className="mb-4">
+        <SignatoryTable lines={stats.perSignatory} />
+      </section>
+
+      <EmailCharts stats={stats} />
     </div>
+  );
+}
+
+function Header({
+  windowDays,
+  spanDays,
+}: {
+  readonly windowDays: number;
+  readonly spanDays: number;
+}) {
+  return (
+    <header className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <h1 className="font-display text-xl font-semibold tracking-tight">Emails</h1>
+      <p className="text-[12.5px] text-muted">
+        Ce qui est parti depuis ce CRM sur les {windowDays} derniers jours, et ce que cela a
+        produit.
+        {spanDays > 0 && (
+          <>
+            {" "}
+            <span className="tabular-nums">{spanDays}</span> jour{spanDays > 1 ? "s" : ""}{" "}
+            d'activité mesurée.
+          </>
+        )}
+      </p>
+    </header>
   );
 }

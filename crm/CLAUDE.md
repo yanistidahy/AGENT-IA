@@ -352,6 +352,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 36 | **Le coût de l'API, mesuré puis coupé** — compteur par appel, un modèle par usage, plafond mensuel | **livré, à valider** |
 | 37 | **Les emails laissent une trace** — copie IMAP dans « Envoyés », journal des envois, section Emails, suivi d'ouverture assumé comme estimation | **livré, à valider** |
 | 38 | **Séquences d'emails** — trois étapes, file du matin, mode automatique à double verrou, plafonds qui apprennent du refus | **livré, à valider** |
+| 39 | **`/emails` refondu** — graphiques conditionnés à l'histoire, entonnoir, journal des envois, « Sans réponse », par signataire | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -5236,3 +5237,127 @@ réduisent le risque ; seul le relevé IMAP de la boîte de réception le suppri
 quotidien. À vingt inscriptions actives, c'est vingt brouillons chaque matin —
 le compteur de coûts du jalon 36 les verra, et le plafond mensuel les arrêtera
 si besoin, mais aucun plafond propre aux séquences n'existe.
+
+
+---
+
+## Jalon 39 — `/emails` refondu : la forme suit l'histoire
+
+### Le reproche, et la réponse
+
+Onze emails envoyés, et un écran qui montrait surtout du vide : quatre cartes,
+puis un graphique de douze semaines à une barre et un graphique de trente jours
+à une poignée. Le défaut n'était pas un bug, c'était une affaire de
+proportions — et la réponse est un ordre de page : **l'entonnoir, le journal des
+envois et la file « Sans réponse » d'abord, les graphiques en dernier et
+seulement quand ils portent quelque chose.**
+
+### La forme suit l'histoire disponible
+
+`lib/domain/email-history.ts` (pur) décide de ce qui a le droit de s'afficher :
+
+| Étendue d'activité | Ce qui se rend |
+|---|---|
+| moins de 7 jours | la liste des envois seule |
+| 7 à 27 jours | le quotidien, **sur l'étendue réelle** — pas 30 jours figés |
+| 28 jours et plus | le quotidien (plafonné à 30 j) et l'hebdomadaire (12 sem.) |
+
+**Un graphique absent se dit, avec sa condition de retour** — « Graphique
+hebdomadaire à partir de 4 semaines d'activité — encore 21 jours » — et revient
+tout seul à mesure que l'histoire s'accumule, sans réglage. Vérifié dans les
+deux sens contre la base : un envoi vieilli à J−45 fait revenir les deux
+graphiques, ramené à J−6 les fait disparaître. Les bornes 6/7 et 27/28 sont
+testées des deux côtés.
+
+### Les quatre nombres sont un entonnoir
+
+`lib/domain/email-funnel.ts` (pur) : personnes écrites → ont ouvert
+(estimation) → ont répondu → rendez-vous, **en personnes, pas en messages** —
+relancer trois fois la même personne ne fait pas trois envois dans l'entonnoir.
+La chute entre étapes est dessinée entre les cartes (−4, −8, −1), et chaque taux
+**nomme son dénominateur** : « 56 % des personnes suivies », « 20 % des
+personnes écrites ». Deux règles y sont fixées par test :
+
+- **une estimation ne sert jamais de dénominateur à un fait** — le taux de
+  réponse se rapporte aux personnes écrites, jamais à « ont ouvert » ;
+- la première étape n'a ni taux ni chute : « 100 % des personnes écrites »
+  serait une tautologie déguisée en mesure.
+
+La mise en garde d'ouverture est ramenée à **une ligne** (`OPEN_RATE_SHORT`),
+la version longue au survol (`title`) — repliée, pas supprimée.
+
+### Le journal, et la file de travail
+
+**`readSentEmails()`** (`lib/api/email-list.ts`) : une ligne par message —
+date, contact (clic vers le tiroir), société, objet (pastille de séquence,
+copie échouée), ouvertures, réponse, signataire. Tri et filtres **dans l'URL**
+(`?tri=…&etat=sans-reponse&signataire=…`), appliqués en mémoire parce que
+« a répondu » et « a ouvert » sont dérivés — même compromis que `/clients`,
+assumé dans le code. La colonne « Réponse » est **postérieure à ce message-ci**,
+pas seulement au premier : une réponse d'avant-hier ne répond pas au message de
+ce matin.
+
+**`readSilentContacts()`** : les personnes écrites qui n'ont pas répondu, du
+plus long silence au plus court, fiches terminales et oppositions exclues. Le
+bloc « Sans réponse » porte les **mêmes actions en ligne que la file
+d'accueil** — consigner (le vrai `LogForm`), écrire (le vrai `ComposePanel`),
+marquer perdu — par le même chemin d'écriture (`POST /api/queue`), avec
+l'optimisme local et l'annulation du serveur. **`mark: false`** : ces lignes ne
+sont pas la file du jour, et l'anneau de l'accueil ne doit pas compter du
+travail qui n'y a jamais été inscrit (vérifié : `queue_marks` reste à 0 après
+un « marquer perdu » depuis `/emails`).
+
+**Par signataire** (`signatoryLines()`, domaine) : messages, personnes,
+réponses, taux — **la réponse est créditée au signataire du dernier message qui
+la précède**, c'est à celui-là qu'on répond. Un tableau, pas un graphique : sur
+deux lignes, une barre occupe dix fois la place de ce qu'elle affirme.
+
+`lib/api/email-replies.ts` porte la seule définition de « a répondu »
+(postérieure à l'envoi, notes de correction exclues) — trois surfaces
+l'appellent, aucune ne la recompose.
+
+### Jalon 39 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` vide), le serveur standalone et le
+cas signalé reconstitué — 11 envois, 10 personnes, 7 jours, 2 réponses, 1 RDV :
+
+- **aucun cadre vide** : le quotidien titre « Par jour, sur 7 jours », l'espace
+  de l'hebdomadaire porte sa phrase de retour avec le décompte ; à 45 jours
+  d'histoire les deux graphiques reviennent seuls ;
+- **entonnoir** : 10 · 5 (56 % des suivies) · 2 (20 % des écrites) · 1 (50 % de
+  celles qui ont répondu), chutes −4/−8/−1 dessinées, mise en garde en une
+  ligne avec la version longue en `title` ;
+- **journal** : 11 lignes antichronologiques, clic → tiroir de la fiche
+  (`?fiche=p4`), tri par ouvertures `4 3 2 1 1 1 0 0 0 — 0` (« — » pour le non
+  suivi, qui n'est pas un zéro), filtre « Sans réponse » → 9 sur 11 avec
+  bandeau de réinitialisation ;
+- **sans réponse** : 7 personnes triées par silence (5 j → 0 j), les deux
+  répondants absents, aucune fiche terminale ; « marquer perdu » → toast,
+  ligne retirée, **annulation → la fiche revient à `Prospect`**, 0 marque
+  d'anneau écrite ; « consigner » ouvre le vrai formulaire, « écrire » ouvre le
+  panneau sur la bonne adresse (substitut Anthropic) ;
+- **signataires** : Yanis 7 msg / 6 pers / 1 rép (17 %), Mohamed 4 / 4 / 1
+  (25 %) — la réponse de p2 va à Mohamed, dernier à avoir écrit ;
+- **1440×900** : entonnoir, journal, « sans réponse » et tableau des
+  signataires au-dessus du pli (bas du tableau à 680 px), **0 débordement
+  horizontal** (mesuré), 0 erreur console, 0 réponse ≥ 400 ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**804 tests**) verts.
+
+### Jalon 39 — ce qui ne l'est pas
+
+**Le tri et les filtres du journal s'appliquent en mémoire** sur la fenêtre de
+90 jours. À quelques centaines d'envois c'est invisible ; à plusieurs dizaines
+de milliers il faudrait matérialiser « a répondu » en base, au prix de la
+portabilité — le code le dit.
+
+**Les compteurs de l'écran sont calculés sur des fixtures**, pas sur vos onze
+vrais messages : la production a sa propre histoire (envois du jalon 37,
+réponses réelles). Les règles sont les mêmes ; les chiffres seront les vôtres.
+
+**`compose-panel.tsx` reste à 348 lignes** (dette antérieure au jalon, non
+aggravée ici) ; `contact-form.tsx` à 276 — les deux au-dessus de la limite de
+250.
+
+**L'état vide (0 envoi) n'a pas été revu dans le navigateur** ce jalon : la
+branche est celle du jalon 37 (un `EmptyChart` qui renvoie vers `/contacts`),
+seul l'en-tête a changé.

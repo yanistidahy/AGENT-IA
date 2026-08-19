@@ -121,21 +121,87 @@ export function byWeek(dates: readonly Date[], now: Date, weeks: number): Bucket
   return buckets;
 }
 
-/** Regroupe par signataire, du plus actif au moins actif. */
-export function bySignatory(
-  rows: ReadonlyArray<{ readonly signatoryName: string }>,
-): Bucket[] {
-  const counts = new Map<string, number>();
-  for (const row of rows) {
-    // Un envoi antérieur au sélecteur de signataire n'en porte aucun. Le
-    // ranger sous « (non renseigné) » plutôt que de l'écarter : le total des
-    // barres doit rester égal au total des envois.
-    const name = row.signatoryName.trim() === "" ? "(non renseigné)" : row.signatoryName.trim();
-    counts.set(name, (counts.get(name) ?? 0) + 1);
+/**
+ * Un envoi antérieur au sélecteur de signataire n'en porte aucun. Le ranger
+ * sous ce libellé plutôt que de l'écarter : le total par signataire doit rester
+ * égal au total des envois, sinon la somme des lignes ne fait plus le compte
+ * affiché en tête de page.
+ */
+export const UNKNOWN_SIGNATORY = "(non renseigné)";
+
+export function signatoryName(raw: string): string {
+  const name = raw.trim();
+  return name === "" ? UNKNOWN_SIGNATORY : name;
+}
+
+export interface SignatorySend {
+  readonly contactId: string | null;
+  readonly signatoryName: string;
+  readonly sentAt: Date;
+}
+
+export interface SignatoryLine {
+  readonly name: string;
+  readonly messages: number;
+  readonly people: number;
+  readonly replies: number;
+  readonly replyRate: Rate;
+}
+
+/**
+ * Ce que chacun a envoyé, et ce que cela a rapporté.
+ *
+ * **Une réponse est créditée au signataire du dernier message qui la
+ * précède** — c'est à celui-là qu'on répond. La créditer au premier message de
+ * la séquence donnerait tout le mérite à qui a ouvert la conversation, et
+ * l'attribuer aux deux compterait la même réponse deux fois : le total des
+ * lignes cesserait d'égaler le nombre de réponses.
+ *
+ * Un envoi postérieur à la réponse ne compte pas : on ne peut pas répondre à un
+ * message qui n'était pas encore parti.
+ */
+export function signatoryLines(
+  sends: readonly SignatorySend[],
+  repliedAt: ReadonlyMap<string, Date>,
+): SignatoryLine[] {
+  const messages = new Map<string, number>();
+  const people = new Map<string, Set<string>>();
+  const replies = new Map<string, number>();
+
+  sends.forEach((send, index) => {
+    const name = signatoryName(send.signatoryName);
+    messages.set(name, (messages.get(name) ?? 0) + 1);
+    const known = people.get(name) ?? new Set<string>();
+    // Une fiche supprimée laisse son envoi sans contact : il reste une personne
+    // écrite, simplement anonyme. La compter pour rien ferait mentir le taux.
+    known.add(send.contactId ?? `orphelin:${index}`);
+    people.set(name, known);
+  });
+
+  for (const [contactId, replyDate] of repliedAt) {
+    let credited: SignatorySend | null = null;
+    for (const send of sends) {
+      if (send.contactId !== contactId || send.sentAt > replyDate) continue;
+      if (credited === null || send.sentAt > credited.sentAt) credited = send;
+    }
+    if (credited === null) continue;
+    const name = signatoryName(credited.signatoryName);
+    replies.set(name, (replies.get(name) ?? 0) + 1);
   }
-  return [...counts.entries()]
-    .map(([name, count]) => ({ key: name, label: name, count }))
-    .sort((a, b) => b.count - a.count);
+
+  return [...messages.entries()]
+    .map(([name, count]) => {
+      const written = people.get(name)?.size ?? 0;
+      const answered = replies.get(name) ?? 0;
+      return {
+        name,
+        messages: count,
+        people: written,
+        replies: answered,
+        replyRate: rate(answered, written),
+      };
+    })
+    .sort((a, b) => b.messages - a.messages || a.name.localeCompare(b.name));
 }
 
 /**

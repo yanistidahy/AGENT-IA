@@ -18,6 +18,8 @@ export interface QueueBatchRequest {
   readonly owner?: string;
   readonly reason?: string;
   readonly sequenceId?: string;
+  /** Compter ces lignes dans l'anneau du jour. Faux hors de la file d'accueil. */
+  readonly mark?: boolean;
 }
 
 export interface QueueBatchResponse {
