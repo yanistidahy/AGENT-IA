@@ -161,7 +161,9 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
   // un échec d'envoi. Le message est parti : ce qui reste à faire, c'est le
   // dire.
   const config = await readMailConfig();
-  const copy = await copyToSent(sent.raw, config, process.env[PASSWORD_ENV] ?? "", now);
+  // **La copie déposée ne porte pas le pixel** (jalon 43) : sans quoi ouvrir son
+  // propre dossier « Envoyés » compterait comme une ouverture du prospect.
+  const copy = await copyToSent(sent.rawForArchive, config, process.env[PASSWORD_ENV] ?? "", now);
 
   await recordSend(
     {

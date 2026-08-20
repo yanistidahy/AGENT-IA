@@ -47,6 +47,15 @@ export interface EmailStats {
   readonly perSignatory: readonly SignatoryLine[];
   /** Envois dont la copie IMAP a échoué — visible, jamais avalé. */
   readonly copyFailures: number;
+  /**
+   * Ce que l'estimation d'ouverture vaut, en deux nombres.
+   *
+   * `unaudited` compte les envois dont le compteur est non nul mais dont aucun
+   * chargement n'est détaillé : ils précèdent le tri du jalon 43, donc leur
+   * chiffre n'a été ni confirmé ni infirmé. **Le dire est la seule façon
+   * honnête d'afficher le taux tant qu'ils pèsent dessus.**
+   */
+  readonly openTrust: { readonly unaudited: number; readonly tracked: number };
 }
 
 const WINDOW_DAYS = 90;
@@ -65,6 +74,8 @@ export async function readEmailStats(now = new Date()): Promise<EmailStats> {
       contactId: true,
       tracked: true,
       firstOpenAt: true,
+      openCount: true,
+      _count: { select: { hits: true } },
       copyStatus: true,
     },
     orderBy: { sentAt: "asc" },
@@ -107,6 +118,14 @@ export async function readEmailStats(now = new Date()): Promise<EmailStats> {
     if (send.firstOpenAt !== null) openedPeople.add(key);
   });
 
+  // **Un envoi dont le compteur est non nul sans aucun chargement détaillé est
+  // antérieur au tri du jalon 43** : son chiffre n'a été ni confirmé ni
+  // infirmé. L'écran doit le dire au lieu de laisser lire l'estimation comme
+  // si elle avait été auditée.
+  const unaudited = sends.filter(
+    (send) => send.tracked && send.openCount > 0 && send._count.hits === 0,
+  ).length;
+
   return {
     total: sends.length,
     windowDays: WINDOW_DAYS,
@@ -128,5 +147,9 @@ export async function readEmailStats(now = new Date()): Promise<EmailStats> {
     perSequence: bySequence(sends),
     perSignatory: signatoryLines(sends, replyDates(facts)),
     copyFailures: sends.filter((send) => send.copyStatus === "failed").length,
+    // Les deux nombres comptent des **envois**, pas des personnes : « 1 envoi
+    // sur 1 » alors que trois messages sont suivis serait faux dans le sens qui
+    // dramatise.
+    openTrust: { unaudited, tracked: sends.filter((send) => send.tracked).length },
   };
 }

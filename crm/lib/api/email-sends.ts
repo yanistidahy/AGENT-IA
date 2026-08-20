@@ -1,6 +1,7 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
 import { prisma } from "../db";
+import { classifyOpenHit, countsAsOpen } from "../domain/open-tracking";
 
 /**
  * Le journal des emails réellement partis, et le suivi d'ouverture.
@@ -146,14 +147,54 @@ export async function recordSend(input: RecordSendInput, now: Date): Promise<str
  */
 export async function recordOpen(token: string, now = new Date()): Promise<void> {
   try {
-    await prisma.emailSend.updateMany({
-      where: { trackToken: token, firstOpenAt: null },
-      data: { firstOpenAt: now },
-    });
-    await prisma.emailSend.updateMany({
+    const send = await prisma.emailSend.findUnique({
       where: { trackToken: token },
-      data: { lastOpenAt: now, openCount: { increment: 1 } },
+      select: { id: true, sentAt: true, hits: { orderBy: { at: "desc" }, take: 1 } },
     });
+    if (send === null) return;
+
+    const verdict = classifyOpenHit({
+      sentAt: send.sentAt,
+      lastHitAt: send.hits[0]?.at ?? null,
+      now,
+    });
+
+    // **Le chargement est enregistré quel que soit son verdict.** C'est ce qui
+    // permet de mesurer le bruit au lieu de l'affirmer : sans la ligne écartée,
+    // « 87 % d'ouvertures » resterait invérifiable.
+    const hit = prisma.emailOpenHit.create({
+      data: {
+        emailSendId: send.id,
+        at: now,
+        delaySeconds: verdict.delaySeconds,
+        kind: verdict.kind,
+      },
+    });
+
+    if (!countsAsOpen(verdict.kind)) {
+      await prisma.$transaction([
+        hit,
+        prisma.emailSend.update({
+          where: { id: send.id },
+          data: { openNoise: { increment: 1 } },
+        }),
+      ]);
+      return;
+    }
+
+    // `firstOpenAt` n'est posé que par un chargement compté : une récupération
+    // à la livraison ne doit pas devenir la date à laquelle le prospect a lu.
+    await prisma.$transaction([
+      hit,
+      prisma.emailSend.updateMany({
+        where: { id: send.id, firstOpenAt: null },
+        data: { firstOpenAt: now },
+      }),
+      prisma.emailSend.update({
+        where: { id: send.id },
+        data: { lastOpenAt: now, openCount: { increment: 1 } },
+      }),
+    ]);
   } catch (error) {
     console.error("[suivi] ouverture non consignée", error);
   }
@@ -173,16 +214,31 @@ export async function purgeOpens(now = new Date()): Promise<number> {
   const cutoff = new Date(now);
   cutoff.setMonth(cutoff.getMonth() - config.retentionMonths);
 
-  const result = await prisma.emailSend.updateMany({
+  const expired = await prisma.emailSend.findMany({
     where: { sentAt: { lt: cutoff }, purgedAt: null, tracked: true },
-    data: {
-      trackToken: null,
-      firstOpenAt: null,
-      lastOpenAt: null,
-      openCount: 0,
-      purgedAt: now,
-    },
+    select: { id: true },
   });
+  if (expired.length === 0) return 0;
+
+  const ids = expired.map((send) => send.id);
+
+  // **Les chargements partent avec le reste.** Ils portent des horodatages de
+  // comportement — c'est même tout ce qu'ils portent — et les laisser derrière
+  // reconstituerait exactement ce que la purge efface.
+  const [, result] = await prisma.$transaction([
+    prisma.emailOpenHit.deleteMany({ where: { emailSendId: { in: ids } } }),
+    prisma.emailSend.updateMany({
+      where: { id: { in: ids } },
+      data: {
+        trackToken: null,
+        firstOpenAt: null,
+        lastOpenAt: null,
+        openCount: 0,
+        openNoise: 0,
+        purgedAt: now,
+      },
+    }),
+  ]);
 
   return result.count;
 }

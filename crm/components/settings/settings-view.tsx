@@ -52,6 +52,12 @@ interface SettingsViewProps {
    * frontière client : il est composé dans la page et posé ici.
    */
   readonly costs: React.ReactNode;
+  /**
+   * Le diagnostic des ouvertures, rendu **côté serveur** et passé en enfant —
+   * même raison que `costs` : des lignes déjà agrégées n'ont pas à traverser la
+   * frontière client.
+   */
+  readonly opens: React.ReactNode;
 }
 
 const LIST_LABELS: Array<{ kind: SettingsListKind; label: string }> = [
@@ -72,6 +78,7 @@ export function SettingsView({
   signatories,
   imap,
   inbox,
+  opens,
   tracking,
   limits,
   emailSequences,
@@ -111,6 +118,7 @@ export function SettingsView({
           <MailPanel initial={mail} passwordEnv={passwordEnv} initialSignatories={signatories} />
           <ImapPanel initial={imap} initialTracking={tracking} initialLimits={limits} />
           <InboxPanel initial={inbox} />
+          {opens}
         </div>
       </Section>
 

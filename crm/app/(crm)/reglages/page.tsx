@@ -23,6 +23,8 @@ import { listSignatories } from "@/lib/api/signatories";
 import { LIFECYCLES } from "@/lib/domain/types";
 import { readUsageReport } from "@/lib/api/usage";
 import { CostPanel } from "@/components/settings/cost-panel";
+import { OpenAuditPanel } from "@/components/settings/open-audit-panel";
+import { readOpenAudit } from "@/lib/api/open-audit";
 import { DEFAULT_MODELS } from "@/lib/domain/model-pricing";
 
 export const dynamic = "force-dynamic";
@@ -73,6 +75,7 @@ export default async function ReglagesPage() {
   const inbox = await inboxHealth(imap.ready);
   const tracking = await readTrackingConfig();
   const limits = await readLimits();
+  const openAudit = await readOpenAudit();
   // Recopié en structures muables : le panneau édite la liste sur place, et un
   // `readonly` du service n'a pas à imposer sa forme au formulaire.
   const emailSequences = (await listEmailSequences()).map((sequence) => ({
@@ -123,6 +126,7 @@ export default async function ReglagesPage() {
         monthlyBudgetCents: settingsRow?.monthlyBudgetCents ?? 2000,
       }}
       costs={<CostPanel report={usage} />}
+      opens={<OpenAuditPanel audit={openAudit} />}
       delays={delays}
       targets={{
         calls: settingsRow?.objectifAppelsSemaine ?? 0,

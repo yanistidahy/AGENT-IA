@@ -23,11 +23,21 @@ export interface InboxHeaders {
   readonly date: Date | null;
 }
 
+/**
+ * Le verdict, **et ce qui l'a produit**.
+ *
+ * Un verdict sans motif ne se diagnostique pas : « 9 messages examinés, 0
+ * rapproché » ne dit ni lesquels, ni pourquoi. Chaque branche porte donc sa
+ * raison — l'en-tête qui a fait écarter un automate, les identifiants qui ont
+ * été essayés quand rien n'a correspondu.
+ */
 export type Classification =
   | { readonly kind: "reply"; readonly matchedId: string }
-  | { readonly kind: "auto" }
+  /** `header` nomme l'en-tête qui a tranché : `Auto-Submitted` ou `X-Autoreply`. */
+  | { readonly kind: "auto"; readonly header: string; readonly value: string }
   | { readonly kind: "bounce" }
-  | { readonly kind: "unrelated" };
+  /** Les identifiants essayés, dans l'ordre : vide = le message ne cite aucun fil. */
+  | { readonly kind: "unrelated"; readonly tried: readonly string[] };
 
 /**
  * Les message-ids d'un en-tête, chevrons compris.
@@ -50,11 +60,27 @@ export function extractMessageIds(header: string): readonly string[] {
  * répondeur ou un système. `X-Autoreply` est la variante non normalisée que
  * certains serveurs posent. Un « absent du bureau » compté comme réponse
  * arrêterait une séquence pour un message que personne n'a lu.
+ *
+ * **Deux en-têtes, et deux seulement.** Ni `List-Unsubscribe`, ni `Precedence`,
+ * ni la présence d'images ou de liens : une signature commerciale riche est
+ * écrite par un humain, et l'écarter perdrait exactement les réponses qui
+ * comptent. Le relevé ne demande d'ailleurs pas ces en-têtes au serveur — ils
+ * ne peuvent donc pas influencer le verdict, même par accident.
  */
+export function autoResponseHeader(
+  headers: Pick<InboxHeaders, "autoSubmitted" | "xAutoreply">,
+): { readonly header: string; readonly value: string } | null {
+  const auto = headers.autoSubmitted.trim();
+  if (auto !== "" && auto.toLowerCase() !== "no") {
+    return { header: "Auto-Submitted", value: auto };
+  }
+  const legacy = headers.xAutoreply.trim();
+  if (legacy !== "") return { header: "X-Autoreply", value: legacy };
+  return null;
+}
+
 export function isAutoResponse(headers: Pick<InboxHeaders, "autoSubmitted" | "xAutoreply">): boolean {
-  const auto = headers.autoSubmitted.trim().toLowerCase();
-  if (auto !== "" && auto !== "no") return true;
-  return headers.xAutoreply.trim() !== "";
+  return autoResponseHeader(headers) !== null;
 }
 
 /**
@@ -82,7 +108,8 @@ export function classify(
   headers: InboxHeaders,
   knownSentIds: ReadonlySet<string>,
 ): Classification {
-  if (isAutoResponse(headers)) return { kind: "auto" };
+  const auto = autoResponseHeader(headers);
+  if (auto !== null) return { kind: "auto", header: auto.header, value: auto.value };
   if (isBounce(headers)) return { kind: "bounce" };
 
   // `In-Reply-To` d'abord : c'est le message auquel on répond directement.
@@ -95,5 +122,5 @@ export function classify(
   for (const candidate of candidates) {
     if (knownSentIds.has(candidate)) return { kind: "reply", matchedId: candidate };
   }
-  return { kind: "unrelated" };
+  return { kind: "unrelated", tried: candidates };
 }

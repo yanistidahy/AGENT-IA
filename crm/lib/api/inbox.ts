@@ -44,6 +44,27 @@ const SENT_WINDOW_DAYS = 180;
 /** Bornes d'un relevé : au-delà, on s'arrête et on reprendra au suivant. */
 const MAX_MESSAGES = 400;
 
+/**
+ * Ce qu'un message examiné a donné, et pourquoi.
+ *
+ * **Des en-têtes de fil, jamais du contenu** : pas de sujet reçu, pas
+ * d'expéditeur, pas un mot du corps. Ce détail n'est pas enregistré en base —
+ * il vit le temps d'une réponse HTTP, pour qu'on puisse répondre à « lesquels,
+ * et pourquoi » sans transformer le CRM en journal de boîte.
+ */
+export interface ExaminedMessage {
+  readonly messageId: string;
+  readonly inReplyTo: string;
+  readonly references: string;
+  readonly verdict: "reply" | "auto" | "bounce" | "unrelated";
+  /** Pour un automate : l'en-tête qui a tranché, et sa valeur. */
+  readonly autoHeader: string;
+  /** Pour une réponse : l'identifiant de **notre** envoi retrouvé. */
+  readonly matchedId: string;
+  /** Pour un message sans rapport : les identifiants essayés, dans l'ordre. */
+  readonly tried: readonly string[];
+}
+
 export interface PollReport {
   readonly skipped: string | null;
   readonly examined: number;
@@ -55,9 +76,31 @@ export interface PollReport {
   readonly ignoredBounce: number;
   readonly unrelated: number;
   readonly error: string | null;
+  /**
+   * Le détail message par message.
+   *
+   * « 9 examinés, 0 rapproché » ne se diagnostique pas : il faut savoir
+   * lesquels et pourquoi. Ce champ existe pour cela, et pour rien d'autre.
+   */
+  readonly messages: readonly ExaminedMessage[];
+  /**
+   * Combien d'identifiants d'envoi le rapprochement avait à sa disposition.
+   *
+   * Zéro ici expliquerait tout d'un coup — et sans ce compteur, la cause
+   * serait indiscernable d'un problème de boîte ou de fenêtre.
+   */
+  readonly knownSent: number;
+  /** La borne basse du `SEARCH SINCE`, pour vérifier qu'elle couvre la réponse. */
+  readonly searchSince: Date | null;
+  /** La boîte réellement ouverte — l'identifiant IMAP, pas l'adresse d'envoi. */
+  readonly mailbox: string;
 }
 
 const EMPTY: PollReport = {
+  messages: [],
+  knownSent: 0,
+  searchSince: null,
+  mailbox: "",
   skipped: null,
   examined: 0,
   replies: 0,
@@ -161,11 +204,21 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
     select: { id: true, messageId: true, contactId: true, sentAt: true, subject: true },
   });
   if (sends.length === 0) {
-    return { ...EMPTY, skipped: "Aucun envoi récent : rien à rapprocher." };
+    return {
+      ...EMPTY,
+      mailbox: mail.user,
+      skipped: "Aucun envoi récent : rien à rapprocher.",
+    };
   }
 
   const byMessageId = new Map<string, SentRow>();
   for (const send of sends) byMessageId.set(send.messageId, send);
+
+  // La boîte réellement ouverte est celle de l'identifiant IMAP, qui est celui
+  // du SMTP. Si l'adresse d'expédition est un alias posé sur une **autre**
+  // boîte, c'est l'autre qui est relevée — et le rapport doit le dire, parce
+  // que rien d'autre à l'écran ne le trahirait.
+  const mailbox = mail.user;
 
   const client = new ImapFlow({
     host: config.host,
@@ -177,7 +230,8 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
     logger: false,
   });
 
-  let report: PollReport = { ...EMPTY };
+  const examinedDetail: ExaminedMessage[] = [];
+  let report: PollReport = { ...EMPTY, knownSent: byMessageId.size, mailbox };
 
   try {
     await client.connect();
@@ -195,6 +249,8 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
 
     // `search()` rend `false` quand le serveur refuse la requête : le traiter
     // comme une liste vide masquerait un refus en « rien de nouveau ».
+    report = { ...report, searchSince: from };
+
     const uids = await client.search({ since: from }, { uid: true });
     if (uids === false) {
       return { ...report, error: "Le serveur IMAP a refusé la recherche dans INBOX." };
@@ -204,6 +260,7 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
       await markPolled(now);
       return report;
     }
+
 
     const matched: Array<{ headers: InboxHeaders; send: SentRow }> = [];
 
@@ -219,6 +276,20 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
       const headers = parseHeaderBlock(raw);
 
       const verdict = classify(headers, new Set(byMessageId.keys()));
+
+      // Le détail est noté **avant** tout aiguillage : un message écarté est
+      // exactement celui sur lequel on veut pouvoir revenir.
+      examinedDetail.push({
+        messageId: headers.messageId,
+        inReplyTo: headers.inReplyTo,
+        references: headers.references,
+        verdict: verdict.kind,
+        autoHeader:
+          verdict.kind === "auto" ? `${verdict.header}: ${verdict.value}` : "",
+        matchedId: verdict.kind === "reply" ? verdict.matchedId : "",
+        tried: verdict.kind === "unrelated" ? verdict.tried : [],
+      });
+
       if (verdict.kind === "auto") {
         report = { ...report, ignoredAuto: report.ignoredAuto + 1 };
         continue;
@@ -254,11 +325,11 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
     // Le battement de cœur est écrit **en dernier et seulement en cas de
     // succès**, comme `lastCronAt` : c'est son absence qui doit alerter.
     await markPolled(now);
-    return report;
+    return { ...report, messages: examinedDetail };
   } catch (error) {
     const message = describeImapError(error);
     console.error("[inbox] relevé échoué :", message);
-    return { ...report, error: message };
+    return { ...report, messages: examinedDetail, error: message };
   } finally {
     try {
       await client.logout();

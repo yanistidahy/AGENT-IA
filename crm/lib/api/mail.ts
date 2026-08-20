@@ -197,14 +197,25 @@ export type SendResult =
       readonly ok: true;
       readonly messageId: string;
       readonly accepted: readonly string[];
-      /**
-       * Le message **tel qu'il est parti**, octet pour octet.
-       *
-       * C'est ce qui est déposé dans « Envoyés » : recomposer un message
-       * équivalent produirait un autre `Message-ID`, donc un fil cassé chez
-       * l'expéditeur — et le défaut ne se verrait qu'à la première réponse.
-       */
+      /** Le message **tel qu'il est parti**, octet pour octet. */
       readonly raw: Buffer;
+      /**
+       * La même chose, **sans le pixel de suivi**, pour le dossier « Envoyés ».
+       *
+       * Défaut trouvé au jalon 43 : la copie archivée portait le pixel, si bien
+       * qu'ouvrir son propre dossier « Envoyés » comptait comme une ouverture du
+       * prospect. C'est la première cause d'un taux d'ouverture à 87 %.
+       *
+       * **Le compromis, dit clairement.** Le jalon 37 déposait les octets exacts
+       * de l'envoi, et cette identité-là est perdue. Ce qui rattache la réponse
+       * au fil est conservé : `Message-ID`, `Date`, `From`, `To`, `Subject` et
+       * le corps sont identiques — seule l'image invisible en fin de HTML
+       * disparaît. Le message archivé est donc celui que le destinataire lit,
+       * amputé de ce qui ne le regardait pas.
+       *
+       * Sans suivi, les deux tampons sont identiques et le sont restés.
+       */
+      readonly rawForArchive: Buffer;
     }
   | { readonly ok: false; readonly message: string };
 
@@ -305,6 +316,13 @@ export async function sendMail(input: SendInput): Promise<SendResult> {
     // fait qu'une réponse se rattache au bon fil.
     const raw = await buildMime(message);
 
+    // La copie d'archive est composée à partir du **même objet**, pixel retiré :
+    // mêmes en-têtes, même `Message-ID`, même date, même corps. Recomposer un
+    // message « équivalent » à la main produirait un autre identifiant, donc un
+    // fil cassé — c'est ce que le jalon 37 avait appris.
+    const tracked = message.html !== html;
+    const rawForArchive = tracked ? await buildMime({ ...message, html }) : raw;
+
     const info = await transport.sendMail({
       envelope: { from: config.from, to: [input.to] },
       raw,
@@ -315,6 +333,7 @@ export async function sendMail(input: SendInput): Promise<SendResult> {
       messageId: info.messageId ?? id,
       accepted: info.accepted.map((entry) => (typeof entry === "string" ? entry : entry.address)),
       raw,
+      rawForArchive,
     };
   } catch (error) {
     // Jamais la configuration ni le secret dans le journal : seulement la cause.
