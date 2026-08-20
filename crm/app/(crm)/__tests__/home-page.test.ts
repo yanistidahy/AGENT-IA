@@ -82,6 +82,10 @@ vi.mock("@/lib/db", () => ({
         ),
     },
     settings: { findUnique: () => Promise.resolve(null) },
+    // Le bandeau « relevé activé mais non configuré » du jalon 42 demande à
+    // savoir si des messages sont déjà partis. Zéro envoi : rien à signaler,
+    // et c'est ce que le test « aucun bandeau » vérifie plus bas.
+    emailSend: { count: () => Promise.resolve(0) },
     // Aucun appel au modèle consigné : le bandeau de budget ne doit donc pas
     // apparaître, et c'est ce que le test « aucun bandeau » vérifie plus bas.
     apiUsage: {

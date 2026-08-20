@@ -132,9 +132,10 @@ export function MailPanel({
     <section className="rounded-card border border-line bg-surface p-4 shadow-card">
       <h3 className="font-display text-[15px] font-semibold">Messagerie</h3>
       <p className="mt-1 text-[12.5px] text-muted">
-        Envoi uniquement, par SMTP. <b className="font-semibold text-ink">Les réponses de vos
-        destinataires n'arrivent pas dans le CRM</b> — elles vont dans votre boîte habituelle.
-        La réception n'est pas gérée par cette version.
+        Ce bloc règle <b className="font-semibold text-ink">l'envoi</b>, par SMTP. Les messages
+        de vos destinataires continuent d'arriver dans votre boîte habituelle : le CRM ne la
+        remplace pas. Il en lit seulement les en-têtes pour reconnaître les réponses — voir
+        « Détection des réponses » plus bas.
       </p>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
