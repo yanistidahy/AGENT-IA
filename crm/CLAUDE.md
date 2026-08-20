@@ -356,6 +356,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 40 | **« Ma performance »** — activité par canal et par jour, comparée ; réponses par canal ; Yanis/Mohamed côte à côte ; régularité et objectifs | **livré, à valider** |
 | 41 | **Détection automatique des réponses** — relevé IMAP d'INBOX toutes les 15 min, en-têtes seuls, rapprochement exact, séquences arrêtées | **livré, à valider** |
 | 42 | **La restauration ne perd plus rien** — 44 colonnes de réglages au lieu de 11, garde anti-perte, bandeau du relevé non configuré | **livré, à valider** |
+| 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -5735,3 +5736,148 @@ nécessaire pour fermer ce défaut et cela changerait la sémantique du filet.
 pourquoi il ne pouvait pas ; que les identifiants passent reste à établir au
 premier relevé réel, et la question de la boîte — `contact@auraflowai.fr` est-il
 un compte à part entière ou un alias — reste ouverte côté IONOS.
+
+
+---
+
+## Jalon 43 — pourquoi le relevé ne trouve rien, et ce que valent les ouvertures
+
+### 1. « 9 examinés, 0 rapproché » ne se diagnostique pas
+
+Le relevé rendait deux nombres et aucune trace. Il rend désormais, **pour chaque
+message examiné** : son `Message-ID`, ses `In-Reply-To` et `References`, son
+verdict, l'en-tête sur lequel un automate a été écarté, et — quand rien n'a
+correspondu — **la liste des identifiants essayés**. `PollReport` porte en plus
+`knownSent` (combien de nos envois sont candidats), `searchSince` (la fenêtre
+réellement demandée) et `mailbox` (la boîte ouverte).
+
+`components/settings/inbox-detail.tsx` rend ce détail dans `/reglages`. Il **ne
+persiste rien** — il vit le temps de la réponse — et ne montre que des en-têtes
+de fil : aucun sujet reçu, aucun expéditeur, aucun mot du corps. La promesse du
+jalon 41 tient jusque dans l'écran de diagnostic.
+
+### Les trois hypothèses, tranchées
+
+| Hypothèse | Verdict |
+|---|---|
+| **Le filtre d'automate est trop large** — une signature riche prise pour un répondeur | **Faux.** `isAutoResponse()` ne lit que `Auto-Submitted` (RFC 3834) et `X-Autoreply` ; il ne regarde ni le corps, ni les images, ni la longueur. Un message signé d'un pavé marketing avec badges Trustpilot est classé `reply` — vérifié contre le substitut IMAP avec exactement ce cas |
+| **La fenêtre `SINCE`** | **Écartée** : le relevé reprend `OVERLAP_DAYS = 2` en arrière et `SEARCH SINCE` est à la granularité du jour. Une réponse du 19/08 est dans la fenêtre d'un relevé du 20/08. `searchSince` est désormais affiché, donc vérifiable au lieu d'être supposé |
+| **La mauvaise boîte** | **La seule qui reste, et elle n'est pas décidable depuis le code.** Le relevé ouvre l'INBOX de `smtpUser` — l'identifiant IMAP. Si l'adresse d'expédition est un **alias** posé sur une autre boîte, les réponses arrivent dans l'autre et aucun relevé ne les verra. Le panneau affiche donc la boîte relevée et le dit en toutes lettres |
+
+**Ce qu'il faut vérifier chez IONOS**, et que le code ne peut pas dire : dans
+l'espace client, *E-mail* → la ligne `contact@auraflowai.fr`. Si elle apparaît
+comme **boîte e-mail** avec sa propre taille et son propre mot de passe, la
+configuration est bonne. Si elle apparaît comme **alias / redirection** vers une
+autre adresse, c'est cette autre adresse qu'il faut mettre dans l'identifiant
+IMAP — l'alias n'a pas d'INBOX à lui.
+
+### 2. Les 87 % d'ouverture ne voulaient rien dire
+
+Deux causes, nommées avec leur fichier, avant tout correctif :
+
+**a. Notre propre copie portait le pixel.** `email-send.ts` déposait dans
+« Envoyés » les octets exacts de l'envoi (jalon 37), pixel compris : ouvrir son
+propre dossier « Envoyés », ou laisser un client le pré-charger, comptait comme
+une ouverture du prospect.
+
+**b. Chaque requête incrémentait le compteur.** `recordOpen()` faisait deux
+`updateMany` sans aucune déduplication ni fenêtre de livraison : un client qui
+recharge l'image cinq fois produisait « 5 ouvertures », et un antivirus qui
+récupère les images à la livraison produisait une ouverture pour un message que
+personne n'avait vu.
+
+**c. Et la question ne pouvait pas se poser.** Le schéma ne portait que
+`firstOpenAt`, `lastOpenAt` et `openCount` : « comment ces ouvertures sont-elles
+groupées » **n'avait pas de réponse en base**. C'est pour cela que le jalon
+commence par mesurer.
+
+### Ce qui est fait
+
+**`EmailOpenHit`** (migration `19_open_hits`) : une ligne par chargement, avec
+son délai depuis l'envoi et son verdict. **Elle ne porte que cela** — pas
+d'adresse IP, pas d'agent utilisateur : la promesse du jalon 37 est tenue jusque
+dans l'instrumentation qui sert à l'auditer.
+
+`lib/domain/open-tracking.ts` (pur) classe chaque chargement :
+
+| Verdict | Règle | Pourquoi |
+|---|---|---|
+| `delivery` | moins de 30 s après l'envoi | personne n'ouvre un message dans les trente secondes ; c'est un relais ou un antivirus |
+| `burst` | moins de 60 s après le chargement précédent | un même client qui recharge n'est pas une seconde lecture |
+| `counted` | le reste | la seule chose affichée |
+
+`openCount` ne bouge que pour `counted`, `openNoise` pour les deux autres, et
+**`firstOpenAt` n'est plus posé par un chargement à la livraison** : la date de
+première lecture cesse d'être la date de livraison. La purge de rétention efface
+les chargements avec le reste — ce sont des horodatages de comportement, et les
+laisser derrière reconstituerait exactement ce qu'elle efface.
+
+**Le pixel est retiré de la copie « Envoyés ».** `sendMail()` rend deux tampons :
+`raw` (parti sur le fil) et `rawForArchive` (déposé par IMAP). Le compromis est
+assumé et écrit dans le code : **l'identité octet pour octet du jalon 37 est
+perdue** quand le suivi est actif. Ce qu'elle servait — rattacher la réponse au
+bon fil — ne tient pas aux octets mais aux en-têtes, et la copie est composée à
+partir du **même objet** message : `Message-ID`, `Date`, `From`, `To`, `Subject`
+et le corps sont identiques. Sans suivi, les deux tampons restent identiques à
+l'octet près, et c'est vérifié.
+
+### 3. L'écran dit ce que le chiffre vaut
+
+**Le passé n'est pas auditable, et c'est le premier nombre affiché.** Les
+chargements antérieurs à ce jalon n'ont jamais été enregistrés ligne à ligne :
+un envoi qui affiche huit ouvertures sans aucune ligne de détail n'est ni
+confirmé, ni infirmé. `/emails` l'écrit sous l'entonnoir — « L'estimation
+d'ouverture n'est pas vérifiable sur 1 envoi sur 3 » — et `/reglages` porte le
+panneau « Ce que valent les ouvertures » : chargements par verdict, part de
+bruit, répartition des délais, et les soixante derniers chargements tels quels.
+
+C'est la réponse à « si le chiffre ne peut pas être cru, je préfère que l'écran
+le dise » : il le dit, envoi par envoi, au lieu de retirer la mesure.
+
+### Jalon 43 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `19_open_hits` appliquée puis
+`migrate diff` **vide**), le serveur standalone, un puits SMTP et deux serveurs
+IMAP substitués :
+
+- **classement** : quatre chargements sur un même envoi (5 s, 1 h, +10 s, 2 h) →
+  `delivery, counted, burst, counted`, `openCount: 2`, `openNoise: 2`, et
+  **`firstOpenAt` posé sur la lecture, pas sur la livraison** ;
+- **jeton inconnu** → aucune ligne écrite, même image rendue ;
+- **audit** : 2 comptés / 1 rafale / 1 livraison, part de bruit 50 %, 1 envoi
+  déclaré inauditable ;
+- **purge** : envois vieillis → chargements supprimés, `openCount` et
+  `openNoise` à zéro, jeton effacé, **objet de l'envoi conservé** ;
+- **copie « Envoyés »** : le message parti porte le pixel, la copie déposée n'en
+  porte **aucun**, et `Message-ID`, `From`, `To`, `Subject`, `Date` sont
+  identiques des deux côtés ; **sans suivi, les deux fichiers sont identiques à
+  l'octet près** (694 octets contre 694) ;
+- **relevé instrumenté** : réponse à signature riche → `reply` avec l'identifiant
+  rapproché ; `Auto-Submitted: auto-replied` → `auto` **en nommant l'en-tête** ;
+  lettre d'information → `unrelated` avec « ne cite aucun fil » ; `mailbox`,
+  `searchSince` et `knownSent` rendus ; second relevé → 0 réponse en double ;
+- **navigateur (1440×900)** : panneau « Ce que valent les ouvertures » avec ses
+  trois compteurs, la part de bruit et la répartition des délais ; bandeau
+  d'`/emails` « n'est pas vérifiable sur 1 envoi sur 3 » ; **0 débordement
+  horizontal, 0 erreur console, 0 réponse ≥ 400** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**860 tests**) verts.
+
+### Jalon 43 — ce qui n'est pas fait
+
+**Le taux d'ouverture de production reste inauditable pour l'historique.** Le
+tri ne s'applique qu'aux chargements à venir : les 87 % constatés portent sur des
+envois dont les chargements n'ont jamais été enregistrés un par un. Ils ne
+seront ni corrigés, ni recalculés — ils sont signalés comme non vérifiables, et
+c'est tout ce qu'on peut en dire honnêtement.
+
+**Les seuils sont un jugement, pas une mesure.** Trente secondes et une minute
+écartent le rechargement mécanique sans prétendre distinguer deux lectures
+rapprochées. Les données que ce jalon commence à accumuler diront s'ils sont
+justes — c'est précisément pour cela que la répartition des délais est affichée.
+
+**La question de la boîte IONOS reste ouverte.** C'est la seule hypothèse
+survivante sur la réponse de Caroline, et elle se tranche dans l'espace client
+IONOS, pas dans le code.
+
+**Rien n'a touché IONOS**, une fois de plus : SMTP et IMAP sont exercés contre
+les substituts versionnés.

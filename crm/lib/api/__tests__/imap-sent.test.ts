@@ -149,3 +149,37 @@ describe("le MIME déposé est conforme et identique à l'envoi", () => {
     expect(toCrlf(raw).toString("utf8")).toContain("é");
   });
 });
+
+/**
+ * **La copie archivée ne porte pas le pixel — et c'est un changement assumé.**
+ *
+ * Jusqu'au jalon 43, les octets déposés dans « Envoyés » étaient exactement ceux
+ * qui étaient partis, pixel compris. Conséquence mesurée : ouvrir son propre
+ * dossier « Envoyés », ou laisser un client de messagerie le pré-charger,
+ * comptait comme une ouverture du prospect — la première cause d'un taux
+ * d'ouverture à 87 %.
+ *
+ * Ce que l'identité octet pour octet servait — rattacher la réponse au bon fil —
+ * ne tient pas aux octets mais aux en-têtes : `Message-ID`, `Date`, `From`,
+ * `To`, `Subject`. Ils sont conservés, la copie étant composée à partir du
+ * **même objet** message, seule l'image invisible retirée. Recomposer un
+ * message « équivalent » à la main produirait un autre identifiant, et c'est
+ * précisément la leçon du jalon 37 qu'on ne défait pas ici.
+ */
+describe("le pixel ne survit pas à l'archivage", () => {
+  const body = "Bonjour,\n\nUne question.";
+  const plain = toHtml(body);
+  const tracked = withTrackingPixel(plain, "https://crm.test/api/t/abc");
+
+  it("le HTML archivé est exactement celui qu'un humain aurait tapé", () => {
+    // La copie repart de `toHtml()`, pas d'une suppression de sous-chaîne :
+    // découper l'image après coup laisserait un jour un fragment derrière.
+    expect(plain).not.toContain("<img");
+    expect(tracked).toContain("<img");
+    expect(tracked.startsWith(plain.slice(0, plain.indexOf("</body>")))).toBe(true);
+  });
+
+  it("sans suivi, il n'y a rien à retirer et les deux versions coïncident", () => {
+    expect(withTrackingPixel(plain, "")).toBe(plain);
+  });
+});

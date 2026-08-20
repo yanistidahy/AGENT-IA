@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import { formatDateLong } from "@/lib/format";
+import { InboxDetail, type ExaminedMessage, type PollDetail } from "./inbox-detail";
 
 /**
  * Le relevé de la boîte de réception.
@@ -24,6 +25,10 @@ export interface InboxStatus {
 interface Report {
   skipped: string | null;
   examined: number;
+  messages: ExaminedMessage[];
+  knownSent: number;
+  searchSince: string | null;
+  mailbox: string;
   replies: number;
   alreadyLogged: number;
   sequencesStopped: number;
@@ -49,6 +54,7 @@ export function InboxPanel({ initial }: { readonly initial: InboxStatus }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [detail, setDetail] = useState<PollDetail | null>(null);
 
   /**
    * L'interrupteur bouge tout de suite, et revient si le serveur refuse.
@@ -91,9 +97,16 @@ export function InboxPanel({ initial }: { readonly initial: InboxStatus }) {
       setError(result.message);
       return;
     }
+    const report = result.data.report;
     setStatus(result.data.health);
-    setDone(describe(result.data.report));
-    if (result.data.report.error !== null) setError(result.data.report.error);
+    setDone(describe(report));
+    setDetail({
+      messages: report.messages ?? [],
+      knownSent: report.knownSent ?? 0,
+      searchSince: report.searchSince ?? null,
+      mailbox: report.mailbox ?? "",
+    });
+    if (report.error !== null) setError(report.error);
   };
 
   return (
@@ -143,6 +156,7 @@ export function InboxPanel({ initial }: { readonly initial: InboxStatus }) {
 
       {done !== null && <p className="mt-2 text-[12px] text-win-d">{done}</p>}
       {error !== null && <p className="mt-2 text-[12px] text-[#B2311F]">{error}</p>}
+      {detail !== null && <InboxDetail detail={detail} />}
     </section>
   );
 }

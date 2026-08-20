@@ -61,6 +61,22 @@ export default async function EmailsPage({
 
       <section className="mb-4">
         <FunnelRow steps={stats.funnel} />
+        {stats.openTrust.unaudited > 0 && (
+          // **Le taux d'ouverture est plus faux que « surestimé » sur ces
+          // envois-là** : leurs chargements n'ont jamais été enregistrés un par
+          // un, donc ni notre propre copie dans « Envoyés », ni les rechargements
+          // d'un même client n'en ont été retirés. Le dire ici, sous le chiffre,
+          // plutôt que de laisser croire qu'il a été trié.
+          <p className="mt-2 rounded-control border border-[#F0DFB8] bg-gold-l px-3.5 py-2 text-[12px] leading-relaxed text-[#9A6410]">
+            <strong>
+              L'estimation d'ouverture n'est pas vérifiable sur {stats.openTrust.unaudited} envoi
+              {stats.openTrust.unaudited > 1 ? "s" : ""} sur {stats.openTrust.tracked}.
+            </strong>{" "}
+            Leurs chargements de pixel précèdent le tri : notre propre copie dans « Envoyés » y
+            comptait comme une ouverture, et un client qui rechargeait l'image comptait autant de
+            fois. Le détail est dans Réglages → Messagerie.
+          </p>
+        )}
       </section>
 
       {stats.copyFailures > 0 && (

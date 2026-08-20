@@ -795,6 +795,13 @@ model EmailSend {
   firstOpenAt DateTime?
   lastOpenAt  DateTime?
   openCount   Int       @default(0)
+  /**
+   * Chargements du pixel écartés du compte : rafales d'un même client, et
+   * chargements survenus dans les secondes qui suivent l'envoi — un antivirus
+   * ou un relais qui récupère les images à la livraison, pas une lecture.
+   */
+  openNoise   Int       @default(0)
+  hits        EmailOpenHit[]
   /// Vidé par la purge de rétention, sans supprimer l'envoi lui-même.
   purgedAt    DateTime?
 
@@ -958,4 +965,30 @@ model EmailReply {
 
   @@index([sentMessageId])
   @@map("email_replies")
+}
+
+/// Un chargement du pixel, horodaté.
+///
+/// **L'horodatage et rien d'autre.** Ni adresse IP, ni agent utilisateur, ni
+/// profil : la promesse du jalon 37 tient, cette table ne fait qu'affiner ce
+/// qui était déjà compté en agrégat. Elle existe pour une raison précise —
+/// répondre à « ces cinq ouvertures sont-elles cinq lectures, ou un client qui
+/// charge l'image cinq fois ? », question qu'un compteur seul ne peut pas
+/// trancher.
+///
+/// Purgée avec le reste du suivi, à la même échéance.
+model EmailOpenHit {
+  id          String   @id @default(cuid())
+  emailSendId String
+  emailSend   EmailSend @relation(fields: [emailSendId], references: [id], onDelete: Cascade)
+
+  at DateTime @default(now())
+  /// Secondes écoulées depuis l'envoi. Stocké plutôt que recalculé : il survit
+  /// à la purge de l'envoi et se lit sans jointure.
+  delaySeconds Int @default(0)
+  /// `counted` | `burst` | `delivery` — pourquoi ce chargement compte ou non.
+  kind String @default("counted")
+
+  @@index([emailSendId])
+  @@map("email_open_hits")
 }

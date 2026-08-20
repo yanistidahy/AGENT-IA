@@ -50,6 +50,34 @@ describe("l'extraction des identifiants", () => {
   });
 });
 
+describe("le filtre d'automate reste étroit", () => {
+  /**
+   * **Une signature commerciale riche est écrite par un humain.**
+   *
+   * Le cas signalé en production : « Ok merci » suivi d'une signature portant
+   * un site, quatre réseaux sociaux et des badges d'avis. Rien de tout cela ne
+   * doit faire écarter la réponse — et le relevé ne demande même pas ces
+   * en-têtes au serveur, donc ils ne peuvent pas influencer le verdict.
+   */
+  it("ne se déclenche sur aucun en-tête de marketing", () => {
+    const rich = headers({ inReplyTo: OURS });
+    expect(isAutoResponse(rich)).toBe(false);
+    expect(classify(rich, KNOWN)).toEqual({ kind: "reply", matchedId: OURS });
+
+    // Ces en-têtes n'appartiennent même pas à la forme lue : le typage
+    // l'interdit, et c'est la vraie garantie.
+    expect(Object.keys(rich)).not.toContain("listUnsubscribe");
+    expect(Object.keys(rich)).not.toContain("precedence");
+  });
+
+  it("ne se déclenche que sur les deux en-têtes normalisés", () => {
+    expect(isAutoResponse({ autoSubmitted: "", xAutoreply: "" })).toBe(false);
+    expect(isAutoResponse({ autoSubmitted: "no", xAutoreply: "" })).toBe(false);
+    expect(isAutoResponse({ autoSubmitted: "auto-generated", xAutoreply: "" })).toBe(true);
+    expect(isAutoResponse({ autoSubmitted: "", xAutoreply: "1" })).toBe(true);
+  });
+});
+
 describe("ce qui n'est pas une réponse", () => {
   it("**écarte un répondeur d'absence même s'il cite nos en-têtes**", () => {
     // C'est le cas qui mord : un « absent du bureau » recopie fidèlement
@@ -57,10 +85,18 @@ describe("ce qui n'est pas une réponse", () => {
     // réponse, il arrêterait une séquence pour un message que personne n'a lu.
     const away = headers({ inReplyTo: OURS, autoSubmitted: "auto-replied" });
     expect(isAutoResponse(away)).toBe(true);
-    expect(classify(away, KNOWN)).toEqual({ kind: "auto" });
-
-    expect(classify(headers({ inReplyTo: OURS, xAutoreply: "yes" }), KNOWN)).toEqual({
+    // Le verdict **nomme l'en-tête qui a tranché** : sans lui, « écarté comme
+    // automate » ne se diagnostique pas, et un filtre trop large resterait
+    // invisible.
+    expect(classify(away, KNOWN)).toEqual({
       kind: "auto",
+      header: "Auto-Submitted",
+      value: "auto-replied",
+    });
+
+    expect(classify(headers({ inReplyTo: OURS, xAutoreply: "yes" }), KNOWN)).toMatchObject({
+      kind: "auto",
+      header: "X-Autoreply",
     });
   });
 
@@ -84,12 +120,21 @@ describe("ce qui n'est pas une réponse", () => {
   it("**ne devine jamais depuis l'expéditeur ni le sujet**", () => {
     // Un message de la bonne personne, sans en-tête de fil : ce n'est pas une
     // réponse à un message identifié, et l'attribuer serait une heuristique.
-    expect(classify(headers({ from: "laure@prospect.fr" }), KNOWN)).toEqual({ kind: "unrelated" });
+    expect(classify(headers({ from: "laure@prospect.fr" }), KNOWN)).toEqual({
+      kind: "unrelated",
+      // Aucun identifiant essayé : le message ne cite aucun fil. C'est la
+      // distinction qui compte au diagnostic — « rien à rapprocher » n'est pas
+      // « rapproché sans succès ».
+      tried: [],
+    });
   });
 
   it("un identifiant qui n'est pas des nôtres ne correspond pas", () => {
     const other = headers({ inReplyTo: "<un-message@ailleurs.fr>" });
-    expect(classify(other, KNOWN)).toEqual({ kind: "unrelated" });
+    expect(classify(other, KNOWN)).toEqual({
+      kind: "unrelated",
+      tried: ["<un-message@ailleurs.fr>"],
+    });
   });
 });
 
@@ -125,6 +170,9 @@ describe("ce qui est une réponse", () => {
   });
 
   it("sans envoi connu, aucune correspondance possible", () => {
-    expect(classify(headers({ inReplyTo: OURS }), new Set())).toEqual({ kind: "unrelated" });
+    expect(classify(headers({ inReplyTo: OURS }), new Set())).toEqual({
+      kind: "unrelated",
+      tried: [OURS],
+    });
   });
 });
