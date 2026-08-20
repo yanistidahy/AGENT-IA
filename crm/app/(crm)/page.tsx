@@ -13,7 +13,7 @@ import { BudgetBanner } from "@/components/dashboard/budget-banner";
 import { schedulerHealth, type SchedulerHealth } from "@/lib/api/scheduler-health";
 import { inboxHealth, type InboxHealth } from "@/lib/api/inbox-health";
 import { readLimitNotice, type LimitNotice } from "@/lib/api/send-rate";
-import { InboxBanner, SchedulerBanner, SendLimitBanner } from "@/components/dashboard/scheduler-banner";
+import { InboxBanner, InboxUnconfiguredBanner, SchedulerBanner, SendLimitBanner } from "@/components/dashboard/scheduler-banner";
 import type { BudgetState } from "@/lib/domain/model-pricing";
 import { describeAge } from "@/lib/domain/snapshots";
 import { RecommendationCard } from "@/components/recommendations/recommendation-card";
@@ -295,6 +295,7 @@ function Shell({
       )}
       {scheduler.stale && <SchedulerBanner health={scheduler} />}
       {inbox.stale && <InboxBanner health={inbox} />}
+      {inbox.unconfiguredButUsed && <InboxUnconfiguredBanner />}
       {sendLimit !== null && <SendLimitBanner notice={sendLimit} />}
       {budget !== null && budget.level !== "ok" && <BudgetBanner budget={budget} />}
       {children}

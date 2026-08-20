@@ -81,3 +81,26 @@ export function InboxBanner({ health }: { readonly health: InboxHealth }) {
     </p>
   );
 }
+
+/**
+ * Le relevé est allumé, des messages sont partis, et il ne peut pas tourner.
+ *
+ * **C'est le bandeau qui manquait en production.** La configuration IMAP avait
+ * été effacée par une restauration ; le relevé s'arrêtait sur « non
+ * configuré », donc sans erreur, donc muet — et une réponse de prospect est
+ * restée invisible pendant des jours. Un ton ambre plutôt que rouge : rien
+ * n'est cassé, il manque un réglage, et le geste est court.
+ */
+export function InboxUnconfiguredBanner() {
+  return (
+    <p className="mb-4 rounded-control border border-[#F0DFB8] bg-gold-l px-3.5 py-3 text-[12.5px] leading-relaxed text-[#9A6410]">
+      <strong>La détection des réponses est activée mais ne peut pas tourner.</strong> Des
+      messages sont partis depuis ce CRM, et la configuration IMAP est incomplète — hôte,
+      identifiant ou mot de passe. Aucune réponse ne sera détectée tant que ce sera le cas.{" "}
+      <Link className="font-semibold underline" href="/reglages">
+        Réglages → Messagerie
+      </Link>{" "}
+      pour la compléter, ou coupez le relevé si c'est délibéré.
+    </p>
+  );
+}

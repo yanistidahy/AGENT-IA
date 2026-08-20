@@ -105,7 +105,7 @@ export function SettingsView({
 
       <Section
         title="Messagerie"
-        hint="envoi des emails par SMTP — la réception n'est pas gérée par cette version"
+        hint="envoi par SMTP, copie dans « Envoyés », et détection des réponses"
       >
         <div className="space-y-4">
           <MailPanel initial={mail} passwordEnv={passwordEnv} initialSignatories={signatories} />

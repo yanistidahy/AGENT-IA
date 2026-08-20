@@ -355,6 +355,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 39 | **`/emails` refondu** — graphiques conditionnés à l'histoire, entonnoir, journal des envois, « Sans réponse », par signataire | **livré, à valider** |
 | 40 | **« Ma performance »** — activité par canal et par jour, comparée ; réponses par canal ; Yanis/Mohamed côte à côte ; régularité et objectifs | **livré, à valider** |
 | 41 | **Détection automatique des réponses** — relevé IMAP d'INBOX toutes les 15 min, en-têtes seuls, rapprochement exact, séquences arrêtées | **livré, à valider** |
+| 42 | **La restauration ne perd plus rien** — 44 colonnes de réglages au lieu de 11, garde anti-perte, bandeau du relevé non configuré | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -5605,3 +5606,132 @@ relevé suivant.
 raison : le cron de Railway ne sait pas émettre de requête HTTP. C'est la seule
 exception à la règle « aucun fichier hors de `crm/` », et elle est assumée
 depuis le filet de sécurité.
+
+
+---
+
+## Jalon 42 — la restauration effaçait la moitié du produit
+
+### L'incident, et ce qu'il a réellement coûté
+
+**Signalé** : une réponse de prospect non détectée, `/emails` à 0 réponse pour
+17 messages envoyés, et — le détail qui ne collait pas — les champs SMTP vides
+sur `/reglages` alors que 17 messages étaient bien partis.
+
+Deux hypothèses ont été écartées avant d'arriver à la bonne. Le texte périmé
+« La réception n'est pas gérée par cette version » **ne prouvait rien** sur
+l'état du déploiement : il était toujours dans `main`, c'était une phrase que le
+jalon 41 avait oublié de retirer. Et « le panneau ne relit pas les réglages »
+était faux : `readMailStatus()` étale `readMailConfig()`, donc le panneau et le
+chemin d'envoi lisent **la même ligne par la même fonction**.
+
+**La cause, nommée :** `restoreBackup()` supprime la ligne de réglages
+(`lib/api/backup.ts:240`) puis la recrée à partir de ce que `backupSchema` a
+laissé passer. Or `settingsRow` déclarait **11 champs** pour une table qui en
+porte **44**, et Zod retire les clés qu'il ne connaît pas. Les deux chemins
+réels valident *avant* de restaurer — `app/api/backup/route.ts:30` et
+`lib/api/snapshots.ts:178` — donc une restauration recréait la ligne avec 11
+colonnes et laissait Prisma remplir le reste avec ses valeurs par défaut.
+
+Le défaut ne se limitait pas aux réglages. Audit des dix modèles sauvegardés :
+
+| Modèle | Colonnes | Dans la sauvegarde | Perdues à la restauration |
+|---|---|---|---|
+| Settings | 44 | 11 | SMTP, IMAP, modèles, plafonds, objectifs, battements de cœur |
+| Contact | 24 | 16 | `status`, `statusSetAt`, `lostReason`, `tag`, `website`, `searchText`, `emailCount`, `lastEmailAt` |
+| Activity | 11 | 10 | **`outcome`** |
+| Company / Deal | 9 / 17 | 8 / 16 | `searchText` |
+| Stage | 8 | 7 | `exitCriterion` |
+
+`Activity.outcome` explique le symptôme d'origine à lui seul : sans issue, plus
+personne n'a « répondu », et le taux de réponse comme l'entonnoir de `/emails`
+retombent à zéro alors que les interactions sont toujours là. Les colonnes SMTP
+et IMAP expliquent le reste : `imapMissingFields()` déclare la configuration
+incomplète, `pollInbox()` sort sur `skipped: "Relevé non configuré…"` et **ne se
+connecte jamais**. Un an de corrections de statuts, les motifs de perte du jalon
+11, les domaines extraits aux jalons 24-25 et les miroirs de recherche du jalon
+10 partaient dans la même opération.
+
+### Un piège de méthode, à retenir
+
+La première tentative de reproduction appelait `restoreBackup()` **en direct** et
+rendait **0 colonne perdue** — un faux négatif rassurant. Le raccourci saute
+`backupSchema`, c'est-à-dire précisément l'endroit où la donnée disparaît.
+**Vérifier le chemin réel, pas le chemin commode** : c'est la même leçon qu'au
+jalon 33 sur le serveur périmé, et elle a resservi ici.
+
+### Ce qui est corrigé
+
+**1. Les dix schémas de ligne portent toutes les colonnes.** Les ajouts sont
+**optionnels** : une sauvegarde plus ancienne ne peut pas porter ce qui
+n'existait pas quand elle a été prise, et la refuser rendrait le filet inutile au
+moment précis où l'on en a besoin.
+
+**2. `tests/backup-columns.test.ts` interdit la rechute.** Il compare le schéma
+Prisma aux schémas Zod **lus à l'exécution** — pas à une liste recopiée, qui
+serait une seconde source de vérité, donc une seconde occasion de diverger. Il
+échoue en nommant chaque colonne, avec le geste à faire. Éprouvé dans les deux
+sens : en retirant `smtpHost` et `outcome` (« Ces colonnes de Settings seraient
+**effacées** par une restauration : smtpHost »), et en ajoutant une colonne
+`quotaMensuelSms` au schéma Prisma sans toucher à la sauvegarde — le test tombe
+en la nommant.
+
+**3. Le relevé non configuré cesse d'être muet.** `inboxVerdict()` traitait
+« non configuré » comme « pas une panne » — juste pour quelqu'un qui n'a jamais
+branché le relevé, faux pour quelqu'un dont la configuration vient d'être
+effacée. Ce qui départage les deux : **des envois existent**. Un CRM qui a écrit
+à quinze personnes, dont le relevé est allumé et qui ne peut pas tourner est en
+panne. Bandeau ambre sur `/accueil`, distinct du bandeau rouge d'ancienneté
+parce que le geste n'est pas le même : là il faut aller voir le workflow, ici
+ressaisir un réglage.
+
+**4. La phrase contradictoire est retirée** (`mail-panel.tsx`,
+`settings-view.tsx`) : elle annonçait que la réception n'était pas gérée, deux
+blocs au-dessus du panneau qui la gère.
+
+### Jalon 42 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, **par le chemin réel** (export → `backupSchema` →
+`restoreBackup`), sur une base portant une configuration IONOS réaliste, un
+contact avec statut/motif/étiquette/site et cinq interactions à issue connue :
+
+- **0 colonne perdue** sur les réglages (44 clés après `backupSchema`, contre 11
+  avant) et **0 sur le contact** ; 5 issues d'interaction avant, 5 après ;
+- **la messagerie survit** : `smtpHost: smtp.ionos.fr`,
+  `smtpUser: contact@auraflowai.fr`, `imap.ready: true`, et le lien de démo
+  reste Calendly au lieu de revenir au défaut du schéma ;
+- **une sauvegarde ancienne reste restaurable** : `smtpHost`, `imapHost`,
+  `inboxPollEnabled`, `objectifAppelsSemaine` et `searchText` retirés du JSON →
+  toujours acceptée ;
+- **bandeau** : silencieux quand tout est configuré, silencieux quand le relevé
+  est coupé volontairement, silencieux sans aucun envoi — **présent** dès que
+  des envois existent et que la configuration manque, avec le texte exact ;
+- **`/reglages`** : plus aucune occurrence de l'ancienne phrase, le panneau
+  « Détection des réponses » et les deux nouveaux textes présents ;
+- `migrate diff` **vide** — aucune migration ce jalon, seuls des schémas de
+  validation ont changé ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**845 tests**) verts.
+
+Un test tiers est tombé au passage et a été corrigé plutôt que contourné : le
+substitut Prisma de `home-page.test.ts` n'avait pas `emailSend.count`, que la
+page lit désormais pour décider du bandeau. Même classe d'oubli qu'au jalon 36
+avec `apiUsage`.
+
+### Jalon 42 — ce qui n'est pas fait
+
+**Les données déjà perdues ne reviennent pas.** Ce jalon empêche la prochaine
+restauration de détruire quoi que ce soit ; il ne rend pas les statuts, motifs,
+étiquettes, domaines et issues effacés par celle qui a eu lieu. Deux voies pour
+les récupérer, dans cet ordre : une sauvegarde antérieure à la restauration —
+elles sont datées dans `/reglages` et le JSON exporté, lui, **a toujours porté
+les 44 colonnes** — ou les reports de feuille des jalons 11, 21 et 25, qui
+savent réécrire statuts et motifs depuis la source.
+
+**La restauration reste un « supprimer puis recréer ».** Une restauration
+partielle, colonne par colonne, serait plus sûre encore ; ce n'était pas
+nécessaire pour fermer ce défaut et cela changerait la sémantique du filet.
+
+**Le relevé n'a toujours pas tourné contre IONOS.** Le diagnostic explique
+pourquoi il ne pouvait pas ; que les identifiants passent reste à établir au
+premier relevé réel, et la question de la boîte — `contact@auraflowai.fr` est-il
+un compte à part entière ou un alias — reste ouverte côté IONOS.

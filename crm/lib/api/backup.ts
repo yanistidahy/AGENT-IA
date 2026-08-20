@@ -59,6 +59,22 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
 /**
  * Formes attendues à la restauration.
  *
+ * **Toute colonne absente d'ici est effacée par une restauration.** Zod retire
+ * les clés qu'il ne connaît pas, et les deux chemins réels — la route et le
+ * planificateur — valident *avant* d'appeler `restoreBackup()`. Une colonne
+ * oubliée traverse donc l'export intacte, disparaît à la validation, et la
+ * ligne est recréée avec la valeur par défaut du schéma Prisma. En silence.
+ *
+ * C'est ce qui s'est produit en production au jalon 42 : la configuration SMTP
+ * et IMAP, les statuts saisis, les motifs de perte, les étiquettes, les miroirs
+ * de recherche et **les issues d'interaction** ont été remis à zéro par une
+ * restauration, sans un mot. `tests/backup-columns.test.ts` interdit la
+ * rechute — il échoue si une colonne du schéma Prisma manque ici.
+ *
+ * Les colonnes ajoutées après coup sont **optionnelles** : une sauvegarde plus
+ * ancienne ne peut pas porter ce qui n'existait pas quand elle a été prise, et
+ * la refuser rendrait tout le filet inutile au moment où l'on en a besoin.
+ *
  * Elles sont explicites plutôt que permissives pour deux raisons : le typage de
  * `createMany` l'exige, et surtout **JSON n'a pas de type date**. Un export
  * relu tel quel passerait des chaînes ISO là où Prisma attend des `Date`, et la
@@ -79,6 +95,8 @@ const stageRow = z.object({
   // Optionnels : une sauvegarde antérieure à l'automatisation reste restaurable.
   nextActionLabel: optionalText,
   nextActionDays: z.number().int().optional(),
+  /** Critère de sortie du jalon 22. */
+  exitCriterion: optionalText,
 });
 
 const companyRow = z.object({
@@ -90,6 +108,8 @@ const companyRow = z.object({
   loc: optionalText,
   desc: optionalText,
   createdAt: day,
+  /** Miroir de recherche : sans lui, la société devient introuvable. */
+  searchText: optionalText,
 });
 
 const contactRow = z.object({
@@ -109,6 +129,17 @@ const contactRow = z.object({
   lastContact: optionalDay,
   nextReminder: optionalDay,
   companyId: z.string().nullable().optional(),
+  /* Ajoutées après le jalon 5, et perdues à chaque restauration jusqu'au 42. */
+  tag: optionalText,
+  /** Motif de perte — porte aussi l'opposition ferme au démarchage. */
+  lostReason: optionalText,
+  /** Statut saisi à la main (jalon 13) : il l'emporte sur le calcul. */
+  status: optionalText,
+  statusSetAt: optionalDay,
+  website: optionalText,
+  searchText: optionalText,
+  emailCount: z.number().int().optional(),
+  lastEmailAt: optionalDay,
 });
 
 const dealRow = z.object({
@@ -128,6 +159,7 @@ const dealRow = z.object({
   stageId: z.string(),
   companyId: z.string().nullable().optional(),
   contactId: z.string().nullable().optional(),
+  searchText: optionalText,
 });
 
 const activityRow = z.object({
@@ -141,6 +173,12 @@ const activityRow = z.object({
   contactId: z.string().nullable().optional(),
   dealId: z.string().nullable().optional(),
   companyId: z.string().nullable().optional(),
+  /**
+   * **L'issue de l'échange.** Sans elle, une restauration efface la mémoire de
+   * qui a répondu : le taux de réponse, l'entonnoir des emails et la détection
+   * de réponse retombent tous à zéro alors que les interactions sont là.
+   */
+  outcome: optionalText,
 });
 
 const taskRow = z.object({
@@ -159,6 +197,14 @@ const taskRow = z.object({
   dealId: z.string().nullable().optional(),
 });
 
+/**
+ * La ligne de réglages, **en entier**.
+ *
+ * C'est la table qui a le plus grandi depuis le jalon 5 — onze colonnes alors,
+ * quarante-quatre aujourd'hui — et c'est elle qui a coûté le plus cher : la
+ * configuration SMTP et IMAP y vit, donc une restauration coupait l'envoi et
+ * le relevé des réponses d'un seul coup, sans rien afficher.
+ */
 const settingsRow = z.object({
   id: z.string(),
   staleDays: z.number().int(),
@@ -168,9 +214,52 @@ const settingsRow = z.object({
   relanceApresEmail: z.number().int().optional(),
   relanceApresDemo: z.number().int().optional(),
   relanceApresReunion: z.number().int().optional(),
+  relanceApresLinkedin: z.number().int().optional(),
   relanceApresNote: z.number().int().optional(),
   notifs: z.boolean(),
   updatedAt: day,
+
+  /* — objectifs hebdomadaires (jalon 40) — */
+  objectifAppelsSemaine: z.number().int().optional(),
+  objectifEmailsSemaine: z.number().int().optional(),
+
+  /* — messagerie : envoi (jalons 32 à 35) — */
+  smtpHost: optionalText,
+  smtpPort: z.number().int().optional(),
+  smtpEncryption: optionalText,
+  smtpUser: optionalText,
+  smtpFrom: optionalText,
+  smtpFromName: optionalText,
+  signName: optionalText,
+  signTitle: optionalText,
+  demoLabel: optionalText,
+  demoUrl: optionalText,
+
+  /* — messagerie : copie « Envoyés », suivi, plafonds (jalons 37 et 38) — */
+  imapHost: optionalText,
+  imapPort: z.number().int().optional(),
+  imapEncryption: optionalText,
+  imapSentMailbox: optionalText,
+  imapCopyEnabled: z.boolean().optional(),
+  trackOpens: z.boolean().optional(),
+  openRetentionMonths: z.number().int().optional(),
+  sendPerHour: z.number().int().optional(),
+  sendPerDay: z.number().int().optional(),
+  sendLimitNotice: optionalText,
+  sendLimitNoticeAt: optionalDay,
+
+  /* — relevé de la boîte de réception (jalon 41) — */
+  inboxPollEnabled: z.boolean().optional(),
+  lastInboxPollAt: optionalDay,
+
+  /* — conseil et coûts (jalons 14, 36) — */
+  shiftTokenBudget: z.number().int().optional(),
+  modelDraft: optionalText,
+  modelRevision: optionalText,
+  modelChat: optionalText,
+  modelShift: optionalText,
+  monthlyBudgetCents: z.number().int().optional(),
+  lastCronAt: optionalDay,
 });
 
 const settingsListRow = z.object({
