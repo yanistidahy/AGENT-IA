@@ -357,6 +357,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 41 | **Détection automatique des réponses** — relevé IMAP d'INBOX toutes les 15 min, en-têtes seuls, rapprochement exact, séquences arrêtées | **livré, à valider** |
 | 42 | **La restauration ne perd plus rien** — 44 colonnes de réglages au lieu de 11, garde anti-perte, bandeau du relevé non configuré | **livré, à valider** |
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
+| 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -5881,3 +5882,153 @@ IONOS, pas dans le code.
 
 **Rien n'a touché IONOS**, une fois de plus : SMTP et IMAP sont exercés contre
 les substituts versionnés.
+
+
+---
+
+## Jalon 44 — la base portait un identifiant qui n'a jamais existé
+
+### La cause, nommée avec sa ligne
+
+Le diagnostic du jalon 43 a désigné le fait au premier relevé : un message
+examiné citait `<1787142802796.rpp6m071@auraflowai.fr>` — **notre format, notre
+domaine** — et le verdict disait « aucun de ces identifiants n'est des nôtres »,
+contre 22 envois connus. Le fil était correct ; c'était la table qui mentait.
+
+**`lib/api/mail.ts:333` rendait `info.messageId ?? id`.** En envoi `raw`,
+nodemailer ne relit pas les en-têtes du tampon : son `MimeNode` n'a pas de
+`Message-ID`, donc `messageId()` (`mime-node/index.js:952`) en **fabrique** un —
+forme UUID `<8-4-4-4-12@domaine>` — et le rend dans `info.messageId`. Cet
+identifiant n'apparaît dans aucun message : le MIME était déjà composé quand il
+a été inventé.
+
+Mesuré contre le puits SMTP, sur quatre envois réels :
+
+| | Message-ID |
+|---|---|
+| parti sur le fil | `<1787220230882.och68sxe@aura.test>` — notre générateur |
+| stocké en base | `<b58ba737-b4c6-c1a8-3bda-dd2f97989d06@aura.test>` — celui de nodemailer |
+
+**Coût réel : trois jalons de détection de réponses inopérante**, et un
+diagnostic qui accusait successivement le filtre d'automate, la fenêtre `SINCE`
+et la boîte IONOS.
+
+### Les deux autres hypothèses, écartées avec leur preuve
+
+**La sauvegarde n'a pas tronqué `email_sends`.** La table **n'est pas
+sauvegardée du tout** : `BACKED_UP` (jalon 42) porte dix modèles, et `EmailSend`
+n'en fait pas partie ; `restoreBackup()` ne supprime que ces dix tables
+(`lib/api/backup.ts:320-329`). Les lignes d'envoi ont donc survécu intactes à la
+restauration, `messageId` compris — il était simplement faux depuis l'écriture.
+
+**La comparaison n'est pas en cause.** `classify()` compare des chaînes entières
+`<…>` extraites par la même expression des deux côtés. Les 22 contre 17 ne sont
+pas une anomalie non plus : le relevé compte les envois sur **180 jours**
+(`SENT_WINDOW_DAYS`) là où `/emails` en montre **90** — deux fenêtres, deux
+nombres, et le rapport les affiche désormais tous les deux.
+
+### Un second défaut, trouvé en écartant la sauvegarde
+
+`EmailSend.contactId` est en `SetNull` (jalon 3 : supprimer une fiche ne doit pas
+effacer l'historique commercial). Or **`restoreBackup()` supprime tous les
+contacts** avant de les recréer : après la restauration, chaque envoi antérieur
+porte `contactId: null`.
+
+La conséquence est muette et grave : `recordReply()` n'écrit **aucune
+interaction** et n'arrête **aucune séquence** quand `contactId` est nul
+(`lib/api/inbox.ts:398-437`). Une réponse aurait été « détectée » sans que rien
+n'apparaisse sur la fiche — donc corriger le seul `Message-ID` n'aurait pas
+suffi à faire remonter la réponse de Caroline sur son écran.
+
+### Le rattrapage depuis « Envoyés » — et pourquoi il est solide
+
+L'identifiant n'est ni déduit ni reconstruit : il est **lu dans le message
+lui-même**, tel que le serveur l'a archivé. C'est la même source que celle que le
+correspondant cite dans sa réponse — donc, par construction, celle qui fera
+correspondre le rapprochement.
+
+`lib/domain/sent-match.ts` (pur) porte la règle : la clé est le couple
+**destinataire + instant** (à 120 s près), jamais le sujet — il arrive encodé
+(`=?UTF-8?Q?…`) et le décoder ajouterait une source d'erreur là où deux champs
+suffisent. **Toute ambiguïté est signalée, jamais tranchée** : deux envois
+candidats, ou deux messages revendiquant le même envoi, sortent du plan. Écrire
+un mauvais `Message-ID` attribuerait une réponse à la mauvaise personne et
+arrêterait la mauvaise séquence — c'est pire que ne rien écrire, et c'est la
+règle du jalon 41 appliquée à la réparation.
+
+Garanties habituelles : simulation d'abord, **une seule colonne** touchée,
+en-têtes seuls, dossier ouvert en **lecture seule**, idempotent, et la condition
+d'écriture porte sur la valeur relue — un envoi corrigé entre la simulation et le
+clic est ignoré, pas écrasé.
+
+Le même geste re-rattache les envois orphelins **par adresse électronique**, la
+seule clé stable au travers d'une restauration. Une adresse portée par deux
+fiches est laissée telle quelle.
+
+### Le diagnostic distingue enfin deux pannes
+
+`lib/domain/message-id.ts` (pur) reconnaît un identifiant de **notre générateur
+et de notre domaine**. Quand un tel identifiant est cité sans être en base, le
+relevé le dit en toutes lettres — « Cite un identifiant de NOTRE domaine, absent
+de la base […] c'est le journal des envois qui ne porte pas cet identifiant » —
+au lieu de le confondre avec un fil inconnu. **C'est cette confusion qui a caché
+la cause pendant trois relevés**, et c'est la moitié du correctif.
+
+### La garde
+
+`tests/message-id-source.test.ts` échoue si `info.messageId` réapparaît dans le
+code exécuté de `mail.ts`. Statique parce que le défaut l'est : les deux valeurs
+sont des `string`, le typecheck ne peut rien voir, et il n'y a pas de serveur
+SMTP dans la suite. Même famille que `cost-single-source` et
+`status-single-source`. **Éprouvée en réintroduisant le défaut exact** : le test
+tombe en citant la ligne et le geste à faire.
+
+`lib/domain/__tests__/message-id.test.ts` vérifie `looksOurs()` **contre le
+générateur du produit** plutôt que contre une chaîne recopiée — une forme
+recopiée cesserait de décrire le générateur au premier changement, et le
+diagnostic redeviendrait muet sans que rien n'échoue.
+
+### Jalon 44 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide** — aucune migration), le
+serveur standalone, un puits SMTP et un serveur IMAP substitué servant le
+dossier « Envoyés » **depuis ce qu'il y a réellement déposé** :
+
+- **la cause** : sur un envoi réel, l'identifiant stocké est désormais celui
+  parti sur le fil, et **pas** la forme UUID de nodemailer ;
+- **rattrapage** : défaut rejoué en base → simulation « 1 identifiant à
+  corriger », **0 écriture**, la valeur proposée est exactement celle lue dans
+  « Envoyés » ; application → 1 corrigé, **sujet et corps inchangés** ; second
+  passage → 0 à corriger, 1 déjà correct ;
+- **la réponse est enfin rapprochée** : avec l'identifiant fantôme en base, le
+  relevé rend `replies: 0` et marque le message « notre identifiant, absent » ;
+  après rattrapage, `replies: 1` et une interaction `email` / `replied` est
+  consignée sur la fiche ;
+- **orphelins** : 6 envois sans fiche détectés, simulation sans écriture, puis
+  re-rattachement à la bonne fiche par adresse ;
+- **navigateur (1440×900)** : la pastille rouge « Notre identifiant, absent » et
+  sa phrase complète ; « Appliquer » **inerte tant qu'aucune simulation n'a rien
+  trouvé** ; compte rendu « Dossier relevé : Envoyés · 1 message lu · 10 lignes
+  d'envoi dans la fenêtre » ; **0 débordement, 0 erreur console, 0 réponse
+  ≥ 400** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**885 tests**) verts.
+
+### Jalon 44 — ce qui n'est pas fait
+
+**Le rattrapage n'a pas tourné contre IONOS.** Le substitut sert le dossier
+« Envoyés » depuis ses propres dépôts, ce qui prouve la chaîne complète —
+lecture des en-têtes, rapprochement, écriture — mais pas que `imap.ionos.fr`
+accepte `EXAMINE` sur ce dossier ni que `SEARCH SINCE` s'y comporte pareil. Le
+bouton « Simuler » le dira sans rien écrire.
+
+**Un envoi dont la copie « Envoyés » a échoué n'est pas rattrapable** : son
+identifiant réel n'existe nulle part. Ces lignes sortent en « sans envoi
+correspondant » — le rapport les compte, il ne les invente pas.
+
+**Les envois antérieurs à la fenêtre de 180 jours ne sont pas relus.** Au-delà,
+une réponse n'arrivera plus, et la ligne d'envoi reste un fait de gestion
+correct par ailleurs.
+
+**La question de la boîte IONOS reste ouverte**, mais elle n'est plus la
+première hypothèse : le rattrapage puis un relevé diront si les réponses
+arrivent bien dans la boîte relevée.

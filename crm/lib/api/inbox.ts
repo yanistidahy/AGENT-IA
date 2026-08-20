@@ -1,6 +1,7 @@
 import "server-only";
 import { ImapFlow } from "imapflow";
 import { prisma } from "../db";
+import { anyOursMissing } from "../domain/message-id";
 import { PASSWORD_ENV, readMailConfig } from "./mail";
 import { describeImapError, imapMissingFields, readImapConfig } from "./imap";
 import { classify, type InboxHeaders } from "../domain/inbox-replies";
@@ -63,6 +64,15 @@ export interface ExaminedMessage {
   readonly matchedId: string;
   /** Pour un message sans rapport : les identifiants essayés, dans l'ordre. */
   readonly tried: readonly string[];
+  /**
+   * Un des identifiants cités est-il **des nôtres, sans être en base** ?
+   *
+   * Ce n'est pas la même panne qu'un fil inconnu, et le jalon 43 les rendait
+   * identiques — ce qui a caché la cause du jalon 44 pendant trois relevés. Ici
+   * le fil est correct et c'est `email_sends` qui ment : l'identifiant a été
+   * écrasé, jamais enregistré, ou perdu.
+   */
+  readonly oursMissing: boolean;
 }
 
 export interface PollReport {
@@ -94,6 +104,8 @@ export interface PollReport {
   readonly searchSince: Date | null;
   /** La boîte réellement ouverte — l'identifiant IMAP, pas l'adresse d'envoi. */
   readonly mailbox: string;
+  /** Le domaine d'expédition, qui sert à reconnaître un de nos identifiants. */
+  readonly sendingDomain: string;
 }
 
 const EMPTY: PollReport = {
@@ -101,6 +113,7 @@ const EMPTY: PollReport = {
   knownSent: 0,
   searchSince: null,
   mailbox: "",
+  sendingDomain: "",
   skipped: null,
   examined: 0,
   replies: 0,
@@ -133,7 +146,7 @@ export const WANTED_HEADERS = [
  * la seule façon de lire un fil entier — sans quoi seul le premier identifiant
  * serait vu, et une réponse à un troisième message passerait pour étrangère.
  */
-export function parseHeaderBlock(raw: string): InboxHeaders {
+export function readHeaders(raw: string): Map<string, string> {
   const unfolded = raw.replace(/\r?\n[ \t]+/g, " ");
   const found = new Map<string, string>();
 
@@ -147,8 +160,19 @@ export function parseHeaderBlock(raw: string): InboxHeaders {
     if (!found.has(name)) found.set(name, value);
   }
 
+  return found;
+}
+
+/** La date d'un en-tête `Date`, ou `null` si elle est absente ou illisible. */
+export function headerDate(value: string | undefined): Date | null {
+  if (value === undefined) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function parseHeaderBlock(raw: string): InboxHeaders {
+  const found = readHeaders(raw);
   const date = found.get("date");
-  const parsed = date === undefined ? null : new Date(date);
 
   return {
     messageId: found.get("message-id") ?? "",
@@ -157,7 +181,7 @@ export function parseHeaderBlock(raw: string): InboxHeaders {
     autoSubmitted: found.get("auto-submitted") ?? "",
     xAutoreply: found.get("x-autoreply") ?? "",
     from: found.get("from") ?? "",
-    date: parsed !== null && !Number.isNaN(parsed.getTime()) ? parsed : null,
+    date: headerDate(date),
   };
 }
 
@@ -219,6 +243,10 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
   // boîte, c'est l'autre qui est relevée — et le rapport doit le dire, parce
   // que rien d'autre à l'écran ne le trahirait.
   const mailbox = mail.user;
+  // Le domaine de l'**adresse d'expédition** : c'est lui que porte le
+  // `Message-ID` que nous fabriquons, donc lui qui permet de reconnaître un de
+  // nos identifiants cité par un correspondant.
+  const sendingDomain = (mail.from.split("@")[1] ?? "").trim().toLowerCase();
 
   const client = new ImapFlow({
     host: config.host,
@@ -231,7 +259,7 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
   });
 
   const examinedDetail: ExaminedMessage[] = [];
-  let report: PollReport = { ...EMPTY, knownSent: byMessageId.size, mailbox };
+  let report: PollReport = { ...EMPTY, knownSent: byMessageId.size, mailbox, sendingDomain };
 
   try {
     await client.connect();
@@ -275,7 +303,8 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
       const raw = message.headers?.toString("utf8") ?? "";
       const headers = parseHeaderBlock(raw);
 
-      const verdict = classify(headers, new Set(byMessageId.keys()));
+      const known = new Set(byMessageId.keys());
+      const verdict = classify(headers, known);
 
       // Le détail est noté **avant** tout aiguillage : un message écarté est
       // exactement celui sur lequel on veut pouvoir revenir.
@@ -288,6 +317,9 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
           verdict.kind === "auto" ? `${verdict.header}: ${verdict.value}` : "",
         matchedId: verdict.kind === "reply" ? verdict.matchedId : "",
         tried: verdict.kind === "unrelated" ? verdict.tried : [],
+        oursMissing:
+          verdict.kind === "unrelated" &&
+          anyOursMissing(verdict.tried, known, sendingDomain),
       });
 
       if (verdict.kind === "auto") {
