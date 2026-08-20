@@ -44,6 +44,17 @@ export interface InboxHealth {
    * faut aller regarder le workflow, ici il faut ressaisir un réglage effacé.
    */
   readonly unconfiguredButUsed: boolean;
+  /**
+   * Réponses rapprochées dont l'envoi n'est rattaché à aucune fiche.
+   *
+   * **Le compteur porte sur l'envoi, pas sur `activityId`.** Une réponse déjà
+   * consignée à la main porte elle aussi `activityId: null` — la compter ici
+   * ferait sonner l'alarme pour un cas parfaitement traité. Ce qui est
+   * réellement perdu, c'est une réponse dont l'envoi ne désigne personne.
+   */
+  readonly unlinkedReplies: number;
+  /** Les destinataires concernés, pour agir sans avoir à chercher. */
+  readonly unlinkedAddresses: readonly string[];
 }
 
 export function inboxVerdict(
@@ -54,7 +65,14 @@ export function inboxVerdict(
   /** Des messages sont-ils déjà partis depuis ce CRM ? */
   hasSends = false,
 ): InboxHealth {
-  const base = { lastPollAt, enabled, configured, unconfiguredButUsed: false };
+  const base = {
+    lastPollAt,
+    enabled,
+    configured,
+    unconfiguredButUsed: false,
+    unlinkedReplies: 0,
+    unlinkedAddresses: [] as readonly string[],
+  };
 
   // **Désactivé n'est pas une panne** : c'est un choix, et quelqu'un qui a
   // éteint le relevé sait qu'il consigne ses réponses à la main.
@@ -84,7 +102,7 @@ export function inboxVerdict(
 }
 
 export async function inboxHealth(configured: boolean, now = new Date()): Promise<InboxHealth> {
-  const [row, sends] = await Promise.all([
+  const [row, sends, orphanReplies] = await Promise.all([
     prisma.settings.findUnique({
       where: { id: "singleton" },
       select: { lastInboxPollAt: true, inboxPollEnabled: true },
@@ -92,13 +110,28 @@ export async function inboxHealth(configured: boolean, now = new Date()): Promis
     // `count` borné à 1 : on ne veut savoir que si le produit sert à écrire,
     // pas combien de messages sont partis.
     prisma.emailSend.count({ take: 1 }),
+    // Les réponses rapprochées dont l'envoi ne désigne aucune fiche : elles
+    // existent en base et n'apparaissent nulle part à l'écran.
+    prisma.emailReply.findMany({
+      where: { emailSend: { contactId: null } },
+      select: { emailSend: { select: { toAddress: true } } },
+      take: 50,
+    }),
   ]);
 
-  return inboxVerdict(
+  const verdict = inboxVerdict(
     row?.lastInboxPollAt ?? null,
     row?.inboxPollEnabled ?? true,
     configured,
     now,
     sends > 0,
   );
+
+  return {
+    ...verdict,
+    unlinkedReplies: orphanReplies.length,
+    unlinkedAddresses: [
+      ...new Set(orphanReplies.map((reply) => reply.emailSend?.toAddress ?? "").filter((a) => a !== "")),
+    ],
+  };
 }

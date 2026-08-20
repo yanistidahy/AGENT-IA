@@ -86,6 +86,10 @@ vi.mock("@/lib/db", () => ({
     // savoir si des messages sont déjà partis. Zéro envoi : rien à signaler,
     // et c'est ce que le test « aucun bandeau » vérifie plus bas.
     emailSend: { count: () => Promise.resolve(0) },
+    // Le bandeau « réponse rapprochée mais non consignée » du jalon 45 lit les
+    // réponses dont l'envoi ne désigne aucune fiche. Aucune ici : le test
+    // « aucun bandeau » vérifie qu'il reste silencieux.
+    emailReply: { findMany: () => Promise.resolve([]) },
     // Aucun appel au modèle consigné : le bandeau de budget ne doit donc pas
     // apparaître, et c'est ce que le test « aucun bandeau » vérifie plus bas.
     apiUsage: {

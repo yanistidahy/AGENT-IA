@@ -24,6 +24,8 @@ export interface Relink {
   orphans: number;
   relinked: number;
   unmatched: number;
+  missing: string[];
+  duplicated: string[];
 }
 
 export function BackfillReport({ data }: { readonly data: { report: Backfill; relink: Relink } }) {
@@ -55,6 +57,22 @@ export function BackfillReport({ data }: { readonly data: { report: Backfill; re
           — {relink.relinked} rattachable{relink.relinked > 1 ? "s" : ""} par adresse,{" "}
           {relink.unmatched} sans fiche correspondante. Sans rattachement, une réponse
           détectée n'écrit aucune interaction.
+        </p>
+      )}
+
+      {/* Les deux causes d'échec appellent deux gestes opposés : créer une
+          fiche, ou fusionner un doublon. Les compter ensemble n'aiderait pas. */}
+      {relink.missing.length > 0 && (
+        <p className="mt-1 text-[11.5px] text-muted">
+          Aucune fiche pour : <b className="font-semibold text-ink">{relink.missing.join(", ")}</b>{" "}
+          — créez-la, ou renseignez son adresse.
+        </p>
+      )}
+      {relink.duplicated.length > 0 && (
+        <p className="mt-1 text-[11.5px] text-[#9A6410]">
+          Plusieurs fiches portent :{" "}
+          <b className="font-semibold">{relink.duplicated.join(", ")}</b> — le rattachement est
+          refusé tant que le doublon existe, car choisir attribuerait la réponse au hasard.
         </p>
       )}
 

@@ -106,6 +106,19 @@ export interface PollReport {
   readonly mailbox: string;
   /** Le domaine d'expédition, qui sert à reconnaître un de nos identifiants. */
   readonly sendingDomain: string;
+  /**
+   * Réponses rapprochées **mais non consignées**, faute de fiche rattachée.
+   *
+   * C'est le compteur qui manquait au jalon 44 : le relevé annonçait une
+   * réponse, `/emails` en affichait zéro, et rien ne reliait les deux. Une
+   * détection qui n'aboutit pas doit se compter à part d'une détection qui
+   * aboutit — sinon le rapport dit « 1 réponse » là où personne n'a rien reçu.
+   */
+  readonly unlinked: number;
+  /** Les destinataires concernés, pour pouvoir agir plutôt que chercher. */
+  readonly unlinkedAddresses: readonly string[];
+  /** Réponses restées sans interaction et enfin consignées par ce relevé. */
+  readonly repaired: number;
 }
 
 const EMPTY: PollReport = {
@@ -114,6 +127,9 @@ const EMPTY: PollReport = {
   searchSince: null,
   mailbox: "",
   sendingDomain: "",
+  unlinked: 0,
+  unlinkedAddresses: [],
+  repaired: 0,
   skipped: null,
   examined: 0,
   replies: 0,
@@ -193,6 +209,8 @@ interface SentRow {
   readonly contactId: string | null;
   readonly sentAt: Date;
   readonly subject: string;
+  /** Le destinataire : c'est lui qu'on nomme quand la fiche manque. */
+  readonly toAddress: string;
 }
 
 export async function pollInbox(now = new Date()): Promise<PollReport> {
@@ -225,7 +243,14 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
   since.setDate(since.getDate() - SENT_WINDOW_DAYS);
   const sends = await prisma.emailSend.findMany({
     where: { sentAt: { gte: since }, messageId: { not: "" } },
-    select: { id: true, messageId: true, contactId: true, sentAt: true, subject: true },
+    select: {
+      id: true,
+      messageId: true,
+      contactId: true,
+      sentAt: true,
+      subject: true,
+      toAddress: true,
+    },
   });
   if (sends.length === 0) {
     return {
@@ -291,6 +316,7 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
 
 
     const matched: Array<{ headers: InboxHeaders; send: SentRow }> = [];
+    const unlinkedAddresses: string[] = [];
 
     for await (const message of client.fetch(
       slice,
@@ -350,14 +376,19 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
         ...report,
         replies: report.replies + (outcome.created ? 1 : 0),
         alreadyLogged: report.alreadyLogged + (outcome.alreadyLogged ? 1 : 0),
+        unlinked: report.unlinked + (outcome.unlinked ? 1 : 0),
+        repaired: report.repaired + (outcome.repaired ? 1 : 0),
         sequencesStopped: report.sequencesStopped + outcome.sequencesStopped,
       };
+      if (outcome.unlinked) {
+        unlinkedAddresses.push(entry.send.toAddress);
+      }
     }
 
     // Le battement de cœur est écrit **en dernier et seulement en cas de
     // succès**, comme `lastCronAt` : c'est son absence qui doit alerter.
     await markPolled(now);
-    return { ...report, messages: examinedDetail };
+    return { ...report, messages: examinedDetail, unlinkedAddresses };
   } catch (error) {
     const message = describeImapError(error);
     console.error("[inbox] relevé échoué :", message);
@@ -382,6 +413,13 @@ async function markPolled(now: Date): Promise<void> {
 interface ReplyOutcome {
   readonly created: boolean;
   readonly alreadyLogged: boolean;
+  /**
+   * Rapprochée, mais **impossible à consigner** : l'envoi n'est rattaché à
+   * aucune fiche. Rien n'est écrit sur personne, aucune séquence ne s'arrête.
+   */
+  readonly unlinked: boolean;
+  /** Une réponse restée sans interaction a enfin été consignée. */
+  readonly repaired: boolean;
   readonly sequencesStopped: number;
 }
 
@@ -405,9 +443,21 @@ async function recordReply(
 ): Promise<ReplyOutcome> {
   const existing = await prisma.emailReply.findUnique({
     where: { replyMessageId: headers.messageId },
-    select: { id: true },
+    select: { id: true, activityId: true },
   });
-  if (existing !== null) return { created: false, alreadyLogged: false, sequencesStopped: 0 };
+
+  // **Une ligne existante n'est pas forcément un travail terminé.** Jusqu'au
+  // jalon 45, ce test sortait dès qu'une ligne existait — donc une réponse
+  // enregistrée alors que l'envoi n'avait aucune fiche restait sans interaction
+  // **pour toujours** : rattacher la fiche ensuite ne changeait rien, puisque
+  // le relevé suivant ressortait ici. Le rattrapage était impossible sans
+  // toucher la base à la main.
+  //
+  // On ne ressort donc que si la réponse a **réellement produit** une
+  // interaction. Sinon on retente : c'est ce qui rend le relevé auto-réparant.
+  if (existing !== null && existing.activityId !== null) {
+    return { created: false, alreadyLogged: false, unlinked: false, repaired: false, sequencesStopped: 0 };
+  }
 
   // La date du message reçu fait foi ; à défaut d'en-tête `Date` lisible, celle
   // du relevé — jamais celle de l'envoi, qui daterait la réponse d'avant qu'elle
@@ -448,26 +498,49 @@ async function recordReply(
   }
 
   try {
-    await prisma.emailReply.create({
-      data: {
-        replyMessageId: headers.messageId,
-        sentMessageId: send.messageId,
-        emailSendId: send.id,
-        contactId: send.contactId,
-        receivedAt,
-        activityId,
-      },
-    });
+    if (existing === null) {
+      await prisma.emailReply.create({
+        data: {
+          replyMessageId: headers.messageId,
+          sentMessageId: send.messageId,
+          emailSendId: send.id,
+          contactId: send.contactId,
+          receivedAt,
+          activityId,
+        },
+      });
+    } else {
+      // La ligne existait sans interaction : on la complète plutôt que d'en
+      // écrire une seconde — le `Message-ID` reste la clé d'idempotence.
+      await prisma.emailReply.update({
+        where: { id: existing.id },
+        data: { contactId: send.contactId, activityId },
+      });
+    }
   } catch (error) {
     // Deux relevés simultanés : le second perd la course sur la contrainte
     // d'unicité. Ce n'est pas une panne — c'est la contrainte qui fait son
     // travail.
     console.error("[inbox] réponse déjà enregistrée par un autre relevé :", error);
-    return { created: false, alreadyLogged: false, sequencesStopped: 0 };
+    return { created: false, alreadyLogged: false, unlinked: false, repaired: false, sequencesStopped: 0 };
   }
 
-  const stopped = send.contactId === null ? 0 : await stopSequences(send.contactId);
-  return { created: manual === null, alreadyLogged: manual !== null, sequencesStopped: stopped };
+  // **Sans fiche, il n'y a rien à consigner et il faut le dire.** La ligne de
+  // détection est écrite quand même — elle garde l'idempotence et permet la
+  // réparation une fois la fiche rattachée — mais l'appelant doit compter cette
+  // réponse comme *non consignée*, jamais comme un succès.
+  if (send.contactId === null) {
+    return { created: false, alreadyLogged: false, unlinked: true, repaired: false, sequencesStopped: 0 };
+  }
+
+  const stopped = await stopSequences(send.contactId);
+  return {
+    created: manual === null,
+    alreadyLogged: manual !== null,
+    unlinked: false,
+    repaired: existing !== null && manual === null,
+    sequencesStopped: stopped,
+  };
 }
 
 /**

@@ -104,3 +104,47 @@ export function InboxUnconfiguredBanner() {
     </p>
   );
 }
+
+/**
+ * Des réponses ont été rapprochées, et **aucune n'a pu être consignée**.
+ *
+ * Le pire état du produit : le relevé fonctionne, le prospect a répondu, le
+ * CRM le sait — et l'écran d'une fiche n'en montre rien. C'est ce que le jalon
+ * 44 laissait passer en silence, avec un compteur qui annonçait pourtant
+ * « 1 réponse ».
+ *
+ * **Rouge, pas ambre** : contrairement à une configuration incomplète, il ne
+ * manque pas un réglage — une information commerciale est arrivée et se perd.
+ * Le geste est nommé, et il est à un clic.
+ */
+export function UnlinkedRepliesBanner({
+  count,
+  addresses,
+}: {
+  readonly count: number;
+  readonly addresses: readonly string[];
+}) {
+  return (
+    <p className="mb-4 rounded-control border border-[#EFC4C4] bg-[#FBE3E3] px-3.5 py-3 text-[12.5px] leading-relaxed text-[#A32C2C]">
+      <strong>
+        {count} réponse{count > 1 ? "s" : ""} rapprochée{count > 1 ? "s" : ""} mais non
+        consignée{count > 1 ? "s" : ""}.
+      </strong>{" "}
+      L&apos;envoi auquel {count > 1 ? "elles répondent n'est" : "elle répond n'est"} rattaché à
+      aucune fiche — rien n&apos;a donc été écrit sur personne, et aucune séquence ne s&apos;est
+      arrêtée.
+      {addresses.length > 0 && (
+        <>
+          {" "}
+          Destinataire{addresses.length > 1 ? "s" : ""} :{" "}
+          <b className="font-semibold">{addresses.slice(0, 4).join(", ")}</b>
+          {addresses.length > 4 ? ` et ${addresses.length - 4} autre(s)` : ""}.
+        </>
+      )}{" "}
+      <Link className="font-semibold underline" href="/reglages">
+        Réglages → Messagerie → « Rattraper les identifiants »
+      </Link>{" "}
+      rattache ces envois par adresse ; le relevé suivant consigne alors les réponses.
+    </p>
+  );
+}
