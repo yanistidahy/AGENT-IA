@@ -21,6 +21,7 @@ export interface ExaminedMessage {
   autoHeader: string;
   matchedId: string;
   tried: string[];
+  oursMissing: boolean;
 }
 
 export interface PollDetail {
@@ -28,6 +29,7 @@ export interface PollDetail {
   knownSent: number;
   searchSince: string | null;
   mailbox: string;
+  sendingDomain: string;
 }
 
 const VERDICTS: Record<ExaminedMessage["verdict"], { label: string; tone: string }> = {
@@ -37,6 +39,9 @@ const VERDICTS: Record<ExaminedMessage["verdict"], { label: string; tone: string
   unrelated: { label: "Sans rapport", tone: "bg-surface-2 text-muted" },
 };
 
+/** Le ton d'un « sans rapport » qui accuse en fait la base, pas la boîte. */
+const OURS_MISSING_TONE = "bg-[#FBE3E3] text-[#A32C2C]";
+
 /** Pourquoi ce message n'est pas devenu une réponse, en une phrase. */
 function why(message: ExaminedMessage): string {
   if (message.verdict === "reply") return `Rapproché de ${message.matchedId}`;
@@ -44,6 +49,17 @@ function why(message: ExaminedMessage): string {
   if (message.verdict === "bounce") return "Écarté : avis de non-remise";
   if (message.tried.length === 0) {
     return "Ne cite aucun fil : ni In-Reply-To ni References. Ce n'est pas une réponse à un message identifié.";
+  }
+  // **Deux phrases, parce que ce sont deux pannes différentes.** « Fil inconnu »
+  // décrit une boîte de réception ordinaire ; « identifiant de notre domaine
+  // absent de la base » décrit un journal d'envois faux, et se répare par le
+  // rattrapage depuis « Envoyés ». Les confondre a coûté trois relevés.
+  if (message.oursMissing) {
+    return (
+      `Cite un identifiant de NOTRE domaine, absent de la base : ${message.tried.join(" ")}. ` +
+      `Le fil est correct — c'est le journal des envois qui ne porte pas cet identifiant. ` +
+      `Lancez « Rattraper depuis « Envoyés » » ci-dessous.`
+    );
   }
   return `Aucun de ces identifiants n'est des nôtres : ${message.tried.join(" ")}`;
 }
@@ -92,9 +108,15 @@ export function InboxDetail({ detail }: { readonly detail: PollDetail }) {
                 <tr key={`${message.messageId}-${index}`}>
                   <td className="border-b border-line-2 px-2 py-1 align-top">
                     <span
-                      className={`rounded-full px-1.5 py-[1px] text-[10.5px] font-medium ${VERDICTS[message.verdict].tone}`}
+                      className={`rounded-full px-1.5 py-[1px] text-[10.5px] font-medium ${
+                        message.oursMissing
+                          ? OURS_MISSING_TONE
+                          : VERDICTS[message.verdict].tone
+                      }`}
                     >
-                      {VERDICTS[message.verdict].label}
+                      {message.oursMissing
+                        ? "Notre identifiant, absent"
+                        : VERDICTS[message.verdict].label}
                     </span>
                   </td>
                   <td className="max-w-[22ch] truncate border-b border-line-2 px-2 py-1 align-top font-mono text-[10.5px] text-muted">

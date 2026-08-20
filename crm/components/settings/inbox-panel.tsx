@@ -4,6 +4,7 @@ import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import { formatDateLong } from "@/lib/format";
 import { InboxDetail, type ExaminedMessage, type PollDetail } from "./inbox-detail";
+import { BackfillSection, type Backfill, type Relink } from "./backfill-report";
 
 /**
  * Le relevé de la boîte de réception.
@@ -35,7 +36,12 @@ interface Report {
   ignoredAuto: number;
   ignoredBounce: number;
   unrelated: number;
+  sendingDomain: string;
   error: string | null;
+}
+
+function isBackfill(value: unknown): value is { report: Backfill; relink: Relink } {
+  return typeof value === "object" && value !== null && "report" in value && "relink" in value;
 }
 
 function isHealth(value: unknown): value is { health: InboxStatus } {
@@ -55,6 +61,7 @@ export function InboxPanel({ initial }: { readonly initial: InboxStatus }) {
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<PollDetail | null>(null);
+  const [backfill, setBackfill] = useState<{ report: Backfill; relink: Relink } | null>(null);
 
   /**
    * L'interrupteur bouge tout de suite, et revient si le serveur refuse.
@@ -105,8 +112,35 @@ export function InboxPanel({ initial }: { readonly initial: InboxStatus }) {
       knownSent: report.knownSent ?? 0,
       searchSince: report.searchSince ?? null,
       mailbox: report.mailbox ?? "",
+      sendingDomain: report.sendingDomain ?? "",
     });
     if (report.error !== null) setError(report.error);
+  };
+
+  /**
+   * Le rattrapage : simulation d'abord, application ensuite.
+   *
+   * Deux boutons distincts plutôt qu'une case à cocher : « Simuler » et
+   * « Appliquer » ne se confondent pas au clic, et c'est une écriture sur le
+   * journal des envois.
+   */
+  const runBackfill = async (apply: boolean) => {
+    setBusy(true);
+    setError(null);
+    setDone(null);
+    const result = await requestJson(
+      "/api/mail/backfill",
+      { method: "POST", body: JSON.stringify({ apply }) },
+      isBackfill,
+    );
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    setBackfill(result.data);
+    if (result.data.report.error !== null) setError(result.data.report.error);
+    else setDone(apply ? "Rattrapage appliqué." : "Simulation terminée — rien n'a été écrit.");
   };
 
   return (
@@ -157,6 +191,12 @@ export function InboxPanel({ initial }: { readonly initial: InboxStatus }) {
       {done !== null && <p className="mt-2 text-[12px] text-win-d">{done}</p>}
       {error !== null && <p className="mt-2 text-[12px] text-[#B2311F]">{error}</p>}
       {detail !== null && <InboxDetail detail={detail} />}
+
+      <BackfillSection
+        busy={busy}
+        data={backfill}
+        onRun={(apply) => void runBackfill(apply)}
+      />
     </section>
   );
 }

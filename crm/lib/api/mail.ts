@@ -330,7 +330,18 @@ export async function sendMail(input: SendInput): Promise<SendResult> {
 
     return {
       ok: true,
-      messageId: info.messageId ?? id,
+      // **`id`, jamais `info.messageId`.** Défaut trouvé au jalon 44, et il a
+      // coûté la détection des réponses pendant trois jalons.
+      //
+      // En envoi `raw`, nodemailer ne relit pas les en-têtes du tampon : son
+      // `MimeNode` n'a pas de `Message-ID`, donc `messageId()`
+      // (`mime-node/index.js:952`) en **fabrique un** — une forme UUID
+      // `<8-4-4-4-12@domaine>` — et le rend dans `info.messageId`. Cet
+      // identifiant n'apparaît dans aucun message : il n'a pas été écrit dans
+      // le MIME, qui était déjà composé. On stockait donc un identifiant
+      // fantôme pendant que le vrai partait sur le fil, et le rapprochement
+      // des réponses comparait des identifiants qui n'avaient jamais existé.
+      messageId: id,
       accepted: info.accepted.map((entry) => (typeof entry === "string" ? entry : entry.address)),
       raw,
       rawForArchive,

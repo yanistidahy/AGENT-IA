@@ -1,5 +1,5 @@
 import { createServer } from "node:tls";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -59,6 +59,26 @@ function readInbox(): readonly InboxMessage[] {
   try {
     const parsed: unknown = JSON.parse(readFileSync(INBOX_FILE, "utf8"));
     return Array.isArray(parsed) ? (parsed as InboxMessage[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Le contenu du dossier « Envoyés » : **ce qui y a réellement été déposé**.
+ *
+ * Depuis le jalon 44, le produit relit ce dossier pour rattraper les
+ * `Message-ID` faux. Le substitut doit donc le servir — et il le sert depuis
+ * les fichiers écrits par ses propres `APPEND`, pas depuis une fixture : c'est
+ * la seule façon d'éprouver que ce qu'on redescend est bien ce qu'on avait
+ * déposé.
+ */
+function readSent(): readonly InboxMessage[] {
+  try {
+    return readdirSync(OUT)
+      .filter((name) => name.endsWith(".eml"))
+      .sort()
+      .map((name) => ({ headers: readFileSync(join(OUT, name), "utf8").split(/\r?\n\r?\n/)[0] ?? "" }));
   } catch {
     return [];
   }
@@ -207,11 +227,12 @@ createServer(
           send("+ Envoyez le message");
         } else if (verb === "SELECT" || verb === "EXAMINE") {
           const box = decodeUtf7((rest[0] ?? "").replace(/^"|"$/g, ""));
-          if (box.toUpperCase() !== "INBOX") {
+          const isSent = box === "Envoyés";
+          if (box.toUpperCase() !== "INBOX" && !isSent) {
             send(`${tag} NO [NONEXISTENT] Mailbox doesn't exist: ${box}`);
             continue;
           }
-          inbox = readInbox();
+          inbox = isSent ? readSent() : readInbox();
           send("* FLAGS (\\Seen \\Answered \\Flagged \\Deleted \\Draft)");
           send(`* ${inbox.length} EXISTS`);
           send("* 0 RECENT");
@@ -219,7 +240,7 @@ createServer(
           send(`* OK [UIDNEXT ${inbox.length + 1}] Prochain UID`);
           // `[READ-ONLY]` sur EXAMINE : le client doit voir que la boîte n'est
           // pas modifiable, sinon la lecture seule ne serait pas éprouvée.
-          console.log(`${verb} INBOX — ${inbox.length} message(s), ${verb === "EXAMINE" ? "lecture seule" : "LECTURE-ÉCRITURE"}`);
+          console.log(`${verb} ${box} — ${inbox.length} message(s), ${verb === "EXAMINE" ? "lecture seule" : "LECTURE-ÉCRITURE"}`);
           send(`${tag} OK [${verb === "EXAMINE" ? "READ-ONLY" : "READ-WRITE"}] ${verb} terminé`);
         } else if (verb === "UID" && (rest[0] ?? "").toUpperCase() === "SEARCH") {
           // Tous les UID : le `SINCE` du vrai serveur filtre par jour, et le
