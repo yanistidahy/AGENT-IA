@@ -172,6 +172,15 @@ export interface RelinkReport {
   readonly orphans: number;
   readonly relinked: number;
   readonly unmatched: number;
+  /**
+   * Les adresses qu'on n'a pas su rattacher, **et pourquoi**.
+   *
+   * Un compteur seul ne se traite pas : « 3 non rattachés » n'indique ni qui,
+   * ni s'il faut créer une fiche ou fusionner un doublon. Les deux causes
+   * demandent des gestes opposés, donc elles sont nommées séparément.
+   */
+  readonly missing: readonly string[];
+  readonly duplicated: readonly string[];
 }
 
 /**
@@ -199,7 +208,9 @@ export async function relinkOrphanSends(apply: boolean): Promise<RelinkReport> {
     where: { contactId: null },
     select: { id: true, toAddress: true },
   });
-  if (orphans.length === 0) return { orphans: 0, relinked: 0, unmatched: 0 };
+  if (orphans.length === 0) {
+    return { orphans: 0, relinked: 0, unmatched: 0, missing: [], duplicated: [] };
+  }
 
   const addresses = [...new Set(orphans.map((send) => send.toAddress.trim().toLowerCase()))];
   const contacts = await prisma.contact.findMany({
@@ -208,6 +219,10 @@ export async function relinkOrphanSends(apply: boolean): Promise<RelinkReport> {
   });
 
   // Une adresse portée par deux fiches ne désigne personne : elle est écartée.
+  // **Le rapprochement se fait en mémoire**, sur des adresses normalisées, et
+  // pas seulement par la clause SQL : c'est la règle du jalon 6 pour les noms de
+  // société, et elle vaut ici pour la même raison — une comparaison qu'on ne
+  // peut pas relire est une comparaison qu'on ne peut pas corriger.
   const byEmail = new Map<string, string | null>();
   for (const contact of contacts) {
     const key = (contact.email ?? "").trim().toLowerCase();
@@ -216,11 +231,17 @@ export async function relinkOrphanSends(apply: boolean): Promise<RelinkReport> {
   }
 
   let relinked = 0;
-  let unmatched = 0;
+  const missing = new Set<string>();
+  const duplicated = new Set<string>();
+
   for (const send of orphans) {
-    const contactId = byEmail.get(send.toAddress.trim().toLowerCase()) ?? null;
+    const key = send.toAddress.trim().toLowerCase();
+    const contactId = byEmail.get(key) ?? null;
     if (contactId === null) {
-      unmatched += 1;
+      // `has` sans valeur = l'adresse existe sur **plusieurs** fiches. Le geste
+      // à faire est alors une fusion, pas une création.
+      if (byEmail.has(key)) duplicated.add(send.toAddress);
+      else missing.add(send.toAddress);
       continue;
     }
     if (apply) {
@@ -229,5 +250,11 @@ export async function relinkOrphanSends(apply: boolean): Promise<RelinkReport> {
     relinked += 1;
   }
 
-  return { orphans: orphans.length, relinked, unmatched };
+  return {
+    orphans: orphans.length,
+    relinked,
+    unmatched: missing.size + duplicated.size,
+    missing: [...missing],
+    duplicated: [...duplicated],
+  };
 }

@@ -37,6 +37,9 @@ interface Report {
   ignoredBounce: number;
   unrelated: number;
   sendingDomain: string;
+  unlinked: number;
+  unlinkedAddresses: string[];
+  repaired: number;
   error: string | null;
 }
 
@@ -107,6 +110,18 @@ export function InboxPanel({ initial }: { readonly initial: InboxStatus }) {
     const report = result.data.report;
     setStatus(result.data.health);
     setDone(describe(report));
+    // **Non consignée n'est pas une nuance : c'est un échec.** Il passe donc par
+    // le canal d'erreur du panneau, pas par la ligne de résumé où il se lirait
+    // comme un détail de plus.
+    if (report.unlinked > 0) {
+      const who = (report.unlinkedAddresses ?? []).slice(0, 4).join(", ");
+      setError(
+        `${report.unlinked} réponse(s) rapprochée(s) mais NON consignée(s) : l'envoi n'est ` +
+          `rattaché à aucun contact${who === "" ? "" : ` (${who})`}. Rien n'a été écrit sur ` +
+          `aucune fiche et aucune séquence ne s'est arrêtée. Lancez « Rattraper les ` +
+          `identifiants » ci-dessous, puis relevez de nouveau.`,
+      );
+    }
     setDetail({
       messages: report.messages ?? [],
       knownSent: report.knownSent ?? 0,
@@ -223,6 +238,9 @@ function describe(report: Report): string {
   if (report.replies > 0) parts.push(`${report.replies} réponse(s) consignée(s)`);
   if (report.alreadyLogged > 0) {
     parts.push(`${report.alreadyLogged} déjà consignée(s) à la main`);
+  }
+  if (report.repaired > 0) {
+    parts.push(`${report.repaired} réponse(s) en attente enfin consignée(s)`);
   }
   if (report.sequencesStopped > 0) parts.push(`${report.sequencesStopped} séquence(s) arrêtée(s)`);
   if (report.ignoredAuto > 0) parts.push(`${report.ignoredAuto} réponse(s) automatique(s) ignorée(s)`);

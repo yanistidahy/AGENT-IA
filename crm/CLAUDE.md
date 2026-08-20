@@ -358,6 +358,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 42 | **La restauration ne perd plus rien** — 44 colonnes de réglages au lieu de 11, garde anti-perte, bandeau du relevé non configuré | **livré, à valider** |
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
+| 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -6032,3 +6033,145 @@ correct par ailleurs.
 **La question de la boîte IONOS reste ouverte**, mais elle n'est plus la
 première hypothèse : le rattrapage puis un relevé diront si les réponses
 arrivent bien dans la boîte relevée.
+
+
+---
+
+## Jalon 45 — le relevé rapprochait, et rien n'arrivait sur la fiche
+
+### Ce que la reproduction a établi, et ce qu'elle a démenti
+
+Reproduit contre un vrai PostgreSQL, à l'image de la production : un contact,
+un envoi **orphelin** (`contactId: null`) portant le vrai `Message-ID`, et la
+réponse de Caroline dans la boîte.
+
+| Preuve | Mesure |
+|---|---|
+| envois sans fiche rattachée | 1 |
+| `<1787142802796.rpp6m071@auraflowai.fr>` | `contactId: null`, destinataire `Caroline@Miye.Care` |
+| l'adresse résout-elle vers une fiche ? | **oui** |
+| relevé | `replies: 1`, ligne `email_replies` écrite avec `activityId: null` |
+| interactions sur la fiche | **0** |
+
+Votre hypothèse est donc exacte, et elle explique le symptôme entier : le relevé
+annonçait « 1 réponse », `/emails` en comptait zéro, et les deux avaient raison
+— l'un comptait une détection, l'autre une interaction.
+
+**Une hypothèse intermédiaire a été démentie en la testant.** Le rattrapage
+rendait d'abord `relinked: 0, unmatched: 1`, ce qui ressemblait à un défaut de
+casse dans `email: { in: […], mode: "insensitive" }`. Vérification directe :
+cette clause **fonctionne** — elle retrouve `Caroline@Miye.Care` depuis
+`caroline@miye.care`. La vraie raison était **deux fiches portant la même
+adresse**, écartées par la règle « une adresse portée par deux fiches ne désigne
+personne ». Le rattachement par adresse couvrait donc bien la ligne ; c'est le
+rapport qui ne le disait pas.
+
+### Les deux défauts, avec leur ligne
+
+**1. Le succès était annoncé sans avoir eu lieu** (`lib/api/inbox.ts`). Le
+chemin d'écriture était gardé par `if (manual === null && send.contactId !== null)`,
+mais le retour comptait `created: manual === null` **sans regarder la fiche** :
+sans contact, aucune interaction, aucune séquence arrêtée — et pourtant une
+réponse comptée. Le rapport se contredisait lui-même.
+
+**2. La réparation était impossible** (`lib/api/inbox.ts`, en tête de
+`recordReply`). Le test sortait dès qu'une ligne `email_replies` existait :
+
+```ts
+if (existing !== null) return { created: false, … };   // avant
+if (existing !== null && existing.activityId !== null) { … }   // après
+```
+
+Conséquence : une réponse enregistrée sans interaction le restait
+**définitivement**. Rattacher la fiche ensuite ne changeait rien, puisque le
+relevé suivant ressortait au même endroit. Le seul rattrapage possible passait
+par une écriture SQL à la main — mesuré : après rattachement, un nouveau relevé
+rendait `replies: 0` et la fiche restait vide.
+
+### Ce qui est fait
+
+**Le relevé ne ment plus.** Une réponse sans fiche sort en `unlinked`, jamais en
+`created`, et le rapport porte le compteur **et les adresses concernées** — un
+« 3 réponses perdues » sans les noms ne se traite pas.
+
+**Le relevé se répare tout seul.** Une ligne existante sans interaction est
+**complétée** — `emailReply.update()`, jamais une seconde ligne : le
+`Message-ID` reste la clé d'idempotence. Dès que la fiche est rattachée, le
+relevé suivant consigne l'interaction et arrête les séquences. Aucun bouton
+supplémentaire, et aucun état à rattraper à la main.
+
+**L'échec est bruyant, à deux endroits.** Le panneau le passe par son canal
+d'erreur — pas par la ligne de résumé où il se lirait comme un détail — et
+`/accueil` porte un bandeau **rouge** : contrairement au bandeau ambre « relevé
+non configuré », il ne manque pas un réglage, une information commerciale est
+arrivée et se perd.
+
+> **1 réponse rapprochée mais non consignée.** L'envoi auquel elle répond n'est
+> rattaché à aucune fiche — rien n'a donc été écrit sur personne, et aucune
+> séquence ne s'est arrêtée. Destinataire : Caroline@Miye.Care. Réglages →
+> Messagerie → « Rattraper les identifiants » rattache ces envois par adresse ;
+> le relevé suivant consigne alors les réponses.
+
+Le compteur du bandeau porte sur **l'envoi sans fiche**, pas sur `activityId:
+null` : une réponse déjà consignée à la main porte elle aussi `activityId: null`,
+et la compter ferait sonner l'alarme pour un cas parfaitement traité.
+
+**Le rattrapage nomme ce qu'il n'a pas su faire**, et distingue les deux causes
+parce qu'elles appellent des gestes opposés : `missing` (aucune fiche — en créer
+une) et `duplicated` (plusieurs fiches — fusionner). Un doublon reste refusé :
+choisir attribuerait la réponse au hasard.
+
+### La garde
+
+`tests/reply-repair-source.test.ts` fixe les quatre invariants : la sortie
+anticipée exige `activityId !== null`, l'absence de fiche sort en `unlinked`
+**avant** tout comptage de création, le rapport porte compteur et adresses, et
+une ligne existante est complétée plutôt que dupliquée. Statique parce que les
+défauts l'étaient : ni exception, ni type invalide, ni test rouge — seulement du
+silence. **Éprouvée en réintroduisant la sortie anticipée** : le test tombe en
+nommant la condition.
+
+### Jalon 45 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide**), le serveur standalone et
+le substitut IMAP, sur l'état de production reproduit :
+
+- **le relevé ne ment plus** : `replies: 0`, `unlinked: 1`, destinataire nommé,
+  **0 interaction** écrite ;
+- **le bandeau est actionnable** : `unlinkedReplies: 1` et l'adresse rendue ;
+- **le rattrapage couvre la ligne** : simulation 1 rattachable sans écriture,
+  application 1 rattaché ;
+- **le trou est fermé** : le relevé suivant rend `repaired: 1` et **1
+  interaction** apparaît sur la fiche ; le bandeau s'éteint ;
+- **idempotence** : un troisième relevé n'écrit rien de plus, une seule ligne
+  `email_replies` ;
+- **le cas normal n'a pas bougé** : envoi rattaché → `replies: 1`,
+  `unlinked: 0`, `repaired: 0` du premier coup ;
+- **doublon** : deux fiches pour une adresse → `relinked: 0`, l'adresse est
+  listée sous `duplicated` et **pas** sous « aucune fiche » ; le doublon
+  supprimé, le rattachement passe immédiatement ;
+- **navigateur (1440×900)** : bandeau rouge sur `/` avec le destinataire et le
+  chemin du correctif, panneau annonçant « 1 envoi sans fiche rattachée » ;
+  **0 débordement, 0 erreur console, 0 réponse ≥ 400** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**889 tests**) verts.
+
+Un test tiers est tombé au passage et a été corrigé plutôt que contourné : le
+substitut Prisma de `home-page.test.ts` n'avait pas `emailReply.findMany`, que la
+page lit désormais. **Troisième occurrence** de cet oubli — jalon 36
+(`apiUsage`), jalon 42 (`emailSend`), jalon 45. Le motif est constant : ajouter
+une lecture à `/` sans compléter le substitut.
+
+### Jalon 45 — ce qui n'est pas fait
+
+**Le rattachement n'est pas automatique.** Le relevé ne réécrit jamais
+`contactId` de lui-même : c'est une réparation de données, elle passe par un
+bouton et une simulation. Un relevé qui rattacherait des fiches tout seul serait
+une consultation qui écrit — ce que le jalon 8 s'interdit.
+
+**Les doublons ne sont pas fusionnés**, seulement nommés. Fusionner deux fiches
+touche l'historique, les affaires et les séquences : c'est un jalon à soi seul,
+pas un effet de bord d'un rattrapage.
+
+**Les chiffres de production restent à mesurer chez vous.** Ceux ci-dessus
+viennent de l'état reproduit ; le nombre réel d'envois orphelins s'affichera à la
+simulation, et le bandeau dira combien de réponses attendent.
