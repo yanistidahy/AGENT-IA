@@ -1,4 +1,6 @@
+import { cookies } from "next/headers";
 import { Rail, type RailTotals } from "@/components/nav/rail";
+import { RAIL_COOKIE } from "@/components/nav/rail-state";
 import { listAgentProfiles } from "@/lib/api/agents";
 import { SearchPalette } from "@/components/search/palette";
 import { countOverdueTasks } from "@/lib/api/tasks";
@@ -43,14 +45,23 @@ export default async function CrmLayout({
   // Les agents du rail, lus au rendu serveur comme les compteurs. Filtrés sur
   // l'activation ici plutôt que dans le composant : le rail affiche ce qu'on lui
   // donne, la décision « qui fait partie du conseil » appartient à la donnée.
-  const [totals, agents] = await Promise.all([
+  const [totals, agents, cookieJar] = await Promise.all([
     readRailTotals(),
     listAgentProfiles().catch(() => []),
+    cookies(),
   ]);
+
+  // L'état replié est lu ici, côté serveur : le premier octet envoyé est déjà
+  // dans le bon état, sans clignotement à l'hydratation (voir rail.tsx).
+  const railCollapsed = cookieJar.get(RAIL_COOKIE)?.value === "collapsed";
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Rail totals={totals} agents={agents.filter((agent) => agent.enabled && !agent.locked)} />
+      <Rail
+        totals={totals}
+        agents={agents.filter((agent) => agent.enabled && !agent.locked)}
+        initialCollapsed={railCollapsed}
+      />
       <main className="flex-1 overflow-y-auto bg-paper">{children}</main>
       <SearchPalette />
     </div>

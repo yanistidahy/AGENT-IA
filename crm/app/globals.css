@@ -163,3 +163,18 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/**
+ * Sous 16 px, iOS Safari zoome sur tout champ qui prend le focus — et l'écran
+ * reste zoomé après la saisie. La règle vit ici plutôt que champ par champ :
+ * un formulaire ajouté demain ne peut pas l'oublier. `max()` respecte les
+ * champs qui affichent déjà plus grand. Le seuil est le `lg` du produit
+ * (64rem) : c'est la même frontière que tout le reste du responsive.
+ */
+@media (max-width: 63.9375rem) {
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+}

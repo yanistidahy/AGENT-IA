@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { ActionRow } from "@/lib/api/dashboard";
+import { Icon } from "@/components/ui/icon";
 import { formatDate } from "@/lib/format";
 
 /**
@@ -63,7 +64,7 @@ export function QueueRow({
     <li
       ref={node}
       onMouseDown={onFocus}
-      className={`relative flex h-12 items-center gap-2.5 border-b border-line-2 px-2.5 last:border-b-0 ${
+      className={`relative flex items-center gap-2.5 border-b border-line-2 px-2.5 last:border-b-0 max-lg:min-h-14 max-lg:gap-2 max-lg:py-1.5 lg:h-12 ${
         focused ? "bg-brand-l" : selected ? "bg-surface-2" : "bg-surface hover:bg-surface-2"
       }`}
     >
@@ -72,32 +73,54 @@ export function QueueRow({
         checked={selected}
         onChange={onSelect}
         aria-label={`Sélectionner ${row.title}`}
-        className="size-3.5 shrink-0 accent-brand-d"
+        className="shrink-0 accent-brand-d max-lg:size-5 lg:size-3.5"
       />
 
-      <span className={`${CELL} min-w-0 flex-[2] font-semibold`}>{row.title}</span>
-
-      <span className={`${CELL} hidden min-w-0 flex-[2] text-muted sm:block`}>
-        {row.company ?? ""}
+      {/* Sur téléphone, nom et société s'empilent dans la même cellule : la
+          ligne garde une seule hauteur de décision, pas une par colonne. */}
+      <span className="flex min-w-0 flex-[2] flex-col lg:contents">
+        <span className={`${CELL} min-w-0 font-semibold lg:flex-[2]`}>{row.title}</span>
+        <span className={`${CELL} min-w-0 text-muted max-lg:text-[11px] lg:flex-[2]`}>
+          {row.company ?? ""}
+        </span>
+        {/* L'échéance suit le nom sur téléphone : la colonne dédiée n'a pas
+            la place, et une relance en retard doit rester rouge. */}
+        {row.due !== null && (
+          <span className="font-mono text-[10.5px] text-[#B2311F] tabular-nums lg:hidden">
+            échéance {formatDate(row.due)}
+          </span>
+        )}
       </span>
 
       {row.phone === "" ? (
-        <span className="hidden w-28 shrink-0 md:block" />
+        <span className="hidden w-28 shrink-0 lg:block" />
       ) : (
-        <a
-          href={`tel:${row.phone.replace(/\s/g, "")}`}
-          onClick={(event) => event.stopPropagation()}
-          className="hidden w-28 shrink-0 truncate font-mono text-[11.5px] text-brand-d hover:underline md:block"
-        >
-          {row.phone}
-        </a>
+        <>
+          <a
+            href={`tel:${row.phone.replace(/\s/g, "")}`}
+            onClick={(event) => event.stopPropagation()}
+            className="hidden w-28 shrink-0 truncate font-mono text-[11.5px] text-brand-d hover:underline lg:block"
+          >
+            {row.phone}
+          </a>
+          {/* Le numéro en icône sur téléphone : appeler est l'action nº 1 de
+              la file en mobilité, elle doit se toucher au pouce (44 px). */}
+          <a
+            href={`tel:${row.phone.replace(/\s/g, "")}`}
+            onClick={(event) => event.stopPropagation()}
+            aria-label={`Appeler ${row.title} au ${row.phone}`}
+            className="flex size-11 shrink-0 items-center justify-center rounded-control text-brand-d transition-colors hover:bg-paper lg:hidden"
+          >
+            <Icon name="phone" size={19} />
+          </a>
+        </>
       )}
 
       <span className="hidden w-20 shrink-0 text-right font-mono text-[11px] text-muted tabular-nums lg:block">
         {row.idleDays === null ? "jamais" : `${row.idleDays} j`}
       </span>
 
-      <span className="w-20 shrink-0 text-right font-mono text-[11px] tabular-nums">
+      <span className="w-20 shrink-0 text-right font-mono text-[11px] tabular-nums max-lg:hidden">
         {row.due === null ? (
           <span className="text-muted">—</span>
         ) : (
@@ -108,7 +131,7 @@ export function QueueRow({
       {row.contactId !== null && (
         <button
           type="button"
-          className="shrink-0 rounded-control border border-line bg-surface px-2 py-1 text-[11.5px] font-semibold transition-colors hover:bg-paper"
+          className="shrink-0 rounded-control border border-line bg-surface px-2 py-1 text-[11.5px] font-semibold transition-colors hover:bg-paper max-lg:min-h-11 max-lg:px-3"
           onClick={() => onIntent({ kind: "log" })}
         >
           Consigner
@@ -120,7 +143,7 @@ export function QueueRow({
           type="button"
           aria-label={`Autres actions pour ${row.title}`}
           aria-expanded={menu}
-          className="rounded-control px-1.5 py-1 text-[13px] text-muted transition-colors hover:bg-paper"
+          className="rounded-control text-muted transition-colors hover:bg-paper max-lg:flex max-lg:size-11 max-lg:items-center max-lg:justify-center max-lg:text-[17px] lg:px-1.5 lg:py-1 lg:text-[13px]"
           onClick={(event) => {
             event.stopPropagation();
             setMenu((open) => !open);
@@ -164,7 +187,7 @@ export function QueueRow({
             )}
             <Link
               href={hrefFor(row)}
-              className="block px-3 py-1.5 text-left text-[12px] transition-colors hover:bg-surface-2"
+              className="block px-3 py-1.5 text-left text-[12px] transition-colors hover:bg-surface-2 max-lg:min-h-11 max-lg:py-3 max-lg:text-[13px]"
             >
               Ouvrir la fiche
             </Link>
@@ -202,7 +225,7 @@ function MenuItem({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`block w-full px-3 py-1.5 text-left text-[12px] transition-colors hover:bg-surface-2 disabled:opacity-40 ${
+      className={`block w-full px-3 py-1.5 text-left text-[12px] transition-colors hover:bg-surface-2 disabled:opacity-40 max-lg:min-h-11 max-lg:py-3 max-lg:text-[13px] ${
         tone === "danger" ? "text-[#B2311F]" : ""
       }`}
     >

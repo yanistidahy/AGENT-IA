@@ -31,12 +31,16 @@ interface StaleContactsProps {
   readonly limit?: number;
 }
 
-const COLUMNS: ReadonlyArray<{ key: StaleSort | null; label: string }> = [
+/** `hide` : colonnes cédées sous `lg` — le nom, l'état et le silence suffisent
+    à décider qui rappeler ; le reste est dans la fiche, à un tap. */
+const COLUMNS: ReadonlyArray<{ key: StaleSort | null; label: string; hide?: string }> = [
   { key: "name", label: "Contact" },
-  { key: "lifecycle", label: "Cycle de vie" },
+  // Sous `lg`, la pastille cède aussi : le rouge du silence porte déjà le
+  // signal, et une pastille de 100 px rendait au tableau son défilement.
+  { key: "lifecycle", label: "Cycle de vie", hide: "max-lg:hidden" },
   { key: "staleness", label: "Dernière touche" },
-  { key: null, label: "Prochaine action" },
-  { key: null, label: "Propriétaire" },
+  { key: null, label: "Prochaine action", hide: "max-lg:hidden" },
+  { key: null, label: "Propriétaire", hide: "max-lg:hidden" },
 ];
 
 /** Un contact jamais touché est le cas le plus préoccupant : il passe en tête. */
@@ -74,11 +78,11 @@ export function StaleContacts({ contacts, sort, limit = 12 }: StaleContactsProps
       <table className="w-full border-collapse">
         <thead>
           <tr>
-            {COLUMNS.map(({ key, label }) => (
+            {COLUMNS.map(({ key, label, hide }) => (
               <th
                 key={label}
                 scope="col"
-                className="border-b border-line bg-surface-2 px-3.5 py-2.5 text-left font-mono text-[9.5px] font-medium tracking-[0.12em] whitespace-nowrap text-muted uppercase"
+                className={`border-b border-line bg-surface-2 px-3.5 py-2.5 text-left font-mono text-[9.5px] font-medium tracking-[0.12em] text-muted uppercase lg:whitespace-nowrap ${hide ?? ""}`}
               >
                 {key === null ? (
                   label
@@ -105,7 +109,7 @@ export function StaleContacts({ contacts, sort, limit = 12 }: StaleContactsProps
 
             return (
               <tr key={contact.id} className="transition-colors hover:bg-surface-2">
-                <td className="border-b border-line-2 px-3.5 py-2.5">
+                <td className="border-b border-line-2 px-3.5 py-2.5 max-lg:px-2">
                   <Link
                     href={`/contacts?lifecycle=all&fiche=${contact.id}`}
                     className="font-semibold hover:underline"
@@ -115,7 +119,7 @@ export function StaleContacts({ contacts, sort, limit = 12 }: StaleContactsProps
                   <br />
                   <span className="text-[12px] text-muted">{contact.companyName ?? "—"}</span>
                 </td>
-                <td className="border-b border-line-2 px-3.5 py-2.5">
+                <td className="border-b border-line-2 px-3.5 py-2.5 max-lg:hidden">
                   <span className="flex flex-wrap items-center gap-1.5">
                     {/* Même cellule que la pastille de statut, qui porte déjà
                         « Perdu » sur une fiche close : une seule suffit. */}
@@ -129,7 +133,7 @@ export function StaleContacts({ contacts, sort, limit = 12 }: StaleContactsProps
                     />
                   </span>
                 </td>
-                <td className="border-b border-line-2 px-3.5 py-2.5 font-mono text-[12.5px]">
+                <td className="border-b border-line-2 px-3.5 py-2.5 max-lg:px-2 font-mono text-[12.5px]">
                   <span className={cold ? "font-semibold text-[#B2311F]" : "text-muted"}>
                     {contact.idleDays === null ? "jamais" : `${contact.idleDays} j`}
                   </span>
@@ -137,7 +141,7 @@ export function StaleContacts({ contacts, sort, limit = 12 }: StaleContactsProps
                     {formatDate(contact.lastContact)}
                   </span>
                 </td>
-                <td className="border-b border-line-2 px-3.5 py-2.5 text-[12.5px]">
+                <td className="border-b border-line-2 px-3.5 py-2.5 max-lg:px-2 text-[12.5px] max-lg:hidden">
                   {contact.nextAction === null ? (
                     <span className="text-muted">—</span>
                   ) : (
@@ -149,7 +153,7 @@ export function StaleContacts({ contacts, sort, limit = 12 }: StaleContactsProps
                     </>
                   )}
                 </td>
-                <td className="border-b border-line-2 px-3.5 py-2.5 text-[12.5px] text-muted">
+                <td className="border-b border-line-2 px-3.5 py-2.5 max-lg:px-2 text-[12.5px] text-muted max-lg:hidden">
                   {contact.owner || "—"}
                 </td>
               </tr>

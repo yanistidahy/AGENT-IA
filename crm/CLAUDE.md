@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 46 | **Le CRM tient dans la main** — rail repliable partout (cookie, Ctrl+B, surcouche mobile), tableaux en cartes sous `lg`, cibles tactiles à 44 px, /reglages assumé bureau | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
 **Séquencement révisé.** L'infrastructure CRM passe avant les agents : le jalon 2
@@ -6175,3 +6176,124 @@ pas un effet de bord d'un rattrapage.
 **Les chiffres de production restent à mesurer chez vous.** Ceux ci-dessus
 viennent de l'état reproduit ; le nombre réel d'envois orphelins s'affichera à la
 simulation, et le bandeau dira combien de réponses attendent.
+
+---
+
+## Jalon 46 — le CRM tient dans la main
+
+### L'audit d'abord, et ce qu'il a montré
+
+Chaque écran mesuré à 390×844 et 360×800 **avant tout changement**. Le constat
+principal n'était pas celui qu'on attendait : aucune page ne débordait
+horizontalement — mais le rail fixe de 236 px mangeait 60 % d'un écran de
+téléphone, les tableaux (854 à 1049 px) défilaient dans leur cadre en perdant le
+nom de la ligne, et les cibles tactiles étaient à 27–34 px là où le pouce en
+demande 44. Le tiroir de fiche, lui, était **déjà** plein écran
+(`w-[min(600px,100vw)]`) et fondamentalement utilisable — l'audit a évité de le
+réécrire pour rien.
+
+### Le rail repliable, sur toutes les tailles
+
+`components/nav/rail-state.ts` (constantes), `rail-nav.tsx` (le contenu en deux
+densités), `rail.tsx` (l'état). Trois décisions :
+
+- **Replié ne veut pas dire caché** : la bande garde une icône par destination
+  (44 px, libellé en `title`/`aria-label`), pastille numérique devenue point.
+  Les deux densités sortent du même `NAV_GROUPS` — une entrée ajoutée apparaît
+  dans les deux.
+- **L'état vit dans un cookie, pas dans `localStorage`** : la coquille serveur
+  le lit (`cookies()` dans le layout) et le premier octet envoyé est déjà dans
+  le bon état — pas de clignotement à l'hydratation. Un an de durée : c'est une
+  préférence. `Ctrl+B` bascule ; le cookie est écrit dans un effet, jamais dans
+  un setter (React les rejoue en mode strict).
+- **Sur téléphone, la bande est l'état permanent** et le bouton ouvre le rail
+  complet en surcouche, refermée à la navigation et sur Échap. Deux boutons,
+  un par taille d'écran — le même aurait porté un libellé faux sur l'une des
+  deux (« Replier » pour un geste qui ouvre).
+
+**Piège trouvé en vérifiant** : une constante exportée d'un module `"use
+client"` devient une *référence client* quand un composant serveur l'importe —
+le layout recevait autre chose que la chaîne `"rail"`, `cookies().get()` ne
+trouvait rien, et l'état ne survivait pas au rechargement. D'où
+`rail-state.ts`, sans directive. La loupe du rail ouvre la palette via
+l'évènement `aura:search` : le doigt n'a pas de Ctrl+K.
+
+### Priorité 1 — travailler au pouce
+
+- file du jour : nom + société empilés, échéance rouge sous le nom, **icône
+  d'appel `tel:` de 44 px**, « Consigner » et « ⋯ » à 44 px, entrées de menu
+  à 44 px ;
+- fiche : lien téléphone à 44 px de haut et 16 px de corps, icônes
+  site/LinkedIn/email à 44 px, onglets à 44 px pleine largeur, ✕ à 44 px ;
+- règle CSS globale (`globals.css`) : **tout champ passe à 16 px sous `lg`** —
+  sous ce seuil, iOS Safari zoome au focus et l'écran reste zoomé. La règle vit
+  dans le CSS pour qu'un formulaire ajouté demain ne puisse pas l'oublier ;
+- le tiroir passe de `inset-y-0` à `h-dvh` : le clavier virtuel réduit le
+  viewport *dynamique*, et le pied du tiroir (« Envoyer ») restait sinon caché
+  sous le clavier.
+
+### Priorité 2 — les tableaux se replient en cartes
+
+`components/table/card-list.tsx` : nom + société en tête, deux ou trois faits
+dessous, **le reste à un tap** — toucher la carte ouvre la fiche. Le composant
+ne connaît pas les colonnes ; chaque vue choisit ses faits. `/contacts` (avec
+appel direct au bord), `/affaires`, `/societes` l'utilisent ; `/clients` et le
+côte à côte de `/performance` rendent leurs cartes en marquage serveur — des
+fonctions de rendu ne franchissent pas la frontière serveur → client. Le
+tableau garde le bureau (`max-lg:hidden`), les cartes prennent le téléphone
+(`lg:hidden`) : mêmes lignes, même tri, même filtre, **aucune version mobile
+séparée**.
+
+Le pipeline empile ses colonnes (`max-lg:flex-col`) au lieu de défiler sur
+1 700 px ; le glisser-déposer reste un geste de bureau et le sous-titre le dit
+différemment selon la taille. Le journal de `/emails` était déjà en
+`table-fixed` + container queries : rien à changer. Les entonnoirs (accueil,
+rapports) perdent leur largeur plancher sous `lg` et se mettent à l'échelle.
+
+### Priorité 3 — `/reglages` assume d'être un écran de bureau
+
+Sous `lg`, la page affiche « Cet écran demande un écran large » et nomme
+pourquoi (corrections, séquences, relecture des domaines — un travail qui se
+valide ligne à ligne). Le contenu n'est pas rendu en cassé derrière : il est
+sous `max-lg:hidden`, même code, même route.
+
+### Jalon 46 — ce qui est vérifié
+
+Contre le serveur standalone de production et un vrai PostgreSQL, navigateur
+piloté en émulation mobile (`isMobile`, `hasTouch`) :
+
+- **rail** : 236 → 64 px au bouton, état conservé à la navigation **et** au
+  rechargement (HTML serveur déjà replié — vérifié sur la réponse brute),
+  Ctrl+B dans les deux sens, cookie `rail=collapsed|open` ; 12 destinations
+  restent à un geste en bande d'icônes ; surcouche mobile de 300 px qui se
+  referme à la navigation ; la loupe ouvre la palette au doigt ;
+- **parcours à 390×844** : « garcia » dans la palette → fiche ouverte plein
+  écran → lien tel 206×44 à y=122, **sans défiler ni zoomer** → formulaire de
+  consignation ouvert, issue comprise, champs à 16 px, « Enregistrer » 225×44 ;
+- **file du jour** : Consigner 81×44, ⋯ 44×44, appel 44×44, échéance visible ;
+- **cibles mesurées** : onglets 114×44, ✕ 44×44, cases de /taches 20×20 ;
+- **zéro débordement de page** sur les douze écrans, à 390 **et** à 360 ;
+- **/reglages** : la notice s'affiche sous `lg` ;
+- **0 erreur console, 0 réponse ≥ 400** sur tout le parcours ;
+- captures avant/après des écrans les plus retouchés (accueil, contacts,
+  fiche, pipeline, performance) ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**889 tests**) verts.
+
+### Jalon 46 — ce qui ne l'est pas
+
+**Aucun vrai téléphone n'a touché l'écran.** L'émulation Chromium vérifie les
+tailles, le viewport et le tactile ; le clavier iOS réel, le `tel:` qui
+compose, et la règle des 16 px contre le zoom Safari ne se prouvent que sur un
+appareil. Le `h-dvh` du tiroir est la bonne construction pour le clavier
+ouvert, mais l'émulation ne simule pas de clavier.
+
+**Le tableau de `/rapports` garde un défilement interne** (488 px dans son
+cadre) : l'écran n'est dans aucune priorité du jalon et sa page ne déborde
+pas ; le replier en cartes reste à faire si l'usage mobile le réclame.
+
+**Le glisser-déposer du pipeline n'existe pas au doigt.** Les colonnes
+s'empilent et se lisent ; faire avancer une affaire passe par sa fiche. C'est
+un choix, pas un oubli — un drag tactile fiable est un chantier à part.
+
+**Le roster de `/conseil` défile latéralement à 360 px** — c'est la bande
+défilante voulue au jalon 15, pas un tableau qui déborde.

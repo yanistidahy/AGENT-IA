@@ -70,8 +70,15 @@ export function SearchPalette() {
         setOpen((current) => !current);
       }
     };
+    // Le rail dispatche cet évènement depuis son bouton loupe : au doigt,
+    // Ctrl+K n'existe pas (voir SEARCH_EVENT dans components/nav/rail.tsx).
+    const onSearchRequest = () => setOpen(true);
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("aura:search", onSearchRequest);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("aura:search", onSearchRequest);
+    };
   }, []);
 
   useEffect(() => {

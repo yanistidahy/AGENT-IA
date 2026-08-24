@@ -74,7 +74,9 @@ export function Tabs<K extends string>({
             // sort vers le contenu. C'est ce que le motif attend.
             tabIndex={selected ? 0 : -1}
             onClick={() => onSelect(tab.key)}
-            className={`-mb-px border-b-2 px-3 py-2 text-[13px] font-semibold transition-colors ${
+            // 44 px de haut sous `lg` : l'onglet se touche au pouce, dans le
+            // tiroir plein écran du téléphone.
+            className={`-mb-px border-b-2 px-3 py-2 text-[13px] font-semibold transition-colors max-lg:min-h-11 max-lg:flex-1 ${
               selected
                 ? "border-brand text-ink"
                 : "border-transparent text-muted hover:text-ink"

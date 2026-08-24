@@ -2,6 +2,8 @@
 
 const PATHS = {
   dash: "M3 13h8V3H3zM13 21h8V11h-8zM13 7h8V3h-8zM3 21h8v-4H3z",
+  /** Le repli du rail : un cadre dont le volet gauche se détache. */
+  panel: "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM9 3v18",
   pipe: "M3 5h18M6 12h12M10 19h4",
   people: "M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M22 21v-2a4 4 0 0 0-3-3.9",
   build: "M4 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16M15 9h3a2 2 0 0 1 2 2v10M4 21h17M8 7h3M8 11h3M8 15h3",
@@ -20,6 +22,9 @@ const PATHS = {
     "M2 12a10 10 0 1 0 20 0 10 10 0 1 0-20 0zM2 12h20M12 2c2.5 2.7 4 6.2 4 10s-1.5 7.3-4 10c-2.5-2.7-4-6.2-4-10s1.5-7.3 4-10z",
   linkedin:
     "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM7 10v6M7 7v.01M11 16v-3.5a2 2 0 0 1 4 0V16M11 12.5v0",
+  /** Combiné téléphonique — l'action « appeler » au pouce, sur téléphone. */
+  phone:
+    "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.6a2 2 0 0 1-.5 2.1L8 9.7a16 16 0 0 0 6.3 6.3l1.3-1.3a2 2 0 0 1 2.1-.5c.8.3 1.7.6 2.6.7a2 2 0 0 1 1.7 2z",
   /** Enveloppe : rabat ouvert, dans le même trait que le reste du jeu. */
   mail: "M3 6h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM2.5 7l9.5 6.5L21.5 7",
   /** Flèches vers les coins : « ouvrir en grand », du panneau vers la page. */

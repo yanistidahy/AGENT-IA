@@ -10,6 +10,7 @@ import { DEAL_FILTER_COLUMNS } from "@/lib/api/deal-columns";
 import type { ColumnFilter, FilterState } from "@/lib/domain/column-filters";
 import type { FacetValue } from "@/lib/domain/column-match";
 import { ColumnFilterMenu } from "@/components/table/column-filter";
+import { CardList } from "@/components/table/card-list";
 
 export type SortKey = "name" | "amount" | "expectedClose" | "lastActivityAt" | "owner";
 
@@ -101,7 +102,37 @@ export function DealsTable({
   }
 
   return (
-    <div className="overflow-x-auto rounded-card border border-line bg-surface shadow-card">
+    <>
+      {/* La forme cartes du téléphone : affaire + société en tête, montant,
+          étape et clôture dessous — le reste dans la fiche, à un tap. */}
+      <CardList
+        rows={deals}
+        rowKey={(deal) => deal.id}
+        title={(deal) => deal.name}
+        subtitle={(deal) => deal.company?.name ?? ""}
+        onSelect={onSelect}
+        facts={(deal) => [
+          {
+            label: "Montant",
+            value: <span className="font-mono font-semibold tabular-nums">{money(deal.amount)}</span>,
+          },
+          {
+            label: "Étape",
+            value: (
+              <span className="inline-flex flex-wrap items-center gap-1.5">
+                <StageTag stage={deal.stage} />
+                {deal.status !== "open" && <StatusTag status={deal.status} />}
+              </span>
+            ),
+          },
+          {
+            label: "Clôture",
+            value: <span className="font-mono tabular-nums">{formatDate(deal.expectedClose)}</span>,
+          },
+        ]}
+      />
+
+      <div className="overflow-x-auto rounded-card border border-line bg-surface shadow-card max-lg:hidden">
       <table className="w-full border-collapse">
         <thead>
           <tr>
@@ -201,6 +232,7 @@ export function DealsTable({
           })}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }

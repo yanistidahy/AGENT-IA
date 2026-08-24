@@ -83,10 +83,13 @@ export function ContactHeader({
         ) : (
           // Le geste le plus fréquent avant tout le reste : sur mobile c'est un
           // appel, sur poste fixe c'est au moins un numéro qu'on ne retape pas.
+          // Sous `lg`, 44 px de haut et 16 px de corps : c'est le lien qu'on
+          // touche en marchant, il ne se vise pas au pixel.
           <a
             href={`tel:${phone.replace(/\s/g, "")}`}
-            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 py-1.5 font-mono text-[12.5px] font-semibold text-brand-d transition-colors hover:bg-paper"
+            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 py-1.5 font-mono text-[12.5px] font-semibold text-brand-d transition-colors hover:bg-paper max-lg:min-h-11 max-lg:px-3.5 max-lg:text-[16px]"
           >
+            <Icon name="phone" size={16} className="lg:hidden" />
             {phone}
           </a>
         )}
@@ -111,7 +114,7 @@ export function ContactHeader({
           <span
             title="Pas d'adresse électronique sur cette fiche"
             aria-disabled
-            className="inline-flex items-center rounded-control border border-dashed border-line px-2 py-1.5 text-line-2"
+            className="inline-flex items-center rounded-control border border-dashed border-line px-2 py-1.5 text-line-2 max-lg:size-11 max-lg:justify-center"
           >
             <Icon name="mail" size={15} />
           </span>
@@ -121,7 +124,7 @@ export function ContactHeader({
             onClick={onCompose}
             title={`Rédiger un email à ${contact.email}`}
             aria-label="Rédiger un email"
-            className="inline-flex items-center rounded-control border border-line bg-surface px-2 py-1.5 text-muted transition-colors hover:bg-paper hover:text-brand-d"
+            className="inline-flex items-center rounded-control border border-line bg-surface px-2 py-1.5 text-muted transition-colors hover:bg-paper hover:text-brand-d max-lg:size-11 max-lg:justify-center"
           >
             <Icon name="mail" size={15} />
           </button>
@@ -130,7 +133,7 @@ export function ContactHeader({
         <button
           type="button"
           onClick={onLog}
-          className="rounded-control bg-brand px-3 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-brand-d"
+          className="rounded-control bg-brand px-3 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-brand-d max-lg:min-h-11 max-lg:text-[13px]"
         >
           Consigner un échange
         </button>
@@ -140,7 +143,7 @@ export function ContactHeader({
             type="button"
             onClick={onQualify}
             title="Le prospect a exprimé le désir de l'offre — une affaire sera ouverte."
-            className="rounded-control border border-[#F0DFB8] bg-gold-l px-3 py-1.5 text-[12.5px] font-semibold text-[#9A6410] transition-colors hover:bg-gold-l/70"
+            className="rounded-control border border-[#F0DFB8] bg-gold-l px-3 py-1.5 text-[12.5px] font-semibold text-[#9A6410] transition-colors hover:bg-gold-l/70 max-lg:min-h-11"
           >
             Qualifier
           </button>
@@ -213,7 +216,7 @@ function HeaderLink({
       <span
         aria-hidden
         title={`${label} — valeur manquante`}
-        className="inline-flex items-center rounded-control border border-dashed border-line p-1.5 text-muted"
+        className="inline-flex items-center rounded-control border border-dashed border-line p-1.5 text-muted max-lg:size-11 max-lg:justify-center"
       >
         <Icon name={icon} size={15} />
       </span>
@@ -227,7 +230,7 @@ function HeaderLink({
       rel="noopener noreferrer"
       title={label}
       aria-label={label}
-      className="inline-flex items-center rounded-control border border-line bg-surface p-1.5 text-muted transition-colors hover:border-brand hover:text-brand-d"
+      className="inline-flex items-center rounded-control border border-line bg-surface p-1.5 text-muted transition-colors hover:border-brand hover:text-brand-d max-lg:size-11 max-lg:justify-center"
     >
       <Icon name={icon} size={15} />
     </a>

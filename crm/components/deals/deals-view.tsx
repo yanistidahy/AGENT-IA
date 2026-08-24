@@ -100,7 +100,10 @@ export function DealsView({
       </header>
 
       <div className="mb-3.5 flex flex-wrap items-center gap-2">
-        <div className="flex overflow-hidden rounded-control border border-line bg-surface">
+        {/* `flex-wrap` sous `lg` : quatre segments ne tiennent pas sur 360 px,
+            et un segment coupé hors écran est un filtre qu'on ne peut plus
+            choisir. */}
+        <div className="flex overflow-hidden rounded-control border border-line bg-surface max-lg:flex-wrap">
           {DEAL_STATUS_FILTERS.map((filter) => (
             <button
               key={filter.value}

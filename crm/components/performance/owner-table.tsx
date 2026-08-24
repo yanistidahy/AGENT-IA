@@ -24,7 +24,39 @@ export function OwnerTable({ lines }: { readonly lines: readonly OwnerLine[] }) 
   ];
 
   return (
-    <div className="overflow-x-auto rounded-card border border-line bg-surface shadow-card">
+    <>
+      {/* Sur téléphone, neuf colonnes deviennent une carte par personne :
+          mêmes nombres, empilés au lieu d'alignés. */}
+      <ul className="grid gap-2 lg:hidden">
+        {lines.map((line) => (
+          <li key={line.owner} className="rounded-card border border-line bg-surface px-3.5 py-3 shadow-card">
+            <div className="text-[14px] font-semibold">{line.owner}</div>
+            <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
+              {(
+                [
+                  ["Interactions", String(line.interactions)],
+                  ["Appels", String(line.calls)],
+                  ["Emails", String(line.emails)],
+                  ["Réunions", String(line.meetings)],
+                  ["Réponses", String(line.replies)],
+                  ["RDV", String(line.booked)],
+                  ["Qualifiés", String(line.qualified)],
+                  ["Taux de rép.", formatRate(line.replyRate)],
+                ] as const
+              ).map(([label, value]) => (
+                <div key={label} className="flex items-baseline justify-between gap-2">
+                  <dt className="font-mono text-[9.5px] tracking-[0.1em] text-muted uppercase">
+                    {label}
+                  </dt>
+                  <dd className="font-mono text-[12.5px] tabular-nums">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </li>
+        ))}
+      </ul>
+
+      <div className="overflow-x-auto rounded-card border border-line bg-surface shadow-card max-lg:hidden">
       <table className="w-full border-collapse">
         <thead>
           <tr>
@@ -59,7 +91,8 @@ export function OwnerTable({ lines }: { readonly lines: readonly OwnerLine[] }) 
           ))}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }
 

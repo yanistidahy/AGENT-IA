@@ -217,7 +217,9 @@ export function LogForm({
       onSubmit={(event) => void submit(event)}
       className="grid gap-3 rounded-card border border-line bg-surface-2 px-3.5 py-3.5"
     >
-      <div className="grid grid-cols-3 gap-2.5">
+      {/* Trois colonnes ne tiennent pas sur 390 px avec des corps de 16 px :
+          la durée passe à la ligne. */}
+      <div className="grid grid-cols-3 gap-2.5 max-lg:grid-cols-2">
         <Field label="Type" errors={fields.type}>
           <select
             name="type"
@@ -344,14 +346,14 @@ export function LogForm({
         <button
           type="submit"
           disabled={busy}
-          className="rounded-control bg-brand px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-d disabled:opacity-50"
+          className="rounded-control bg-brand px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brand-d disabled:opacity-50 max-lg:min-h-11 max-lg:flex-1 max-lg:text-[15px]"
         >
           {busy ? "Enregistrement…" : "Consigner"}
         </button>
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-control border border-line px-4 py-2 text-[13px] font-semibold transition-colors hover:bg-surface-2"
+          className="rounded-control border border-line px-4 py-2 text-[13px] font-semibold transition-colors hover:bg-surface-2 max-lg:min-h-11"
         >
           Annuler
         </button>

@@ -50,7 +50,9 @@ export function ContactChips({
 
   return (
     <>
-    <div className="flex overflow-hidden rounded-control border border-line bg-surface">
+    {/* `flex-wrap` sous `lg` : six segments coupés au bord de l'écran, c'est
+        des cycles de vie qu'on ne peut plus choisir. */}
+    <div className="flex overflow-hidden rounded-control border border-line bg-surface max-lg:flex-wrap">
       {LIFECYCLE_FILTERS.map((value) => (
         <button
           key={value}

@@ -78,7 +78,11 @@ export function KanbanBoard({ deals, stages, settings, onSelect }: KanbanBoardPr
         </p>
       )}
 
-      <div className="flex items-start gap-3 overflow-x-auto pb-3.5">
+      {/* Sur téléphone, les colonnes s'empilent : un kanban de 1 700 px ne se
+          « lit » pas en défilant latéralement — on parcourt les étapes de haut
+          en bas, chaque colonne à pleine largeur. Le glisser-déposer reste une
+          affaire d'écran large ; le tiroir sait toujours changer l'étape. */}
+      <div className="flex items-start gap-3 pb-3.5 max-lg:flex-col lg:overflow-x-auto">
         {stages.map((stage) => {
           const column = deals.filter((deal) => stageOf(deal) === stage.id);
           const amount = column.reduce((sum, deal) => sum + deal.amount, 0);
@@ -97,7 +101,7 @@ export function KanbanBoard({ deals, stages, settings, onSelect }: KanbanBoardPr
                 const id = dragging ?? event.dataTransfer.getData("text/plain");
                 if (id !== "") void drop(id, stage.id);
               }}
-              className={`flex max-h-[calc(100vh-300px)] w-[268px] shrink-0 flex-col gap-2 rounded-card p-2.5 transition-colors ${
+              className={`flex flex-col gap-2 rounded-card p-2.5 transition-colors max-lg:w-full lg:max-h-[calc(100vh-300px)] lg:w-[268px] lg:shrink-0 ${
                 over === stage.id ? "bg-brand-l ring-2 ring-brand ring-inset" : "bg-[#E4E6EF]"
               }`}
             >
