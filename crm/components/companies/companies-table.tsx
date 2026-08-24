@@ -2,6 +2,7 @@
 
 import { EmptyState } from "@/components/ui/primitives";
 import { ColumnFilterMenu } from "@/components/table/column-filter";
+import { CardList } from "@/components/table/card-list";
 import type { CompanyRecord } from "@/lib/api/companies";
 import { COMPANY_FILTER_COLUMNS } from "@/lib/api/company-columns";
 import type { ColumnFilter, FilterState } from "@/lib/domain/column-filters";
@@ -76,7 +77,39 @@ export function CompaniesTable({
   }
 
   return (
-    <div className="overflow-x-auto rounded-card border border-line bg-surface shadow-card">
+    <>
+      {/* Sur téléphone, une société se lit en carte : nom + secteur, puis les
+          trois nombres qui la jugent — contacts, pipeline, CA signé. */}
+      <CardList
+        rows={companies}
+        rowKey={(company) => company.id}
+        title={(company) => company.name}
+        subtitle={(company) =>
+          [company.industry, company.loc].filter((part) => part !== "").join(" · ")
+        }
+        onSelect={onSelect}
+        facts={(company) => [
+          { label: "Contacts", value: <span className="font-mono">{company.contacts.length}</span> },
+          {
+            label: "Pipeline",
+            value: (
+              <span className="font-mono">
+                {company.openValue === 0 ? "—" : moneyShort(company.openValue)}
+              </span>
+            ),
+          },
+          {
+            label: "CA signé",
+            value: (
+              <span className="font-mono font-semibold">
+                {company.wonValue === 0 ? "—" : moneyShort(company.wonValue)}
+              </span>
+            ),
+          },
+        ]}
+      />
+
+      <div className="overflow-x-auto rounded-card border border-line bg-surface shadow-card max-lg:hidden">
       <table className="w-full border-collapse">
         <thead>
           <tr>
@@ -160,6 +193,7 @@ export function CompaniesTable({
           })}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }

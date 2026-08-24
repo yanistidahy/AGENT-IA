@@ -49,7 +49,9 @@ export function ProspectingFunnel({ data }: { data: FunnelInput }) {
       <div className="overflow-x-auto">
         <svg
           viewBox={`0 0 ${WIDTH} ${height}`}
-          className="h-auto w-full min-w-[420px]"
+          // La largeur plancher ne vaut qu'au-dessus de `lg` : sur téléphone,
+          // le SVG se met à l'échelle du cadre (viewBox) au lieu de défiler.
+          className="h-auto w-full lg:min-w-[420px]"
           role="img"
           aria-label={bands.map((band) => `${band.value} ${band.label}`).join(", puis ")}
         >

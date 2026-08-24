@@ -217,14 +217,14 @@ export function ComposePanel({
             type="button"
             disabled={busy || draft === null || subject.trim() === "" || body.trim() === ""}
             onClick={() => void send()}
-            className="rounded-control bg-brand px-4 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-brand-d disabled:opacity-50"
+            className="rounded-control bg-brand px-4 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-brand-d disabled:opacity-50 max-lg:min-h-11 max-lg:flex-1 max-lg:text-[15px]"
           >
             {busy ? "Envoi…" : "Envoyer maintenant"}
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-control border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-muted transition-colors hover:bg-surface-2"
+            className="rounded-control border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-muted transition-colors hover:bg-surface-2 max-lg:min-h-11"
           >
             Annuler
           </button>

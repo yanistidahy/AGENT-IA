@@ -23,7 +23,9 @@ export function Funnel({ rows }: { rows: readonly FunnelRow[] }) {
     <div className="grid gap-1.5">
       {rows.map((row) => (
         <div key={row.stageId} className="flex items-center gap-3">
-          <span className="w-[150px] shrink-0 truncate text-[12.5px]">{row.label}</span>
+          {/* Sous `lg`, le libellé cède la moitié de sa largeur et le montant
+              disparaît : la barre et le taux de passage sont la lecture. */}
+          <span className="w-[150px] shrink-0 truncate text-[12.5px] max-lg:w-[92px]">{row.label}</span>
           <div className="h-6 flex-1 overflow-hidden rounded-control bg-paper">
             <div
               className="flex h-full items-center justify-end rounded-control px-2"
@@ -38,7 +40,7 @@ export function Funnel({ rows }: { rows: readonly FunnelRow[] }) {
               </span>
             </div>
           </div>
-          <span className="w-[76px] shrink-0 text-right font-mono text-[11.5px] text-muted tabular-nums">
+          <span className="w-[76px] shrink-0 text-right font-mono text-[11.5px] text-muted tabular-nums max-lg:hidden">
             {moneyShort(row.amount)}
           </span>
           <span className="w-[54px] shrink-0 text-right font-mono text-[11.5px] tabular-nums">

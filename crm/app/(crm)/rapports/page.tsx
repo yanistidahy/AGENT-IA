@@ -85,7 +85,7 @@ export default async function RapportsPage({
       )}
 
       {hasDeals && (
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-5 *:min-w-0 lg:grid-cols-2">
         <Card title="CA signé par mois">
           <BarChart
             points={data.revenueByMonth.map((p) => ({ label: p.month, value: p.value }))}
@@ -104,7 +104,7 @@ export default async function RapportsPage({
         </Card>
       )}
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+      <div className="mt-5 grid gap-5 *:min-w-0 lg:grid-cols-2">
         <Card title="Nouveaux contacts par mois">
           <LineChart
             points={data.leadsByMonth.map((p) => ({ label: p.label, value: p.value }))}
@@ -117,7 +117,7 @@ export default async function RapportsPage({
         </Card>
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+      <div className="mt-5 grid gap-5 *:min-w-0 lg:grid-cols-2">
         <Card
           title="Motifs de perte"
           hint="contacts marqués « Perdu », tous exercices confondus"

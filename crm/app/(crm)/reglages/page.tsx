@@ -87,6 +87,29 @@ export default async function ReglagesPage() {
   const lifecycles = lifecycleRows.map((row) => row.value);
 
   return (
+    <>
+      {/*
+        Les réglages sont un écran de bureau, et il le dit. Corrections de
+        maintenance, éditeur de séquences, relecture des domaines : tout ici
+        écrit en base après relecture ligne à ligne — un travail qui demande de
+        voir ce qu'on valide, pas un écran rendu cassé à 390 px. Le contenu
+        reste dans le DOM (`lg` le rend) : aucune « version mobile » séparée,
+        la même page dit simplement où elle se travaille.
+      */}
+      <div className="px-5 py-10 lg:hidden">
+        <div className="mx-auto max-w-[42ch] rounded-card border border-line bg-surface px-5 py-6 text-center shadow-card">
+          <b className="mb-1.5 block font-display text-[16px]">
+            Cet écran demande un écran large
+          </b>
+          <p className="text-[13.5px] leading-relaxed text-muted">
+            Les réglages — corrections de données, séquences, relecture des
+            domaines — se valident ligne à ligne. Ouvrez cette page depuis un
+            ordinateur ; le reste du CRM fonctionne sur ce téléphone.
+          </p>
+        </div>
+      </div>
+
+      <div className="max-lg:hidden">
     <SettingsView
       sequences={sequences.map((sequence) => ({
         id: sequence.id,
@@ -141,5 +164,7 @@ export default async function ReglagesPage() {
         lifecycles: lifecycles.length > 0 ? lifecycles : [...LIFECYCLES],
       }}
     />
+      </div>
+    </>
   );
 }

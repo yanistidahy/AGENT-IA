@@ -41,7 +41,7 @@ export function PerfFilters({ perf, kind }: { readonly perf: Performance; readon
       </nav>
 
       {/* La période libre : deux dates, un GET. */}
-      <form action="/performance" method="get" className="flex items-center gap-1.5">
+      <form action="/performance" method="get" className="flex flex-wrap items-center gap-1.5">
         <input type="hidden" name="periode" value="libre" />
         {perf.owner !== null && <input type="hidden" name="qui" value={perf.owner} />}
         <input

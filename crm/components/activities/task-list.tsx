@@ -81,7 +81,9 @@ export function TaskList({ tasks, onChanged, showTarget = true }: TaskListProps)
                 checked={done}
                 onChange={() => void toggle(task)}
                 aria-label={`Terminer « ${task.title} »`}
-                className="size-4 shrink-0 accent-brand"
+                // 20 px de case sous `lg` : cocher une tâche au pouce est le
+                // geste central de /taches en mobilité.
+                className="shrink-0 accent-brand max-lg:size-5 lg:size-4"
               />
               <span
                 aria-hidden

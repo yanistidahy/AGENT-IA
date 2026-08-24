@@ -44,8 +44,13 @@ export function PipelineView({
       <header className="mb-5 flex flex-wrap items-end gap-4">
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">Pipeline</h1>
-          <p className="mt-0.5 text-[13px] text-muted">
+          {/* Le glisser-déposer n'existe pas au doigt : sur téléphone, la
+              phrase dirait un geste impossible. La fiche sait changer l'étape. */}
+          <p className="mt-0.5 text-[13px] text-muted max-lg:hidden">
             Glissez une affaire d&apos;une colonne à l&apos;autre pour la faire avancer.
+          </p>
+          <p className="mt-0.5 text-[13px] text-muted lg:hidden">
+            Les étapes se suivent de haut en bas — ouvrez une affaire pour la faire avancer.
           </p>
         </div>
         <button

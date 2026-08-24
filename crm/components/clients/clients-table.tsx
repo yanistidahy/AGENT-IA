@@ -51,7 +51,48 @@ export function ClientsTable({ clients, sort, coldDays, facets }: ClientsTablePr
   }
 
   return (
-    <div className="overflow-x-auto rounded-card border border-line bg-surface shadow-card">
+    <>
+      {/* La forme cartes du téléphone. Rendue ici plutôt que par `CardList` :
+          ce tableau est un composant serveur, et des fonctions de rendu ne
+          franchissent pas la frontière serveur → client. Le lien fait office
+          de tap — la fiche porte le reste. */}
+      <ul className="grid gap-2 lg:hidden">
+        {clients.map((client) => (
+          <li key={client.id}>
+            <Link
+              href={`/contacts?lifecycle=all&fiche=${client.id}`}
+              className="block rounded-card border border-line bg-surface px-3.5 py-3 shadow-card transition-colors active:bg-surface-2"
+            >
+              <div className="truncate text-[14.5px] font-semibold">
+                {client.firstName} {client.lastName}
+              </div>
+              {client.companyName !== null && client.companyName !== "" && (
+                <div className="truncate text-[12px] text-muted">{client.companyName}</div>
+              )}
+              <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                <div className="flex items-baseline gap-1.5">
+                  <dt className="font-mono text-[9.5px] tracking-[0.1em] text-muted uppercase">
+                    CA signé
+                  </dt>
+                  <dd className="font-mono text-[12.5px] font-semibold tabular-nums">
+                    {money(client.wonValue)}
+                  </dd>
+                </div>
+                <div className="flex items-baseline gap-1.5">
+                  <dt className="font-mono text-[9.5px] tracking-[0.1em] text-muted uppercase">
+                    Dernier contact
+                  </dt>
+                  <dd className="font-mono text-[12.5px] tabular-nums">
+                    {client.lastContact === null ? "—" : formatDate(client.lastContact)}
+                  </dd>
+                </div>
+              </dl>
+            </Link>
+          </li>
+        ))}
+      </ul>
+
+      <div className="overflow-x-auto rounded-card border border-line bg-surface shadow-card max-lg:hidden">
       <table className="w-full border-collapse">
         <thead>
           <tr>
@@ -139,7 +180,8 @@ export function ClientsTable({ clients, sort, coldDays, facets }: ClientsTablePr
           })}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }
 

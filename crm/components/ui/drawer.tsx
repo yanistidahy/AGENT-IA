@@ -103,7 +103,10 @@ export function Drawer({
       <aside
         role="dialog"
         aria-modal="true"
-        className="fixed inset-y-0 right-0 z-50 flex w-[min(600px,100vw)] flex-col bg-surface shadow-float"
+        // `h-dvh` et non `inset-y-0` : le clavier virtuel réduit le viewport
+        // *dynamique* — avec une hauteur figée, le pied du tiroir (le bouton
+        // « Envoyer » du panneau de rédaction) resterait caché sous le clavier.
+        className="fixed top-0 right-0 z-50 flex h-dvh w-[min(600px,100vw)] flex-col bg-surface shadow-float"
       >
         <header className="flex flex-none items-start gap-3 border-b border-line px-[22px] py-4">
           <div className="min-w-0 flex-1">
@@ -119,7 +122,7 @@ export function Drawer({
             type="button"
             onClick={() => close.current()}
             aria-label="Fermer"
-            className="relative z-10 shrink-0 rounded-control p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+            className="relative z-10 shrink-0 rounded-control p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-ink max-lg:flex max-lg:size-11 max-lg:items-center max-lg:justify-center max-lg:p-0"
           >
             <Icon name="x" size={18} />
           </button>

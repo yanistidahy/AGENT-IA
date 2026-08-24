@@ -8,6 +8,9 @@ import type { ColumnFilter, ColumnSpec, FilterState } from "@/lib/domain/column-
 import type { FacetValue } from "@/lib/domain/column-match";
 import { CONTACT_FILTER_COLUMNS } from "@/lib/api/contact-columns";
 import { ColumnFilterMenu } from "@/components/table/column-filter";
+import { CardCallLink, CardList } from "@/components/table/card-list";
+import { ContactStatusTag } from "@/components/ui/primitives";
+import { describeReminder } from "@/lib/domain/follow-up";
 import { CONTACT_COLUMNS, type ContactSortKey } from "./contact-table-columns";
 
 export type { ContactSortKey };
@@ -73,7 +76,46 @@ export function ContactsTable({
   }
 
   return (
-    <div className="overflow-x-auto rounded-card border border-line bg-surface shadow-card">
+    <>
+      {/* Sur téléphone, le tableau se replie en cartes : nom et société en
+          tête, l'état et l'échéance dessous, l'appel au bord — le reste à un
+          tap, dans la fiche. Mêmes lignes, même tri, même filtre. */}
+      <CardList
+        rows={contacts}
+        rowKey={(contact) => contact.id}
+        title={(contact) => `${contact.firstName} ${contact.lastName}`.trim()}
+        subtitle={(contact) => contact.company?.name ?? ""}
+        onSelect={onSelect}
+        trailing={(contact) => (
+          <CardCallLink
+            phone={contact.phone}
+            name={`${contact.firstName} ${contact.lastName}`.trim()}
+          />
+        )}
+        facts={(contact) => {
+          const reminder =
+            contact.nextReminder === null
+              ? null
+              : describeReminder(contact.nextReminder, now);
+          return [
+            {
+              label: "Statut",
+              value: (
+                <ContactStatusTag
+                  status={contact.status}
+                  followUp={contact.followUp}
+                  lifecycle={contact.lifecycle}
+                />
+              ),
+            },
+            ...(reminder === null
+              ? []
+              : [{ label: "Relance", value: reminder.label }]),
+          ];
+        }}
+      />
+
+      <div className="overflow-x-auto rounded-card border border-line bg-surface shadow-card max-lg:hidden">
       <table className="w-full border-collapse">
         <thead>
           <tr>
@@ -138,6 +180,7 @@ export function ContactsTable({
           ))}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }
