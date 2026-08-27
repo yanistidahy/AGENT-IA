@@ -151,6 +151,10 @@ const dealRow = z.object({
   status: text,
   prob: z.number().int().nullable().optional(),
   notes: optionalText,
+  // Facultatif comme les autres ajouts : une sauvegarde antérieure au jalon 47
+  // ne peut pas porter ce que la colonne n'avait pas encore, et la refuser
+  // rendrait le filet inutile au moment précis où l'on en a besoin.
+  lostReason: optionalText,
   createdAt: day,
   expectedClose: optionalDay,
   lastActivityAt: optionalDay,

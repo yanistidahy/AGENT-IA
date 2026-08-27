@@ -11,6 +11,7 @@ import { dealHeat, dealProb, weightedValue } from "@/lib/domain/pipeline";
 import type { PilotageSettings } from "@/lib/domain/types";
 import { formatDate, money, moneyShort } from "@/lib/format";
 import { DealForm, type DealFormOptions } from "./deal-form";
+import { DealCloseActions } from "./deal-close-actions";
 import { PostWinSequence } from "./post-win-sequence";
 import { PromoteContact } from "./promote-contact";
 import { RecordPanel } from "@/components/activities/record-panel";
@@ -181,6 +182,18 @@ export function DealDrawer({
               </Link>
             </p>
           )}
+
+          <DealCloseActions
+            deal={deal}
+            onChanged={onChanged}
+            onDeleted={() => {
+              // La fiche n'existe plus : refermer d'abord, relire ensuite —
+              // laisser le tiroir ouvert sur un enregistrement supprimé
+              // afficherait un fantôme jusqu'au prochain clic.
+              onClose();
+              onChanged();
+            }}
+          />
 
           <PromoteContact deal={deal} onChanged={onChanged} />
           <PostWinSequence deal={deal} sequences={sequences} onChanged={onChanged} />

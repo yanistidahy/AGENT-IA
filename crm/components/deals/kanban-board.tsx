@@ -4,10 +4,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { DealRecord } from "@/lib/api/deals";
 import Link from "next/link";
-import { autoTaskNotice, moveDealStage } from "@/lib/client/deals-api";
-import { daysSince } from "@/lib/domain/dates";
-import { dealHeat, dealProb } from "@/lib/domain/pipeline";
-import type { DealHeat, PilotageSettings, StageLike } from "@/lib/domain/types";
+import { autoTaskNotice, markDealLost, moveDealStage } from "@/lib/client/deals-api";
+import { KanbanCard } from "./kanban-card";
+import type { PilotageSettings, StageLike } from "@/lib/domain/types";
 import { moneyShort } from "@/lib/format";
 
 /**
@@ -24,12 +23,6 @@ interface KanbanBoardProps {
   readonly settings: PilotageSettings;
   readonly onSelect: (deal: DealRecord) => void;
 }
-
-const HEAT_BORDER: Record<DealHeat, string> = {
-  hot: "var(--color-win)",
-  warm: "var(--color-gold)",
-  cold: "var(--color-pulse)",
-};
 
 export function KanbanBoard({ deals, stages, settings, onSelect }: KanbanBoardProps) {
   const router = useRouter();
@@ -59,6 +52,25 @@ export function KanbanBoard({ deals, stages, settings, onSelect }: KanbanBoardPr
 
     setPlacement((current) => ({ ...current, [dealId]: previous }));
     setError(result.message);
+  };
+
+  /**
+   * Perdre depuis la carte. La ligne disparaît **après** la réponse, pas avant :
+   * le kanban ne montre que les affaires en cours, une carte retirée d'office
+   * puis remise en cas d'échec clignoterait sans rien apprendre. Le déplacement
+   * d'étape, lui, reste optimiste — il est réversible, celui-ci l'est par un
+   * autre geste.
+   */
+  const lose = async (dealId: string, reason: string) => {
+    setError(null);
+    setNotice(null);
+    const result = await markDealLost(dealId, reason);
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    setNotice(`Affaire marquée perdue — motif : ${reason}.`);
+    router.refresh();
   };
 
   return (
@@ -143,9 +155,11 @@ export function KanbanBoard({ deals, stages, settings, onSelect }: KanbanBoardPr
                   </p>
                 ) : (
                   column.map((deal) => (
-                    <Card
+                    <KanbanCard
                       key={deal.id}
                       deal={deal}
+                      stages={stages}
+                      currentStageId={stageOf(deal)}
                       settings={settings}
                       dragging={dragging === deal.id}
                       onDragStart={() => setDragging(deal.id)}
@@ -154,6 +168,8 @@ export function KanbanBoard({ deals, stages, settings, onSelect }: KanbanBoardPr
                         setOver(null);
                       }}
                       onSelect={() => onSelect(deal)}
+                      onMove={(stageId) => void drop(deal.id, stageId)}
+                      onLost={(reason) => void lose(deal.id, reason)}
                     />
                   ))
                 )}
@@ -163,66 +179,5 @@ export function KanbanBoard({ deals, stages, settings, onSelect }: KanbanBoardPr
         })}
       </div>
     </>
-  );
-}
-
-function Card({
-  deal,
-  settings,
-  dragging,
-  onDragStart,
-  onDragEnd,
-  onSelect,
-}: {
-  deal: DealRecord;
-  settings: PilotageSettings;
-  dragging: boolean;
-  onDragStart: () => void;
-  onDragEnd: () => void;
-  onSelect: () => void;
-}) {
-  const now = new Date();
-  const heat = dealHeat(deal, settings, now);
-  const idle = daysSince(deal.lastActivityAt ?? deal.createdAt, now);
-
-  return (
-    <article
-      draggable
-      onDragStart={(event) => {
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", deal.id);
-        onDragStart();
-      }}
-      onDragEnd={onDragEnd}
-      onClick={onSelect}
-      tabIndex={0}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") onSelect();
-      }}
-      style={{ borderLeftColor: HEAT_BORDER[heat] }}
-      className={`cursor-grab rounded-control border-l-[3px] bg-surface px-3 py-2.5 shadow-sm transition-transform hover:-translate-y-px hover:shadow-md active:cursor-grabbing ${
-        dragging ? "opacity-40" : ""
-      }`}
-    >
-      <h4 className="text-[13.5px] leading-snug font-semibold">{deal.name}</h4>
-      <p className="mt-0.5 mb-2 text-[12px] text-muted">
-        {deal.company?.name ?? "Sans société"}
-      </p>
-
-      <div className="h-[3px] overflow-hidden rounded bg-line-2">
-        <i
-          className="block h-full rounded transition-[width] duration-300"
-          style={{
-            width: `${dealProb(deal, deal.stage)}%`,
-            backgroundColor: deal.stage.color,
-          }}
-        />
-      </div>
-
-      <div className="mt-2 flex items-center gap-2">
-        <span className="font-mono text-[13px] font-semibold">{moneyShort(deal.amount)}</span>
-        <span className="ml-auto font-mono text-[10.5px] text-muted">{idle} j</span>
-      </div>
-    </article>
   );
 }

@@ -7,6 +7,7 @@ import { StatusesBlock, type StatusPlan } from "./statuses-block";
 import { WebsitesBlock, type WebsitePlan } from "./websites-block";
 import { SitesBlock, type SitePlan } from "./sites-block";
 import { TerminalBlock, type TerminalPlan } from "./terminal-block";
+import { DealCompanyBlock, type DealCompanyPlanView } from "./deal-company-block";
 import { DomainsBlock, type DomainPlan } from "./domains-block";
 
 /**
@@ -56,11 +57,21 @@ interface Plans {
   websites: WebsitePlan;
   sites: SitePlan;
   terminal: TerminalPlan;
+  dealCompanies: DealCompanyPlanView;
   domains: DomainPlan;
 }
 
 function isPlans(value: unknown): value is Plans {
-  return typeof value === "object" && value !== null && "search" in value && "lifecycles" in value;
+  // Chaque bloc rendu lit `plans.<clé>.total` sans filet : une clé annoncée par
+  // le type mais absente de la réponse ferait tomber le panneau entier. La
+  // garde nomme donc les clés ajoutées, au lieu de supposer qu'elles suivent.
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "search" in value &&
+    "lifecycles" in value &&
+    "dealCompanies" in value
+  );
 }
 
 function isApplied(value: unknown): value is { applied: number; snapshot?: unknown } {
@@ -87,7 +98,15 @@ export function MaintenancePanel() {
   };
 
   const apply = async (
-    operation: "search" | "lifecycles" | "names" | "statuses" | "websites" | "sites" | "terminal",
+    operation:
+      | "search"
+      | "lifecycles"
+      | "names"
+      | "statuses"
+      | "websites"
+      | "sites"
+      | "terminal"
+      | "deal-companies",
     expected: number,
     what: string,
   ) => {
@@ -193,6 +212,7 @@ export function MaintenancePanel() {
           <SitesBlock plan={plans.sites} busy={busy} onApply={apply} />
 
           <TerminalBlock plan={plans.terminal} busy={busy} onApply={apply} />
+          <DealCompanyBlock plan={plans.dealCompanies} busy={busy} onApply={apply} />
 
           <WebsitesBlock plan={plans.websites} busy={busy} onApply={apply} />
 

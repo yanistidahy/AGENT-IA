@@ -3,6 +3,14 @@ import { prisma } from "../db";
 import { applyTaskIntent, ownerOrDefault, type AutoTaskOutcome } from "./automation";
 import { resolveCompanyLink } from "./company-resolve";
 import { planStageMove } from "../domain/deal-transitions";
+import { canReopen, planLoss, planReopen } from "../domain/deal-loss";
+import { inheritedCompanyId } from "../domain/deal-company";
+import {
+  deletionVerdict,
+  describeRefusal,
+  type DeletionFacts,
+  type DeletionVerdict,
+} from "../domain/deal-deletion";
 import { stageTask } from "../domain/automation";
 import { toDealStatus, toLifecycle } from "../domain/guards";
 import type { DealLike, DealStatus, Lifecycle, StageLike } from "../domain/types";
@@ -42,6 +50,8 @@ function containsFilter(value: string): Prisma.StringFilter {
 export interface DealRecord extends DealLike {
   readonly offer: string;
   readonly notes: string;
+  /** Motif de perte. Vide sur une affaire en cours ou gagnée. */
+  readonly lostReason: string;
   readonly companyId: string | null;
   readonly contactId: string | null;
   readonly company: { readonly id: string; readonly name: string } | null;
@@ -73,6 +83,7 @@ function toRecord(row: DealRow): DealRecord {
     owner: row.owner,
     offer: row.offer,
     notes: row.notes,
+    lostReason: row.lostReason,
     createdAt: row.createdAt,
     expectedClose: row.expectedClose,
     lastActivityAt: row.lastActivityAt,
@@ -224,10 +235,38 @@ export async function getDeal(id: string): Promise<DealRecord | null> {
  * `companyName` crée la société dans la même transaction — même règle que pour
  * les contacts : on découvre souvent l'affaire et la société ensemble.
  */
+/**
+ * La société du contact principal, s'il y en a une.
+ *
+ * Séparée de `resolveCompanyLink` volontairement : celle-là traduit ce que le
+ * formulaire a saisi, celle-ci comble ce qu'il a laissé vide. Les mêler ferait
+ * qu'un `companyId: null` explicite — un détachement voulu — se verrait
+ * aussitôt rerempli par le contact.
+ */
+async function contactCompanyId(
+  tx: Prisma.TransactionClient,
+  contactId: string | null,
+): Promise<string | null> {
+  if (contactId === null) return null;
+  const contact = await tx.contact.findUnique({
+    where: { id: contactId },
+    select: { companyId: true },
+  });
+  return inheritedCompanyId({
+    dealCompanyId: null,
+    contactCompanyId: contact?.companyId ?? null,
+  });
+}
+
 export async function createDeal(input: CreateDealInput): Promise<DealRecord> {
   const now = new Date();
   const row = await prisma.$transaction(async (tx) => {
-    const companyId = await resolveCompanyLink(tx, input);
+    const chosen = await resolveCompanyLink(tx, input);
+    // Une affaire rattachée à quelqu'un appartient à la société de ce
+    // quelqu'un : sans ce repli, choisir un contact sans choisir de société
+    // donne une affaire hors des totaux de `/societes`, et seul un « Sans
+    // société » en petit sur la carte le dit. La règle ne comble qu'un vide.
+    const companyId = chosen ?? (await contactCompanyId(tx, input.contactId ?? null));
     const created = await tx.deal.create({
     data: {
       searchText: searchText([input.name, input.offer]),
@@ -296,10 +335,23 @@ export async function updateDeal(
   }
 
   const row = await prisma.$transaction(async (tx) => {
-    const companyId = await resolveCompanyLink(tx, input);
-    if (companyId !== undefined) {
-      data.company = companyId === null ? { disconnect: true } : { connect: { id: companyId } };
+    const chosen = await resolveCompanyLink(tx, input);
+    if (chosen !== undefined) {
+      data.company = chosen === null ? { disconnect: true } : { connect: { id: chosen } };
     }
+
+    // Même repli qu'à la création, sur l'état **résultant** : rattacher un
+    // contact à une affaire sans société doit suffire à la renseigner. Un
+    // `companyId: null` explicite reste un détachement voulu — il vient du
+    // formulaire et sort par la branche ci-dessus, pas par celle-ci.
+    const resultingCompany = chosen === undefined ? existing.companyId : chosen;
+    const resultingContact =
+      input.contactId === undefined ? existing.contactId : input.contactId;
+    if (resultingCompany === null && chosen !== null) {
+      const inherited = await contactCompanyId(tx, resultingContact);
+      if (inherited !== null) data.company = { connect: { id: inherited } };
+    }
+
     return tx.deal.update({ where: { id }, data, include: dealInclude });
   });
 
@@ -402,6 +454,179 @@ export async function moveDealStage(id: string, stageId: string): Promise<MoveSt
   });
 
   return { ok: true, deal: toRecord(row), autoTask };
+}
+
+/**
+ * Marquer une affaire perdue.
+ *
+ * L'étape n'est pas touchée — perdre fait sortir du tableau, pas reculer dans
+ * le pipeline — et c'est ce qui rend la réouverture exacte sans stocker
+ * d'« étape d'avant ». La note système part dans la même transaction : une
+ * affaire close dont l'historique ne dit pas pourquoi serait à rouvrir à
+ * l'aveugle dans six mois.
+ */
+export async function markDealLost(
+  id: string,
+  reason: string,
+): Promise<DealRecord | null> {
+  const existing = await prisma.deal.findUnique({ where: { id } });
+  if (existing === null) return null;
+
+  const plan = planLoss(reason, new Date());
+
+  const row = await prisma.$transaction(async (tx) => {
+    const updated = await tx.deal.update({
+      where: { id },
+      data: {
+        status: plan.status,
+        closedAt: plan.closedAt,
+        lostReason: plan.lostReason,
+        lastActivityAt: plan.lastActivityAt,
+      },
+      include: dealInclude,
+    });
+    await tx.activity.create({
+      data: {
+        type: "note",
+        date: plan.lastActivityAt,
+        owner: existing.owner,
+        notes: plan.note,
+        dealId: id,
+        contactId: existing.contactId,
+        companyId: existing.companyId,
+      },
+    });
+    return updated;
+  });
+
+  return toRecord(row);
+}
+
+export type ReopenResult =
+  | { readonly ok: true; readonly deal: DealRecord }
+  | { readonly ok: false; readonly reason: "not_found" | "already_open" };
+
+/**
+ * Rouvrir. L'affaire revient dans la colonne qu'elle n'a jamais quittée.
+ *
+ * Rouvrir plutôt que recréer : recréer perdrait l'historique, la date de
+ * création — donc la vélocité — et le fil des échanges déjà consignés.
+ */
+export async function reopenDeal(id: string): Promise<ReopenResult> {
+  const existing = await prisma.deal.findUnique({ where: { id } });
+  if (existing === null) return { ok: false, reason: "not_found" };
+  if (!canReopen(toDealStatus(existing.status))) {
+    return { ok: false, reason: "already_open" };
+  }
+
+  const plan = planReopen(existing.lostReason, new Date());
+
+  const row = await prisma.$transaction(async (tx) => {
+    const updated = await tx.deal.update({
+      where: { id },
+      data: {
+        status: plan.status,
+        closedAt: plan.closedAt,
+        lostReason: plan.lostReason,
+        lastActivityAt: plan.lastActivityAt,
+      },
+      include: dealInclude,
+    });
+    await tx.activity.create({
+      data: {
+        type: "note",
+        date: plan.lastActivityAt,
+        owner: existing.owner,
+        notes: plan.note,
+        dealId: id,
+        contactId: existing.contactId,
+        companyId: existing.companyId,
+      },
+    });
+    return updated;
+  });
+
+  return { ok: true, deal: toRecord(row) };
+}
+
+export interface DeletionReport {
+  readonly name: string;
+  readonly amount: number;
+  readonly facts: DeletionFacts;
+  readonly verdict: DeletionVerdict;
+  /** Vide quand la suppression est possible. */
+  readonly refusal: string;
+}
+
+/**
+ * Les faits qui décident, comptés en base.
+ *
+ * Rendus **avant** de demander confirmation : une confirmation qui ne sait pas
+ * ce qu'elle va détruire ne vaut pas mieux qu'un « Êtes-vous sûr ? ».
+ */
+export async function dealDeletionReport(id: string): Promise<DeletionReport | null> {
+  const deal = await prisma.deal.findUnique({
+    where: { id },
+    select: { name: true, amount: true, status: true },
+  });
+  if (deal === null) return null;
+
+  const [realActivities, notes, stageVisits, tasks] = await Promise.all([
+    prisma.activity.count({ where: { dealId: id, type: { not: "note" } } }),
+    prisma.activity.count({ where: { dealId: id, type: "note" } }),
+    prisma.dealStageVisit.count({ where: { dealId: id } }),
+    prisma.task.count({ where: { dealId: id } }),
+  ]);
+
+  const facts: DeletionFacts = {
+    status: toDealStatus(deal.status),
+    realActivities,
+    notes,
+    stageVisits,
+    tasks,
+  };
+  const verdict = deletionVerdict(facts);
+
+  return {
+    name: deal.name,
+    amount: deal.amount,
+    facts,
+    verdict,
+    refusal: describeRefusal(facts, verdict),
+  };
+}
+
+export type DeleteDealResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: "not_found" }
+  | { readonly ok: false; readonly reason: "has_history"; readonly message: string };
+
+/**
+ * Supprimer — pour un doublon ou une saisie d'essai, jamais pour sortir une
+ * affaire du pipeline.
+ *
+ * Le verdict est **relu au moment d'écrire**, pas seulement à l'affichage : la
+ * confirmation peut rester ouverte pendant qu'un appel se consigne ailleurs, et
+ * c'est exactement le moment où l'affaire cesse d'être supprimable. Même
+ * principe que les corrections de `/reglages` au jalon 12.
+ */
+export async function deleteDeal(id: string): Promise<DeleteDealResult> {
+  const report = await dealDeletionReport(id);
+  if (report === null) return { ok: false, reason: "not_found" };
+  if (!report.verdict.deletable) {
+    return { ok: false, reason: "has_history", message: report.refusal };
+  }
+
+  // Les notes et visites d'étape partent explicitement : `Activity.dealId` est
+  // en `SetNull`, sans quoi la suppression laisserait des notes orphelines
+  // parlant d'une affaire qui n'existe plus.
+  await prisma.$transaction(async (tx) => {
+    await tx.activity.deleteMany({ where: { dealId: id } });
+    await tx.dealStageVisit.deleteMany({ where: { dealId: id } });
+    await tx.deal.delete({ where: { id } });
+  });
+
+  return { ok: true };
 }
 
 /** Statuts acceptés par les filtres de la vue liste. */

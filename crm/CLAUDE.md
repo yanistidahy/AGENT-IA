@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 47 | **Sortir une affaire du pipeline** — « perdue » avec motif et réouverture exacte, suppression refusée dès qu'il y a une histoire, menu ⋯ sur les cartes, société héritée du contact | **livré, à valider** |
 | 46 | **Le CRM tient dans la main** — rail repliable partout (cookie, Ctrl+B, surcouche mobile), tableaux en cartes sous `lg`, cibles tactiles à 44 px, /reglages assumé bureau | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
 
@@ -6297,3 +6298,190 @@ un choix, pas un oubli — un drag tactile fiable est un chantier à part.
 
 **Le roster de `/conseil` défile latéralement à 360 px** — c'est la bande
 défilante voulue au jalon 15, pas un tableau qui déborde.
+
+---
+
+## Jalon 47 — sortir une affaire du pipeline
+
+### Deux gestes, et tout le jalon tient dans leur écart
+
+| | « Marquer perdue » | « Supprimer » |
+|---|---|---|
+| Pour | le refus commercial, tous les jours | le doublon, la saisie d'essai |
+| Garde | montant, historique, motif | rien |
+| Où | tiroir **et** menu de la carte | tiroir seul |
+| Réversible | oui, « Rouvrir » | non |
+| Refusée si | jamais | l'affaire porte une histoire |
+
+**Perdre n'est pas supprimer**, et l'écran le montre : la perte est un bouton
+ordinaire, la suppression vit en bas du tiroir, en rouge, derrière une
+confirmation qui nomme l'affaire et son montant. Un geste destructeur à deux
+taps depuis une liste est un geste qu'on finit par faire par erreur — d'où
+l'absence de « Supprimer » dans le menu des cartes.
+
+### L'étape n'est jamais touchée, et c'est ce qui rend la réouverture exacte
+
+Gagner fait **avancer** : l'affaire rejoint l'étape à 100 %. Perdre fait
+**sortir** : elle reste dans la colonne où elle était et disparaît du tableau
+parce que le kanban ne montre que les affaires en cours. « Rouvrir » n'a donc
+rien à restaurer — la carte revient exactement là où elle était, sans qu'aucune
+colonne « étape d'avant » ait eu à exister. Une seconde source de vérité pour
+une information que la première n'a jamais perdue aurait fini par diverger.
+
+Le motif, lui, est effacé à la réouverture — l'affaire n'est plus perdue, le
+garder ferait mentir la colonne — mais il **passe dans la note système** :
+« Affaire rouverte (était perdue — motif : Concurrent) ». Rouvrir ne doit pas
+effacer en silence la raison pour laquelle on avait renoncé.
+
+### Le motif que la liste des affaires n'a pas le droit de proposer
+
+Le vocabulaire est celui de la fiche contact — une seule liste à tenir — **moins
+« Ne souhaite plus être contacté »**, et ce retrait est la décision de
+conception de ce jalon.
+
+Ce n'est pas un motif d'échec commercial : c'est une volonté exprimée par une
+personne, et le produit la fait respecter en lisant `Contact.lostReason`
+(`optedOut()` — séquences, relances, outils du conseil). Le porter sur une
+affaire l'aurait rendu **visible sans être respecté** : l'écran aurait affiché
+« ne souhaite plus être contacté » pendant que le moteur de séquences aurait
+continué d'écrire à la personne, faute de lire cette colonne-là. Un motif qui
+ment de cette façon est pire que son absence. Le tiroir dit donc où le noter :
+*« Une opposition au démarchage se note sur la fiche du contact, pas sur
+l'affaire : c'est elle que lisent les séquences et les relances. »*
+
+### Ce qui compte comme « histoire », et l'exception qui a demandé à réfléchir
+
+`lib/domain/deal-deletion.ts`, pur et testé. Bloquent la suppression : une
+interaction réelle (appel, email, réunion, démo, LinkedIn), un **deuxième**
+passage d'étape, un statut gagné ou perdu, une tâche rattachée.
+
+**Les notes ne bloquent pas, et ce n'est pas un oubli.** Le produit en écrit une
+à *chaque* déplacement d'étape et une à la qualification d'un contact : les
+compter rendrait indélébile toute affaire née d'une qualification — y compris
+celle qu'on vient d'ouvrir sur le mauvais contact, c'est-à-dire précisément
+l'erreur que la suppression doit réparer. Une note ne sait pas dire si elle
+vient d'un humain ou de la comptabilité interne du produit ; tant qu'elle ne le
+sait pas, elle ne peut pas servir de preuve. Ce qu'elle emporte est donc
+**nommé dans la confirmation** plutôt que d'y faire obstacle. Même raison pour
+la première visite d'étape, écrite par `createDeal` dans sa propre transaction.
+
+Le refus est un **409 qui nomme ce qui retient et quoi faire à la place** :
+« Cette affaire porte une histoire : 1 tâche(s) rattachée(s). La supprimer
+ferait mentir vos taux de conversion. Marquez-la perdue — elle sort du pipeline
+et garde son montant, son historique et son motif. » Le verdict est **relu au
+moment d'écrire**, pas repris de l'affichage : la confirmation peut rester
+ouverte pendant qu'un appel se consigne ailleurs, et c'est exactement le moment
+où l'affaire cesse d'être supprimable.
+
+### Le menu des cartes, et pourquoi il compte sur téléphone
+
+Le tableau ne se pilotait qu'au glisser-déposer, **qui n'existe pas au doigt**.
+« Déplacer vers » met les étapes à un tap ; c'est ce qui rend le pipeline
+utilisable en mobilité, dans le prolongement du jalon 46. Le motif de perte se
+choisit dans le menu lui-même — deux taps au total — plutôt que dans une boîte
+de dialogue ; « Autre motif » renvoie au tiroir, qui a la place d'un champ
+libre.
+
+Le compteur des affaires perdues vit sur la page du pipeline et mène à
+`/affaires?status=lost` : quitter le tableau ne doit pas vouloir dire
+disparaître de la vue. Muet à zéro — un « 0 perdue » permanent finirait par ne
+plus rien vouloir dire.
+
+### La société manquante : le formulaire, pas la qualification
+
+Diagnostic d'abord. **La qualification n'était pas en cause** : `qualifyContact`
+recopie déjà `contact.companyId` sur l'affaire qu'elle ouvre. Le trou est dans
+`createDeal` : `resolveCompanyLink()` ne connaît que ce que le formulaire lui
+envoie, et le formulaire d'affaire laisse choisir un contact **et** une société
+séparément. Remplir l'un sans l'autre — le geste le plus naturel du monde —
+donnait une affaire sans société alors que la réponse était à un pas.
+
+La conséquence n'est pas cosmétique : l'affaire sort des totaux de `/societes`
+(pipeline ouvert, CA signé) et de la chronologie de la fiche société. La maison
+paraît plus petite qu'elle n'est, et seul un « Sans société » en petit sur la
+carte le signale.
+
+`inheritedCompanyId()` (pur) comble **un vide, jamais un choix** : une société
+déjà renseignée n'est pas écrasée — elle peut différer volontairement de celle
+du contact (intermédiaire, filiale, acheteur qui n'est pas la maison qui signe),
+même raisonnement qu'au jalon 3 sur la promotion en client. Appliquée à la
+création **et** à la mise à jour, sur l'état résultant : rattacher un contact à
+une affaire sans société suffit désormais à la renseigner. Un `companyId: null`
+explicite reste un détachement voulu.
+
+Un rattrapage `/reglages` traite l'existant, avec les garanties habituelles :
+simulation d'abord, une seule colonne, condition d'écriture sur la valeur relue,
+idempotent, et les affaires sans rien à déduire **nommées** plutôt que tues.
+
+### Jalon 47 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16, migration `20_deal_loss` appliquée puis
+`migrate diff` **vide**, le serveur standalone de production, et un navigateur
+piloté :
+
+- **1 · perdue** : statut `lost`, motif `Budget`, **étape inchangée**, sortie du
+  kanban, valeur totale 85 268 € → 76 088 € (−9 180 €), retrouvée sous
+  `/affaires?status=lost` ;
+- **2 · rouverte** : statut `open`, **même étape**, `closedAt` effacé, motif vidé
+  de la colonne et repris dans la note ; rouvrir une affaire en cours → **409** ;
+- **3 · refusée** : verdict `deletable: false`, `DELETE` → **409** nommant la
+  cause, l'affaire toujours en base ; une affaire d'essai déplacée une fois
+  devient elle aussi indélébile (« 1 déplacement(s) d'étape ») ;
+- **4 · supprimée** : doublon créé puis effacé, confirmation lue à l'écran —
+  « Supprimer « Doublon Vérif47 — à supprimer » (7 300 €) définitivement ?
+  Partiront avec elle : 1 visite(s) d'étape. » —, tiroir refermé, 404 ensuite ;
+- **5 · menu ⋯ à 390×844** : bouton 44×44, entrées 222×44, les cinq étapes plus
+  « Ouvrir la fiche » et « Marquer perdue… », **jamais « Supprimer »** ; étape
+  changée au doigt « Qualifié » → « Démo planifiée », **sans glisser-déposer** ;
+- **motifs à l'écran** : les six de la fiche contact, **« Ne souhaite plus être
+  contacté » absente** ;
+- **société héritée** : affaire créée avec un contact et sans société → FLOWI ;
+  société explicitement choisie **non écrasée** ; contact rattaché après coup à
+  une affaire nue → société renseignée ;
+- **rattrapage** : 1 affaire sur 2 orphelines rattachable (l'autre nommée comme
+  n'ayant rien à déduire), `expected` faux → refus chiffré, application → 1,
+  rejoué → 0 ;
+- **0 erreur console, 0 réponse ≥ 400** sur tout le parcours ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**919 tests**) verts.
+
+**Deux défauts attrapés avant de partir**, tous deux par des gardes existantes
+ou par relecture :
+
+1. `backup-columns.test.ts` (jalon 42) a échoué à la seconde où `lostReason` est
+   apparue au schéma sans rejoindre la sauvegarde — la garde a fait exactement
+   son travail, un an de motifs de perte aurait sinon disparu à la première
+   restauration ;
+2. la route du rattrapage rendait `applied` comme un **objet** là où toutes les
+   autres opérations rendent un nombre : le panneau l'interpole dans « N ligne(s)
+   corrigée(s) » et aurait affiché « [object Object] » sans que rien n'échoue.
+
+Un **flottement de test** préexistant a aussi été corrigé au passage :
+`home-page.test.ts` vérifiait « il y a 3 jours » sur un instantané daté à
+exactement 72 h, alors que `describeAge` tronque les **heures** et que le
+substitut date depuis `Date.now()` au moment de la requête — quelques
+millisecondes après l'horloge déjà capturée par la page. Le test tombait une
+fois sur dix, sous charge. La valeur passe à 76 h : la même chose est vérifiée
+sans dépendre de la milliseconde.
+
+### Jalon 47 — ce qui n'est pas fait
+
+**Une affaire perdue peut encore changer d'étape.** `planStageMove` la laisse
+perdue tout en déplaçant sa colonne (règle du jalon 1, testée) : « Rouvrir » la
+ramènerait alors ailleurs qu'à l'endroit d'où elle est sortie. Le cas demande
+d'ouvrir le tiroir d'une affaire close et de cliquer « Faire avancer » — c'est
+un geste délibéré, pas un accident, et le corriger changerait une règle
+antérieure sans qu'on ait constaté la gêne.
+
+**La suppression ne descend pas de sauvegarde.** Les corrections de données de
+`/reglages` en téléchargent une avant d'écrire ; ici, la confirmation nomme ce
+qui part et le verdict interdit tout ce qui a une histoire. Une affaire
+supprimable est, par construction, une affaire qui ne contient presque rien.
+
+**Le menu s'ouvre toujours vers le bas.** Sur la dernière carte d'une colonne
+longue, il faut faire défiler pour voir ses dernières entrées. Un
+positionnement qui se retourne près du bord se fera le jour où la gêne sera
+constatée.
+
+**Les chiffres ci-dessus viennent de la base locale**, pas de la vôtre. En
+production, le nombre d'affaires orphelines de société — et donc ce que le
+rattrapage aura à faire — s'affichera à la simulation. C'est à cela qu'elle sert.
