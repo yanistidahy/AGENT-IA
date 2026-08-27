@@ -169,6 +169,12 @@ model Deal {
   status         String    @default("open")
   prob           Int?
   notes          String    @default("")
+
+  /// Pourquoi l'affaire a été perdue. Vocabulaire de la fiche contact moins
+  /// l'opposition au démarchage, qui n'appartient qu'à la personne — voir
+  /// lib/domain/deal-loss.ts. Champ libre : effacé à la réouverture, mais
+  /// repris dans la note système pour que la raison ne disparaisse pas.
+  lostReason     String    @default("")
   expectedClose  DateTime?
   lastActivityAt DateTime?
   closedAt       DateTime?

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Drawer } from "@/components/ui/drawer";
@@ -19,6 +20,8 @@ interface PipelineViewProps extends DealFormOptions {
   readonly settings: PilotageSettings;
   readonly sequences: readonly SequenceOption[];
   readonly alerts: readonly Alert[];
+  /** Affaires perdues, tous mois confondus — elles ont quitté le tableau. */
+  readonly lostCount: number;
 }
 
 export function PipelineView({
@@ -27,6 +30,7 @@ export function PipelineView({
   settings,
   sequences,
   alerts,
+  lostCount,
   ...options
 }: PipelineViewProps) {
   const router = useRouter();
@@ -66,6 +70,21 @@ export function PipelineView({
       <div className="mb-4">
         <Fluxbar deals={openDeals} stages={options.stages} />
       </div>
+
+      {/* Quitter le pipeline n'est pas disparaître : le compteur garde une porte
+          ouverte vers ce qu'on a renoncé à suivre. Muet à zéro — un « 0 perdue »
+          permanent finirait par ne plus rien vouloir dire. */}
+      {lostCount > 0 && (
+        <p className="mb-3 text-[12.5px] text-muted">
+          {lostCount} affaire{lostCount > 1 ? "s" : ""} perdue{lostCount > 1 ? "s" : ""} —{" "}
+          <Link
+            href="/affaires?status=lost"
+            className="font-semibold text-brand-d hover:underline"
+          >
+            les revoir
+          </Link>
+        </p>
+      )}
 
       <KanbanBoard
         deals={deals}

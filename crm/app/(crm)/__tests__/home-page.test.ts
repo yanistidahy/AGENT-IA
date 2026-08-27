@@ -244,7 +244,14 @@ describe("bandeau de sauvegarde", () => {
   });
 
   it("alerte au-delà de 48 h, en disant depuis quand", async () => {
-    backupAgeHours = 72;
+    // 76 h et non 72 : `describeAge` tronque les **heures** écoulées, et le
+    // substitut date l'instantané depuis `Date.now()` au moment de la requête,
+    // donc quelques millisecondes après l'horloge que la page a déjà capturée.
+    // À exactement 72 h l'écart fait basculer 72 h en 71 h — soit « 2 jours » —
+    // et le test tombait une fois sur dix, sous charge. Une valeur qui n'est
+    // pas posée sur la frontière vérifie la même chose sans dépendre de la
+    // milliseconde.
+    backupAgeHours = 76;
     vi.resetModules();
     const html = await renderHome();
     expect(html).toContain("Sauvegarde en retard");

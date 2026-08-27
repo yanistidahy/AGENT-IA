@@ -119,3 +119,80 @@ export function moveDealStage(id: string, stageId: string): Promise<ApiResult<De
     body: JSON.stringify({ stageId }),
   });
 }
+
+export function markDealLost(id: string, reason: string): Promise<ApiResult<DealPayload>> {
+  return send(`/api/deals/${id}/lost`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function reopenDeal(id: string): Promise<ApiResult<DealPayload>> {
+  return send(`/api/deals/${id}/reopen`, { method: "POST" });
+}
+
+/** Ce que la suppression détruirait, et si elle est seulement possible. */
+export interface DeletionPayload {
+  readonly name: string;
+  readonly amount: number;
+  readonly verdict: {
+    readonly deletable: boolean;
+    readonly collateral: readonly string[];
+  };
+  readonly refusal: string;
+}
+
+function isDeletionPayload(value: unknown): value is { readonly suppression: DeletionPayload } {
+  if (typeof value !== "object" || value === null || !("suppression" in value)) return false;
+  const { suppression } = value;
+  if (typeof suppression !== "object" || suppression === null) return false;
+  const bag: Record<string, unknown> = { ...suppression };
+  return (
+    typeof bag.name === "string" &&
+    typeof bag.amount === "number" &&
+    typeof bag.refusal === "string" &&
+    typeof bag.verdict === "object" &&
+    bag.verdict !== null
+  );
+}
+
+/**
+ * Les faits, lus avant d'ouvrir la confirmation. Un aller-retour de plus, et
+ * c'est voulu : demander « supprimer ? » sans savoir ce qui va partir revient à
+ * faire confirmer à l'aveugle.
+ */
+export async function readDeletionReport(id: string): Promise<ApiResult<DeletionPayload>> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/deals/${id}?suppression=1`);
+  } catch {
+    return { ok: false, message: "Le serveur est injoignable. Vérifiez votre connexion." };
+  }
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    return isErrorBody(payload)
+      ? { ok: false, message: payload.error.message }
+      : { ok: false, message: `Erreur serveur (${response.status}).` };
+  }
+  if (!isDeletionPayload(payload)) {
+    return { ok: false, message: "Réponse inattendue du serveur." };
+  }
+  return { ok: true, data: payload.suppression };
+}
+
+/** Le refus arrive en 409 avec sa raison : elle est rendue telle quelle. */
+export async function deleteDeal(id: string): Promise<ApiResult<{ readonly deleted: true }>> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/deals/${id}`, { method: "DELETE" });
+  } catch {
+    return { ok: false, message: "Le serveur est injoignable. Vérifiez votre connexion." };
+  }
+  const payload: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    return isErrorBody(payload)
+      ? { ok: false, message: payload.error.message }
+      : { ok: false, message: `Erreur serveur (${response.status}).` };
+  }
+  return { ok: true, data: { deleted: true } };
+}

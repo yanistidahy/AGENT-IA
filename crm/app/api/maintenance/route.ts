@@ -22,6 +22,10 @@ import {
   websiteSnapshot,
 } from "@/lib/api/maintenance";
 import { readDomainReview } from "@/lib/api/domain-review";
+import {
+  applyDealCompanyBackfill,
+  planDealCompanyBackfill,
+} from "@/lib/api/deal-company-backfill";
 import { SHEET_SITES } from "@/scripts/sites-2026-08";
 import { STATUS_CORRECTIONS } from "@/scripts/corrections-2026-08";
 import {
@@ -44,7 +48,16 @@ export const dynamic = "force-dynamic";
  * `GET` simule et n'écrit rien. `POST` écrit, et exige de nommer l'opération :
  * une requête vide ne peut pas déclencher une écriture par accident.
  */
-const OPERATIONS = ["search", "lifecycles", "names", "statuses", "websites", "sites", "terminal"] as const;
+const OPERATIONS = [
+  "search",
+  "lifecycles",
+  "names",
+  "statuses",
+  "websites",
+  "sites",
+  "terminal",
+  "deal-companies",
+] as const;
 
 const applySchema = z.object({
   operation: z.enum(OPERATIONS, { error: "Opération inconnue" }),
@@ -54,7 +67,8 @@ const applySchema = z.object({
 
 export async function GET() {
   try {
-    const [search, lifecycles, names, statuses, websites, sites, terminal, domains] = await Promise.all([
+    const [search, lifecycles, names, statuses, websites, sites, terminal, domains, dealCompanies] =
+      await Promise.all([
       planSearchBackfill(),
       planLifecycleFix(STATUS_CORRECTIONS),
       planNameFix(),
@@ -63,6 +77,7 @@ export async function GET() {
       planSiteFix(SHEET_SITES),
       planTerminalFix(),
       readDomainReview(),
+      planDealCompanyBackfill(),
     ]);
 
     return jsonOk({
@@ -156,6 +171,16 @@ export async function GET() {
         noProposal: domains.noProposal,
         totals: domains.totals,
       },
+      dealCompanies: {
+        total: dealCompanies.fixes.length,
+        examined: dealCompanies.examined,
+        unresolved: dealCompanies.unresolved,
+        rows: dealCompanies.fixes.map((row) => ({
+          dealName: row.dealName,
+          contactName: row.contactName,
+          companyName: row.companyName,
+        })),
+      },
       websites: {
         total: websites.rows.length,
         unresolved: websites.unresolved,
@@ -202,6 +227,20 @@ export async function POST(request: Request) {
         );
       }
       return jsonOk({ applied: await applyNameFix(plan) });
+    }
+
+    if (parsed.data.operation === "deal-companies") {
+      const plan = await planDealCompanyBackfill();
+      if (plan.fixes.length !== parsed.data.expected) {
+        return badRequest(
+          `La base a changé depuis la simulation (${plan.fixes.length} affaires au lieu de ${parsed.data.expected}). Relancez la simulation.`,
+        );
+      }
+      // `applied` est un **nombre**, comme pour toutes les autres opérations :
+      // le panneau l'interpole dans « N ligne(s) corrigée(s) », et un objet y
+      // aurait affiché « [object Object] » sans que rien n'échoue.
+      const report = await applyDealCompanyBackfill(plan);
+      return jsonOk({ applied: report.linked, skipped: report.skipped });
     }
 
     if (parsed.data.operation === "terminal") {

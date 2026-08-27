@@ -74,6 +74,16 @@ export const moveStageSchema = z.object({
   stageId: z.string().trim().min(1, "L'étape cible est obligatoire"),
 });
 
+/**
+ * Marquer perdue. Le motif est **facultatif au schéma et obligatoire à
+ * l'écran** : c'est la même posture que l'issue d'une interaction au jalon 13.
+ * Un import ou un agent n'en porte pas, et refuser ces écritures casserait un
+ * chemin légitime pour un champ d'ergonomie.
+ */
+export const markLostSchema = z.object({
+  reason: z.string().trim().max(120, "Motif trop long").optional(),
+});
+
 export const DEAL_SORT_KEYS = [
   "name",
   "amount",

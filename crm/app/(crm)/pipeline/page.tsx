@@ -33,6 +33,11 @@ export default async function PipelinePage() {
       readAlerts(),
     ]);
 
+  // Sortir du pipeline ne doit pas vouloir dire sortir de la vue : sans ce
+  // compteur, une affaire perdue disparaît sans laisser d'adresse, et l'on
+  // finit par douter de l'avoir marquée.
+  const lostCount = await prisma.deal.count({ where: { status: "lost" } });
+
   const thisMonth = monthKey(new Date());
   const wonThisMonth = won.filter(
     (deal) => deal.closedAt !== null && monthKey(deal.closedAt) === thisMonth,
@@ -50,6 +55,7 @@ export default async function PipelinePage() {
       settings={settings}
       sequences={sequences}
       alerts={alerts}
+      lostCount={lostCount}
     />
   );
 }
