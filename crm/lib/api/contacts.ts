@@ -8,7 +8,7 @@ import {
   idleDays,
   type FollowUpStatus,
 } from "../domain/follow-up";
-import { isLost, isTerminal, LOST_LIFECYCLE, TERMINAL_RESET } from "../domain/lost";
+import { isLost, isTerminal, LOST_LIFECYCLE, TERMINAL_RESET, TERMINAL_LIFECYCLES } from "../domain/lost";
 import { ANSWERED_OUTCOMES, isStale, nameOverflow } from "../domain/status";
 import { compareByStatus, matchesContactFilter } from "../domain/contact-status";
 import { REAL_ACTIVITY } from "./real-activity";
@@ -158,6 +158,34 @@ const contactInclude = {
 } satisfies Prisma.ContactInclude;
 
 type ContactRow = Prisma.ContactGetPayload<{ include: typeof contactInclude }>;
+
+/**
+ * Les compteurs de la puce Instagram, sur **tout** le portefeuille.
+ *
+ * Jamais sur la liste filtrée : une puce qui compte son propre résultat
+ * afficherait toujours le total de ce qu'elle vient de sélectionner, ce qui
+ * n'apprend rien (règle du jalon 6). Quatre `count` plutôt qu'un chargement
+ * complet — c'est ce que la base sait faire de mieux, et « 23 comptes prêts à
+ * DM » est le nombre qui ouvre la matinée.
+ *
+ * Les fiches terminales sont exclues comme partout ailleurs : une marque
+ * perdue n'entre dans aucune file de travail (jalon 30).
+ */
+export async function instagramCounts(): Promise<Record<string, number>> {
+  const active = { lifecycle: { notIn: [...TERMINAL_LIFECYCLES] } };
+  const known = { instagram: { not: "" } };
+  const dmSent = { activities: { some: { ...REAL_ACTIVITY, type: "instagram" } } };
+  const noDm = { activities: { none: { ...REAL_ACTIVITY, type: "instagram" } } };
+
+  const [compte, aDm, envoye, aucun] = await Promise.all([
+    prisma.contact.count({ where: { ...active, ...known } }),
+    prisma.contact.count({ where: { ...active, ...known, ...noDm } }),
+    prisma.contact.count({ where: { ...active, ...dmSent } }),
+    prisma.contact.count({ where: { ...active, ...noDm } }),
+  ]);
+
+  return { compte, "a-dm": aDm, envoye, aucun };
+}
 
 /**
  * Interactions sans réponse, par contact.
@@ -435,15 +463,34 @@ function contactsWhere(
     });
   }
 
-  // Le segment de la nouvelle approche : les fiches à qui un DM a **réellement**
-  // été envoyé. La clause porte sur l'interaction, jamais sur `instagram` —
-  // connaître le compte d'une marque n'est pas l'avoir contactée, et mesurer le
-  // taux de réponse sur des gens qu'on n'a pas approchés ne dirait rien.
-  if (query.followUp === "dm") {
+  // Les deux axes du segment Instagram, indépendants l'un de l'autre — c'est
+  // ce qui rend leur intersection atteignable sans l'avoir énumérée. Voir
+  // lib/domain/instagram-filter.ts.
+  //
+  // `compte` lit le **champ** : on sait où écrire.
+  if (query.account === "connu") and.push({ instagram: { not: "" } });
+  if (query.account === "inconnu") and.push({ instagram: "" });
+
+  // `dm` lit l'**interaction** : on a écrit. Connaître le compte d'une marque
+  // n'est pas l'avoir contactée, et confondre les deux ferait entrer dans le
+  // segment des gens à qui l'on n'a rien envoyé.
+  if (query.dm === "envoye") {
     and.push({ activities: { some: { ...REAL_ACTIVITY, type: "instagram" } } });
   }
-  if (query.followUp === "no-dm") {
+  if (query.dm === "aucun") {
     and.push({ activities: { none: { ...REAL_ACTIVITY, type: "instagram" } } });
+  }
+
+  // Les deux axes sont des axes de **prospection** : ils excluent donc les
+  // cycles terminaux, comme toute file de travail depuis le jalon 30. Un ancien
+  // client dont on connaît le compte n'est pas une marque à qui écrire.
+  //
+  // Ce n'est pas qu'une question de sens : sans cette ligne, le compteur de la
+  // puce — qui exclut ces cycles — annoncerait un nombre que la liste ne rendrait
+  // pas. Une file du matin qui annonce 23 et en affiche 24 n'est plus un chiffre
+  // sur lequel commencer sa journée.
+  if (query.account !== undefined || query.dm !== undefined) {
+    and.push({ lifecycle: { notIn: [...TERMINAL_LIFECYCLES] } });
   }
 
   // Recherche insensible aux accents : elle porte sur le miroir normalisé, pas
@@ -552,6 +599,7 @@ function toFacetRow(contact: ContactRecord): ContactFacetRow {
     tag: contact.tag,
     lostReason: contact.lostReason,
     status: contact.status,
+    instagram: contact.instagram,
     companyName: contact.company?.name ?? null,
     lastContact: contact.lastContact,
     nextReminder: contact.nextReminder,
@@ -585,6 +633,7 @@ export async function contactFacets(
       tag: true,
       lostReason: true,
       status: true,
+      instagram: true,
       lastContact: true,
       nextReminder: true,
       company: { select: { name: true } },
@@ -599,6 +648,7 @@ export async function contactFacets(
     status: row.status,
     tag: row.tag,
     lostReason: row.lostReason,
+    instagram: row.instagram,
     companyName: row.company?.name ?? null,
     lastContact: row.lastContact,
     nextReminder: row.nextReminder,

@@ -37,16 +37,21 @@ interface Row {
   readonly amount: number;
   readonly nextReminder: Date | null;
   readonly company: { readonly name: string } | null;
+  /** Colonne filtrée sur sa **présence** et non sur sa valeur (jalon 49). */
+  readonly instagram: string;
 }
+
+/** L'étiquette de la facette de présence, comme dans `contact-columns.ts`. */
+const PRESENT = "Compte connu";
 
 const NOW = new Date("2026-08-12T09:00:00Z");
 
 const ROWS: readonly Row[] = [
-  { id: "1", lifecycle: "Lead", owner: "Yanis", amount: 1000, nextReminder: new Date("2026-08-01"), company: { name: "ACME" } },
-  { id: "2", lifecycle: "Prospect", owner: "Sacha", amount: 5000, nextReminder: new Date("2026-08-12"), company: { name: "Zénith" } },
-  { id: "3", lifecycle: "Lead", owner: "", amount: 0, nextReminder: null, company: null },
-  { id: "4", lifecycle: "Perdu", owner: "Yanis", amount: 12000, nextReminder: new Date("2026-09-30"), company: { name: "ACME" } },
-  { id: "5", lifecycle: "Client", owner: "Sacha", amount: 300, nextReminder: new Date("2026-08-14"), company: { name: "" } },
+  { id: "1", lifecycle: "Lead", owner: "Yanis", amount: 1000, nextReminder: new Date("2026-08-01"), company: { name: "ACME" }, instagram: "@acme" },
+  { id: "2", lifecycle: "Prospect", owner: "Sacha", amount: 5000, nextReminder: new Date("2026-08-12"), company: { name: "Zénith" }, instagram: "" },
+  { id: "3", lifecycle: "Lead", owner: "", amount: 0, nextReminder: null, company: null, instagram: "zenith_labs" },
+  { id: "4", lifecycle: "Perdu", owner: "Yanis", amount: 12000, nextReminder: new Date("2026-09-30"), company: { name: "ACME" }, instagram: "" },
+  { id: "5", lifecycle: "Client", owner: "Sacha", amount: 300, nextReminder: new Date("2026-08-14"), company: { name: "" }, instagram: "" },
 ];
 
 const SPECS: readonly ColumnSpec[] = [
@@ -55,6 +60,7 @@ const SPECS: readonly ColumnSpec[] = [
   { key: "company", label: "Société", kind: "text" },
   { key: "amount", label: "Montant", kind: "number" },
   { key: "nextReminder", label: "Prochaine relance", kind: "date" },
+  { key: "instagram", label: "Instagram", kind: "text" },
 ];
 
 const DB: readonly DbColumn[] = [
@@ -63,6 +69,7 @@ const DB: readonly DbColumn[] = [
   { key: "company", source: { kind: "relation", path: "company", field: "name" } },
   { key: "amount", source: { kind: "scalar", field: "amount" } },
   { key: "nextReminder", source: { kind: "scalar", field: "nextReminder" } },
+  { key: "instagram", source: { kind: "presence", field: "instagram", label: PRESENT } },
 ];
 
 const FACETS: readonly FacetColumn<Row>[] = [
@@ -71,6 +78,7 @@ const FACETS: readonly FacetColumn<Row>[] = [
   { key: "company", label: "Société", value: (row) => row.company?.name ?? null },
   { key: "amount", label: "Montant", value: (row) => row.amount },
   { key: "nextReminder", label: "Prochaine relance", value: (row) => row.nextReminder },
+  { key: "instagram", label: "Instagram", value: (row) => (row.instagram === "" ? "" : PRESENT) },
 ];
 
 /** Valeur d'un champ, en suivant éventuellement une relation. */
@@ -109,8 +117,23 @@ function evaluate(where: Record<string, unknown>, row: Row): boolean {
   });
 }
 
-function test(condition: Record<string, unknown>, value: unknown): boolean {
-  return Object.entries(condition).every(([operator, operand]) => {
+function test(condition: unknown, value: unknown): boolean {
+  // Prisma accepte la forme abrégée `{ champ: "valeur" }` pour l'égalité. Elle
+  // arrivait ici comme une « condition » sans opérateur : `Object.entries("")`
+  // est vide, `.every` renvoie donc **vrai pour toutes les lignes**, et
+  // l'évaluateur soi-disant strict validait en silence une clause qui filtre.
+  // C'est exactement le faux positif que ce test existe pour interdire.
+  if (typeof condition !== "object" || condition === null) {
+    if (typeof condition !== "string" && condition !== null) {
+      throw new Error(`condition non interprétée : ${String(condition)}`);
+    }
+    return value === condition;
+  }
+
+  const entries = Object.entries(condition as Record<string, unknown>);
+  if (entries.length === 0) throw new Error("condition vide");
+
+  return entries.every(([operator, operand]) => {
     switch (operator) {
       case "in": {
         if (!Array.isArray(operand)) throw new Error("in attendu comme tableau");
@@ -165,6 +188,17 @@ const CASES: ReadonlyArray<[string, FilterState]> = [
   ["valeur absente du jeu", { lifecycle: { kind: "text", values: ["Inexistant"] } }],
   ["(vide) seul", { owner: { kind: "text", values: [VOID] } }],
   ["(vide) mêlé à une valeur", { owner: { kind: "text", values: [VOID, "Yanis"] } }],
+  // Colonne de **présence** (jalon 49) : le menu n'y propose que deux entrées,
+  // et les deux cochées ensemble ne contraignent rien — comme aucune cochée.
+  ["présence : compte connu", { instagram: { kind: "text", values: [PRESENT] } }],
+  ["présence : (vide)", { instagram: { kind: "text", values: [VOID] } }],
+  ["présence : les deux états, donc aucune contrainte", {
+    instagram: { kind: "text", values: [PRESENT, VOID] },
+  }],
+  ["présence croisée avec une autre colonne", {
+    instagram: { kind: "text", values: [PRESENT] },
+    lifecycle: { kind: "text", values: ["Lead"] },
+  }],
   ["relation", { company: { kind: "text", values: ["ACME"] } }],
   ["relation vide — société absente ou sans nom", { company: { kind: "text", values: [VOID] } }],
   ["deux colonnes en ET", {

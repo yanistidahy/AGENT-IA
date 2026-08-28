@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ACCOUNT_STATES, DM_STATES } from "../domain/instagram-filter";
 import { CONTACT_FILTERS } from "../domain/follow-up";
 import { LIFECYCLES } from "../domain/types";
 
@@ -122,6 +123,14 @@ export const listContactsQuerySchema = z.object({
   q: z.string().optional(),
   lifecycle: z.enum([...LIFECYCLES, "all"]).optional(),
   followUp: z.enum(CONTACT_FILTERS).optional(),
+  /**
+   * Les deux axes du segment Instagram, **indépendants** : leur croisement
+   * donne les quatre lectures sans qu'aucune ait été énumérée. `account` porte
+   * sur le champ de la fiche, `dm` sur les interactions — voir
+   * lib/domain/instagram-filter.ts.
+   */
+  account: z.enum(ACCOUNT_STATES).optional(),
+  dm: z.enum(DM_STATES).optional(),
   owner: z.string().optional(),
   source: z.string().optional(),
   companyId: z.string().optional(),
