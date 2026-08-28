@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { instagramLabel, instagramUrl } from "@/lib/domain/instagram";
 import { ExternalLink } from "@/components/ui/external-link";
 import { Eyebrow } from "@/components/ui/primitives";
 import type { ContactRecord } from "@/lib/api/contacts";
@@ -40,6 +41,23 @@ export function ContactFields({ contact }: { contact: ContactRecord }) {
         </Field>
         <Field label="LinkedIn">
           <ExternalLink value={contact.linkedin} />
+        </Field>
+        <Field label="Instagram">
+          {instagramUrl(contact.instagram) === null ? (
+            // La valeur brute reste lisible quand elle ne fait pas un lien :
+            // quelqu'un a peut-être écrit une note dans le champ, et l'effacer
+            // de l'écran ferait croire qu'il est vide.
+            <span className="text-muted">{contact.instagram || "—"}</span>
+          ) : (
+            <a
+              href={instagramUrl(contact.instagram) ?? "#"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-brand-d hover:underline"
+            >
+              {instagramLabel(contact.instagram)}
+            </a>
+          )}
         </Field>
         <Field label="Étiquette">{contact.tag || "—"}</Field>
         <Field label="Dernier contact">

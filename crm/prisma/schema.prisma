@@ -128,6 +128,12 @@ model Contact {
   /// réécrit en base — voir lib/domain/links.ts.
   website String @default("")
 
+  /// Le compte Instagram de la marque — un pseudo (« @maison-vertu ») ou une
+  /// URL complète. Rendu en lien dans l'en-tête de la fiche : avant d'écrire,
+  /// on ouvre le profil. Distinct du fait d'avoir envoyé un DM, qui se lit
+  /// dans les interactions — connaître le compte n'est pas l'avoir contacté.
+  instagram String @default("")
+
   /// Miroir normalisé des champs cherchables — voir Company.searchText.
   searchText String @default("")
 
@@ -330,6 +336,10 @@ model Settings {
   relanceApresDemo    Int @default(2)
   relanceApresReunion Int @default(3)
   relanceApresLinkedin Int @default(4)
+  /// Un DM Instagram est le premier geste de la nouvelle approche : le délai
+  /// suit celui de LinkedIn, autre canal social où la réponse ne vient pas
+  /// dans l'heure.
+  relanceApresInstagram Int @default(4)
   relanceApresNote    Int @default(7)
 
   /// Objectifs hebdomadaires de « Ma performance ». `0` = pas d'objectif —

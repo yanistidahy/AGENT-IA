@@ -58,7 +58,8 @@ export interface EmailStats {
   readonly openTrust: { readonly unaudited: number; readonly tracked: number };
 }
 
-const WINDOW_DAYS = 90;
+export const EMAIL_WINDOW_DAYS = 90;
+const WINDOW_DAYS = EMAIL_WINDOW_DAYS;
 
 export async function readEmailStats(now = new Date()): Promise<EmailStats> {
   const since = new Date(now);

@@ -85,6 +85,7 @@ export function ContactForm({
       phone: text("phone"),
       linkedin: text("linkedin"),
       website: text("website"),
+      instagram: text("instagram"),
       source: text("source"),
       owner: text("owner"),
       tag: tag.kind === "existing" ? tag.id : tag.kind === "new" ? tag.name : "",

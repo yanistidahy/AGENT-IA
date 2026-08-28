@@ -19,6 +19,7 @@ const CHANNEL_COLORS: Record<ActivityType, string> = {
   meeting: "var(--color-violet)",
   demo: "var(--color-gold)",
   linkedin: "var(--color-win)",
+  instagram: "var(--color-pulse)",
   note: "var(--color-line)",
 };
 

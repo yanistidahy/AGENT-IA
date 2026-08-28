@@ -27,6 +27,7 @@ const API_FIELD: Record<ActivityType, string> = {
   demo: "relanceApresDemo",
   meeting: "relanceApresReunion",
   linkedin: "relanceApresLinkedin",
+  instagram: "relanceApresInstagram",
   note: "relanceApresNote",
 };
 

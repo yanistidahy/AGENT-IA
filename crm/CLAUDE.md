@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 48 | **Instagram entre dans la prospection** — DM consigné comme un canal, segment isolable, Alex qui ne mentionne le DM que s'il existe et nomme le vrai site, comparaison DM+email contre email seul | **livré, à valider** |
 | 47 | **Sortir une affaire du pipeline** — « perdue » avec motif et réouverture exacte, suppression refusée dès qu'il y a une histoire, menu ⋯ sur les cartes, société héritée du contact | **livré, à valider** |
 | 46 | **Le CRM tient dans la main** — rail repliable partout (cookie, Ctrl+B, surcouche mobile), tableaux en cartes sous `lg`, cibles tactiles à 44 px, /reglages assumé bureau | **livré, à valider** |
 | 4.5 | Envoi d'e-mails automatisé — spécifié après la validation du jalon 5 | différé |
@@ -6485,3 +6486,174 @@ constatée.
 **Les chiffres ci-dessus viennent de la base locale**, pas de la vôtre. En
 production, le nombre d'affaires orphelines de société — et donc ce que le
 rattrapage aura à faire — s'affichera à la simulation. C'est à cela qu'elle sert.
+
+---
+
+## Jalon 48 — Instagram entre dans la prospection
+
+### Un canal, pas un champ de plus
+
+`instagram` rejoint `ACTIVITY_TYPES`, et le changement s'est propagé **par le
+compilateur** : chaque `Record<ActivityType, …>` — couleurs de chronologie,
+libellés du flux, délais de relance, empilement de `/performance`, étiquettes
+des outils du conseil — a refusé de compiler jusqu'à être complété. C'est la
+raison d'être de ces `Record` plutôt que des tableaux, et c'est la deuxième fois
+qu'ils rendent ce service après le canal LinkedIn du jalon 40.
+
+Migration `21_instagram` : `Contact.instagram`, `Settings.relanceApresInstagram`
+(4 jours, comme LinkedIn — un DM ne se relance pas dans l'heure), et la source
+« Instagram » semée `WHERE NOT EXISTS`, sans jamais écraser une configuration.
+
+### Connaître le compte n'est pas avoir écrit
+
+C'est la distinction qui structure tout le jalon, et la confondre aurait faussé
+la mesure qui le justifie.
+
+| | Ce que ça dit | Où ça vit |
+|---|---|---|
+| `Contact.instagram` | on sait **où** écrire | un champ, rendu en lien |
+| interaction `instagram` | on a **écrit** | une ligne d'historique, datée |
+
+La puce « DM envoyé » sélectionne donc sur l'**interaction**, jamais sur le
+champ : filtrer sur le champ ferait entrer dans le segment toutes les marques
+repérées mais jamais approchées, et le taux de réponse de la nouvelle stratégie
+se mesurerait sur des gens à qui l'on n'a rien envoyé. Un test statique fixe la
+clause SQL pour que la confusion ne s'introduise pas plus tard.
+
+Le pseudo n'est pas une URL : `lib/domain/instagram.ts` accepte `@maison_vertu`,
+`maison_vertu` ou l'adresse collée entière, et rend `null` sur tout le reste —
+une note écrite dans le champ ne devient pas un lien mort. **La valeur stockée
+n'est jamais réécrite**, c'est la règle des liens du jalon 10 : la normalisation
+a lieu au rendu.
+
+### Un défaut attrapé avant de partir, et il aurait été muet
+
+Les filtres de `/contacts` passent **deux** tamis : la clause SQL ramène les
+lignes, puis `applyDerived` les repasse à `matchesContactFilter`. Un filtre
+tranché en SQL doit donc être déclaré dans `SQL_ONLY_FILTERS`, faute de quoi le
+second passage le compare à un statut de relance — qui ne vaut jamais « dm » —
+et **rejette tout ce que SQL vient de retenir**. La puce aurait affiché une
+liste vide en ayant l'air de fonctionner : aucune erreur, aucun test rouge, un
+segment introuvable.
+
+Le test ajouté échoue en nommant le filtre non déclaré ; il a été éprouvé en
+retirant les deux valeurs de la liste.
+
+### Alex ne peut pas inventer un DM
+
+Deux faits sont désormais **cherchés en base et annoncés dans le dossier sous
+leurs deux formes**, puis convertis en consignes exclusives :
+
+- **le DM** — « envoyé le 22/08 » ou « AUCUN n'a été envoyé à cette personne ».
+  Le déduire de la liste des dix dernières interactions aurait été un pari : sur
+  une fiche bavarde le DM en sort, sur une autre non, et Alex se met alors à
+  mentionner un message incertain. Quand il n'y en a pas, la consigne est une
+  **interdiction explicite**, pas une omission — une absence de ligne se lit
+  comme une absence d'information, une ligne qui dit « non » se lit comme une
+  règle. L'enjeu est petit et fatal : « je vous ai écrit sur Instagram » se
+  vérifie en trois secondes, et ce qui tombe alors n'est pas l'email, c'est la
+  relation.
+- **le site de la démonstration** — `lib/domain/demo-target.ts` : le site du
+  contact, à défaut le domaine de la société, **à défaut le nom de la marque**.
+  Ce troisième cas est le plus important : sans lui, un modèle à qui l'on
+  demande de citer un site sans lui en donner un **en fabrique un**, et
+  `maisonvertu.fr` a toutes les chances d'appartenir à quelqu'un d'autre. Le
+  module écarte aussi ce qui ressemble à un site sans en être un — les 59 fiches
+  du jalon 24 dont la colonne SITE portait « Shopify » ou un titre de page.
+
+`tests/dm-mention-source.test.ts` fixe les quatre invariants, éprouvé en rendant
+la consigne inconditionnelle.
+
+### Le nouveau mail de référence
+
+Approuvé avant d'être câblé, comme au jalon 35. Le DM y est un **paragraphe à
+part** qui dit *où* le message se trouve — Instagram range ceux qui viennent de
+comptes non suivis dans les demandes de messages privés, où personne ne regarde
+spontanément. La phrase de démonstration cite l'adresse (« ce que cela donnerait
+sur linae.fr ») : c'est ce qui la fait lire comme préparée pour eux plutôt que
+comme un gabarit.
+
+La mise en garde « à imiter, jamais à recopier » précise maintenant que
+l'exemple porte un DM **parce que le cas est fréquent, pas parce qu'il y en a
+toujours un** : sur une fiche sans DM consigné, le troisième paragraphe
+disparaît et le reste ne bouge pas.
+
+### La comparaison qui décide de la stratégie
+
+`lib/domain/dm-lift.ts` partage les personnes **écrites** en deux groupes selon
+qu'un DM précède ou non leur **premier** email, et compare leurs taux de
+réponse. La borne est le premier email et non le dernier : ce qu'on teste, c'est
+l'effet d'une prise de contact préalable, et un DM envoyé après coup n'a rien
+préparé.
+
+Trois refus, tous délibérés :
+
+- **aucun taux sur un dénominateur vide** — `rate()` rend `null`, règle du
+  jalon 20 ;
+- **aucune conclusion sous cinq personnes par groupe** : à trois contre deux, un
+  écart de trente points est du bruit, et l'afficher comme un résultat ferait
+  changer de stratégie sur rien ;
+- **aucune causalité affirmée**. Les marques approchées en DM ne sont pas
+  tirées au sort — ce sont celles dont on a trouvé le compte, donc souvent les
+  plus visibles. La phrase de lecture le dit avec le chiffre, comme la mise en
+  garde du taux d'ouverture depuis le jalon 43.
+
+Le délai DM → réponse est une **médiane** : une réponse arrivée six mois après
+tirerait la moyenne au point de ne plus décrire aucun cas. Un seul composant
+sert `/emails` et `/performance` — deux rendus du même chiffre finiraient par ne
+plus dire la même chose, et c'est ce chiffre-là qui portera une décision.
+
+### Jalon 48 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `21_instagram` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production, et un **proxy qui
+capte ce qui part réellement vers le modèle** — la discipline du jalon 44 : on
+lit le fil, pas l'intention :
+
+- **1 · DM consigné** : interaction `instagram` créée (201), visible dans la
+  chronologie de la fiche, et rendue dans l'empilement de `/performance`
+  (« 22/08 — Instagram : 3 ») avec Instagram dans la légende des canaux ;
+- **2 · segment** : puce « DM envoyé » → 1 fiche, le témoin dedans ; « Pas
+  encore de DM » → 103, le témoin dehors ; **1 + 103 = 104 = toutes les fiches
+  actives** (les 50 fiches terminales n'entrent dans aucune liste de travail,
+  règle du jalon 30) ; `dmAt` remonté sur la fiche ;
+- **3 · brouillon avec DM** : le dossier envoyé au modèle porte « DM Instagram :
+  envoyé le … », « Site à citer … : miye.fr », et la consigne « Un DM Instagram
+  a bien été envoyé » ;
+- **4 · brouillon sans DM ni site** : « AUCUN n'a été envoyé à cette personne »,
+  la consigne « N'en mentionne donc aucun », « Marque à nommer : Alvadiem », la
+  consigne « n'en déduis pas une du nom de la marque », et **aucune URL
+  fabriquée nulle part dans la requête** ;
+- **5 · comparaison** : le bloc « DM puis email, ou email seul » est présent sur
+  `/emails` **et** `/performance`, nomme ses deux côtés, et **refuse de
+  conclure** sur l'échantillon actuel ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**964 tests**) verts.
+
+**Deux gardes existantes ont fait leur travail** : `backup-columns` a signalé
+`Contact.instagram` et `Settings.relanceApresInstagram` absentes de la
+sauvegarde — sans quoi la première restauration aurait effacé tous les comptes
+Instagram saisis ; et le test du jeu de puces du jalon 31 a exigé que l'ajout de
+deux puces soit un geste délibéré, documenté sur place.
+
+### Jalon 48 — ce qui n'est pas fait
+
+**La comparaison n'a pas encore de quoi trancher.** Sur la base de
+vérification, un seul contact porte un DM : le bloc affiche donc son refus de
+conclure, ce qui est le comportement voulu mais n'est pas un résultat. Il faudra
+cinq personnes de chaque côté — soit quelques semaines de la nouvelle approche —
+avant que l'écart veuille dire quelque chose.
+
+**Aucun DM n'est envoyé depuis le CRM**, et ce n'était pas demandé : Instagram
+n'ouvre pas d'API de messagerie pour ce cas. Le DM se fait à la main, dans
+l'application, puis se consigne ici — comme un appel.
+
+**Le champ Instagram ne se remplit pas tout seul.** Il n'existe aucun rattrapage
+qui déduirait un compte du nom d'une marque : ce serait exactement la
+supposition refusée au jalon 25 pour les domaines, et le lien mènerait chez
+quelqu'un d'autre. Les 154 fiches partent donc avec un champ vide, à remplir au
+fil des recherches.
+
+**La qualité du texte d'Alex n'est pas établie**, une fois de plus : le
+substitut prouve que le bon dossier et les bonnes consignes partent, pas
+qu'Alex écrive un bon paragraphe sur le DM. Les trois premiers brouillons réels
+le diront.

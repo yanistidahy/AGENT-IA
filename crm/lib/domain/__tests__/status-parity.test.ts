@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   CONTACT_CHIPS,
   CONTACT_FILTERS,
@@ -6,6 +8,8 @@ import {
   FOLLOW_UP_LABELS,
   followUpStatus,
   isChipFilter,
+  appliedInSql,
+  type ContactFilter,
 } from "../follow-up";
 import {
   compareByStatus,
@@ -102,7 +106,17 @@ const POPULATION: ReadonlyArray<readonly [string, ContactStatusLike]> = [
  * n'y aurait aucun intérêt à filtrer. Un contact dans l'un de ces états
  * n'appartient donc à **aucune** puce de statut, et c'est correct.
  */
-const HISTORY_CHIPS = ["reminder", "stale-status", "contacted", "recent", "answered"] as const;
+const HISTORY_CHIPS = [
+  "reminder",
+  "stale-status",
+  "contacted",
+  "recent",
+  "answered",
+  // Le DM est un fait d'historique, pas un statut de relance : il se tranche
+  // en SQL sur les interactions, exactement comme les trois précédents.
+  "dm",
+  "no-dm",
+] as const;
 const STATUS_CHIPS = CONTACT_FILTERS.filter(
   (filter) => !HISTORY_CHIPS.some((history) => history === filter),
 );
@@ -219,11 +233,17 @@ describe("le jeu de puces", () => {
    * La décision, écrite noir sur blanc.
    *
    * « Déjà contactés » est retirée : complément exact de « Jamais contacté »,
-   * donc deux formulations d'une même frontière. Les six autres restent.
-   * Ce test existe pour qu'on ne la réintroduise pas par distraction — et pour
-   * qu'en ajouter une soit un geste délibéré, pas un effet de bord.
+   * donc deux formulations d'une même frontière. Ce test existe pour qu'on ne
+   * la réintroduise pas par distraction — et pour qu'en ajouter une soit un
+   * geste délibéré, pas un effet de bord.
+   *
+   * **Deux puces ajoutées au jalon 48**, et elles ne retombent pas dans le
+   * défaut de « Déjà contactés » : « DM envoyé » et « Pas encore de DM » sont
+   * bien complémentaires l'une de l'autre, mais aucune des deux ne se déduit
+   * d'une puce **déjà présente** — c'était ça, le reproche. Elles nomment les
+   * deux moitiés d'une file de travail : ce qui est fait, ce qui reste à faire.
    */
-  it("propose exactement les six puces retenues", () => {
+  it("propose exactement les puces retenues", () => {
     expect(CONTACT_CHIPS.map((chip) => CONTACT_FILTER_LABELS[chip])).toEqual([
       "À relancer",
       "Sans nouvelles",
@@ -231,7 +251,23 @@ describe("le jeu de puces", () => {
       "Statut figé",
       "Contactés cette semaine",
       "Ont répondu",
+      "DM envoyé",
+      "Pas encore de DM",
     ]);
+  });
+
+  it("« DM envoyé » se lit sur l'interaction, pas sur le champ Instagram", () => {
+    // Connaître le compte d'une marque n'est pas l'avoir contactée. Si la puce
+    // se mettait à sélectionner sur `Contact.instagram`, le segment gonflerait
+    // de marques repérées mais jamais approchées — et le taux de réponse de la
+    // nouvelle stratégie se mesurerait sur des gens à qui l'on n'a rien écrit.
+    const source = readFileSync(
+      join(__dirname, "..", "..", "api", "contacts.ts"),
+      "utf8",
+    );
+    expect(source).toMatch(
+      /followUp === "dm"[\s\S]{0,200}activities: \{ some: \{ \.\.\.REAL_ACTIVITY, type: "instagram" \}/,
+    );
   });
 
   it("« Déjà contactés » reste une valeur valide, sans puce", () => {
@@ -409,5 +445,44 @@ describe("cycle de vie terminal", () => {
     expect(contradictsTerminal({ lifecycle: LOST_LIFECYCLE, status: "Intéressé", nextReminder: null })).toBe(true);
     expect(contradictsTerminal({ lifecycle: LOST_LIFECYCLE, status: "", nextReminder: null })).toBe(false);
     expect(contradictsTerminal({ lifecycle: "Prospect", status: "Intéressé", nextReminder: day("2026-09-01") })).toBe(false);
+  });
+});
+
+/**
+ * **Un filtre tranché en SQL doit être déclaré comme tel.**
+ *
+ * `listContacts` applique les deux passes : la clause SQL ramène les lignes,
+ * puis `applyDerived` les repasse au tamis de `matchesContactFilter`. Un filtre
+ * qui vit en SQL sans figurer dans `SQL_ONLY_FILTERS` retombe sur la
+ * comparaison de statut — qui ne vaut jamais « dm » — et **la liste ressort
+ * vide sans qu'aucune erreur ne soit levée** : la puce a l'air de marcher, elle
+ * ne renvoie rien.
+ *
+ * C'est exactement le défaut introduit puis corrigé au jalon 48, et ce test
+ * existe pour qu'il ne revienne pas au prochain filtre d'historique.
+ */
+describe("les filtres décidés en SQL sont déclarés", () => {
+  const HISTORY_FILTERS: readonly ContactFilter[] = [
+    "stale-status",
+    "contacted",
+    "recent",
+    "answered",
+    "dm",
+    "no-dm",
+  ];
+
+  it("chacun est reconnu par appliedInSql", () => {
+    for (const filter of HISTORY_FILTERS) {
+      expect(appliedInSql(filter), `${filter} doit être déclaré SQL`).toBe(true);
+    }
+  });
+
+  it("et laisse donc passer les lignes que SQL a déjà retenues", () => {
+    // Une fiche quelconque, non terminale : le second passage ne doit pas la
+    // rejeter sous prétexte que son statut calculé ne s'appelle pas « dm ».
+    const row = contact({ lastContact: day("2026-08-10"), activityCount: 1 });
+    for (const filter of HISTORY_FILTERS) {
+      expect(matchesContactFilter(row, filter, settings, now), filter).toBe(true);
+    }
   });
 });

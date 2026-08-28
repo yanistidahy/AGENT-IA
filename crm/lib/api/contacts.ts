@@ -66,6 +66,8 @@ export interface ContactRecord {
   readonly linkedin: string;
   /** Site du contact ; à défaut, le domaine de sa société. Voir `toRecord`. */
   readonly website: string;
+  /** Compte Instagram de la marque, tel qu'il est saisi. Jamais réécrit. */
+  readonly instagram: string;
   readonly lifecycle: Lifecycle;
   readonly source: string;
   readonly owner: string;
@@ -110,6 +112,8 @@ export interface ContactRecord {
   readonly attempts: number;
   /** Interactions dont l'issue est « sans réponse ». */
   readonly unanswered: number;
+  /** Date du DM Instagram le plus récent — `null` si on n'a jamais écrit. */
+  readonly dmAt: Date | null;
   /** Type et issue du dernier échange — le canal qui a servi en dernier. */
   readonly lastChannel: ActivityType | null;
   readonly lastOutcome: string;
@@ -163,16 +167,51 @@ type ContactRow = Prisma.ContactGetPayload<{ include: typeof contactInclude }>;
  * (l'un total, l'autre filtré), et cent quarante requêtes pour cent quarante
  * lignes seraient un prix absurde pour un second nombre.
  */
-async function unansweredByContact(ids: readonly string[]): Promise<Map<string, number>> {
-  if (ids.length === 0) return new Map();
-  const rows = await prisma.activity.groupBy({
-    by: ["contactId"],
-    where: { contactId: { in: [...ids] }, outcome: "no-answer", ...REAL_ACTIVITY },
-    _count: { _all: true },
-  });
-  const map = new Map<string, number>();
-  for (const row of rows) {
-    if (row.contactId !== null) map.set(row.contactId, row._count._all);
+interface ContactExtras {
+  readonly unanswered: number;
+  /** Date du DM Instagram le plus récent, `null` s'il n'y en a jamais eu. */
+  readonly dmAt: Date | null;
+}
+
+const NO_EXTRAS: ContactExtras = { unanswered: 0, dmAt: null };
+
+/**
+ * Les deux agrégats que `include` ne sait pas rendre, en deux requêtes pour
+ * toute la liste.
+ *
+ * Prisma ne nomme pas les sous-sélections d'une même relation : on ne peut pas
+ * demander « la dernière interaction » **et** « le dernier DM » dans un seul
+ * `include`. Le `groupBy` répond pour toute la page d'un coup — cent quarante
+ * requêtes pour cent quarante lignes seraient un prix absurde pour deux
+ * valeurs.
+ */
+async function extrasByContact(
+  ids: readonly string[],
+): Promise<Map<string, ContactExtras>> {
+  const map = new Map<string, ContactExtras>();
+  if (ids.length === 0) return map;
+
+  const [unanswered, dms] = await Promise.all([
+    prisma.activity.groupBy({
+      by: ["contactId"],
+      where: { contactId: { in: [...ids] }, outcome: "no-answer", ...REAL_ACTIVITY },
+      _count: { _all: true },
+    }),
+    prisma.activity.groupBy({
+      by: ["contactId"],
+      where: { contactId: { in: [...ids] }, type: "instagram", ...REAL_ACTIVITY },
+      _max: { date: true },
+    }),
+  ]);
+
+  const put = (id: string, patch: Partial<ContactExtras>) => {
+    map.set(id, { ...(map.get(id) ?? NO_EXTRAS), ...patch });
+  };
+  for (const row of unanswered) {
+    if (row.contactId !== null) put(row.contactId, { unanswered: row._count._all });
+  }
+  for (const row of dms) {
+    if (row.contactId !== null) put(row.contactId, { dmAt: row._max.date });
   }
   return map;
 }
@@ -181,7 +220,7 @@ function toRecord(
   row: ContactRow,
   settings: PilotageSettings,
   now: Date,
-  unanswered = 0,
+  extras: ContactExtras = NO_EXTRAS,
 ): ContactRecord {
   const followUpInput = {
     lastContact: row.lastContact,
@@ -213,9 +252,13 @@ function toRecord(
     // base : recopier la valeur à l'écriture ferait diverger les deux le jour
     // où la société change de domaine, et personne ne saurait laquelle croire.
     website: row.website !== "" ? row.website : (row.company?.domain ?? ""),
+    // Pas de repli depuis la société : un compte Instagram appartient à la
+    // marque qu'on démarche, il ne se déduit d'aucun autre champ.
+    instagram: row.instagram,
     lastActivityAt: row.activities[0]?.date ?? null,
     attempts: row._count.activities,
-    unanswered,
+    unanswered: extras.unanswered,
+    dmAt: extras.dmAt,
     lastChannel: last === undefined ? null : toActivityType(last.type),
     lastOutcome: last?.outcome ?? "",
     companySize: row.company?.size ?? "",
@@ -316,8 +359,8 @@ export async function listContacts(
     orderBy: orderBy(query),
   });
 
-  const unanswered = await unansweredByContact(rows.map((row) => row.id));
-  let records = rows.map((row) => toRecord(row, settings, now, unanswered.get(row.id) ?? 0));
+  const extras = await extrasByContact(rows.map((row) => row.id));
+  let records = rows.map((row) => toRecord(row, settings, now, extras.get(row.id) ?? NO_EXTRAS));
   records = applyDerived(records, query, filters, settings, now);
 
   // Le filtre « à relancer » rassemble retards et échéances à venir : sans tri
@@ -390,6 +433,17 @@ function contactsWhere(
     and.push({
       activities: { some: { ...REAL_ACTIVITY, outcome: { in: [...ANSWERED_OUTCOMES] } } },
     });
+  }
+
+  // Le segment de la nouvelle approche : les fiches à qui un DM a **réellement**
+  // été envoyé. La clause porte sur l'interaction, jamais sur `instagram` —
+  // connaître le compte d'une marque n'est pas l'avoir contactée, et mesurer le
+  // taux de réponse sur des gens qu'on n'a pas approchés ne dirait rien.
+  if (query.followUp === "dm") {
+    and.push({ activities: { some: { ...REAL_ACTIVITY, type: "instagram" } } });
+  }
+  if (query.followUp === "no-dm") {
+    and.push({ activities: { none: { ...REAL_ACTIVITY, type: "instagram" } } });
   }
 
   // Recherche insensible aux accents : elle porte sur le miroir normalisé, pas
@@ -615,8 +669,8 @@ export async function getContact(
 ): Promise<ContactRecord | null> {
   const row = await prisma.contact.findUnique({ where: { id }, include: contactInclude });
   if (row === null) return null;
-  const unanswered = await unansweredByContact([row.id]);
-  return toRecord(row, settings, now, unanswered.get(row.id) ?? 0);
+  const extras = await extrasByContact([row.id]);
+  return toRecord(row, settings, now, extras.get(row.id) ?? NO_EXTRAS);
 }
 
 /**
@@ -640,6 +694,7 @@ export async function createContact(input: CreateContactInput): Promise<ContactR
       phone: input.phone ?? "",
       linkedin: input.linkedin ?? "",
       website: input.website ?? "",
+      instagram: input.instagram ?? "",
       source: input.source ?? "",
       owner: input.owner ?? "",
       tag: input.tag ?? "",
@@ -664,8 +719,8 @@ export async function createContact(input: CreateContactInput): Promise<ContactR
 
     return created;
   });
-  const unanswered = await unansweredByContact([row.id]);
-  return toRecord(row, DEFAULT_PILOTAGE, new Date(), unanswered.get(row.id) ?? 0);
+  const extras = await extrasByContact([row.id]);
+  return toRecord(row, DEFAULT_PILOTAGE, new Date(), extras.get(row.id) ?? NO_EXTRAS);
 }
 
 export async function updateContact(
@@ -698,6 +753,7 @@ export async function updateContact(
   if (input.phone !== undefined) data.phone = input.phone;
   if (input.linkedin !== undefined) data.linkedin = input.linkedin;
   if (input.website !== undefined) data.website = input.website;
+  if (input.instagram !== undefined) data.instagram = input.instagram;
   if (input.source !== undefined) data.source = input.source;
   if (input.owner !== undefined) data.owner = input.owner;
   if (input.tag !== undefined) data.tag = input.tag;
@@ -745,8 +801,8 @@ export async function updateContact(
     return updated;
   });
 
-  const unanswered = await unansweredByContact([row.id]);
-  return toRecord(row, DEFAULT_PILOTAGE, new Date(), unanswered.get(row.id) ?? 0);
+  const extras = await extrasByContact([row.id]);
+  return toRecord(row, DEFAULT_PILOTAGE, new Date(), extras.get(row.id) ?? NO_EXTRAS);
 }
 
 /**

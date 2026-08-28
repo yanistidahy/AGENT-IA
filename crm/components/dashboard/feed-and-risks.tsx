@@ -10,6 +10,7 @@ const TYPE_LABELS: Record<ActivityType, string> = {
   meeting: "Réunion",
   demo: "Démo",
   linkedin: "LinkedIn",
+  instagram: "Instagram",
   note: "Note",
 };
 
@@ -19,6 +20,7 @@ const TYPE_TONES: Record<ActivityType, Tone> = {
   meeting: "violet",
   demo: "gold",
   linkedin: "sky",
+  instagram: "pulse",
   note: "mute",
 };
 

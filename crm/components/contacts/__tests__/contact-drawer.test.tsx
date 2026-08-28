@@ -29,6 +29,8 @@ function contact(overrides: Partial<ContactRecord> = {}): ContactRecord {
     phone: "06 11 22 33 44",
     linkedin: "linkedin.com/in/nadia",
     website: "nutrivia.fr",
+    instagram: "",
+    dmAt: null,
     lifecycle: "Prospect",
     source: "Salon",
     owner: "Yanis",

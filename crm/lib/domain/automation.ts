@@ -143,6 +143,7 @@ export interface ReminderDelays {
   readonly demo: number;
   readonly meeting: number;
   readonly linkedin: number;
+  readonly instagram: number;
   readonly note: number;
 }
 
@@ -154,6 +155,9 @@ export const DEFAULT_REMINDER_DELAYS: ReminderDelays = {
   // Un message LinkedIn se relance comme un email : même canal écrit, même
   // absence d'engagement immédiat.
   linkedin: 4,
+  // Un DM Instagram non plus : c'est le premier geste de l'approche, et la
+  // réponse vient quand la marque relève ses messages, pas dans l'heure.
+  instagram: 4,
   note: 7,
 };
 

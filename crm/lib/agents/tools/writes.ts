@@ -132,6 +132,7 @@ const LABELS: Record<(typeof ACTIVITY_TYPES)[number], string> = {
   meeting: "une réunion",
   demo: "une démo",
   linkedin: "un message LinkedIn",
+  instagram: "un DM Instagram",
   note: "une note",
 };
 

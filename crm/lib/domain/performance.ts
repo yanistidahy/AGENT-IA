@@ -134,6 +134,7 @@ const EMPTY_COUNTS: Readonly<Record<ActivityType, number>> = {
   demo: 0,
   note: 0,
   linkedin: 0,
+  instagram: 0,
 };
 
 function pad(value: number): string {
