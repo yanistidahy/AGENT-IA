@@ -53,6 +53,7 @@ export async function getReminderDelays(): Promise<ReminderDelays> {
     demo: row.relanceApresDemo,
     meeting: row.relanceApresReunion,
     linkedin: row.relanceApresLinkedin,
+    instagram: row.relanceApresInstagram,
     note: row.relanceApresNote,
   };
 }

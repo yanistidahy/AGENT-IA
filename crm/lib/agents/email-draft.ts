@@ -15,6 +15,7 @@ import { OUTCOME_LABELS, isOutcome } from "@/lib/domain/status";
 import { formatDate } from "@/lib/format";
 import { enforceSignature, sanitizeSubject } from "@/lib/domain/email-format";
 import { signatureBlock } from "./prompts/company";
+import { demoTarget, demoTargetRule } from "@/lib/domain/demo-target";
 import { alexDynamicRules } from "./alex-rules";
 import { AGENTS } from "./registry";
 import { readMailConfig, type MailConfig } from "@/lib/api/mail";
@@ -112,7 +113,7 @@ export type DraftResult =
   | { readonly ok: false; readonly message: string };
 
 /** Le dossier réel du contact, mis en phrases pour le modèle. */
-async function contextFor(contactId: string, focusActivityId?: string): Promise<string | null> {
+async function contextFor(contactId: string, focusActivityId?: string): Promise<ContextResult | null> {
   const contact = await prisma.contact.findUnique({
     where: { id: contactId },
     select: {
@@ -126,7 +127,8 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
       lastContact: true,
       nextReminder: true,
       notes: true,
-      company: { select: { name: true, industry: true, size: true } },
+      website: true,
+      company: { select: { name: true, industry: true, size: true, domain: true } },
       deals: {
         select: { name: true, amount: true, status: true, stage: { select: { name: true } } },
         orderBy: { amount: "desc" },
@@ -157,6 +159,23 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
     now,
   );
 
+  // Le DM Instagram : un **fait**, cherché séparément et daté. Le laisser se
+  // déduire de la liste des dix dernières interactions serait un pari — sur une
+  // fiche bavarde le DM en sort, et Alex se met alors à mentionner un message
+  // qu'on n'a peut-être jamais envoyé. C'est le genre de petit mensonge qui tue
+  // une première prise de contact, donc il ne se déduit pas : il se demande.
+  const dm = await prisma.activity.findFirst({
+    where: { ...REAL_ACTIVITY, contactId, type: "instagram" },
+    select: { date: true },
+    orderBy: { date: "desc" },
+  });
+
+  const target = demoTarget({
+    website: contact.website,
+    companyDomain: contact.company?.domain ?? "",
+    companyName: contact.company?.name ?? "",
+  });
+
   const lines: string[] = [];
   lines.push(`Destinataire : ${contact.firstName} ${contact.lastName}${contact.title === "" ? "" : `, ${contact.title}`}`);
   if (contact.company !== null) {
@@ -171,6 +190,23 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
       : `Dernier contact : ${formatDate(contact.lastContact)}`,
   );
   lines.push(`Nombre d'échanges réels consignés : ${contact._count.activities}`);
+
+  // Les deux faits que la nouvelle forme d'email exige, annoncés sans ambiguïté
+  // et **toujours présents** — y compris à la forme négative. Une absence de
+  // ligne se lit comme une absence d'information ; une ligne qui dit « non »
+  // se lit comme une interdiction.
+  lines.push(
+    dm === null
+      ? "DM Instagram : AUCUN n'a été envoyé à cette personne."
+      : `DM Instagram : envoyé le ${formatDate(dm.date)}.`,
+  );
+  lines.push(
+    target.kind === "site"
+      ? `Site à citer dans la phrase de démonstration : ${target.value}`
+      : target.kind === "brand"
+        ? `Site à citer : AUCUN site connu. Marque à nommer : ${target.value}`
+        : "Site à citer : AUCUN site ni nom de marque connu.",
+  );
 
   for (const deal of contact.deals) {
     lines.push(`Affaire : « ${deal.name} », ${deal.amount} €, étape ${deal.stage.name}, ${deal.status}`);
@@ -201,7 +237,17 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
     lines.push(`Notes de la fiche : ${notes.slice(0, 600)}`);
   }
 
-  return lines.join("\n");
+  return { dossier: lines.join("\n"), target, dmSent: dm !== null };
+}
+
+/**
+ * Le dossier, plus les deux faits qui commandent des consignes distinctes :
+ * ce que la phrase de démonstration doit nommer, et si un DM existe vraiment.
+ */
+interface ContextResult {
+  readonly dossier: string;
+  readonly target: ReturnType<typeof demoTarget>;
+  readonly dmSent: boolean;
 }
 
 /**
@@ -220,9 +266,13 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
  * Ne reste ici que ce que le prompt système ne peut pas porter : **la forme de
  * la réponse**. Le reste est au-dessus.
  */
-function draftInstruction(): string {
+function draftInstruction(context: ContextResult): string {
   return `Rédige **un** email à partir du dossier ci-dessus, en appliquant les
 règles de forme, de signature et de lien données plus haut.
+
+${demoTargetRule(context.target)}
+
+${dmRule(context.dmSent)}
 
 Rends exclusivement un objet JSON, sans texte autour, sans bloc de code :
 {"subject": "...", "body": "..."}
@@ -230,6 +280,26 @@ Rends exclusivement un objet JSON, sans texte autour, sans bloc de code :
 Deux points propres à cette forme :
 - \`body\` sépare ses paragraphes par une ligne vide (\\n\\n) ;
 - n'invente aucun fait qui ne soit pas dans le dossier.`;
+}
+
+/**
+ * **Mentionner le DM, ou se taire — et c'est la donnée qui tranche.**
+ *
+ * La consigne est construite depuis le fait, pas laissée au jugement : « parle
+ * du DM si tu en as envoyé un » invite un modèle à supposer qu'il y en a eu
+ * un, puisque la phrase existe. Ici, l'une des deux consignes seulement atteint
+ * le modèle, et celle du cas négatif est une **interdiction**, pas une
+ * omission.
+ *
+ * L'enjeu est petit et fatal : affirmer « je vous ai écrit sur Instagram » à
+ * quelqu'un qui n'a rien reçu se vérifie en trois secondes, et ce qui tombe
+ * alors n'est pas l'email, c'est la relation.
+ */
+function dmRule(dmSent: boolean): string {
+  if (dmSent) {
+    return `**Un DM Instagram a bien été envoyé à cette personne**, et le dossier en donne la date. Mentionne-le dans le corps du message, après l'accroche : dis que tu lui as écrit sur Instagram et invite-la à regarder ses messages privés. C'est une raison concrète et vérifiable de prêter attention à cet email — jamais « je me permets de vous relancer », qui ne parle que de ton agenda.`;
+  }
+  return `**Aucun DM Instagram n'a été envoyé à cette personne.** N'en mentionne donc aucun, sous aucune forme : ni « comme je vous l'écrivais sur Instagram », ni « vous avez dû voir mon message ». Ce serait une affirmation fausse, vérifiable en trois secondes par le destinataire. Écris l'email sans cette mention.`;
 }
 
 export async function draftEmail(
@@ -274,7 +344,7 @@ export async function draftEmail(
 
   return complete(
     system,
-    `${context}\n\n---\n\n${draftInstruction()}${
+    `${context.dossier}\n\n---\n\n${draftInstruction(context)}${
       stepBrief === undefined || stepBrief.trim() === ""
         ? ""
         : `\n\nConsigne propre à ce message : ${stepBrief.trim()}`

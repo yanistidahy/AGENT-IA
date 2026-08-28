@@ -1,5 +1,6 @@
 "use client";
 
+import { instagramLabel, instagramUrl } from "@/lib/domain/instagram";
 import { ExternalLink } from "@/components/ui/external-link";
 import { ACTIVITY_LABELS } from "@/lib/domain/types";
 import { formatDate } from "@/lib/format";
@@ -104,5 +105,44 @@ export const EXTRA_COLUMNS: readonly ContactColumn[] = [
     sort: null,
     filterKey: null,
     cell: (contact) => <ExternalLink value={contact.website} />,
+  },
+  {
+    key: "instagram",
+    label: "Instagram",
+    sort: null,
+    filterKey: null,
+    // Le compte, pas le fait de l'avoir contacté : les deux colonnes se
+    // suivent pour que l'écart soit visible d'un coup d'œil.
+    cell: (contact) => {
+      const href = instagramUrl(contact.instagram);
+      if (href === null) return <span className="text-muted">—</span>;
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => event.stopPropagation()}
+          className="text-brand-d hover:underline"
+        >
+          {instagramLabel(contact.instagram)}
+        </a>
+      );
+    },
+  },
+  {
+    key: "dm",
+    label: "DM",
+    sort: null,
+    filterKey: null,
+    // « Pas encore » et non « — » : l'absence de DM est un état de la
+    // prospection, pas une donnée manquante, et c'est une file de travail.
+    cell: (contact) =>
+      contact.dmAt === null ? (
+        <span className="text-muted">Pas encore</span>
+      ) : (
+        <span className="font-mono tabular-nums text-win-d">
+          envoyé {formatDate(contact.dmAt)}
+        </span>
+      ),
   },
 ];

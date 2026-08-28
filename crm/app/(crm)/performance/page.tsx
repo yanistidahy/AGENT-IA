@@ -5,6 +5,9 @@ import { FunnelRow } from "@/components/emails/funnel-row";
 import { StackedBars } from "@/components/performance/stacked-bars";
 import { PerfFilters } from "@/components/performance/perf-filters";
 import { OwnerTable } from "@/components/performance/owner-table";
+import { DmLiftBlock } from "@/components/emails/dm-lift-block";
+import { readDmLift } from "@/lib/api/dm-lift";
+import { EMAIL_WINDOW_DAYS as DM_LIFT_WINDOW_DAYS } from "@/lib/api/email-stats";
 import { ConsistencyBlock } from "@/components/performance/consistency-block";
 import {
   CallOutcomes,
@@ -56,12 +59,18 @@ export default async function PerformancePage({
   const kind = toPeriod(raw.periode);
   const who = Array.isArray(raw.qui) ? raw.qui[0] : raw.qui;
 
-  const perf = await readPerformance({
-    period: kind,
-    owner: who,
-    from: toDate(raw.du),
-    to: toDate(raw.au),
-  });
+  const [perf, lift] = await Promise.all([
+    readPerformance({
+      period: kind,
+      owner: who,
+      from: toDate(raw.du),
+      to: toDate(raw.au),
+    }),
+    // Sur sa propre fenêtre de 90 jours, et non celle du sélecteur : comparer
+    // deux groupes demande du volume, et « aujourd'hui » n'en a jamais assez.
+    // Le bloc dit lui-même à partir de quand il accepte de conclure.
+    readDmLift(DM_LIFT_WINDOW_DAYS),
+  ]);
 
   const vs = VS[kind];
   const calls = perf.channels.find((channel) => channel.channel === "call");
@@ -183,6 +192,12 @@ export default async function PerformancePage({
       {/* — par personne — */}
       <section className="mb-4">
         <OwnerTable lines={perf.perOwner} />
+      </section>
+
+      {/* La nouvelle approche, mise à l'épreuve : c'est ici qu'on décide de
+          continuer le DM ou de l'abandonner. */}
+      <section className="mb-4">
+        <DmLiftBlock lift={lift} />
       </section>
 
       <section className="mb-4 lg:max-w-[560px]">

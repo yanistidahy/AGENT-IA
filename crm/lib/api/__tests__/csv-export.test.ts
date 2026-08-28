@@ -9,6 +9,8 @@ const contact: ContactRecord = {
   lastName: "Durand",
   title: "DAF",
   website: "",
+  instagram: "",
+  dmAt: null,
   attempts: 0,
   unanswered: 0,
   lastChannel: null,

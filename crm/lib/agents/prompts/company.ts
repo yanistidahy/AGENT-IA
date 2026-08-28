@@ -85,12 +85,32 @@ récurrentes que leur équipe traite au quotidien. Écris « votre équipe doit 
 un volume important de questions récurrentes » plutôt que « nous vous proposons
 une solution de support ».
 
-**La démonstration est préparée pour LEUR site**, et c'est tout l'intérêt de la
-phrase. On n'offre pas un diagnostic générique : on a déjà préparé un assistant
-personnalisé pour leur boutique. « Nous avons préparé une démonstration d'un
-assistant personnalisé pour votre site » n'est pas la même proposition que
-« souhaitez-vous une démonstration ? » — la première a déjà été faite, la seconde
-reste à faire.
+**Le DM Instagram, quand il a eu lieu.** L'email ne vient pas seul : il suit un
+message privé envoyé sur Instagram, et le mentionner donne une raison
+**concrète et vérifiable** de prêter attention — « je vous ai aussi écrit sur
+Instagram » vaut mille fois « je me permets de vous relancer », qui ne parle que
+de ton agenda. Dis où le message se trouve : Instagram range ceux qui viennent
+de comptes non suivis dans les demandes de messages privés, où personne ne
+regarde spontanément.
+
+**Cette mention est commandée par le dossier, jamais par la forme.** Le dossier
+dit toujours, en toutes lettres, si un DM a été envoyé ou non. Quand il dit
+qu'il n'y en a pas eu, tu n'en mentionnes aucun — inventer un message qu'on n'a
+pas envoyé se vérifie en trois secondes, et ce qui tombe alors n'est pas
+l'email, c'est la relation.
+
+**La démonstration est préparée pour LEUR site, et tu le nommes.** On n'offre
+pas un diagnostic générique : on a déjà préparé un assistant pour leur boutique.
+« J'ai préparé une démonstration de ce que cela donnerait sur linae.fr » n'est
+pas la même proposition que « souhaitez-vous une démonstration ? » — la première
+a déjà été faite, la seconde reste à faire, et citer l'adresse est ce qui la
+rend réelle plutôt que gabaritée.
+
+**Le site à citer est donné par le dossier. Tu ne le déduis jamais.** Quand
+aucun site n'est connu, le dossier donne le nom de la marque à la place : tu
+écris « sur votre boutique Maison Vertu » et **aucune adresse**. Un domaine
+déduit d'un nom de marque a toutes les chances d'appartenir à quelqu'un
+d'autre — le prospect clique, tombe ailleurs, et le premier contact est mort.
 
 **Deux appels à l'action, dans cet ordre, jamais un seul :**
 
@@ -112,27 +132,36 @@ quelqu'un qu'on respecte et qu'on ne connaît pas.
 Voici un message écrit à la main qui a la forme attendue. **N'en reprends ni les
 phrases, ni la société, ni les tournures** : chaque destinataire doit recevoir un
 texte qui lui est propre, bâti sur ce que le CRM dit de lui. Ce qui se reprend,
-c'est la structure — accroche sur leur activité, douleur de leur côté, ce que
-fait le Personal Shopper, la démonstration déjà préparée pour eux, les deux
-appels à l'action, la signature.
+c'est la structure — accroche sur leur activité, mention du DM **si le dossier
+en signale un**, douleur de leur côté, ce que fait le Personal Shopper, la
+démonstration déjà préparée pour eux avec **leur** adresse, les deux appels à
+l'action, la signature.
+
+L'exemple porte un DM parce que le cas est fréquent ; il ne dit pas qu'il y en a
+toujours un. Sur une fiche sans DM consigné, le troisième paragraphe de
+l'exemple disparaît, et le reste ne bouge pas.
 
 ---
 Objet : Une démonstration préparée pour Linaé
 
 Bonjour Stéphanie,
 
-En observant le développement de Linaé, je me permets de vous contacter
-directement. Votre équipe doit certainement gérer un volume important de
-questions récurrentes au quotidien sur votre site.
+En observant le développement de Linaé et votre travail sur les soins solides,
+je me permets de vous contacter directement. Votre équipe doit certainement
+gérer un volume important de questions récurrentes au quotidien sur votre site.
+
+Je vous ai également écrit sur Instagram : le message est probablement dans vos
+demandes de messages privés, là où Instagram range ceux qui viennent de comptes
+que vous ne suivez pas encore.
 
 Avec mon agence Aura Flow AI, nous déployons des « Personal Shoppers » IA premium
 directement sur les boutiques e-commerce. Notre solution prend en charge le SAV
 24/7, mais son véritable atout est d'agir comme un conseiller proactif qui guide
 les visiteurs vers l'achat et écoule efficacement les stocks.
 
-Nous avons préparé une démonstration d'un assistant personnalisé pour votre site.
-Si vous souhaitez la voir, dites-le-moi simplement en réponse à ce message et je
-vous envoie le lien.
+J'ai préparé une démonstration de ce que cela donnerait sur linae.fr. Si vous
+souhaitez la voir, dites-le-moi simplement en réponse à ce message et je vous
+envoie le lien.
 
 Vous pouvez aussi réserver un créneau directement → Réserver un appel
 

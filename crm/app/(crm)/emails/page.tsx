@@ -1,4 +1,6 @@
-import { readEmailStats } from "@/lib/api/email-stats";
+import { EMAIL_WINDOW_DAYS, readEmailStats } from "@/lib/api/email-stats";
+import { readDmLift } from "@/lib/api/dm-lift";
+import { DmLiftBlock } from "@/components/emails/dm-lift-block";
 import { parseSentQuery, readSentEmails, readSilentContacts } from "@/lib/api/email-list";
 import { listOwners } from "@/lib/api/reference";
 import { EmptyChart } from "@/components/charts/empty-chart";
@@ -34,11 +36,14 @@ export default async function EmailsPage({
 }) {
   const query = parseSentQuery(await searchParams);
 
-  const [stats, list, silent, owners] = await Promise.all([
+  const [stats, list, silent, owners, lift] = await Promise.all([
     readEmailStats(),
     readSentEmails(query),
     readSilentContacts(),
     listOwners(),
+    // Même fenêtre que les statistiques d'envoi : deux périodes différentes sur
+    // le même écran feraient comparer des choses qui ne se comparent pas.
+    readDmLift(EMAIL_WINDOW_DAYS),
   ]);
 
   if (stats.total === 0) {
@@ -96,6 +101,12 @@ export default async function EmailsPage({
       <section className="mb-4 grid gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <SentTable list={list} query={query} />
         <NoReplyBlock rows={silent} owners={owners} defaultOwner={owners[0] ?? ""} />
+      </section>
+
+      {/* La comparaison qui décide de la stratégie : elle passe **avant** les
+          graphiques, comme l'entonnoir — les faits d'abord, la forme ensuite. */}
+      <section className="mb-4">
+        <DmLiftBlock lift={lift} />
       </section>
 
       <section className="mb-4">

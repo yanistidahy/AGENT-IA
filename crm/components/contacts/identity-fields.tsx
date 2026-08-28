@@ -77,6 +77,17 @@ export function IdentityFields({
       <Field label="LinkedIn" errors={fields.linkedin}>
         <input name="linkedin" defaultValue={contact?.linkedin ?? ""} className={CONTROL} />
       </Field>
+
+      <Field label="Instagram" errors={fields.instagram}>
+        {/* Le pseudo suffit : la valeur saisie n'est jamais réécrite, c'est
+            l'affichage qui en fait un lien (lib/domain/instagram.ts). */}
+        <input
+          name="instagram"
+          defaultValue={contact?.instagram ?? ""}
+          placeholder="@maison_vertu — ou l'URL du profil"
+          className={CONTROL}
+        />
+      </Field>
     </>
   );
 }

@@ -6,6 +6,7 @@ import type { ContactRecord } from "@/lib/api/contacts";
 import { formatDate } from "@/lib/format";
 import { describeReminder } from "@/lib/domain/follow-up";
 import { externalUrl } from "@/lib/domain/links";
+import { instagramUrl } from "@/lib/domain/instagram";
 import { ACTIVITY_LABELS } from "@/lib/domain/types";
 import { isOutcome, OUTCOME_LABELS } from "@/lib/domain/status";
 import { isTerminal } from "@/lib/domain/lost";
@@ -42,6 +43,9 @@ export function ContactHeader({
   const terminal = isTerminal(contact.lifecycle);
   const websiteHref = externalUrl(contact.website);
   const linkedinHref = externalUrl(contact.linkedin);
+  // Le pseudo n'est pas une URL : `instagramUrl` en fait une, ou rend `null`
+  // et le bouton reste grisé — jamais une adresse fabriquée.
+  const instagramHref = instagramUrl(contact.instagram);
   const reminder =
     contact.nextReminder === null ? null : describeReminder(contact.nextReminder, new Date());
 
@@ -103,6 +107,9 @@ export function ContactHeader({
         */}
         <HeaderLink href={websiteHref} icon="globe" label="Ouvrir le site" />
         <HeaderLink href={linkedinHref} icon="linkedin" label="Ouvrir le profil LinkedIn" />
+        {/* Avant d'écrire, on ouvre le compte : c'est le geste d'avant-DM,
+            au même endroit que le numéro et le site. */}
+        <HeaderLink href={instagramHref} icon="instagram" label="Ouvrir le compte Instagram" />
 
         {/*
           Écrire est un geste d'avant-appel au même titre qu'ouvrir le site : il
@@ -208,7 +215,7 @@ function HeaderLink({
   label,
 }: {
   href: string | null;
-  icon: "globe" | "linkedin";
+  icon: "globe" | "linkedin" | "instagram";
   label: string;
 }) {
   if (href === null) {
