@@ -1,5 +1,7 @@
 "use client";
 
+import type { AccountState, DmState } from "@/lib/domain/instagram-filter";
+
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
 import { Drawer } from "@/components/ui/drawer";
@@ -30,6 +32,9 @@ interface ContactsViewProps extends ContactFormOptions {
   readonly alerts: readonly Alert[];
   /** Compteurs de la puce « À relancer », calculés sur l'ensemble des contacts. */
   readonly reminderCounts: { readonly total: number; readonly late: number };
+  readonly account: AccountState | undefined;
+  readonly dm: DmState | undefined;
+  readonly instagramCounts: Readonly<Record<string, number>>;
   /** Fiche désignée par `?fiche=` mais absente de la liste filtrée. */
   readonly focused: ContactRecord | null;
   /** Valeurs distinctes par colonne, calculées côté serveur. */
@@ -54,6 +59,9 @@ export function ContactsView({
   alerts,
   focused,
   reminderCounts,
+  account,
+  dm,
+  instagramCounts,
   facets,
   totalRows,
   incompleteCount,
@@ -153,6 +161,9 @@ export function ContactsView({
         incomplete={incomplete}
         incompleteCount={incompleteCount}
         reminderCounts={reminderCounts}
+        account={account}
+        dm={dm}
+        instagramCounts={instagramCounts}
         owners={options.owners}
         sources={options.sources}
         companies={companyOptions}

@@ -4,6 +4,7 @@ import {
   contactFacets,
   countIncompleteContacts,
   getContact,
+  instagramCounts,
   listCompaniesWithContacts,
   listContacts,
   listTags,
@@ -61,6 +62,7 @@ export default async function ContactsPage({
     incompleteCount,
     offers,
     defaultOffer,
+    instaCounts,
   ] = await Promise.all([
     listContacts(query, settings, now, filters),
     listOwners(),
@@ -79,6 +81,9 @@ export default async function ContactsPage({
     countIncompleteContacts(),
     listOffers(),
     lastSoldOffer(),
+    // Sur tout le portefeuille, jamais sur la liste filtrée : une puce qui
+    // compte son propre résultat n'apprend rien (jalon 6).
+    instagramCounts(),
   ]);
 
   // La fiche visée par `?fiche=` peut ne pas figurer dans la liste filtrée :
@@ -118,6 +123,9 @@ export default async function ContactsPage({
       alerts={alerts}
       focused={focused}
       reminderCounts={reminderCounts}
+      account={query.account}
+      dm={query.dm}
+      instagramCounts={instaCounts}
       facets={facetData.facets}
       totalRows={facetData.total}
       incompleteCount={incompleteCount}

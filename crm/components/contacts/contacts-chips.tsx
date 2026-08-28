@@ -7,6 +7,8 @@ import {
   isContactFilter,
 } from "@/lib/domain/follow-up";
 import { LIFECYCLES } from "@/lib/domain/types";
+import type { AccountState, DmState } from "@/lib/domain/instagram-filter";
+import { InstagramChip } from "./instagram-chip";
 
 /**
  * Les puces de `/contacts` : cycle de vie, puis relances.
@@ -28,6 +30,9 @@ export function ContactChips({
   incomplete,
   incompleteCount,
   reminderCounts,
+  account,
+  dm,
+  instagramCounts,
   expanded,
   onExpand,
   onChange,
@@ -37,6 +42,9 @@ export function ContactChips({
   incomplete: boolean;
   incompleteCount: number;
   reminderCounts: { readonly total: number; readonly late: number };
+  account: AccountState | undefined;
+  dm: DmState | undefined;
+  instagramCounts: Readonly<Record<string, number>>;
   expanded: boolean;
   onExpand: () => void;
   onChange: (updates: Record<string, string | null>) => void;
@@ -66,6 +74,10 @@ export function ContactChips({
         </button>
       ))}
     </div>
+
+    {/* Sur la première rangée, à côté de « Filtres » : c'est une file de
+        travail quotidienne, pas un filtre qu'on ouvre une fois sur dix. */}
+    <InstagramChip account={account} dm={dm} counts={instagramCounts} onChange={onChange} />
 
     <button
       type="button"

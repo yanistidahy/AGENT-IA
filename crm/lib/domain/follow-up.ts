@@ -113,10 +113,6 @@ export function emptyFilterMessage(filter: ContactFilter, settings: PilotageSett
       return "Aucun contact touché depuis sept jours. La semaine n'a pas encore commencé côté prospection.";
     case "answered":
       return "Aucun échange n'a d'issue renseignée. Consignez le résultat de vos appels — c'est ce qui rend le taux de réponse calculable.";
-    case "no-dm":
-      return "Toutes les fiches ont reçu un DM Instagram : il ne reste personne à approcher de cette façon.";
-    case "dm":
-      return "Aucun DM Instagram consigné. Renseigner le compte d'une marque ne suffit pas : c'est en consignant l'échange, avec le type « Instagram », que la fiche entre dans ce segment.";
   }
 }
 
@@ -159,22 +155,6 @@ export const CONTACT_FILTERS = [
   "contacted",
   "recent",
   "answered",
-  /**
-   * Les fiches à qui un DM Instagram a réellement été envoyé.
-   *
-   * **Ce n'est pas « celles dont on connaît le compte »** : le champ
-   * `Contact.instagram` dit qu'on sait où écrire, cette puce dit qu'on a
-   * écrit. Les confondre ferait entrer dans le segment toutes les marques
-   * repérées mais jamais approchées, et le taux de réponse de la nouvelle
-   * approche se mesurerait sur des gens qu'on n'a pas contactés.
-   */
-  "dm",
-  /**
-   * Le complément : les fiches qu'on n'a **pas encore** approchées en DM.
-   * C'est la moitié utile du filtre demandé — la file de ce qui reste à
-   * faire, quand « DM envoyé » est celle de ce qui est fait.
-   */
-  "no-dm",
 ] as const;
 export type ContactFilter = (typeof CONTACT_FILTERS)[number];
 
@@ -221,8 +201,6 @@ export const CONTACT_FILTER_LABELS: Record<ContactFilter, string> = {
   contacted: "Déjà contactés",
   recent: "Contactés cette semaine",
   answered: "Ont répondu",
-  dm: "DM envoyé",
-  "no-dm": "Pas encore de DM",
 };
 
 /**
@@ -238,13 +216,6 @@ const SQL_ONLY_FILTERS: readonly ContactFilter[] = [
   "contacted",
   "recent",
   "answered",
-  // Le DM se lit sur les interactions liées, comme les trois au-dessus.
-  // **Les oublier ici n'aurait rien cassé bruyamment** : la clause SQL aurait
-  // ramené les bonnes lignes, puis le second passage en mémoire les aurait
-  // toutes rejetées — `resolveContactStatus().key` ne vaut jamais « dm » — et
-  // la puce aurait affiché une liste vide en donnant l'air de fonctionner.
-  "dm",
-  "no-dm",
 ];
 
 export function appliedInSql(filter: ContactFilter): boolean {

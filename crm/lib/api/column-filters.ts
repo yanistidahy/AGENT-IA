@@ -30,7 +30,26 @@ type Where = Record<string, unknown>;
  */
 export type ColumnSource =
   | { readonly kind: "scalar"; readonly field: string }
-  | { readonly kind: "relation"; readonly path: string; readonly field: string };
+  | { readonly kind: "relation"; readonly path: string; readonly field: string }
+  /**
+   * **Une colonne dont on filtre la présence, pas la valeur.**
+   *
+   * Le compte Instagram est un pseudo : proposer ses valeurs distinctes
+   * listerait cent quarante pseudos, dont aucun ne sert de filtre. Ce qu'on
+   * veut demander est binaire — « le compte est-il noté ? » — et c'est ce que
+   * la facette rend : `label` d'un côté, « (vide) » de l'autre.
+   *
+   * La traduction SQL ne peut donc pas passer par le `in` des colonnes texte,
+   * puisque la base stocke des pseudos et non l'étiquette : elle devient
+   * `{ not: "" }` ou `{ in: ["", null] }`.
+   */
+  | {
+      readonly kind: "presence";
+      readonly field: string;
+      readonly label: string;
+      /** La colonne accepte-t-elle NULL ? Sans quoi le vide est la chaîne vide. */
+      readonly nullable?: boolean;
+    };
 
 export interface DbColumn {
   readonly key: string;
@@ -103,7 +122,35 @@ function mixedTextBranches(
 
 function fieldWhere(column: DbColumn, condition: Where): Where {
   if (column.source.kind === "scalar") return { [column.source.field]: condition };
+  if (column.source.kind === "presence") return { [column.source.field]: condition };
   return { [column.source.path]: { [column.source.field]: condition } };
+}
+
+/**
+ * La clause d'une colonne de présence.
+ *
+ * `null` quand les deux états sont cochés : demander « rempli ou vide » ne
+ * restreint rien, et poser la contrainte quand même produirait un `OR` inutile
+ * qui ne changerait que le plan de requête.
+ */
+function presenceCondition(
+  column: DbColumn,
+  values: readonly string[],
+): Where | null {
+  if (column.source.kind !== "presence") return null;
+  const wantsFilled = values.includes(column.source.label);
+  const wantsVoid = values.includes(VOID);
+  if (wantsFilled === wantsVoid) return null;
+  if (wantsFilled) return { [column.source.field]: { not: "" } };
+
+  // `{ in: ["", null] }` — l'idiome des autres colonnes — est **refusé par
+  // Prisma sur une colonne non nulle** : « Expected ListStringFieldRefInput,
+  // provided (String, Null) ». La page tombait en erreur là où l'API répondait,
+  // parce que seule la page passe par les facettes. D'où le drapeau, porté par
+  // la déclaration de colonne plutôt que deviné ici.
+  return column.source.nullable === true
+    ? { [column.source.field]: { in: ["", null] } }
+    : { [column.source.field]: "" };
 }
 
 /**
@@ -125,6 +172,12 @@ export function columnsWhere(
 
     const filter = state[column.key];
     if (filter === undefined) continue;
+
+    if (filter.kind === "text" && column.source.kind === "presence") {
+      const condition = presenceCondition(column, filter.values);
+      if (condition !== null) and.push(condition);
+      continue;
+    }
 
     if (filter.kind === "text") {
       const mixed = mixedTextBranches(column, filter.values);

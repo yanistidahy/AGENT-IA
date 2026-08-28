@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 49 | **La file du matin** — deux axes Instagram combinables sous une seule puce, comptée ; filtre de colonne de présence | **livré, à valider** |
 | 48 | **Instagram entre dans la prospection** — DM consigné comme un canal, segment isolable, Alex qui ne mentionne le DM que s'il existe et nomme le vrai site, comparaison DM+email contre email seul | **livré, à valider** |
 | 47 | **Sortir une affaire du pipeline** — « perdue » avec motif et réouverture exacte, suppression refusée dès qu'il y a une histoire, menu ⋯ sur les cartes, société héritée du contact | **livré, à valider** |
 | 46 | **Le CRM tient dans la main** — rail repliable partout (cookie, Ctrl+B, surcouche mobile), tableaux en cartes sous `lg`, cibles tactiles à 44 px, /reglages assumé bureau | **livré, à valider** |
@@ -6657,3 +6658,134 @@ fil des recherches.
 substitut prouve que le bon dossier et les bonnes consignes partent, pas
 qu'Alex écrive un bon paragraphe sur le DM. Les trois premiers brouillons réels
 le diront.
+
+---
+
+## Jalon 49 — la file du matin : compte connu, DM pas encore envoyé
+
+### Combinables, et non deux puces de plus — pourquoi
+
+La demande laissait le choix : ajouter « Compte Instagram » et « Compte
+Instagram · à DM », ou rendre les états combinables. **Combinables, par deux
+paramètres indépendants** (`account`, `dm`), pour une raison qui n'est pas
+esthétique.
+
+« Le compte est connu » et « le DM est parti » sont deux faits **indépendants**,
+lus à deux endroits différents — le premier dans un champ, le second dans une
+interaction (jalon 48). Les énumérer comme valeurs d'un filtre unique demande
+d'écrire leurs croisements : quatre aujourd'hui, huit si un troisième axe
+arrive, et chacun réclame une valeur d'URL, une traduction SQL, un libellé, un
+état vide et un test. Deux paramètres donnent **tous** les croisements pour
+rien, chacun étant une clause :
+
+|  | DM envoyé | Pas de DM |
+|---|---|---|
+| **Compte connu** | on a écrit | ← **la file du matin** |
+| **Compte inconnu** | (rare : DM sans compte noté) | le vivier à chercher |
+
+L'intersection demandée — celle qui commence la journée — n'a donc pas eu à
+être inventée : elle **existe déjà** dès que les deux axes existent.
+
+### Une puce qui ouvre, plutôt que trois de plus
+
+La rangée en portait huit. Les quatre lectures utiles vivent sous une seule
+puce « Instagram » qui les ouvre en menu, comme « Filtres » replie la seconde
+rangée depuis le jalon 21. **La puce dit ce qu'elle cache** : quand un état est
+actif, elle porte son libellé court et reste en surbrillance — règle du filtre
+orphelin du jalon 31, appliquée à un menu. Un couple atteint par URL écrite à la
+main est nommé lui aussi (`describeCombination`) plutôt que de laisser une puce
+muette au-dessus d'une liste filtrée.
+
+Hors sélection, elle porte **le seul nombre qui déclenche une action** — « (22 à
+DM) » — et le menu porte les quatre compteurs. Comme depuis le jalon 6, ils
+portent sur **tout le portefeuille**, jamais sur la liste filtrée.
+
+### Le compteur et la liste ne peuvent plus se contredire
+
+Trouvé à la vérification, pas à la lecture : un **ancien client** dont on
+connaît le compte était compté par la puce (qui exclut les cycles terminaux)
+autrement que rendu par la liste (qui n'exclut que `Perdu` par défaut) — 23
+annoncés, 24 affichés.
+
+Les deux axes sont désormais des axes de **prospection** : ils excluent les
+cycles terminaux, comme toute file de travail depuis le jalon 30. Un ancien
+client n'est pas une marque à qui écrire, et une file du matin qui annonce 23
+puis en affiche 24 n'est plus un chiffre sur lequel commencer sa journée.
+
+Le **filtre de colonne**, lui, ne les exclut pas : c'est un filtre de tableur
+sur la donnée, pas une file de travail. Les deux nombres diffèrent parce que les
+deux questions diffèrent.
+
+### Le filtre de colonne : une source de « présence »
+
+`ColumnSource` gagne le genre `presence` — on filtre sur le fait qu'une colonne
+soit remplie, pas sur sa valeur : cent pseudos distincts feraient cent entrées
+de menu et aucune ne servirait. Deux entrées, « Compte connu » et « (vide) »,
+combinables avec le cycle de vie et la source. **Les deux cochées ne
+contraignent rien**, comme aucune cochée.
+
+### Trois défauts trouvés en vérifiant, tous muets
+
+1. **La puce écrivait `compte`, le schéma lisait `account`.** Zod **ignore** une
+   clé inconnue : la requête revenait entière, la puce s'allumait quand même, et
+   la file du matin affichait tout le portefeuille. Aucune erreur, aucun test
+   rouge. `presetParams()` vit désormais dans le domaine, et
+   `instagram-params.test.ts` fait l'aller-retour complet préréglage → URL →
+   schéma → préréglage. Éprouvé en réintroduisant `compte` : trois tests
+   tombent.
+2. **`{ in: ["", null] }` est refusé par Prisma sur une colonne non nulle**
+   (« Expected ListStringFieldRefInput »). `Contact.instagram` en est une. La
+   **page** tombait en erreur là où l'API répondait — seule la page passe par
+   les facettes. La source de présence déclare donc si sa colonne accepte NULL.
+3. **L'évaluateur « volontairement strict » du test de parité ne l'était pas.**
+   Prisma accepte la forme abrégée `{ champ: "valeur" }` ; elle arrivait comme
+   une condition sans opérateur, `Object.entries("")` est vide, et `.every`
+   renvoyait **vrai pour toutes les lignes**. Le test validait en silence une
+   clause qui filtre — exactement le faux positif qu'il existe pour interdire.
+   Il lève maintenant sur toute forme qu'il ne modélise pas.
+
+Le troisième mérite d'être noté comme leçon de méthode : ma première « preuve »
+du garde-fou de présence modifiait le littéral `in: ["", null]` **partout**,
+donc cassait les colonnes voisines et non la présence. Un test qui tombe ne
+prouve rien tant qu'on n'a pas lu **quel** cas tombe.
+
+### Jalon 49 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide** — aucune migration, la
+colonne `instagram` datant du jalon 48), le serveur standalone de production et
+un navigateur piloté, sur une base portant 23 comptes Instagram dont 1 déjà
+contacté par DM :
+
+- **1 · « Compte Instagram »** rend exactement les fiches au champ rempli :
+  23 lignes, contre 23 en SQL direct ; « compte inconnu » 131 ; 23 + 131 = 154 ;
+- **2 · la file du matin** (`account=connu&dm=aucun`) : **22 lignes** = 23
+  comptes connus moins le seul déjà DMé ; « connu + DM envoyé » → 1 ;
+- **3 · les compteurs égalent les lignes** : puce « Instagram (22 à DM) »,
+  menu « Compte connu, à DM 22 · Compte Instagram 23 · DM envoyé 1 · Pas encore
+  de DM 103 », et les listes correspondantes rendent 22, 23, 1 et 103 ;
+  un **ancien client** portant un compte est exclu des deux côtés, y compris
+  sous `lifecycle=all` ;
+- **4 · rechargement** : `GET /contacts?account=connu&dm=aucun` rend 22 lignes
+  au **rendu serveur**, la puce affichée active et libellée « à DM » ; le filtre
+  de colonne survit de même — `f.instagram=Compte connu` → 24, croisé avec
+  `f.lifecycle=Lead` → 11, `(vide)` → 85 ;
+- **5 · à 1440×900** la rangée des puces tient sur **une ligne** (481 + 176 +
+  60 + 220 + 180 = 1117 px pour 1156 utiles) ; à **390×844** puce et entrées de
+  menu à **44 px**, **0 débordement horizontal** aux deux tailles, sélection au
+  doigt fonctionnelle ; **0 erreur console, 0 réponse ≥ 400** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**975 tests**) verts.
+
+### Jalon 49 — ce qui ne l'est pas
+
+**Le champ Instagram ne se remplit toujours pas tout seul** (jalon 48) : les 23
+comptes de la base de vérification ont été semés pour distinguer les quatre
+états. En production, la file du matin vaudra ce que vaut la recherche déjà
+faite — c'est-à-dire zéro au premier jour.
+
+**Le menu de la puce n'a pas de test de rendu**, comme tous les composants
+clients de ce projet : il est vérifié dans un navigateur piloté, pas par la
+suite, qui n'a pas de DOM.
+
+**« Compte inconnu » n'a pas de préréglage dans le menu.** L'axe l'accepte —
+l'URL fonctionne et la puce se nomme — mais aucune entrée ne le propose : c'est
+le vivier à chercher, pas une file d'envoi. À ajouter si l'usage le réclame.

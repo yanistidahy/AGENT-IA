@@ -106,17 +106,7 @@ const POPULATION: ReadonlyArray<readonly [string, ContactStatusLike]> = [
  * n'y aurait aucun intérêt à filtrer. Un contact dans l'un de ces états
  * n'appartient donc à **aucune** puce de statut, et c'est correct.
  */
-const HISTORY_CHIPS = [
-  "reminder",
-  "stale-status",
-  "contacted",
-  "recent",
-  "answered",
-  // Le DM est un fait d'historique, pas un statut de relance : il se tranche
-  // en SQL sur les interactions, exactement comme les trois précédents.
-  "dm",
-  "no-dm",
-] as const;
+const HISTORY_CHIPS = ["reminder", "stale-status", "contacted", "recent", "answered"] as const;
 const STATUS_CHIPS = CONTACT_FILTERS.filter(
   (filter) => !HISTORY_CHIPS.some((history) => history === filter),
 );
@@ -243,7 +233,7 @@ describe("le jeu de puces", () => {
    * d'une puce **déjà présente** — c'était ça, le reproche. Elles nomment les
    * deux moitiés d'une file de travail : ce qui est fait, ce qui reste à faire.
    */
-  it("propose exactement les puces retenues", () => {
+  it("propose exactement les six puces retenues", () => {
     expect(CONTACT_CHIPS.map((chip) => CONTACT_FILTER_LABELS[chip])).toEqual([
       "À relancer",
       "Sans nouvelles",
@@ -251,23 +241,16 @@ describe("le jeu de puces", () => {
       "Statut figé",
       "Contactés cette semaine",
       "Ont répondu",
-      "DM envoyé",
-      "Pas encore de DM",
     ]);
   });
 
-  it("« DM envoyé » se lit sur l'interaction, pas sur le champ Instagram", () => {
-    // Connaître le compte d'une marque n'est pas l'avoir contactée. Si la puce
-    // se mettait à sélectionner sur `Contact.instagram`, le segment gonflerait
-    // de marques repérées mais jamais approchées — et le taux de réponse de la
-    // nouvelle stratégie se mesurerait sur des gens à qui l'on n'a rien écrit.
-    const source = readFileSync(
-      join(__dirname, "..", "..", "api", "contacts.ts"),
-      "utf8",
-    );
-    expect(source).toMatch(
-      /followUp === "dm"[\s\S]{0,200}activities: \{ some: \{ \.\.\.REAL_ACTIVITY, type: "instagram" \}/,
-    );
+  it("les états Instagram ne sont **pas** des puces de relance", () => {
+    // Le jalon 48 en avait fait deux valeurs de `followUp` ; le jalon 49 les a
+    // sorties, parce que « compte connu » et « DM envoyé » sont deux questions
+    // indépendantes dont les croisements ne s'énumèrent pas. Elles vivent
+    // maintenant dans deux paramètres à elles.
+    expect(CONTACT_FILTERS).not.toContain("dm");
+    expect(CONTACT_FILTERS).not.toContain("no-dm");
   });
 
   it("« Déjà contactés » reste une valeur valide, sans puce", () => {
@@ -467,8 +450,6 @@ describe("les filtres décidés en SQL sont déclarés", () => {
     "contacted",
     "recent",
     "answered",
-    "dm",
-    "no-dm",
   ];
 
   it("chacun est reconnu par appliedInSql", () => {
