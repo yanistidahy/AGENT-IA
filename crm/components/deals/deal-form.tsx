@@ -6,6 +6,7 @@ import { Combobox, companyFields, type ComboboxValue } from "@/components/ui/com
 import { createDeal, updateDeal } from "@/lib/client/deals-api";
 import type { DealRecord } from "@/lib/api/deals";
 import type { StageLike } from "@/lib/domain/types";
+import { contactTitle } from "@/lib/domain/contact-identity";
 
 export interface DealFormOptions {
   readonly stages: readonly StageLike[];
@@ -235,7 +236,7 @@ export function DealForm({
             <option value="">—</option>
             {contacts.map((contact) => (
               <option key={contact.id} value={contact.id}>
-                {contact.firstName} {contact.lastName}
+                {contactTitle(contact)}
               </option>
             ))}
           </select>

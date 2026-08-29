@@ -16,6 +16,7 @@ import { getPilotage, listStages } from "./reference";
 import { REAL_ACTIVITY } from "./real-activity";
 import { ANSWERED_OUTCOMES } from "../domain/status";
 import type { FunnelInput } from "../domain/funnel";
+import { contactTitle } from "../domain/contact-identity";
 
 /**
  * Données du centre de pilotage.
@@ -205,7 +206,7 @@ async function readUpcoming(now: Date): Promise<UpcomingItem[]> {
             due: row.nextReminder,
             owner: row.owner,
             priority: "normale" as const,
-            targetLabel: `${row.firstName} ${row.lastName}`,
+            targetLabel: contactTitle(row),
             targetHref: `/contacts?lifecycle=all&fiche=${row.id}`,
             kind: "reminder" as const,
           },
@@ -218,7 +219,7 @@ async function readUpcoming(now: Date): Promise<UpcomingItem[]> {
         ? { label: row.deal.name, href: `/affaires?status=all&fiche=${row.deal.id}` }
         : row.contact !== null
           ? {
-              label: `${row.contact.firstName} ${row.contact.lastName}`,
+              label: contactTitle(row.contact),
               href: `/contacts?lifecycle=all&fiche=${row.contact.id}`,
             }
           : row.company !== null
@@ -326,7 +327,7 @@ export async function readDashboard(now: Date = new Date()): Promise<DashboardDa
       notes: row.notes,
       label:
         row.deal?.name ??
-        (row.contact === null ? null : `${row.contact.firstName} ${row.contact.lastName}`) ??
+        (row.contact === null ? null : contactTitle(row.contact)) ??
         row.company?.name ??
         null,
     })),
@@ -612,7 +613,7 @@ export async function readActionQueue(
     rows.push({
       id: `reminder-${contact.id}`,
       group: "reminders",
-      title: `${contact.firstName} ${contact.lastName}`.trim(),
+      title: contactTitle(contact),
       company: contact.company?.name ?? null,
       phone: contact.phone,
       idleDays: contact.lastContact === null ? null : daysSince(contact.lastContact, now),

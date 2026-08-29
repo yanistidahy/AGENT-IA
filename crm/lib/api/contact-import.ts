@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { searchText } from "../domain/text";
+import { contactTitle } from "../domain/contact-identity";
 import {
   cell,
   looksLikeHeader,
@@ -302,10 +303,15 @@ export async function importContacts(
         companiesCreated,
       );
 
+      // L'import ne transmet pas `companyName` au schéma : une ligne sans nom
+      // y est donc toujours refusée (jalon 50). C'est voulu — le rapprochement
+      // de doublon retombe sur « nom + société », qui confondrait toutes les
+      // fiches anonymes d'une même marque. Une fiche sans nom se crée depuis le
+      // formulaire, où l'on voit ce qu'on fait.
       const existing = await findExisting(
         email,
-        parsed.data.firstName,
-        parsed.data.lastName,
+        parsed.data.firstName ?? "",
+        parsed.data.lastName ?? "",
         companyId,
       );
 
@@ -351,7 +357,7 @@ export async function importContacts(
 
         updates.push({
           line,
-          name: `${merged.firstName} ${merged.lastName}`.trim(),
+          name: contactTitle({ ...merged, company: existing.company }),
           company: existing.company?.name ?? null,
           changes,
         });
@@ -362,6 +368,10 @@ export async function importContacts(
         data: {
           ...parsed.data,
           companyId,
+          // Jamais indéfinis en pratique — une ligne sans nom est refusée
+          // plus haut — mais le schéma les rend facultatifs depuis le jalon 50.
+          firstName: parsed.data.firstName ?? "",
+          lastName: parsed.data.lastName ?? "",
           notes: parsed.data.notes ?? "",
           // Miroir de recherche : sans lui, une fiche importée resterait
           // introuvable jusqu'à sa prochaine modification.

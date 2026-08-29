@@ -3,6 +3,7 @@ import { parseContactsQuery } from "@/lib/api/contact-schemas";
 import {
   contactFacets,
   countIncompleteContacts,
+  countUnidentifiedContacts,
   getContact,
   instagramCounts,
   listCompaniesWithContacts,
@@ -60,6 +61,7 @@ export default async function ContactsPage({
     companyOptions,
     tags,
     incompleteCount,
+    unidentifiedCount,
     offers,
     defaultOffer,
     instaCounts,
@@ -79,6 +81,7 @@ export default async function ContactsPage({
     listCompaniesWithContacts(),
     listTags(),
     countIncompleteContacts(),
+    countUnidentifiedContacts(),
     listOffers(),
     lastSoldOffer(),
     // Sur tout le portefeuille, jamais sur la liste filtrée : une puce qui
@@ -129,6 +132,7 @@ export default async function ContactsPage({
       facets={facetData.facets}
       totalRows={facetData.total}
       incompleteCount={incompleteCount}
+      unidentifiedCount={unidentifiedCount}
       companyOptions={companyOptions}
       tagCounts={tags}
       tags={tags.map((tag) => tag.value)}

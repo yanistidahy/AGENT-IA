@@ -12,6 +12,7 @@ import { CardCallLink, CardList } from "@/components/table/card-list";
 import { ContactStatusTag } from "@/components/ui/primitives";
 import { describeReminder } from "@/lib/domain/follow-up";
 import { CONTACT_COLUMNS, type ContactSortKey } from "./contact-table-columns";
+import { contactTitle } from "@/lib/domain/contact-identity";
 
 export type { ContactSortKey };
 
@@ -83,13 +84,13 @@ export function ContactsTable({
       <CardList
         rows={contacts}
         rowKey={(contact) => contact.id}
-        title={(contact) => `${contact.firstName} ${contact.lastName}`.trim()}
+        title={(contact) => contactTitle(contact)}
         subtitle={(contact) => contact.company?.name ?? ""}
         onSelect={onSelect}
         trailing={(contact) => (
           <CardCallLink
             phone={contact.phone}
-            name={`${contact.firstName} ${contact.lastName}`.trim()}
+            name={contactTitle(contact)}
           />
         )}
         facts={(contact) => {

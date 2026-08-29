@@ -42,6 +42,7 @@ interface ContactsViewProps extends ContactFormOptions {
   /** Total avant filtres de colonne, pour le « 54 sur 138 ». */
   readonly totalRows: number;
   readonly incompleteCount: number;
+  readonly unidentifiedCount: number;
   readonly companyOptions: ReadonlyArray<{ id: string; name: string; count: number }>;
   readonly tagCounts: ReadonlyArray<{ value: string; count: number }>;
   /** Offres proposées à la qualification, et celle vendue en dernier. */
@@ -65,6 +66,7 @@ export function ContactsView({
   facets,
   totalRows,
   incompleteCount,
+  unidentifiedCount,
   companyOptions,
   tagCounts,
   ...options
@@ -160,6 +162,7 @@ export function ContactsView({
         followUp={followUp}
         incomplete={incomplete}
         incompleteCount={incompleteCount}
+        unidentifiedCount={unidentifiedCount}
         reminderCounts={reminderCounts}
         account={account}
         dm={dm}

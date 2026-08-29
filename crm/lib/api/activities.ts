@@ -6,6 +6,7 @@ import type { ActivityType } from "../domain/types";
 import type { CreateActivityInput, ListActivitiesQuery } from "./activity-schemas";
 import { ownerOrDefault, syncReminderTask, type AutoTaskOutcome } from "./automation";
 import { taskInclude, toTaskRecord, type TaskRecord } from "./tasks";
+import { contactTitle } from "../domain/contact-identity";
 
 /**
  * Accès aux interactions.
@@ -217,7 +218,7 @@ export async function logActivity(input: CreateActivityInput): Promise<LogActivi
         await tx.contact.update({ where: { id: contactId }, data: { nextReminder: null } });
         reminderTask = await syncReminderTask(tx, {
           contactId,
-          contactName: `${current?.firstName ?? ""} ${current?.lastName ?? ""}`.trim(),
+          contactName: current === null ? "" : contactTitle(current),
           owner: await ownerOrDefault(tx, current?.owner ?? ""),
           reminder: null,
         });
@@ -233,7 +234,7 @@ export async function logActivity(input: CreateActivityInput): Promise<LogActivi
         });
         reminderTask = await syncReminderTask(tx, {
           contactId,
-          contactName: `${current.firstName} ${current.lastName}`,
+          contactName: contactTitle(current),
           owner: await ownerOrDefault(tx, current.owner),
           reminder: input.setReminder,
         });

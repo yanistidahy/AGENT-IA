@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 50 | **La marque avant le fondateur** — fiche sans personne nommée, marqueur déduit, appel d'email conditionnel, puce « À identifier » | **livré, à valider** |
 | 49 | **La file du matin** — deux axes Instagram combinables sous une seule puce, comptée ; filtre de colonne de présence | **livré, à valider** |
 | 48 | **Instagram entre dans la prospection** — DM consigné comme un canal, segment isolable, Alex qui ne mentionne le DM que s'il existe et nomme le vrai site, comparaison DM+email contre email seul | **livré, à valider** |
 | 47 | **Sortir une affaire du pipeline** — « perdue » avec motif et réouverture exacte, suppression refusée dès qu'il y a une histoire, menu ⋯ sur les cartes, société héritée du contact | **livré, à valider** |
@@ -6789,3 +6790,178 @@ suite, qui n'a pas de DOM.
 **« Compte inconnu » n'a pas de préréglage dans le menu.** L'axe l'accepte —
 l'URL fonctionne et la puce se nomme — mais aucune entrée ne le propose : c'est
 le vivier à chercher, pas une file d'envoi. À ajouter si l'usage le réclame.
+
+---
+
+## Jalon 50 — la marque avant le fondateur
+
+### Le manque est déduit, jamais stocké
+
+Une fiche est « à identifier » si et seulement si elle ne porte aucun nom de
+personne. **Pas de colonne `unidentified`, pas de drapeau, pas de migration** —
+`firstName` et `lastName` acceptaient déjà la chaîne vide. Trois conséquences,
+et c'est pour elles que le choix a été fait :
+
+1. **le marqueur disparaît tout seul** dès qu'on saisit le prénom : il n'y a
+   rien à mettre à jour, donc rien qui puisse rester en retard. C'est le
+   quatrième test d'acceptation, vrai **par construction** plutôt que par un
+   crochet qu'on pourrait oublier de câbler ;
+2. **rien à reprendre sur l'existant** : une fiche importée sans nom est « à
+   identifier » depuis toujours, sans qu'on l'ait retouchée ;
+3. une colonne de plus serait une colonne à tenir cohérente avec les deux
+   qu'elle décrit — et un jour elle les contredirait.
+
+`lib/domain/contact-identity.ts` porte tout : `personName`, `isUnidentified`,
+`contactTitle`, `greeting`, `greetingRule`, `repairGreeting`.
+
+### Une fiche doit porter quelque chose
+
+Le nom devient facultatif, mais pas gratuitement : `createContactSchema` exige
+**une personne ou une marque**. Sans cette contrainte, « nom facultatif »
+deviendrait « fiche vide autorisée », et une liste de contacts anonymes qu'on ne
+sait ni nommer ni joindre n'est pas un vivier, c'est du bruit. L'erreur porte
+sur `companyName` — le champ que la bascule rend obligatoire à l'écran — parce
+qu'un message d'erreur doit renvoyer là où l'on peut agir.
+
+**La marque *est* la société.** La bascule ne crée pas un second concept : le
+champ société du formulaire devient « Marque (obligatoire) », et
+`resolveCompanyLink()` fait ce qu'il fait depuis le jalon 6 — retrouver ou créer,
+en comparant les noms **en mémoire** donc sans accent ni casse. Vérifié :
+« maison VERTU » rejoint « Maison Vertu », une seule société pour quatre fiches.
+
+**L'import continue de refuser une ligne sans nom**, et c'est écrit sur place :
+il ne transmet pas `companyName` au schéma, donc le refus est structurel. Le
+rapprochement de doublon y retombe sur « nom + société », qui confondrait toutes
+les fiches anonymes d'une même marque. Une fiche sans nom se crée depuis le
+formulaire, où l'on voit ce qu'on fait.
+
+### Trente-neuf endroits recomposaient le nom
+
+`${contact.firstName} ${contact.lastName}` était écrit **trente-neuf fois dans
+vingt fichiers**. C'est exactement ce qui produit le « — » orphelin : chaque
+endroit qui recompose le nom lui-même est un endroit qui oubliera le cas vide,
+et les corriger un par un aurait tenu jusqu'au prochain écran ajouté.
+
+`contactTitle()` est désormais la seule façon de nommer une fiche — personne, à
+défaut marque, à défaut adresse ou pseudo, à défaut « Fiche sans nom ». Le
+dernier repli est une phrase et non un tiret : une ligne vide dans une liste ne
+se clique pas, on croit à une panne d'affichage.
+
+`tests/contact-name-source.test.ts` ferme le chemin. Statique parce que le
+défaut l'est : les deux champs sont des `string`, le typecheck ne voit rien, une
+chaîne vide ne lève pas. Même famille que `status-single-source`,
+`cost-single-source` et `message-id-source`. Trois fichiers restent autorisés —
+export CSV, import, rapprochement de feuille — parce que leur objet est **la
+colonne**, pas l'affichage : y substituer « Fiche sans nom » dans un export
+serait une invention.
+
+**La garde a immédiatement trouvé sept sites que j'avais manqués** (`alerts.ts`,
+`open-audit.ts`, `/taches`, le journal des envois…), et deux cas fixent qu'elle
+attrape bien les trois formes interdites et laisse passer une lecture d'un seul
+champ — sans quoi une expression régulière devenue fausse la rendrait verte pour
+toujours.
+
+### « Bonjour — », et ce que la vérification a réellement trouvé
+
+Deux couches, comme la signature au jalon 33 : le prompt **demande**,
+`repairGreeting()` **impose**. Une consigne de prompt est une intention ; elle
+tient presque toujours, et « presque » n'est pas assez pour la première ligne
+que lit le destinataire.
+
+Le dossier annonce le prénom **sous ses deux formes** — « Prénom du destinataire :
+INCONNU » — et la consigne du cas négatif est une **interdiction** explicite,
+pas une omission : c'est la règle du DM du jalon 48, appliquée à l'appel.
+
+**Ce que le test d'acceptation a trouvé, et que je n'avais pas prévu :** sur la
+fiche « Maison Vertu » sans personne, le brouillon s'ouvrait sur **« Bonjour
+Maison, »**. Pas un tiret — un prénom **fabriqué à partir de la marque**. Ma
+première réparation ne visait que les formes qui pendent, et celle-ci ressemble
+à un vrai prénom : elle passe la relecture, et se lit chez le destinataire comme
+un publipostage mal fusionné.
+
+La règle est donc devenue plus forte, et elle reste entièrement fondée sur la
+donnée : **sans prénom connu, l'appel ne peut nommer personne.** On le sait de
+source sûre — la fiche ne porte aucun prénom — donc tout nom dans l'appel est
+inventé, quelle que soit sa vraisemblance. Avec un prénom connu, la réparation
+redevient étroite et ne touche que ce qui pend : réécrire plus large mutilerait
+un texte que quelqu'un vient peut-être de relire.
+
+**L'appel n'est pas adressé à la marque non plus.** « Bonjour Maison Vertu, »
+s'écrit à une entreprise, pas à la personne qui lira. Nu — « Bonjour, » — il
+fonctionne dans les deux cas.
+
+### La puce « À identifier »
+
+Septième puce. Elle **ne double aucune existante**, et c'est le reproche qui
+avait fait retirer « Déjà contactés » au jalon 31 : elle porte sur le **nom de
+la fiche**, pas sur son historique ni sur ses dates. Une marque sans décideur
+connu peut être jamais contactée, relancée ou silencieuse — le test de parité la
+classe donc hors des puces de statut, et vérifie qu'elle en reste dehors.
+
+C'est un **arriéré de recherche**, pas un statut : des marques déjà approchées
+dont il reste à trouver le décideur, et une personne nommée répond mieux qu'une
+boîte générique. D'où le compteur sur la puce.
+
+**Le compteur et la liste ne peuvent pas diverger** : les deux excluent les
+cycles terminaux, et le code le dit. Le jalon 49 a payé une fois cet écart — la
+puce Instagram annonçait 23 et en affichait 24.
+
+### Dette réduite, pas aggravée
+
+`contact-form.tsx` passe de **276 à 265 lignes** malgré la bascule : elle est
+extraite (`brand-only-toggle.tsx`), et le composant `Field` — écrit **deux
+fois**, dans le formulaire et dans les coordonnées, à deux détails de style près
+— devient `form-field.tsx`. Toujours au-dessus de la limite de 250, mais plus
+bas qu'avant ce jalon.
+
+### Jalon 50 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide** — aucune migration), le
+serveur standalone de production, le substitut Anthropic derrière un proxy qui
+capte ce qui part sur le fil, et un navigateur piloté :
+
+- **1 · création** : fiche créée avec une marque, un compte Instagram et une
+  adresse générique — `firstName: ""`, société « Maison Vertu », visible dans
+  les listes **sous la marque**, marqueur « Contact à identifier » rendu ;
+- **2 · société** : la marque rejoint la société **existante** (`c2`), pas de
+  doublon ; « maison VERTU » y retombe aussi — **une** société, quatre fiches ;
+- **3 · appel** : sur la fiche sans personne, la requête porte « Prénom du
+  destinataire : INCONNU », « Ouvre par « Bonjour, » exactement » et « N'invente
+  aucun prénom » ; le brouillon rendu s'ouvre sur **« Bonjour, »** et l'en-tête
+  du panneau affiche **« Maison Vertu »**. Sur une fiche nommée, « Bonjour
+  Christian, » — aucune régression ;
+- **4 · nom saisi plus tard** : `PATCH` du prénom et du nom → **156 fiches avant
+  et après**, aucune seconde fiche ; le tiroir affiche « Camille Rouvier /
+  Maison Vertu », le marqueur a disparu, la puce passe de 2 à 1 ;
+- **5 · puce** : « À identifier(1) », lignes rendues = compte = SQL ; à
+  **1440×900** 107×31 px, à **390×844** cible de bascule 346×98 px, **0
+  débordement horizontal** aux deux tailles, **0 erreur console, 0 réponse
+  ≥ 400** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1006 tests**) verts.
+
+### Jalon 50 — ce qui n'est pas fait
+
+**Aucun appel Anthropic réel**, comme aux jalons précédents. Ce qui est établi :
+le bon dossier et la bonne consigne partent, et la réparation impose l'appel
+quoi qu'il revienne. Ce qui ne l'est pas : qu'Alex écrive un bon paragraphe pour
+une marque dont il ne connaît personne.
+
+**La bascule n'est proposée qu'à la création.** Sur une fiche existante, les
+champs sont de toute façon facultatifs et le manque se lit dans la donnée ; un
+interrupteur qui ne ferait que décrire un état déjà visible serait un endroit de
+plus où se contredire.
+
+**Deux fiches anonymes sur la même marque restent deux fiches.** Rien ne les
+rapproche, et c'est délibéré : ce peut être deux personnes différentes de la
+même maison. La fusion de doublons reste le jalon à part signalé au jalon 45.
+
+**Le marqueur n'apparaît pas dans les cartes mobiles ni dans `/clients`.** Le
+nom y passe bien par `contactTitle()` — donc la marque s'affiche — mais la
+mention « Contact à identifier » n'est rendue que dans le tableau et le tiroir,
+là où il y a la place de la lire.
+
+**Un piège de méthode, pour la quatrième fois.** Le serveur de vérification est
+resté attaché au port pendant plusieurs essais : je lisais un binaire périmé et
+son ancienne configuration, et j'ai d'abord conclu que la clé d'API n'était pas
+transmise. C'est la leçon des jalons 33, 34 et 37 — **vérifier quel processus
+répond avant de conclure quoi que ce soit sur le produit**.

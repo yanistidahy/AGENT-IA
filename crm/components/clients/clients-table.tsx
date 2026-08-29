@@ -6,6 +6,7 @@ import { needsAttention } from "@/lib/domain/follow-up";
 import { formatDate, money, moneyShort } from "@/lib/format";
 import type { FacetValue } from "@/lib/domain/column-match";
 import { ClientFilterCell } from "./client-filter-cell";
+import { contactTitle } from "@/lib/domain/contact-identity";
 
 /**
  * Portefeuille clients.
@@ -64,7 +65,7 @@ export function ClientsTable({ clients, sort, coldDays, facets }: ClientsTablePr
               className="block rounded-card border border-line bg-surface px-3.5 py-3 shadow-card transition-colors active:bg-surface-2"
             >
               <div className="truncate text-[14.5px] font-semibold">
-                {client.firstName} {client.lastName}
+                {contactTitle(client)}
               </div>
               {client.companyName !== null && client.companyName !== "" && (
                 <div className="truncate text-[12px] text-muted">{client.companyName}</div>
@@ -137,7 +138,7 @@ export function ClientsTable({ clients, sort, coldDays, facets }: ClientsTablePr
                     href={`/contacts?lifecycle=all&fiche=${client.id}`}
                     className="font-semibold hover:underline"
                   >
-                    {client.firstName} {client.lastName}
+                    {contactTitle(client)}
                   </Link>
                   <br />
                   <span className="text-[12px] text-muted">{client.owner || "—"}</span>

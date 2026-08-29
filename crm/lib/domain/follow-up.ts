@@ -113,6 +113,8 @@ export function emptyFilterMessage(filter: ContactFilter, settings: PilotageSett
       return "Aucun contact touché depuis sept jours. La semaine n'a pas encore commencé côté prospection.";
     case "answered":
       return "Aucun échange n'a d'issue renseignée. Consignez le résultat de vos appels — c'est ce qui rend le taux de réponse calculable.";
+    case "unidentified":
+      return "Aucune fiche à identifier : toutes portent le nom d'une personne. Les fiches créées avec « Je n'ai pas encore le contact » apparaissent ici jusqu'à ce que vous saisissiez le nom du décideur.";
   }
 }
 
@@ -155,6 +157,15 @@ export const CONTACT_FILTERS = [
   "contacted",
   "recent",
   "answered",
+  /**
+   * Les fiches sans personne nommée — la marque trouvée avant le fondateur
+   * (jalon 50). C'est un **arriéré de recherche**, pas un statut de relance :
+   * des marques déjà approchées dont il reste à trouver le décideur, et une
+   * personne nommée répond mieux qu'une boîte générique.
+   *
+   * Décidée en SQL, sur deux colonnes de la fiche : voir `SQL_ONLY_FILTERS`.
+   */
+  "unidentified",
 ] as const;
 export type ContactFilter = (typeof CONTACT_FILTERS)[number];
 
@@ -201,6 +212,7 @@ export const CONTACT_FILTER_LABELS: Record<ContactFilter, string> = {
   contacted: "Déjà contactés",
   recent: "Contactés cette semaine",
   answered: "Ont répondu",
+  unidentified: "À identifier",
 };
 
 /**
@@ -216,6 +228,10 @@ const SQL_ONLY_FILTERS: readonly ContactFilter[] = [
   "contacted",
   "recent",
   "answered",
+  // Sur `firstName`/`lastName` : deux colonnes de la fiche, pas un statut
+  // dérivé. Sans cette déclaration, la clause SQL retiendrait les bonnes lignes
+  // et le second tamis les rejetterait toutes — le défaut muet du jalon 48.
+  "unidentified",
 ];
 
 export function appliedInSql(filter: ContactFilter): boolean {

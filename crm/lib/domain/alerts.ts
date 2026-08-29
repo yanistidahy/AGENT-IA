@@ -11,6 +11,7 @@ import {
   type StageLike,
   type TaskLike,
 } from "./types";
+import { contactTitle } from "./contact-identity";
 
 interface AlertInput {
   readonly tasks: readonly TaskLike[];
@@ -129,7 +130,7 @@ export function contactReminderAlerts(
     .map((contact) => ({
       kind: "contact-reminder" as const,
       level: "md" as const,
-      title: `Rappel : ${contact.firstName} ${contact.lastName}`,
+      title: `Rappel : ${contactTitle(contact)}`,
       detail: "Rappel programmé arrivé à échéance.",
       targetType: "contact" as const,
       targetId: contact.id,

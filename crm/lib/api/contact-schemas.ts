@@ -42,9 +42,19 @@ const emailValue = z
 
 const idValue = z.string().trim().min(1).nullable();
 
+/**
+ * Nom facultatif — mais pas gratuitement.
+ *
+ * La prospection Instagram trouve la marque avant le fondateur : imposer un nom
+ * fait inventer « — » ou « Contact », qui atterrit ensuite dans les listes. Le
+ * champ est donc facultatif, et c'est `withIdentity` ci-dessous qui exige
+ * qu'une fiche porte **quelque chose** : une personne, ou une marque.
+ */
+const nameValue = z.string().trim().optional();
+
 export const createContactSchema = z.object({
-  firstName: z.string().trim().min(1, "Le prénom est obligatoire"),
-  lastName: z.string().trim().min(1, "Le nom est obligatoire"),
+  firstName: nameValue,
+  lastName: nameValue,
   lifecycle: z.enum(LIFECYCLES, { error: "Cycle de vie inconnu" }),
   title: z.string().trim().optional(),
   dep: z.string().trim().optional(),
@@ -69,14 +79,36 @@ export const createContactSchema = z.object({
   companyName: z.string().trim().min(1).optional(),
   lastContact: dateValue.optional(),
   nextReminder: dateValue.optional(),
-});
+})
+  /**
+   * Une fiche doit porter **quelque chose** : une personne, ou une marque.
+   *
+   * Sans cette contrainte, « nom facultatif » deviendrait « fiche vide
+   * autorisée », et une liste de contacts anonymes qu'on ne sait ni nommer ni
+   * joindre n'est pas un vivier, c'est du bruit. L'erreur porte sur
+   * `companyName` parce que c'est le champ que la bascule rend obligatoire à
+   * l'écran — l'utilisateur doit être renvoyé là où il peut agir.
+   */
+  .refine(
+    (value) =>
+      (value.firstName ?? "") !== "" ||
+      (value.lastName ?? "") !== "" ||
+      (value.companyName ?? "") !== "" ||
+      (value.companyId ?? null) !== null,
+    {
+      path: ["companyName"],
+      message: "Sans nom de personne, le nom de la marque est obligatoire",
+    },
+  );
 
 export type CreateContactInput = z.infer<typeof createContactSchema>;
 
 export const updateContactSchema = z
   .object({
-    firstName: z.string().trim().min(1, "Le prénom est obligatoire").optional(),
-    lastName: z.string().trim().min(1, "Le nom est obligatoire").optional(),
+    // Vider un nom est autorisé : on peut s'être trompé de personne sur une
+    // marque, et la fiche redevient alors « à identifier ».
+    firstName: nameValue,
+    lastName: nameValue,
     lifecycle: z.enum(LIFECYCLES, { error: "Cycle de vie inconnu" }).optional(),
     title: z.string().trim().optional(),
     dep: z.string().trim().optional(),

@@ -11,6 +11,7 @@ import {
   validAmount,
 } from "../domain/qualification";
 import type { UndoStep } from "./queue";
+import { contactTitle } from "../domain/contact-identity";
 
 /**
  * Qualifier un contact, c'est ouvrir une affaire.
@@ -145,7 +146,7 @@ export async function qualifyContact(
   const draft = draftFromContact(
     {
       contactId: contact.id,
-      contactName: `${contact.firstName} ${contact.lastName}`.trim(),
+      contactName: contactTitle(contact),
       companyId: contact.companyId,
       companyName: contact.company?.name ?? null,
       owner: await ownerOrDefault(prisma, contact.owner),

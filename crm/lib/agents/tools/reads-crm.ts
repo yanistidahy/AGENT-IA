@@ -9,6 +9,7 @@ import { listSequences } from "@/lib/api/sequences";
 import { FOLLOW_UP_LABELS } from "@/lib/domain/follow-up";
 import { ACTIVITY_LABELS } from "@/lib/domain/types";
 import { defineTool } from "./types";
+import { contactTitle } from "../../domain/contact-identity";
 
 /**
  * Outils de lecture ouverts au conseil après les jalons 3 à 6.
@@ -70,7 +71,7 @@ export const listReminders = defineTool({
       enRetardOuAujourdhui: rows.filter((contact) => contact.followUp === "due").length,
       contacts: rows.slice(0, input.limit).map((contact) => ({
         id: contact.id,
-        nom: `${contact.firstName} ${contact.lastName}`,
+        nom: contactTitle(contact),
         société: contact.company?.name ?? null,
         cycleDeVie: contact.lifecycle,
         statut: FOLLOW_UP_LABELS[contact.followUp],
@@ -121,7 +122,7 @@ export const listNeglectedContacts = defineTool({
       seuilFroidJours: settings.coldDays,
       contacts: contacts.slice(0, input.limit).map((contact) => ({
         id: contact.id,
-        nom: `${contact.firstName} ${contact.lastName}`,
+        nom: contactTitle(contact),
         société: contact.company?.name ?? null,
         cycleDeVie: contact.lifecycle,
         statut: FOLLOW_UP_LABELS[contact.followUp],
@@ -211,7 +212,7 @@ export const getTimeline = defineTool({
         surContact:
           activity.contact === null
             ? null
-            : `${activity.contact.firstName} ${activity.contact.lastName}`,
+            : contactTitle(activity.contact),
       })),
     };
   },
@@ -276,7 +277,7 @@ export const listClients = defineTool({
       caMoyenParClient: portfolio.averageRevenue,
       clients: portfolio.clients.slice(0, input.limit).map((client) => ({
         id: client.id,
-        nom: `${client.firstName} ${client.lastName}`,
+        nom: contactTitle(client),
         société: client.companyName,
         caSigné: client.wonValue,
         affairesGagnées: client.wonCount,

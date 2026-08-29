@@ -15,6 +15,7 @@ import {
   nextStep,
   stopsEnrollment,
 } from "../domain/sequence-rules";
+import { contactTitle } from "../domain/contact-identity";
 
 /**
  * « Départs du jour » : la file du matin, et ce qu'on en fait.
@@ -251,7 +252,7 @@ export async function listDepartures(now = new Date()): Promise<DepartureView[]>
       detail: row.detail,
       sequenceName: row.enrollment.sequence.name,
       contactId: row.enrollment.contact.id,
-      contactName: `${row.enrollment.contact.firstName} ${row.enrollment.contact.lastName}`.trim(),
+      contactName: contactTitle(row.enrollment.contact),
       to: row.enrollment.contact.email,
       lastActivityDays: last === null ? null : daysSince(last.date, now),
       lastActivityAt: last?.date ?? null,

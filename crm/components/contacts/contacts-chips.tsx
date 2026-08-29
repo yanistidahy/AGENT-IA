@@ -29,6 +29,7 @@ export function ContactChips({
   followUp,
   incomplete,
   incompleteCount,
+  unidentifiedCount,
   reminderCounts,
   account,
   dm,
@@ -41,6 +42,7 @@ export function ContactChips({
   followUp: string | null;
   incomplete: boolean;
   incompleteCount: number;
+  unidentifiedCount: number;
   reminderCounts: { readonly total: number; readonly late: number };
   account: AccountState | undefined;
   dm: DmState | undefined;
@@ -117,6 +119,11 @@ export function ContactChips({
           }`}
         >
           {CONTACT_FILTER_LABELS[value]}
+          {value === "unidentified" && unidentifiedCount > 0 && (
+            // Le nombre de marques dont il reste à trouver le décideur : c'est
+            // un arriéré, et un arriéré se travaille quand on sait sa taille.
+            <span className="ml-1 font-normal opacity-80">({unidentifiedCount})</span>
+          )}
           {value === "reminder" && reminderCounts.total > 0 && (
             <span className="ml-1 font-normal opacity-80">
               ({reminderCounts.total}

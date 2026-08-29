@@ -11,6 +11,7 @@ import { formatDate, money } from "@/lib/format";
 import { RecordPanel } from "@/components/activities/record-panel";
 import type { SequenceOption } from "@/components/activities/run-sequence";
 import { CompanyForm } from "./company-form";
+import { contactTitle } from "@/lib/domain/contact-identity";
 
 interface CompanyDrawerProps {
   readonly company: CompanyRecord | null;
@@ -140,7 +141,7 @@ export function CompanyDrawer({
                     href={`/contacts?q=${encodeURIComponent(contact.lastName)}`}
                     className="font-semibold hover:underline"
                   >
-                    {contact.firstName} {contact.lastName}
+                    {contactTitle({ ...contact, company: null })}
                   </Link>
                   <span className="text-[12.5px] text-muted">{contact.title || "—"}</span>
                   <span className="ml-auto">
