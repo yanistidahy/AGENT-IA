@@ -23,6 +23,7 @@ import { dealHeat, pipelineValue, stuckDeals, weighted } from "@/lib/domain/pipe
 import { LIFECYCLES } from "@/lib/domain/types";
 import { toLifecycle } from "@/lib/domain/guards";
 import { defineTool } from "./types";
+import { contactTitle } from "../../domain/contact-identity";
 
 /**
  * Outils de lecture. Exécutés directement dans la boucle, sans confirmation.
@@ -93,7 +94,7 @@ export const searchContacts = defineTool({
 
       return {
         id: c.id,
-        nom: `${c.firstName} ${c.lastName}`,
+        nom: contactTitle(c),
         poste: c.title,
         société: c.company?.name ?? null,
         cycleDeVie: c.lifecycle,
@@ -144,7 +145,7 @@ export const getCompany = defineTool({
       activité: company.desc,
       contacts: company.contacts.map((c) => ({
         id: c.id,
-        nom: `${c.firstName} ${c.lastName}`,
+        nom: contactTitle(c),
         poste: c.title,
         cycleDeVie: c.lifecycle,
       })),
@@ -203,7 +204,7 @@ export const listDealsTool = defineTool({
       id: d.id,
       nom: d.name,
       société: d.company?.name ?? null,
-      contact: d.contact === null ? null : `${d.contact.firstName} ${d.contact.lastName}`,
+      contact: d.contact === null ? null : contactTitle(d.contact),
       montant: d.amount,
       étape: d.stage.name,
       étapeId: d.stageId,
@@ -250,7 +251,7 @@ export const getDealDetail = defineTool({
       contact:
         deal.contact === null
           ? null
-          : `${deal.contact.firstName} ${deal.contact.lastName} — ${deal.contact.title}`,
+          : `${contactTitle(deal.contact)} — ${deal.contact.title}`,
       clôturePrévue: deal.expectedClose,
       notes: deal.notes,
       historique: deal.activities.map((a) => ({
@@ -317,7 +318,7 @@ export const listTasks = defineTool({
       terminée: t.done,
       rattachéeÀ:
         t.deal?.name ??
-        (t.contact === null ? null : `${t.contact.firstName} ${t.contact.lastName}`) ??
+        (t.contact === null ? null : contactTitle(t.contact)) ??
         t.company?.name ??
         null,
     }));

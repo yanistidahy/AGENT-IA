@@ -1,5 +1,7 @@
 "use client";
 
+import { BrandOnlyToggle } from "./brand-only-toggle";
+import { CONTROL, Field } from "./form-field";
 import { IdentityFields } from "./identity-fields";
 
 import { LifecycleField } from "./lifecycle-field";
@@ -38,9 +40,6 @@ interface ContactFormProps extends ContactFormOptions {
   readonly onSaved: (lifecycle: string) => void;
 }
 
-const CONTROL =
-  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[13.5px] outline-none focus:border-brand";
-
 function day(date: Date | null): string {
   return date === null ? "" : date.toISOString().slice(0, 10);
 }
@@ -69,6 +68,9 @@ export function ContactForm({
   const [company, setCompany] = useState<ComboboxValue>(
     initialCompany === null ? { kind: "none" } : { kind: "existing", id: initialCompany },
   );
+
+  /** Voir `BrandOnlyToggle` — proposée à la création seulement. */
+  const [brandOnly, setBrandOnly] = useState(false);
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -119,14 +121,21 @@ export function ContactForm({
 
   return (
     <form onSubmit={(event) => void submit(event)} className="grid gap-3.5">
-      <IdentityFields contact={contact} fields={fields} />
+      {contact === null && <BrandOnlyToggle checked={brandOnly} onChange={setBrandOnly} />}
+
+      <IdentityFields contact={contact} fields={fields} brandOnly={brandOnly} />
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Société" errors={fields.companyId ?? fields.companyName}>
+        <Field
+          label={brandOnly ? "Marque (obligatoire)" : "Société"}
+          errors={fields.companyId ?? fields.companyName}
+        >
           <Combobox
             options={companies.map((option) => ({ id: option.id, label: option.name }))}
             value={company}
             onChange={setCompany}
-            placeholder="Rechercher ou créer une société…"
+            placeholder={
+              brandOnly ? "Nom de la marque…" : "Rechercher ou créer une société…"
+            }
             emptyLabel="Sans société"
           />
         </Field>
@@ -239,27 +248,6 @@ export function ContactForm({
   );
 }
 
-function Field({
-  label,
-  errors,
-  children,
-}: {
-  label: string;
-  errors?: string[];
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block font-mono text-[10px] tracking-[0.1em] text-muted uppercase">
-        {label}
-      </span>
-      {children}
-      {errors !== undefined && errors.length > 0 && (
-        <span className="mt-1 block text-[12px] text-[#B2311F]">{errors.join(" · ")}</span>
-      )}
-    </label>
-  );
-}
 
 /** Liste proposée : les étiquettes déjà en usage d'abord, puis celles de départ. */
 function TAG_OPTIONS(used: readonly string[]): string[] {

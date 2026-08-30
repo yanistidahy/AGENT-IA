@@ -4,6 +4,7 @@ import { addDays, daysSince, startOfDay } from "@/lib/domain/dates";
 import { LOST_LIFECYCLE } from "@/lib/domain/lost";
 import { ACTIVITY_LABELS, type PilotageSettings } from "@/lib/domain/types";
 import { readProspectingReport } from "@/lib/api/prospecting";
+import { contactTitle } from "../../domain/contact-identity";
 
 /**
  * Briefing d'une vacation : les faits, calculés.
@@ -84,7 +85,7 @@ function section(
 }
 
 function name(contact: { firstName: string; lastName: string }): string {
-  return `${contact.firstName} ${contact.lastName}`.trim();
+  return contactTitle(contact);
 }
 
 /**

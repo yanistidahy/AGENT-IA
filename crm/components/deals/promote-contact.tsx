@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { DealRecord } from "@/lib/api/deals";
 import { updateContact } from "@/lib/client/crm-api";
+import { contactTitle } from "@/lib/domain/contact-identity";
 
 /**
  * Promotion du contact en « Client » après un gain.
@@ -44,7 +45,7 @@ export function PromoteContact({ deal, onChanged }: PromoteContactProps) {
   return (
     <div className="mt-5 rounded-card border border-[#B9E7DC] bg-win-l px-3.5 py-3">
       <p className="text-[13px] leading-relaxed text-win-d">
-        Affaire gagnée. <b>{contact.firstName} {contact.lastName}</b> est encore
+        Affaire gagnée. <b>{contactTitle(contact)}</b> est encore
         « {contact.lifecycle} » — le passer en « Client » ?
       </p>
       <div className="mt-2.5 flex gap-2">

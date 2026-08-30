@@ -17,6 +17,7 @@ import { PromoteContact } from "./promote-contact";
 import { RecordPanel } from "@/components/activities/record-panel";
 import type { SequenceOption } from "@/components/activities/run-sequence";
 import type { Alert } from "@/lib/domain/types";
+import { contactTitle } from "@/lib/domain/contact-identity";
 
 interface DealDrawerProps extends DealFormOptions {
   readonly deal: DealRecord | null;
@@ -132,7 +133,7 @@ export function DealDrawer({
                   href={`/contacts?lifecycle=all&fiche=${encodeURIComponent(deal.contact.id)}`}
                   className="text-brand-d hover:underline"
                 >
-                  {deal.contact.firstName} {deal.contact.lastName}
+                  {contactTitle(deal.contact)}
                 </Link>
               )}
             </Row>

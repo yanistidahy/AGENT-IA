@@ -1,6 +1,7 @@
 "use client";
 
 import type { ContactRecord } from "@/lib/api/contacts";
+import { CONTROL, Field } from "./form-field";
 
 /**
  * Les coordonnées : qui c'est, et comment on le joint.
@@ -9,47 +10,39 @@ import type { ContactRecord } from "@/lib/api/contacts";
  * forment un groupe naturel — ce sont les seuls champs qu'on remplit à la
  * création, et les seuls qu'un import renseigne.
  */
-const CONTROL =
-  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[14px] outline-none focus:border-brand";
-
-function Field({
-  label,
-  errors,
-  children,
-}: {
-  label: string;
-  errors?: readonly string[];
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="grid gap-1">
-      <span className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase">{label}</span>
-      {children}
-      {errors !== undefined &&
-        errors.map((message) => (
-          <span key={message} className="text-[12px] text-[#B2311F]">
-            {message}
-          </span>
-        ))}
-    </label>
-  );
-}
 
 export function IdentityFields({
   contact,
   fields,
+  brandOnly = false,
 }: {
   contact: ContactRecord | null;
   fields: Readonly<Record<string, readonly string[]>>;
+  /**
+   * « Je n'ai pas encore le contact » : on a trouvé la marque avant le
+   * fondateur. Les deux noms cessent d'être obligatoires — c'est la marque qui
+   * porte l'identité, et le formulaire ne doit plus faire inventer un nom.
+   */
+  brandOnly?: boolean;
 }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Prénom" errors={fields.firstName}>
-          <input name="firstName" required defaultValue={contact?.firstName ?? ""} className={CONTROL} />
+        <Field label={brandOnly ? "Prénom (si connu)" : "Prénom"} errors={fields.firstName}>
+          <input
+            name="firstName"
+            required={!brandOnly}
+            defaultValue={contact?.firstName ?? ""}
+            className={CONTROL}
+          />
         </Field>
-        <Field label="Nom" errors={fields.lastName}>
-          <input name="lastName" required defaultValue={contact?.lastName ?? ""} className={CONTROL} />
+        <Field label={brandOnly ? "Nom (si connu)" : "Nom"} errors={fields.lastName}>
+          <input
+            name="lastName"
+            required={!brandOnly}
+            defaultValue={contact?.lastName ?? ""}
+            className={CONTROL}
+          />
         </Field>
         <Field label="Fonction" errors={fields.title}>
           <input name="title" defaultValue={contact?.title ?? ""} className={CONTROL} />

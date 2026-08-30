@@ -7,6 +7,11 @@ import { describeReminder } from "@/lib/domain/follow-up";
 import { contactAttention } from "@/lib/domain/contact-status";
 import { formatDate } from "@/lib/format";
 import { EXTRA_COLUMNS } from "./contact-table-extra-columns";
+import {
+  contactTitle,
+  isUnidentified,
+  UNIDENTIFIED_MARKER,
+} from "@/lib/domain/contact-identity";
 
 /**
  * Les colonnes de `/contacts`, définies une fois.
@@ -55,11 +60,14 @@ export const CONTACT_COLUMNS: readonly ContactColumn[] = [
     filterKey: null,
     cell: (contact) => (
       <>
-        <span className="font-semibold">
-          {contact.firstName} {contact.lastName}
-        </span>
+        <span className="font-semibold">{contactTitle(contact)}</span>
         <br />
-        <span className="text-[12.5px] text-muted">{contact.title || "—"}</span>
+        {/* Sous le nom : la fonction, ou — quand la fiche n'a pas encore de
+            personne — ce qui manque. C'est la ligne qu'on lit en balayant la
+            liste, donc c'est là que le manque doit se voir (jalon 50). */}
+        <span className="text-[12.5px] text-muted">
+          {isUnidentified(contact) ? UNIDENTIFIED_MARKER : contact.title || "—"}
+        </span>
       </>
     ),
   },

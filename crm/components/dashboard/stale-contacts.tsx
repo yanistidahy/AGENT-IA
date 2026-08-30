@@ -5,6 +5,7 @@ import { isTerminal } from "@/lib/domain/lost";
 import type { StaleContact } from "@/lib/api/dashboard";
 import { needsAttention } from "@/lib/domain/follow-up";
 import { formatDate } from "@/lib/format";
+import { contactTitle } from "@/lib/domain/contact-identity";
 
 /**
  * « Qui avons-nous oublié ? »
@@ -114,7 +115,7 @@ export function StaleContacts({ contacts, sort, limit = 12 }: StaleContactsProps
                     href={`/contacts?lifecycle=all&fiche=${contact.id}`}
                     className="font-semibold hover:underline"
                   >
-                    {contact.firstName} {contact.lastName}
+                    {contactTitle(contact)}
                   </Link>
                   <br />
                   <span className="text-[12px] text-muted">{contact.companyName ?? "—"}</span>

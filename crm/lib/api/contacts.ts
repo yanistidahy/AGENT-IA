@@ -15,6 +15,7 @@ import { REAL_ACTIVITY } from "./real-activity";
 import { searchText, searchTerm } from "../domain/text";
 import { addDays, daysSince, startOfDay } from "../domain/dates";
 import type { FilterState } from "../domain/column-filters";
+import { contactTitle } from "../domain/contact-identity";
 import { facetsFor, matchesAll, type FacetValue } from "../domain/column-match";
 import { columnsWhere, derivedFilters } from "./column-filters";
 import {
@@ -463,6 +464,17 @@ function contactsWhere(
     });
   }
 
+  // « À identifier » : deux colonnes de la fiche, donc une clause SQL. C'est un
+  // arriéré de recherche — des marques approchées dont le décideur reste à
+  // trouver — et il se vide en saisissant un nom, sans qu'aucun drapeau ait à
+  // être mis à jour (lib/domain/contact-identity.ts).
+  if (query.followUp === "unidentified") {
+    // Les cycles terminaux sont exclus **des deux côtés** — ici et dans
+    // `countUnidentifiedContacts()`. Le jalon 49 a payé une fois l'écart entre
+    // un compteur et sa liste : la puce annonçait 23 et en affichait 24.
+    and.push({ firstName: "", lastName: "", lifecycle: { notIn: [...TERMINAL_LIFECYCLES] } });
+  }
+
   // Les deux axes du segment Instagram, indépendants l'un de l'autre — c'est
   // ce qui rend leur intersection atteignable sans l'avoir énumérée. Voir
   // lib/domain/instagram-filter.ts.
@@ -700,6 +712,24 @@ export async function countIncompleteContacts(): Promise<number> {
   return rows.filter(isIncomplete).length;
 }
 
+/**
+ * Les fiches qui attendent encore le nom de leur décideur.
+ *
+ * Un `count` et non une lecture : c'est exactement la clause de la puce, donc
+ * le compteur ne peut pas annoncer autre chose que ce que la liste rendra.
+ * Les cycles terminaux sont exclus comme partout — chercher le fondateur d'une
+ * marque qui a dit non n'est pas du travail (jalon 30).
+ */
+export async function countUnidentifiedContacts(): Promise<number> {
+  return prisma.contact.count({
+    where: {
+      firstName: "",
+      lastName: "",
+      lifecycle: { notIn: [...TERMINAL_LIFECYCLES] },
+    },
+  });
+}
+
 /** Le prédicat complet, appliqué en mémoire. Source unique du compte et du filtre. */
 function isIncomplete(contact: {
   readonly firstName: string;
@@ -735,8 +765,10 @@ export async function createContact(input: CreateContactInput): Promise<ContactR
     const companyId = await resolveCompanyLink(tx, input);
     const created = await tx.contact.create({
     data: {
-      firstName: input.firstName,
-      lastName: input.lastName,
+      // Vides quand la fiche n'a encore que sa marque : le manque est **déduit**
+      // de ces deux champs, jamais stocké à côté (lib/domain/contact-identity.ts).
+      firstName: input.firstName ?? "",
+      lastName: input.lastName ?? "",
       lifecycle: input.lifecycle,
       title: input.title ?? "",
       dep: input.dep ?? "",
@@ -761,7 +793,7 @@ export async function createContact(input: CreateContactInput): Promise<ContactR
     if (created.nextReminder !== null) {
       await syncReminderTask(tx, {
         contactId: created.id,
-        contactName: `${created.firstName} ${created.lastName}`,
+        contactName: contactTitle(created),
         owner: await ownerOrDefault(tx, created.owner),
         reminder: created.nextReminder,
       });
@@ -842,7 +874,7 @@ export async function updateContact(
     if (input.nextReminder !== undefined || becomesLost) {
       await syncReminderTask(tx, {
         contactId: updated.id,
-        contactName: `${updated.firstName} ${updated.lastName}`,
+        contactName: contactTitle(updated),
         owner: await ownerOrDefault(tx, updated.owner),
         reminder: updated.nextReminder,
       });

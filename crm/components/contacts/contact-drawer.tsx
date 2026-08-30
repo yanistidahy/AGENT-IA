@@ -22,6 +22,11 @@ import { Notices } from "./drawer-notices";
 import { QualifyFlow, type QualifyTarget } from "./qualify-flow";
 import { entersQualified, outcomeQualifies, QUALIFIED } from "@/lib/domain/qualification";
 import { toLifecycle } from "@/lib/domain/guards";
+import {
+  contactTitle,
+  isUnidentified,
+  UNIDENTIFIED_MARKER,
+} from "@/lib/domain/contact-identity";
 
 /**
  * La fiche contact : en-tête fixe, puis trois onglets.
@@ -125,8 +130,16 @@ export function ContactDrawer({
     <Drawer
       open
       onClose={onClose}
-      title={`${contact.firstName} ${contact.lastName}`}
-      subtitle={contact.company?.name ?? "Sans société"}
+      title={contactTitle(contact)}
+      subtitle={
+        // Sans personne nommée, le titre porte déjà la marque : répéter le nom
+        // de la société juste en dessous n'apprendrait rien. Le sous-titre dit
+        // alors **ce qui manque**, discrètement, pour qu'on sache d'un coup
+        // d'œil qu'il reste un décideur à trouver (jalon 50).
+        isUnidentified(contact)
+          ? UNIDENTIFIED_MARKER
+          : (contact.company?.name ?? "Sans société")
+      }
       banner={
         editing ? undefined : (
           <>
@@ -145,7 +158,7 @@ export function ContactDrawer({
                   : () =>
                       setQualifying({
                         id: contact.id,
-                        name: `${contact.firstName} ${contact.lastName}`.trim(),
+                        name: contactTitle(contact),
                       })
               }
             />
@@ -190,7 +203,7 @@ export function ContactDrawer({
             if (entersQualified(contact.lifecycle, toLifecycle(saved))) {
               setQualifying({
                 id: contact.id,
-                name: `${contact.firstName} ${contact.lastName}`.trim(),
+                name: contactTitle(contact),
               });
             }
           }}
@@ -236,7 +249,7 @@ export function ContactDrawer({
                 if (contact.lifecycle !== QUALIFIED && outcomeQualifies(outcome)) {
                   setQualifying({
                     id: contact.id,
-                    name: `${contact.firstName} ${contact.lastName}`.trim(),
+                    name: contactTitle(contact),
                   });
                 }
               }}

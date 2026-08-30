@@ -15,6 +15,7 @@ import {
 import { sanitizeSubject } from "../domain/email-format";
 import { addDays } from "../domain/dates";
 import { getReminderDelays } from "./reference";
+import { contactTitle } from "../domain/contact-identity";
 
 /**
  * Envoyer un courriel à un contact, et le consigner.
@@ -190,7 +191,7 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
     ok: true,
     sent: {
       to,
-      contactName: `${contact.firstName} ${contact.lastName}`.trim(),
+      contactName: contactTitle(contact),
       subject,
       activityId: logged.activity.id,
       suggestedReminder: addDays(now, delays.email),

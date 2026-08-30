@@ -25,6 +25,12 @@ import {
   signatoryNames,
   type Signatory,
 } from "@/lib/api/signatories";
+import {
+  contactTitle,
+  greetingRule,
+  repairGreeting,
+  type ContactIdentityLike,
+} from "../domain/contact-identity";
 
 /**
  * Le brouillon d'Alex.
@@ -177,7 +183,7 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
   });
 
   const lines: string[] = [];
-  lines.push(`Destinataire : ${contact.firstName} ${contact.lastName}${contact.title === "" ? "" : `, ${contact.title}`}`);
+  lines.push(`Destinataire : ${contactTitle(contact)}${contact.title === "" ? "" : `, ${contact.title}`}`);
   if (contact.company !== null) {
     const details = [contact.company.industry, contact.company.size].filter((v) => v !== "");
     lines.push(`Société : ${contact.company.name}${details.length ? ` (${details.join(", ")})` : ""}`);
@@ -190,6 +196,16 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
       : `Dernier contact : ${formatDate(contact.lastContact)}`,
   );
   lines.push(`Nombre d'échanges réels consignés : ${contact._count.activities}`);
+
+  // Le prénom est annoncé **sous ses deux formes**, comme le DM : une fiche
+  // trouvée par la marque avant le fondateur n'en a pas, et un modèle à qui
+  // l'on ne dit rien comble le vide — par un tiret, ou par un prénom déduit de
+  // l'adresse. Voir lib/domain/contact-identity.ts.
+  lines.push(
+    contact.firstName.trim() === ""
+      ? "Prénom du destinataire : INCONNU — la fiche n'en porte pas encore."
+      : `Prénom du destinataire : ${contact.firstName.trim()}`,
+  );
 
   // Les deux faits que la nouvelle forme d'email exige, annoncés sans ambiguïté
   // et **toujours présents** — y compris à la forme négative. Une absence de
@@ -237,7 +253,12 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
     lines.push(`Notes de la fiche : ${notes.slice(0, 600)}`);
   }
 
-  return { dossier: lines.join("\n"), target, dmSent: dm !== null };
+  return {
+    dossier: lines.join("\n"),
+    target,
+    dmSent: dm !== null,
+    greeting: greetingRule(contact),
+  };
 }
 
 /**
@@ -248,6 +269,8 @@ interface ContextResult {
   readonly dossier: string;
   readonly target: ReturnType<typeof demoTarget>;
   readonly dmSent: boolean;
+  /** L'appel à écrire, décidé sur la donnée — jamais laissé au modèle. */
+  readonly greeting: string;
 }
 
 /**
@@ -273,6 +296,8 @@ règles de forme, de signature et de lien données plus haut.
 ${demoTargetRule(context.target)}
 
 ${dmRule(context.dmSent)}
+
+${context.greeting}
 
 Rends exclusivement un objet JSON, sans texte autour, sans bloc de code :
 {"subject": "...", "body": "..."}
@@ -317,7 +342,16 @@ export async function draftEmail(
 ): Promise<DraftResult> {
   const contact = await prisma.contact.findUnique({
     where: { id: contactId },
-    select: { firstName: true, lastName: true, email: true, owner: true },
+    // La société est lue pour **nommer** la fiche : sans nom de personne, c'est
+    // la marque qui l'identifie (jalon 50). Voir lib/domain/contact-identity.ts.
+    select: {
+      firstName: true,
+      lastName: true,
+      email: true,
+      owner: true,
+      instagram: true,
+      company: { select: { name: true } },
+    },
   });
 
   if (contact === null) return { ok: false, message: "Contact introuvable." };
@@ -350,8 +384,7 @@ export async function draftEmail(
         : `\n\nConsigne propre à ce message : ${stepBrief.trim()}`
     }`,
     to,
-    contact.firstName,
-    contact.lastName,
+    contact,
     config,
     signatories,
     signatory,
@@ -370,8 +403,7 @@ async function complete(
   system: string,
   ask: string,
   to: string,
-  firstName: string,
-  lastName: string,
+  identity: ContactIdentityLike,
   config: MailConfig,
   signatories: readonly Signatory[],
   signatory: Signatory | null,
@@ -433,9 +465,16 @@ async function complete(
         // prompt : une consigne tient presque toujours, et « presque » n'est
         // pas assez quand la conséquence est qu'un prospect lit le prénom d'un
         // agent dans un message censé venir d'un humain.
-        body: enforceSignature(checked.data.body.trim(), signature, forbidden),
+        // Deux garde-fous, dans cet ordre : l'appel d'abord — il ouvre le
+        // message et « Bonjour — » se voit avant tout le reste — puis la
+        // signature, qui le ferme.
+        body: enforceSignature(
+          repairGreeting(checked.data.body.trim(), identity),
+          signature,
+          forbidden,
+        ),
         to,
-        contactName: `${firstName} ${lastName}`.trim(),
+        contactName: contactTitle(identity),
         signatories,
         signatoryId: signatory?.id ?? null,
       },

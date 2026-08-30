@@ -4,6 +4,7 @@ import { listOwners } from "@/lib/api/reference";
 import { parseTasksQuery } from "@/lib/api/task-schemas";
 import { listTasks } from "@/lib/api/tasks";
 import { prisma } from "@/lib/db";
+import { contactTitle } from "@/lib/domain/contact-identity";
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +55,7 @@ export default async function TachesPage({
       tasks={view}
       owners={owners}
       targets={{
-        contacts: contacts.map((c) => ({ id: c.id, label: `${c.firstName} ${c.lastName}` })),
+        contacts: contacts.map((c) => ({ id: c.id, label: contactTitle(c) })),
         companies: companies.map((c) => ({ id: c.id, label: c.name })),
         deals: deals.map((d) => ({ id: d.id, label: d.name })),
       }}

@@ -14,10 +14,42 @@ describe("createContactSchema", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("refuse un prénom vide, avec un message lisible", () => {
-    const parsed = createContactSchema.safeParse({ ...base, firstName: "  " });
+  // Jalon 50 : le nom devient facultatif — la prospection Instagram trouve la
+  // marque avant le fondateur. Ce qui reste obligatoire, c'est qu'une fiche
+  // porte **quelque chose** : une personne, ou une marque.
+  it("accepte un prénom vide dès lors que le nom est là", () => {
+    expect(createContactSchema.safeParse({ ...base, firstName: "  " }).success).toBe(true);
+  });
+
+  it("accepte une fiche sans personne, si la marque est nommée", () => {
+    const parsed = createContactSchema.safeParse({
+      firstName: "",
+      lastName: "",
+      lifecycle: "Lead",
+      companyName: "Maison Vertu",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("refuse une fiche sans personne **et** sans marque", () => {
+    const parsed = createContactSchema.safeParse({ firstName: "", lastName: "", lifecycle: "Lead" });
     expect(parsed.success).toBe(false);
-    expect(parsed.error?.issues[0]?.message).toBe("Le prénom est obligatoire");
+    // L'erreur porte sur le champ que la bascule rend obligatoire à l'écran :
+    // l'utilisateur doit être renvoyé là où il peut agir.
+    expect(parsed.error?.issues[0]?.path).toEqual(["companyName"]);
+    expect(parsed.error?.issues[0]?.message).toBe(
+      "Sans nom de personne, le nom de la marque est obligatoire",
+    );
+  });
+
+  it("une société existante choisie dans la liste suffit aussi", () => {
+    const parsed = createContactSchema.safeParse({
+      firstName: "",
+      lastName: "",
+      lifecycle: "Lead",
+      companyId: "c1",
+    });
+    expect(parsed.success).toBe(true);
   });
 
   it("refuse un cycle de vie hors liste", () => {
@@ -55,9 +87,19 @@ describe("updateContactSchema", () => {
     expect(updateContactSchema.safeParse({}).success).toBe(false);
   });
 
-  it("autorise l'omission mais pas l'effacement du nom", () => {
+  it("autorise l'omission **et** l'effacement du nom", () => {
     expect(updateContactSchema.safeParse({ phone: "06" }).success).toBe(true);
-    expect(updateContactSchema.safeParse({ lastName: "" }).success).toBe(false);
+    // Effacer est autorisé depuis le jalon 50 : on peut s'être trompé de
+    // personne sur une marque, et la fiche redevient alors « à identifier ».
+    expect(updateContactSchema.safeParse({ lastName: "" }).success).toBe(true);
+  });
+
+  it("saisir un nom plus tard est une simple mise à jour", () => {
+    // Acceptance nº 4 : trouver le fondateur ne doit pas créer un second
+    // enregistrement. C'est l'édition ordinaire de la fiche.
+    const parsed = updateContactSchema.safeParse({ firstName: "Caroline", lastName: "Miyé" });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.firstName).toBe("Caroline");
   });
 
   it("distingue « société à null » de « société absente »", () => {

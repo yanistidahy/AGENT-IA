@@ -5,6 +5,7 @@ import { optedOut, TERMINAL_LIFECYCLES } from "../domain/lost";
 import { signatoryName } from "../domain/email-stats";
 import { readReplyFacts } from "./email-replies";
 import { toLifecycle } from "../domain/guards";
+import { contactTitle } from "../domain/contact-identity";
 
 /**
  * La liste de ce qui est parti, et la liste de ceux qui n'ont pas répondu.
@@ -148,7 +149,7 @@ export async function readSentEmails(query: SentQuery, now = new Date()): Promis
       contactName:
         send.contact === null
           ? send.toAddress
-          : `${send.contact.firstName} ${send.contact.lastName}`.trim(),
+          : contactTitle(send.contact),
       company: send.contact?.company?.name ?? "",
       subject: send.subject,
       tracked: send.tracked,
@@ -291,7 +292,7 @@ export async function readSilentContacts(now = new Date()): Promise<readonly Sil
     // dernier parti, et c'est lui qui date le silence.
     rows.set(contact.id, {
       contactId: contact.id,
-      name: `${contact.firstName} ${contact.lastName}`.trim(),
+      name: contactTitle(contact),
       company: contact.company?.name ?? "",
       email: contact.email,
       phone: contact.phone,

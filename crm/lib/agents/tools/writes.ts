@@ -7,6 +7,7 @@ import { OPT_OUT_MESSAGE, optedOut } from "@/lib/domain/lost";
 import { ACTIVITY_TYPES, LIFECYCLES, TASK_PRIORITIES } from "@/lib/domain/types";
 import { formatDate, money } from "@/lib/format";
 import { defineTool } from "./types";
+import { contactTitle } from "../../domain/contact-identity";
 
 /**
  * Outils d'écriture.
@@ -232,7 +233,7 @@ export const createContact = defineTool({
     companyId: z.string().nullish(),
   }),
   summarize: (input) => ({
-    headline: `Créer le contact ${input.firstName} ${input.lastName}`,
+    headline: `Créer le contact ${contactTitle(input)}`,
     details: [
       input.title === "" ? "Poste non renseigné" : `Poste : ${input.title}`,
       `Cycle de vie : ${input.lifecycle}`,
@@ -253,7 +254,7 @@ export const createContact = defineTool({
         companyId: input.companyId ?? null,
       },
     });
-    return { créé: true, id: contact.id, nom: `${contact.firstName} ${contact.lastName}` };
+    return { créé: true, id: contact.id, nom: contactTitle(contact) };
   },
 });
 
@@ -291,7 +292,7 @@ export const setReminder = defineTool({
     return {
       programmée: true,
       id: contact.id,
-      nom: `${contact.firstName} ${contact.lastName}`,
+      nom: contactTitle(contact),
       prochaineRelance: contact.nextReminder,
     };
   },

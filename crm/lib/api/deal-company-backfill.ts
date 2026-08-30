@@ -1,5 +1,6 @@
 import { prisma } from "../db";
 import { inheritedCompanyId } from "../domain/deal-company";
+import { contactTitle } from "../domain/contact-identity";
 
 /**
  * Rattraper les affaires nées sans société.
@@ -75,7 +76,7 @@ export async function planDealCompanyBackfill(): Promise<DealCompanyPlan> {
     fixes.push({
       dealId: deal.id,
       dealName: deal.name,
-      contactName: `${deal.contact?.firstName ?? ""} ${deal.contact?.lastName ?? ""}`.trim(),
+      contactName: deal.contact === null ? "" : contactTitle(deal.contact),
       companyId,
       companyName,
     });

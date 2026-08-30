@@ -6,6 +6,7 @@ import {
   noiseShare,
   type OpenHitKind,
 } from "../domain/open-tracking";
+import { contactTitle } from "../domain/contact-identity";
 
 /**
  * À quoi ressemblent vraiment les chargements de pixel.
@@ -91,7 +92,7 @@ export async function readOpenAudit(now = new Date()): Promise<OpenAudit> {
   let unclassified = 0;
 
   for (const send of sends) {
-    const name = `${send.contact?.firstName ?? ""} ${send.contact?.lastName ?? ""}`.trim();
+    const name = send.contact === null ? "" : contactTitle(send.contact);
     if (send.hits.length === 0) {
       // Un compteur sans ligne : le chiffre existe, la preuve n'existe pas.
       if (send.openCount > 0) unclassified += 1;

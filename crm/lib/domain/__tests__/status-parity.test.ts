@@ -106,7 +106,18 @@ const POPULATION: ReadonlyArray<readonly [string, ContactStatusLike]> = [
  * n'y aurait aucun intérêt à filtrer. Un contact dans l'un de ces états
  * n'appartient donc à **aucune** puce de statut, et c'est correct.
  */
-const HISTORY_CHIPS = ["reminder", "stale-status", "contacted", "recent", "answered"] as const;
+// `unidentified` rejoint la liste au jalon 50 : elle ne décrit **pas** un statut
+// de relance mais un manque dans la fiche — le nom du décideur. Elle est donc
+// orthogonale aux cinq états, et se croise librement avec eux : une marque sans
+// nom peut être « jamais contactée » comme « sans nouvelles ».
+const HISTORY_CHIPS = [
+  "reminder",
+  "stale-status",
+  "contacted",
+  "recent",
+  "answered",
+  "unidentified",
+] as const;
 const STATUS_CHIPS = CONTACT_FILTERS.filter(
   (filter) => !HISTORY_CHIPS.some((history) => history === filter),
 );
@@ -233,7 +244,7 @@ describe("le jeu de puces", () => {
    * d'une puce **déjà présente** — c'était ça, le reproche. Elles nomment les
    * deux moitiés d'une file de travail : ce qui est fait, ce qui reste à faire.
    */
-  it("propose exactement les six puces retenues", () => {
+  it("propose exactement les sept puces retenues", () => {
     expect(CONTACT_CHIPS.map((chip) => CONTACT_FILTER_LABELS[chip])).toEqual([
       "À relancer",
       "Sans nouvelles",
@@ -241,7 +252,17 @@ describe("le jeu de puces", () => {
       "Statut figé",
       "Contactés cette semaine",
       "Ont répondu",
+      "À identifier",
     ]);
+  });
+
+  it("« À identifier » ne double aucune puce existante", () => {
+    // Le reproche fait à « Déjà contactés » était d'être le complément exact
+    // d'une autre puce. Celle-ci ne l'est d'aucune : elle porte sur le **nom
+    // de la fiche**, pas sur son historique ni sur ses dates — une marque sans
+    // décideur connu peut être jamais contactée, relancée, ou silencieuse.
+    expect(CONTACT_CHIPS).toContain("unidentified");
+    expect(STATUS_CHIPS).not.toContain("unidentified");
   });
 
   it("les états Instagram ne sont **pas** des puces de relance", () => {

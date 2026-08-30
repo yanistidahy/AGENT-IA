@@ -5,6 +5,7 @@ import { taskTarget, type TaskTargetType } from "../domain/tasks";
 import type { TaskPriority } from "../domain/types";
 import { clearReminderAfterTask } from "./automation";
 import type { CreateTaskInput, ListTasksQuery, UpdateTaskInput } from "./task-schemas";
+import { contactTitle } from "../domain/contact-identity";
 
 /** Accès aux tâches. Même motif de couche de service que les autres entités. */
 
@@ -70,7 +71,7 @@ function toTargetView(row: TaskRow): TaskTargetView | null {
         : {
             type: "contact",
             id: row.contact.id,
-            label: `${row.contact.firstName} ${row.contact.lastName}`,
+            label: contactTitle(row.contact),
             href: `/contacts?q=${encodeURIComponent(row.contact.lastName)}`,
           };
     case "company":

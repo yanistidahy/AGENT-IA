@@ -1,4 +1,5 @@
 import { prisma } from "../db";
+import { contactTitle } from "../domain/contact-identity";
 
 /**
  * Recherche transverse pour la palette Ctrl+K.
@@ -69,7 +70,7 @@ export async function search(query: string): Promise<SearchHit[]> {
     ...contacts.map((row) => ({
       kind: "contact" as const,
       id: row.id,
-      label: `${row.firstName} ${row.lastName}`,
+      label: contactTitle(row),
       detail: [row.title, row.company?.name].filter((v) => v !== "" && v != null).join(" · "),
       href: `/contacts?lifecycle=all&fiche=${row.id}`,
     })),
