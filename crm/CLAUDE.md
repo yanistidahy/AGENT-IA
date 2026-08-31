@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 52 | **Le healthcheck traversait le verrou** — cible `/` redirigée, `/api/health` liée à la base ; sonde `/api/live` muette et sans dépendance, contrat sous test | **livré, à valider** |
 | 51 | **Quel code sert cet écran** — commit et instant de démarrage lisibles dans le pied de page, dans `/reglages` et sur `/api/version` | **livré, à valider** |
 | 50 | **La marque avant le fondateur** — fiche sans personne nommée, marqueur déduit, appel d'email conditionnel, puce « À identifier » | **livré, à valider** |
 | 49 | **La file du matin** — deux axes Instagram combinables sous une seule puce, comptée ; filtre de colonne de présence | **livré, à valider** |
@@ -7101,3 +7102,133 @@ le fait dont on dispose de source sûre, et il est nommé « Démarré » plutô
 tué le shell qui l'exécutait : la commande contenait le motif, donc `pkill` s'est
 trouvé lui-même. Deux tours de vérification perdus sur un script jamais écrit.
 Un motif de `pkill` ne doit pas figurer littéralement dans la ligne qui le lance.
+
+
+---
+
+## Jalon 52 — le healthcheck traversait le verrou
+
+### La cause, nommée avec sa ligne
+
+Railway l'a désigné : *Network › Healthcheck ✗*, initialisation, build et deploy
+passés. Le conteneur démarre, puis ne répond pas ce que le healthcheck attend.
+
+**`crm/railway.json:8` — `"healthcheckPath": "/"`.** La cible du healthcheck est
+la page d'accueil, et `/` **n'est pas dans `PUBLIC_PATHS`**. Sans cookie — un
+healthcheck n'en présente aucun — le middleware la traite comme tout le reste :
+
+```
+sans cookie, WORKSPACE_PASSWORD posée, base ARRÊTÉE
+  /api/live    -> 200      ← la nouvelle cible
+  /api/health  -> 503      ← interroge la base, par conception
+  /            -> 307      ← l'ancienne cible : redirection vers /login
+```
+
+Cette valeur n'a **jamais changé** : `git log -L` sur la ligne ne rend qu'un
+commit, `5e7d22a` (phase 1). Ce n'est donc pas une régression — c'est une
+fragilité qui a fini par se réaliser, et **je ne peux pas dire depuis ici
+pourquoi la PR #21 est passée et les deux suivantes non**. Un healthcheck qui
+suit les redirections voit `/login` en 200 ; un qui ne les suit pas voit 307. Ce
+qui est certain, c'est que la cible dépendait de trois choses qui n'ont rien à
+voir avec « le processus est-il debout » : le verrou, une variable
+d'environnement, et dix requêtes Prisma.
+
+### Les trois autres pistes, écartées avec leur preuve
+
+| Piste | Verdict |
+|---|---|
+| **`config.ts` lève au démarrage** | **Faux.** Aucun `throw`, aucune validation au chargement : `workspacePassword()` **rend `null`** quand la variable manque, et c'est le middleware qui décide d'un 503. Le module n'a aucune dépendance — ni Prisma, ni réglages. `SNAPSHOT_GITHUB_*`, non posées en production, ne sont lues nulle part dans `lib/auth/` |
+| **Le jalon 50 ou `/api/version` ont touché le routage** | **Faux, mesuré** : `git diff f4f38a2 HEAD -- crm/middleware.ts crm/lib/auth/ crm/railway.json crm/next.config.ts crm/scripts/start.sh` est **vide**. Une seule route a été ajoutée sous `app/api/` depuis le déploiement vivant : `api/version` |
+| **`/api/version` visée par le healthcheck** | **Elle rend bien 401 sans session** — donc l'hypothèse était juste dans son raisonnement — mais elle n'est pas la cible : `railway.json` dit `/`. Le risque était réel et il est désormais fermé par un test |
+
+**Où lire la valeur configurée, et quoi vérifier chez Railway** : le fichier
+`crm/railway.json` fait foi **sauf** si le service porte un réglage propre —
+*Service → Settings → Deploy → Health Check Path* et *Healthcheck Timeout*. Un
+réglage saisi là **écrase** le fichier, et c'est la seule chose que ce dépôt ne
+peut pas savoir. S'il y est renseigné, le mettre à `/api/live` ou le vider pour
+laisser `railway.json` décider.
+
+### La sonde ne dit qu'une chose
+
+`app/api/live/route.ts` : `{"status":"live","at":"…"}`, `no-store`. **Aucun
+import de `lib/`, aucun Prisma, aucun `process.env`** — et ce ne sont pas trois
+scrupules, ce sont trois modes de défaillance :
+
+- **la base** — le conteneur vient d'exécuter `prisma migrate deploy` ; c'est
+  précisément l'instant où PostgreSQL peut ne pas encore répondre. Un
+  healthcheck qui l'interroge refuse un binaire sain, et l'ancien continue de
+  servir sans que rien ne dise pourquoi ;
+- **une variable optionnelle** — `SNAPSHOT_GITHUB_TOKEN` absente doit se
+  signaler *dans* l'application, pas en empêchant sa mise en ligne ;
+- **un import** — il suffirait qu'un module de la chaîne lise un réglage au
+  chargement pour que la route redevienne fragile sans qu'on l'ait voulu.
+
+**`/api/health` n'est pas la cible et garde son rôle** : elle rend 503 quand la
+base ne répond pas, c'est tout son intérêt comme diagnostic depuis le jalon 5,
+et c'est exactement ce qui la disqualifie comme porte de déploiement. La
+distinction est celle, classique, entre *liveness* et *readiness* — le
+déploiement se décide sur la première.
+
+Publique par nécessité, donc **muette** : ni compteur, ni commit, ni nom de
+service, même règle que la sonde du jalon 9. L'identité du déploiement se lit
+derrière le verrou, sur `/api/version` (jalon 51).
+
+### La garde : le contrat, pas l'intention
+
+`tests/healthcheck-contract.test.ts` lit `railway.json` **à l'exécution** — pas
+une constante recopiée, qui cesserait de décrire la configuration réelle au
+premier changement — et fixe six invariants : le chemin configuré est public ;
+le **vrai middleware** le laisse passer, mot de passe présent **et** absent ; la
+route qui le sert n'importe rien de `lib/`, ne nomme pas Prisma et ne lit aucune
+variable d'environnement ; elle ne rend que `status` et `at` ; et ce n'est pas
+`/api/health`.
+
+Les commentaires sont retirés du source avant l'examen — sans quoi la garde
+attrape sa propre documentation (le fichier explique justement pourquoi il ne
+touche pas Prisma) et deviendrait un test qu'on contourne en reformulant une
+phrase plutôt qu'en corrigeant du code. Le défaut a été trouvé au premier
+lancement du test.
+
+**Éprouvée en réintroduisant les trois régressions**, dont la cause exacte de
+l'incident :
+
+| Régression | Ce qui tombe |
+|---|---|
+| `railway.json` revient à `/` | **4 tests** : « railway.json vise « / », qui n'est pas dans PUBLIC_PATHS : le healthcheck traverserait le verrou » |
+| la route lit `process.env.NODE_ENV` | 2 tests : la dépendance nommée, et le corps qui divulgue plus |
+| la cible redevient `/api/health` | 2 tests, dont « Prisma — une base momentanément indisponible refuserait le déploiement » |
+
+### Jalon 52 — ce qui est vérifié
+
+Contre le serveur standalone de production, **base volontairement arrêtée** —
+le cas qui refusait le déploiement :
+
+- **`/api/live` → 200** sans session, base éteinte, `no-store`, corps
+  `{"status":"live","at":"…"}` ; `/api/health` → **503** et `/` → **307** dans
+  les mêmes conditions ;
+- **sans `WORKSPACE_PASSWORD`** : le vrai middleware laisse passer `/api/live`
+  (test unitaire — en local, `.env` fournit la variable au serveur standalone,
+  donc le cas ne s'exerce pas au navigateur) ;
+- **le verrou n'a pas été affaibli** : `auth-routes.test.ts` continue d'exiger
+  que toute autre route ajoutée soit fermée ; `/api/version` reste 401 ;
+- `migrate diff` **vide** — aucune migration ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1018 tests**) verts.
+
+### Jalon 52 — ce qui n'est pas fait
+
+**Je ne peux pas dire pourquoi la PR #21 est passée et les deux suivantes non.**
+La cible était la même depuis la phase 1 ; ce jalon supprime la fragilité, il
+n'explique pas le déclencheur. Sans accès aux Deploy Logs, l'honnête est de le
+dire.
+
+**Un réglage de healthcheck saisi dans l'interface Railway écrase
+`railway.json`**, et le test ne peut pas le voir — il vérifie le fichier du
+dépôt. C'est à contrôler une fois dans *Settings → Deploy*.
+
+**Le piège du `pkill`, résolu pour de bon.** Le serveur standalone se **renomme**
+`next-server (v15.5.23)` : `pkill -f "standalone/server.js"` ne l'a donc jamais
+trouvé, et c'est pourquoi le port restait pris — la cause des faux diagnostics
+des jalons 33, 34, 37, 50 et 51. La bonne commande cherche **le tenant du
+port** : `ss -lptn 'sport = :<port>'`, puis `kill -9` sur le PID rendu. Et ici
+encore, c'est la lecture du journal (`EADDRINUSE`) **avant** toute conclusion qui
+a évité de prendre une mesure périmée pour un défaut du correctif.

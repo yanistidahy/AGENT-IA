@@ -23,13 +23,22 @@ export const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
  * oubliée. Une route nouvelle est privée tant que personne ne l'ouvre ici
  * explicitement.
  *
- * `/api/health` reste public parce que le healthcheck Railway l'interroge sans
- * cookie ; il ne renvoie plus aucune donnée (voir `app/api/health/route.ts`).
+ * `/api/live` et `/api/health` sont publiques parce qu'elles sont interrogées
+ * sans cookie ; ni l'une ni l'autre ne renvoie de donnée. La première est la
+ * **cible du healthcheck de déploiement** — voir `app/api/live/route.ts` et
+ * `railway.json` —, la seconde reste le diagnostic de la base.
+ *
+ * **La cible du healthcheck est vérifiée par un test**, pas par cette phrase :
+ * `tests/healthcheck-contract.test.ts` lit `railway.json` et échoue si le chemin
+ * qui y est configuré cesse d'être public. Un healthcheck qui traverse le verrou
+ * reçoit une redirection ou un 401, et un déploiement sain est refusé sans que
+ * rien ne dise pourquoi — c'est ce qui a coûté trois déploiements.
  */
 export const PUBLIC_PATHS: readonly string[] = [
   "/login",
   "/api/auth/login",
   "/api/auth/logout",
+  "/api/live",
   "/api/health",
   /**
    * Le planificateur n'a pas de session : il présente son propre secret
