@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -25,7 +25,15 @@ import { isPublicPath } from "@/lib/auth/config";
  */
 
 const ROOT = process.cwd();
+const REPO_ROOT = path.join(ROOT, "..");
 const PASSWORD = "mot-de-passe-de-test-suffisamment-long";
+
+/**
+ * Les noms de fichier que Railway lit comme configuration de déploiement, à la
+ * racine du **Root Directory** du service. Le nôtre vaut `crm`, donc le fichier
+ * qui gouverne est `crm/railway.json` — et lui seul.
+ */
+const RAILWAY_CONFIG_NAMES = ["railway.json", "railway.toml"] as const;
 
 /** Le chemin réellement configuré, lu dans le fichier que Railway lit. */
 function healthcheckPath(): string {
@@ -124,6 +132,37 @@ describe("le healthcheck de déploiement répond sans rien demander à personne"
     const body: unknown = await GET().json();
 
     expect(body).toEqual({ status: "live", at: expect.any(String) });
+  });
+
+  it("un seul fichier peut gouverner le service `crm`", () => {
+    // Deux jours perdus à lire la bonne ligne dans le mauvais endroit : le
+    // fichier lu ici doit être, démontrablement, celui que Railway lit. Deux
+    // fichiers de configuration dans `crm/` en feraient deux sources, dont une
+    // seule serait sous test — et c'est la non-testée qui gouvernerait un jour.
+    const inCrm = RAILWAY_CONFIG_NAMES.filter((name) =>
+      existsSync(path.join(ROOT, name)),
+    );
+
+    expect(
+      inCrm,
+      `crm/ doit porter exactement un fichier de configuration Railway ; trouvés : ${inCrm.join(", ") || "aucun"}.`,
+    ).toEqual(["railway.json"]);
+  });
+
+  it("aucun fichier de la racine du dépôt ne peut prétendre gouverner le healthcheck", () => {
+    // Le Root Directory du service vaut `crm` : un fichier posé à la racine du
+    // dépôt appartient à un **autre** service. Il ne changerait donc rien à
+    // notre déploiement — mais il porterait un second `healthcheckPath`, et
+    // c'est très exactement l'ambiguïté qui a coûté ce jalon : on relit la
+    // valeur d'un fichier qui ne gouverne pas celui qu'on déploie.
+    const atRepoRoot = RAILWAY_CONFIG_NAMES.filter((name) =>
+      existsSync(path.join(REPO_ROOT, name)),
+    );
+
+    expect(
+      atRepoRoot,
+      `${atRepoRoot.join(", ")} existe à la racine du dépôt : deux fichiers déclareraient un healthcheckPath, et seul crm/railway.json gouverne le service crm (Root Directory « crm »).`,
+    ).toEqual([]);
   });
 
   it("`/api/health` n'est **pas** la cible, et c'est délibéré", () => {

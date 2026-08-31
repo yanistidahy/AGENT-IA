@@ -7189,6 +7189,18 @@ touche pas Prisma) et deviendrait un test qu'on contourne en reformulant une
 phrase plutôt qu'en corrigeant du code. Le défaut a été trouvé au premier
 lancement du test.
 
+**Une seule source, prouvée et non inspectée.** Deux invariants de plus, ajoutés
+après que la question « quel fichier Railway lit-il vraiment ? » eut coûté un
+aller-retour de plus : `crm/` doit porter **exactement un** fichier de
+configuration Railway, et la racine du dépôt **aucun**. Le Root Directory du
+service vaut `crm`, donc `crm/railway.json` gouverne — un fichier posé à la
+racine appartiendrait à un autre service tout en déclarant un second
+`healthcheckPath`, et c'est cette ambiguïté-là qu'on relit alors au lieu de la
+valeur qui gouverne. Éprouvés en posant les deux fichiers fautifs : chacun fait
+tomber sa garde en nommant le fichier. État constaté du dépôt : `backend/` et
+`crm/` portent chacun le leur, la racine n'en porte aucun — **il n'y a donc
+aucun doublon à supprimer**.
+
 **Éprouvée en réintroduisant les trois régressions**, dont la cause exacte de
 l'incident :
 
