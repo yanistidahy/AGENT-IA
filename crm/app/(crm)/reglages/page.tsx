@@ -26,6 +26,8 @@ import { CostPanel } from "@/components/settings/cost-panel";
 import { OpenAuditPanel } from "@/components/settings/open-audit-panel";
 import { readOpenAudit } from "@/lib/api/open-audit";
 import { DEFAULT_MODELS } from "@/lib/domain/model-pricing";
+import { DeployCard } from "@/components/settings/deploy-card";
+import { readDeployInfo } from "@/lib/deploy-info";
 
 export const dynamic = "force-dynamic";
 
@@ -148,6 +150,7 @@ export default async function ReglagesPage() {
         shift: settingsRow?.modelShift ?? DEFAULT_MODELS.shift,
         monthlyBudgetCents: settingsRow?.monthlyBudgetCents ?? 2000,
       }}
+      deploy={<DeployCard deploy={readDeployInfo()} now={new Date()} />}
       costs={<CostPanel report={usage} />}
       opens={<OpenAuditPanel audit={openAudit} />}
       delays={delays}

@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 51 | **Quel code sert cet écran** — commit et instant de démarrage lisibles dans le pied de page, dans `/reglages` et sur `/api/version` | **livré, à valider** |
 | 50 | **La marque avant le fondateur** — fiche sans personne nommée, marqueur déduit, appel d'email conditionnel, puce « À identifier » | **livré, à valider** |
 | 49 | **La file du matin** — deux axes Instagram combinables sous une seule puce, comptée ; filtre de colonne de présence | **livré, à valider** |
 | 48 | **Instagram entre dans la prospection** — DM consigné comme un canal, segment isolable, Alex qui ne mentionne le DM que s'il existe et nomme le vrai site, comparaison DM+email contre email seul | **livré, à valider** |
@@ -6965,3 +6966,138 @@ resté attaché au port pendant plusieurs essais : je lisais un binaire périmé
 son ancienne configuration, et j'ai d'abord conclu que la clé d'API n'était pas
 transmise. C'est la leçon des jalons 33, 34 et 37 — **vérifier quel processus
 répond avant de conclure quoi que ce soit sur le produit**.
+
+
+---
+
+## Jalon 51 — quel code sert cet écran, et depuis quand
+
+### Le diagnostic, d'abord — et il a coûté deux allers-retours
+
+Signalé : la bascule « Je n'ai pas encore le contact » toujours absente **après**
+la fusion de la PR #22. Trois hypothèses, prises dans l'ordre du moins cher au
+plus cher, et tranchées avec des preuves plutôt qu'avec des lectures de code.
+
+| # | Hypothèse | Verdict |
+|---|---|---|
+| 1 | Le déploiement ne porte pas `54324b6` | **la seule qui reste** — et elle n'est pas décidable depuis cet environnement |
+| 2 | Le tiroir de création n'utilise pas le composant câblé | **faux, prouvé au navigateur** |
+| 3 | Un cache sert l'ancien formulaire | **faux** — même preuve |
+
+**La fusion, elle, est établie** : `origin/main` est à `54324b6` (« Merge pull
+request #22 »), `git cat-file -e` trouve les cinq fichiers du jalon 50 dans
+`main` — les mêmes commandes qui répondaient « exists on disk, but not in
+'origin/main' » deux jours plus tôt —, `git log origin/main..origin/<branche>`
+est **vide** et aucune PR n'est ouverte.
+
+**L'hypothèse 2 a été fermée par mesure, pas par relecture.** Le code dit bien
+que `contacts-view.tsx:230` passe `contact={null}` et que `contact-form.tsx:124`
+rend la bascule sur cette seule condition — mais après deux erreurs de
+diagnostic, une lecture de code ne vaut plus preuve. Un build standalone de
+production du commit fusionné, une vraie base PostgreSQL, un navigateur piloté :
+
+```
+bascule présente : 1
+libellé prénom (décoché) : Prénom            | requis : true
+libellé prénom (coché)   : Prénom (si connu) | requis : false
+puce « À identifier » : 1        erreurs console : 0
+```
+
+Le code de `54324b6` **rend la bascule**. Il ne reste donc que le déploiement,
+et c'est exactement ce qu'aucune preuve d'ici ne peut trancher : cet
+environnement n'a ni jeton Railway, ni CLI `railway`, ni variable `RAILWAY_*`.
+
+### Le vrai livrable : rendre la question vérifiable en une seconde
+
+Deux fois de suite, « ça ne marche pas » a coûté un aller-retour entier parce
+que **deux situations produisent le même écran** : un déploiement en retard, et
+un défaut d'affichage. Le pied de page portait le commit sur sept caractères ; il
+lui manquait **depuis quand** ce code sert les requêtes — le fait qui les sépare.
+
+`lib/deploy-info.ts` rend désormais `commitFull`, `environment`, `deploymentId`
+et `startedAt`, plus `describeUptime()`. Trois décisions :
+
+- **`startedAt` vient de `process.uptime()`**, calculé **une fois à l'import**.
+  Railway n'injecte aucun horodatage de déploiement, et une date figée au build
+  mentirait après un redémarrage de conteneur — or c'est précisément le cas
+  qu'on cherche à distinguer. Recalculé à chaque requête, il varierait de
+  quelques millisecondes et ferait douter d'un affichage qu'on consulte pour
+  trancher ;
+- **`deploymentId` change à chaque déploiement, même à commit identique** : c'est
+  ce qui permet de dire « j'ai bien redéployé » quand rien n'a été poussé ;
+- **l'âge plutôt que la date brute** : « démarré il y a 16 h » à côté d'une
+  fusion faite ce matin **est** le diagnostic, sans soustraction mentale.
+
+Trois surfaces, choisies pour couvrir trois usages :
+
+| Où | Pour |
+|---|---|
+| pied de page de `/` | le coup d'œil, **y compris sur téléphone** — `/reglages` est un écran de bureau depuis le jalon 46 |
+| `/reglages` → « Version déployée » | le commit **entier**, à comparer au copier-coller, avec branche, environnement et identifiant de déploiement |
+| `GET /api/version` | vérifier sans naviguer, depuis un onglet ou un `curl` |
+
+**`/api/version` n'est pas publique**, et c'est délibéré : le middleware ferme
+tout ce qui n'est pas dans `PUBLIC_PATHS`. C'est la règle du jalon 9, quand la
+sonde publique a été rendue muette — branche, commit et environnement
+renseignent un tiers sur le rythme de livraison et la structure du dépôt.
+`no-store` : une réponse mise en cache répondrait un jour l'ancien commit, ce qui
+recréerait exactement l'ambiguïté que la route supprime.
+
+### Le déploiement en échec — ce que je peux affirmer, et ce que je ne peux pas
+
+« Deployment failed during network process », initialisation et build passés.
+**Notre chemin de démarrage ne peut pas produire une erreur à cette phase, parce
+qu'il n'a pas encore tourné** : le « network process » se situe entre l'image
+construite et le conteneur lancé, et `scripts/start.sh` s'exécute après. Chacun
+de ses modes d'échec porte d'ailleurs une signature différente — `HOSTNAME` non
+forcé et port non lié échouent au **healthcheck** (« service unavailable »),
+et une migration en échec **ne bloque rien** par conception (`if … else`, jamais
+`&&`).
+
+La bannière de `start.sh` tranche en un coup d'œil : **si les Deploy Logs ne
+portent pas les lignes `AuraFLOW CRM — Next.js standalone / commit / branche`,
+notre code n'a jamais démarré.**
+
+**Ce que je ne peux pas déterminer d'ici** : il n'y a ni jeton Railway, ni CLI,
+ni variable `RAILWAY_*` dans cet environnement — je ne peux lire ni les Deploy
+Logs ni l'état du service. Au vu de la phase, cela ressemble à une défaillance
+d'infrastructure Railway, la troisième sur leurs builders, et **il n'y a rien à
+corriger dans notre chemin de démarrage**. Un *Redeploy* qui passe sans qu'une
+ligne de code ait changé en est la preuve.
+
+### Jalon 51 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide** — aucune migration), le
+serveur standalone de production lancé avec les cinq variables `RAILWAY_*`, et
+un navigateur piloté :
+
+- **la bascule du jalon 50 rend bien** sur le commit fusionné (mesures
+  ci-dessus) — l'hypothèse « défaut d'affichage » est close ;
+- **pied de page** : `commit 54324b6 · main · démarré à l'instant · rendu à
+  14:17:34 · /api/health` ;
+- **`/reglages`** : section « Version déployée » unique, portant le commit
+  entier `54324b6c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f60`, `main`, `crm`,
+  `production`, `dep_4f2a91c7` et « 31/08/2026 12:17 — à l'instant » ;
+- **`/api/version`** : 200 avec session et les neuf champs ; **401 sans
+  session** ;
+- **variable absente** → `null`, jamais une chaîne vide : « — » à l'écran veut
+  dire « Railway ne l'a pas injectée », ce qui est une information ;
+- **`startedAt` stable** d'un appel à l'autre, et toujours dans le passé ;
+- **0 erreur console, 0 réponse ≥ 400** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1012 tests**) verts.
+
+### Jalon 51 — ce qui n'est pas fait
+
+**L'état réel du déploiement de production reste inconnu depuis ici.** C'est la
+limite que ce jalon rend inoffensive plutôt qu'il ne la lève : la réponse est
+désormais à un coup d'œil dans le produit, au lieu d'un aller-retour.
+
+**`startedAt` est l'instant du processus, pas celui du déploiement.** Un
+redémarrage de conteneur sans nouveau déploiement remet le compteur à zéro. C'est
+le fait dont on dispose de source sûre, et il est nommé « Démarré » plutôt que
+« Déployé » pour ne pas prétendre autre chose.
+
+**Un piège de méthode, nouveau celui-là.** `pkill -f "standalone/server.js"` a
+tué le shell qui l'exécutait : la commande contenait le motif, donc `pkill` s'est
+trouvé lui-même. Deux tours de vérification perdus sur un script jamais écrit.
+Un motif de `pkill` ne doit pas figurer littéralement dans la ligne qui le lance.
