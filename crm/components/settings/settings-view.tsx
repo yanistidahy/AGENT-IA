@@ -51,6 +51,11 @@ interface SettingsViewProps {
    * Un tableau de chiffres déjà agrégés n'a aucune raison de traverser la
    * frontière client : il est composé dans la page et posé ici.
    */
+  /**
+   * L'identité du déploiement, rendue **côté serveur** — elle vient de
+   * `process.env`, qui n'existe pas dans le navigateur.
+   */
+  readonly deploy: React.ReactNode;
   readonly costs: React.ReactNode;
   /**
    * Le diagnostic des ouvertures, rendu **côté serveur** et passé en enfant —
@@ -89,6 +94,7 @@ export function SettingsView({
   agents,
   modelSettings,
   costs,
+  deploy,
 }: SettingsViewProps) {
   const router = useRouter();
   const refresh = () => router.refresh();
@@ -102,6 +108,13 @@ export function SettingsView({
           Kanban, menus déroulants.
         </p>
       </header>
+
+      <Section
+        title="Version déployée"
+        hint="quel commit sert cet écran, et depuis quand"
+      >
+        {deploy}
+      </Section>
 
       <Section
         title="Conseil"

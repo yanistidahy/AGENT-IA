@@ -44,7 +44,7 @@ import { readDashboard } from "@/lib/api/dashboard";
 import { readMailStatus } from "@/lib/api/mail";
 import { readImapStatus } from "@/lib/api/imap";
 import { readDbStatus, type Counts } from "@/lib/db-status";
-import { readDeployInfo } from "@/lib/deploy-info";
+import { describeUptime, readDeployInfo } from "@/lib/deploy-info";
 
 /**
  * Centre de pilotage.
@@ -319,6 +319,12 @@ function Shell({
             {" · "}
           </>
         )}
+        {/* **Depuis quand ce code sert les requêtes.** Le commit seul ne suffit
+            pas : un déploiement en échec laisse tourner le précédent, et l'écran
+            est alors identique à celui d'un défaut d'affichage. « démarré il y a
+            16 h » à côté d'une fusion faite ce matin tranche entre les deux. */}
+        démarré {describeUptime(deploy.startedAt, renderedAt)}
+        {" · "}
         rendu à{" "}
         <time dateTime={renderedAt.toISOString()}>
           {renderedAt.toLocaleTimeString("fr-FR", {
