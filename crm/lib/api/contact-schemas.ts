@@ -64,6 +64,7 @@ export const createContactSchema = z.object({
   /** Site du contact. Stocké tel qu'il est saisi — voir lib/domain/links.ts. */
   website: z.string().trim().optional(),
   instagram: z.string().trim().optional(),
+  alexNote: z.string().trim().max(2000).optional(),
   source: z.string().trim().optional(),
   owner: z.string().trim().optional(),
   /** Étiquette libre. Vide = sans étiquette. */
@@ -117,6 +118,7 @@ export const updateContactSchema = z
     linkedin: z.string().trim().optional(),
     website: z.string().trim().optional(),
   instagram: z.string().trim().optional(),
+  alexNote: z.string().trim().max(2000).optional(),
     source: z.string().trim().optional(),
     owner: z.string().trim().optional(),
     tag: z.string().trim().max(60, "Étiquette trop longue").optional(),
@@ -137,6 +139,9 @@ export const CONTACT_SORT_KEYS = [
   "lastName",
   "firstName",
   "company",
+  // La fonction est stockée, donc triable en SQL : travailler un compte, c'est
+  // souvent lire ses fiches par rôle plutôt que par ordre alphabétique.
+  "title",
   "lifecycle",
   "owner",
   "lastContact",
@@ -175,6 +180,15 @@ export const listContactsQuerySchema = z.object({
     .union([z.boolean(), z.string()])
     .transform((value) => value === true || value === "1" || value === "true")
     .optional(),
+  /**
+   * Toutes les fiches d'une maison, par l'identifiant de la société.
+   *
+   * Par l'identifiant et non par le nom : deux sociétés peuvent porter des noms
+   * proches, et le nom se renomme. C'est ce qui rend le lien depuis une fiche
+   * ou depuis le tiroir société stable — il désigne le compte, pas sa
+   * dénomination du jour.
+   */
+  societe: z.string().optional(),
   sort: z.enum(CONTACT_SORT_KEYS).optional(),
   dir: z.enum(["asc", "desc"]).optional(),
 });

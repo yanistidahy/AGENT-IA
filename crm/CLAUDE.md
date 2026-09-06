@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 53 | **Plusieurs personnes par maison** — société dédoublonnée sur les accents, collègues sur la fiche, notes d'angle par rôle, note pour Alex, avertissement collègue | **livré, à valider** |
 | 52 | **Le healthcheck traversait le verrou** — cible `/` redirigée, `/api/health` liée à la base ; sonde `/api/live` muette et sans dépendance, contrat sous test | **livré, à valider** |
 | 51 | **Quel code sert cet écran** — commit et instant de démarrage lisibles dans le pied de page, dans `/reglages` et sur `/api/version` | **livré, à valider** |
 | 50 | **La marque avant le fondateur** — fiche sans personne nommée, marqueur déduit, appel d'email conditionnel, puce « À identifier » | **livré, à valider** |
@@ -7244,3 +7245,204 @@ des jalons 33, 34, 37, 50 et 51. La bonne commande cherche **le tenant du
 port** : `ss -lptn 'sport = :<port>'`, puis `kill -9` sur le PID rendu. Et ici
 encore, c'est la lecture du journal (`EADDRINUSE`) **avant** toute conclusion qui
 a évité de prendre une mesure périmée pour un défaut du correctif.
+
+---
+
+## Jalon 53 — plusieurs personnes par maison, écrites différemment
+
+### Ce que l'import faisait vraiment, mesuré avant de le corriger
+
+Quatre lignes d'une même maison, par le **chemin réel** de l'import (la leçon du
+jalon 42 : le raccourci saute précisément l'endroit où la donnée se perd) :
+
+| Variante | Avant | Après |
+|---|---|---|
+| « Miye » / « MIYE » | fusionnées | fusionnées |
+| « MiYé » | **doublon créé** | fusionnée |
+| « Miye Care » | société distincte | société distincte — **et c'est correct** |
+| `searchText` des sociétés créées | **vide** | écrit |
+
+**Une cause pour les deux défauts : deux règles pour une même question.**
+`contact-import.ts` comparait en SQL (`mode: "insensitive"` — la casse, pas les
+accents) et créait la société lui-même, donc sans miroir de recherche ; le
+formulaire normalisait en mémoire depuis le jalon 6, accents compris, et
+écrivait le miroir depuis le jalon 12. C'était le chemin des **fichiers importés
+en masse** qui portait la règle la plus faible.
+
+`resolveCompanyDetailed()` est désormais la seule porte, et elle rend en plus
+**si elle a créé** — le rapport d'import annonce les sociétés créées, et le
+déduire en comptant la table avant et après aurait été deux requêtes par ligne
+pour une information que la fonction qui écrit possède déjà.
+
+**« Miye Care » reste distincte, et ce n'est pas un manque.** C'est un autre nom,
+pas une variante d'écriture ; les rapprocher serait deviner — la faute que le
+jalon 25 s'est interdite sur les domaines. Rapprocher des noms réellement
+proches est une **fusion de fiches**, avec son historique, ses affaires et ses
+séquences à recoudre : c'est le jalon à part déjà signalé au jalon 45.
+
+`tests/company-match-source.test.ts` ferme le chemin, éprouvé en réintroduisant
+le défaut exact : deux tests tombent en nommant le fichier.
+
+### L'angle est réglé, jamais deviné
+
+```
+lib/domain/role-angles.ts     appariement + consignes — pur, testé
+lib/api/role-angles.ts        rôles, étiquettes, couverture, angle d'un contact
+app/api/role-angles/          GET (couverture) / PUT (remplacement de la liste)
+components/settings/          panneau, fonctions non reconnues, fenêtre collègue
+```
+
+Un rôle porte un nom, une **note d'angle écrite à la main** et autant
+d'étiquettes qu'il faut : « Head of Customer Care », « Responsable service
+client », « SAV Manager » désignent le même métier selon le fichier. L'appariement
+n'absorbe que ce qui ne veut rien dire — casse, accents, ponctuation, espaces —
+et **ne devine jamais** :
+
+1. **égalité** de l'intitulé normalisé avec une étiquette ;
+2. **inclusion en mots entiers**, l'étiquette la plus longue l'emportant :
+   « responsable sav » décrit mieux que « responsable ». Sur les mots et non les
+   caractères, sans quoi « ops » se reconnaîtrait dans « opsourcing » ;
+3. **ambiguïté** — deux rôles à égalité : on **renonce**, et l'intitulé remonte
+   dans les non appariés. Trancher reviendrait à tirer au sort l'angle sous
+   lequel on écrit à quelqu'un.
+
+`normalized` est **unique en base** : une même étiquette ne peut pas désigner
+deux rôles. Une contrainte plutôt qu'une vérification — une course ne contourne
+pas un index unique. Le service refuse quand même *en nommant les deux rôles*,
+parce qu'un message Prisma sur un index ne dit pas quelle ligne retirer.
+
+**Un rôle reconnu sans note ne vaut pas un angle.** C'est l'état des quatre rôles
+semés par la migration : leur annoncer « angle pour Responsable SAV » puis rien
+ferait remplir le vide par le modèle. La consigne dit alors explicitement qu'il
+n'y en a pas.
+
+**La liste des fonctions non reconnues est la moitié utile du panneau.** Un
+appariement qui échoue en silence fait retomber Alex sur l'angle générique sans
+que personne l'apprenne : les messages partent, ils sont corrects, et ils sont
+tièdes. Chaque ligne est une étiquette à écrire, chiffrée en nombre de fiches.
+Les fiches **sans fonction** sont comptées à part : elles n'appellent pas une
+étiquette mais une saisie.
+
+### Ce qu'Alex reçoit, et pourquoi c'est cherché plutôt que déduit
+
+Trois faits rejoignent le DM du jalon 48 dans le dossier, **toujours présents, y
+compris à la forme négative** — une absence de ligne se lit comme une absence
+d'information, une ligne qui dit « aucun » se lit comme une interdiction :
+
+| Fait | Cas positif | Cas négatif |
+|---|---|---|
+| Fonction | « Fonction du destinataire : Head of Customer Care » | « NON RENSEIGNÉE » |
+| Angle | la note de l'utilisateur, mot pour mot, avec le nom du rôle | « AUCUN — … N'invente pas l'angle d'un métier que tu crois deviner » |
+| Collègue écrit | nom, rôle, date, objet **et sa phrase d'ouverture** | « AUCUN — personne d'autre de cette maison n'est en base » |
+
+La **note pour Alex** (`Contact.alexNote`) est un champ distinct des Notes, et le
+dossier l'annonce comme « écrit à la main ». Les Notes portent le déversoir de
+l'import — lignes `SITE :`, `N° :`, titres de page (jalon 24) — qu'on ne peut pas
+envoyer à un modèle sans lui faire prendre un titre d'onglet pour un fait.
+
+**La consigne du collègue porte la phrase exacte à ne pas reprendre**, jamais un
+« varie un peu » : un modèle à qui l'on montre ce qu'il ne doit pas écrire s'en
+écarte, un modèle à qui l'on demande de la variété reformule la même idée — ce
+qu'un lecteur humain reconnaît immédiatement. Le positionnement, lui, ne bouge
+pas : une entreprise qui raconte deux histoires à deux collègues n'est pas plus
+crédible que celle qui leur envoie deux fois la même.
+
+### L'avertissement avertit, il n'interdit pas
+
+Fenêtre réglable (`colleagueWarningDays`, 30 j par défaut, `0` la coupe — même
+convention que le plafond mensuel de l'API). Le panneau de rédaction nomme le
+collègue et la date, **et laisse partir le message** : écrire à plusieurs
+personnes d'une maison est l'intention même de la campagne. Ce qui fait écrire
+une bêtise, c'est de ne pas le savoir. Refuser à la place de l'utilisateur serait
+décider pour lui, ce que le produit s'interdit depuis le jalon 8.
+
+### Le compte se travaille
+
+- **fiche société** : les contacts avec leur fonction, le **dernier email envoyé
+  à quiconque** de la maison (avec son signataire et son objet), et un lien vers
+  toutes ses fiches. Les liens vont vers `?fiche=<id>` et non `?q=<nom>` — ce
+  dernier retombait sur une recherche, et sur une liste **vide** pour une fiche
+  sans personne nommée depuis le jalon 50 ;
+- **fiche contact** : les collègues déjà en base, cliquables, avec la date du
+  dernier message reçu par chacun ; la note pour Alex, éditable sur place ;
+- **`/contacts?societe=<id>`** : toutes les fiches d'une maison, par identifiant
+  et non par nom — un nom se renomme. Un filtre actif se **nomme** dans un
+  bandeau avec son bouton d'annulation, sinon la liste serait filtrée sans
+  qu'aucun contrôle ne dise par quoi (règle du jalon 31) ;
+- **colonne « Fonction »** : hors des six par défaut, **triable et filtrable**.
+
+Ces lectures vivent dans `lib/api/account.ts`, **hors de `listContacts`** : la
+liste est un chemin chaud rendu pour cent cinquante lignes, et y joindre les
+collègues de chacun coûterait une requête par ligne pour une information que
+seuls le tiroir et la rédaction affichent.
+
+`ContactSortKey` était une recopie à la main de `CONTACT_SORT_KEYS` — deux
+sources pour un même vocabulaire. Elle en est désormais **dérivée** : une clé
+ajoutée à l'une sans l'autre donnait soit un tri refusé en 400, soit un tri
+accepté qu'aucune colonne n'offrait, sans que rien n'échoue à la compilation.
+
+### Jalon 53 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `22_roles` appliquée puis `migrate diff`
+**vide**, seed rejoué → 4 rôles / 27 étiquettes, idempotent), et le substitut
+Anthropic dont la capture (`MOCK_DUMP`) permet de lire **ce qui part réellement
+sur le fil**, comme pour le DM au jalon 48 :
+
+- **1 · une maison, une société** : « Miye », « MiYé », « Miye » → **1** société,
+  3 contacts, `searchText` écrit ;
+- **2 · le compte se lit** : la fiche société liste les trois avec leur fonction ;
+  les collègues de Sophie sont Léa et Caroline ; `?societe=` rend 3 fiches ;
+- **3 · l'angle atteint le modèle** : note écrite pour « Responsable SAV » → le
+  fil porte « SAV absorbé, pas de conversion », « Angle pour ce rôle
+  (« Responsable SAV ») » et « Fonction du destinataire : Head of Customer Care ».
+  L'appariement s'est fait sur l'étiquette « Head of Customer Care » ;
+- **4 · rien n'est deviné** : « Office Manager » → « Angle pour ce rôle : AUCUN »,
+  « N'invente pas », et **l'angle SAV n'a pas fuité** dans cette requête ; la
+  fonction apparaît dans les non appariés avec son compte ;
+- **5 · le deuxième message** : l'avertissement nomme « Caroline Petit » et sa
+  date, le fil porte « a reçu un email il y a … », **sa phrase d'ouverture
+  exacte** et « ni une reformulation » ;
+- **la note pour Alex** part sur le fil, annoncée « écrit à la main », et les
+  Notes brutes (`SITE : Shopify`) restent dans leur propre bloc ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1045 tests**) verts.
+
+### Jalon 53 — ce qui n'est pas fait
+
+**Aucun appel Anthropic réel**, comme aux jalons précédents. Ce qui est établi :
+le bon angle, la bonne note et le bon avertissement partent, et l'angle d'un rôle
+ne fuite pas vers un autre. Ce qui ne l'est pas : qu'Alex **écrive** réellement
+autre chose à la responsable SAV qu'à la fondatrice. C'est le point qui décidera
+de l'usage de la fonction, et il se juge sur les trois premiers brouillons réels.
+
+**Les doublons de société ne sont pas fusionnés**, seulement évités à l'écriture.
+« Miye » et « Miye Care » restent deux comptes ; les réunir demande une fusion de
+fiches — historique, affaires, séquences — qui reste un jalon à part.
+
+**Le tri par fonction est alphabétique, pas hiérarchique.** « CMO » précède
+« Fondatrice » : c'est l'ordre de la chaîne, pas celui du pouvoir de décision.
+Un ordre par rôle demanderait de trier sur le rôle apparié, qui n'existe qu'après
+lecture.
+
+**Les panneaux ne sont pas exercés au clavier dans un navigateur**, comme tous
+les composants clients de ce projet : l'éditeur de rôles, la note pour Alex et le
+bandeau d'avertissement sont vérifiés par leurs services et par le rendu, pas par
+une frappe.
+
+### Défaut latent trouvé au passage, et non corrigé
+
+**Sur une base neuve, `prisma migrate deploy` échoue.** Prisma applique les
+migrations dans l'ordre **lexicographique** du nom de dossier : `10_domain_review`
+et `11_email` passent avant `2_automation`, et `11_email` référence la table
+`agents` que `6_agents` n'a pas encore créée. Mesuré ici, sur une base vide.
+
+La production n'en souffre pas : ses migrations ont été appliquées une par une, à
+mesure qu'elles étaient écrites. Le risque est ailleurs — **toute base neuve**
+(nouvel environnement, base recréée après incident, base de test) refusera de se
+construire, c'est-à-dire précisément le jour où l'on a besoin qu'elle marche.
+
+Ce n'est pas corrigé dans ce jalon, et délibérément : renommer les dossiers
+appliqués ferait voir à Prisma des migrations inconnues sur la base de
+production, qu'il tenterait de rejouer. La correction sûre est un jalon à elle
+seule — renommer **et** réécrire `_prisma_migrations` dans la même transaction,
+ou repartir d'une migration de consolidation. À traiter avant le prochain
+changement d'environnement.

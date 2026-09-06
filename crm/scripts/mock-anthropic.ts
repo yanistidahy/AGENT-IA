@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { appendFileSync } from "node:fs";
 import { inspectTool } from "../lib/domain/tool-schema";
 
 /**
@@ -30,6 +31,17 @@ import { inspectTool } from "../lib/domain/tool-schema";
  */
 
 const PORT = Number(process.argv[2] ?? 3399);
+
+/**
+ * Fichier où consigner **ce qui part réellement sur le fil**, une requête par
+ * ligne (JSON). Optionnel, activé par `MOCK_DUMP`.
+ *
+ * C'est ce qui permet de vérifier une consigne comme on l'a fait pour le DM au
+ * jalon 48 : on ne lit pas l'intention du code, on lit l'octet envoyé. Un
+ * dossier qui « devrait » contenir l'angle du rôle et un dossier qui le
+ * contient sont deux choses différentes, et seule la seconde se prouve.
+ */
+const DUMP = process.env.MOCK_DUMP ?? "";
 
 /** Paramètres retirés sur Claude Opus 5 : la vraie API répond 400. */
 const REMOVED_PARAMS = ["budget_tokens", "temperature", "top_p", "top_k"] as const;
@@ -239,6 +251,15 @@ createServer((req, res) => {
         }),
       );
       return;
+    }
+
+    if (DUMP !== "") {
+      try {
+        appendFileSync(DUMP, `${JSON.stringify({ at: new Date().toISOString(), body })}\n`);
+      } catch {
+        // Une capture qui échoue ne doit pas faire échouer la vérification
+        // elle-même : elle se remarque à l'absence de lignes dans le fichier.
+      }
     }
 
     const problem = validate(body);

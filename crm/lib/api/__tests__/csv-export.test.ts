@@ -10,6 +10,7 @@ const contact: ContactRecord = {
   title: "DAF",
   website: "",
   instagram: "",
+  alexNote: "",
   dmAt: null,
   attempts: 0,
   unanswered: 0,

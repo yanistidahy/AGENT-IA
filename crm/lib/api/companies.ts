@@ -9,6 +9,7 @@ import {
 } from "./company-columns";
 import { facetsFor, matchesAll, type FacetValue } from "../domain/column-match";
 import { prisma } from "../db";
+import { readCompanyLastEmail, type CompanyLastEmail } from "./account";
 import { toDealStatus, toLifecycle } from "../domain/guards";
 import type { DealStatus, Lifecycle } from "../domain/types";
 import type {
@@ -54,6 +55,12 @@ export interface CompanyRecord {
   readonly openValue: number;
   /** Chiffre d'affaires déjà signé. */
   readonly wonValue: number;
+  /**
+   * Dernier email envoyé à quiconque de la maison — `undefined` dans les
+   * listes, qui ne le chargent pas, `null` si personne n'a jamais été écrit.
+   * Les deux se lisent différemment : « pas chargé » n'est pas « jamais ».
+   */
+  readonly lastEmail?: CompanyLastEmail | null;
 }
 
 const companyInclude = {
@@ -248,9 +255,19 @@ export async function listIndustries(): Promise<ReadonlyArray<{ value: string; c
     .sort((a, b) => a.value.localeCompare(b.value, "fr"));
 }
 
+/**
+ * La fiche société, **avec le dernier email envoyé à quiconque dans la maison**.
+ *
+ * Cette lecture n'est faite qu'ici, pas dans la liste : c'est une requête par
+ * fiche ouverte, et la table des sociétés en compte cent trente. Elle répond à
+ * la question qu'on se pose avant d'écrire à un deuxième interlocuteur — « leur
+ * a-t-on déjà parlé, et quand ? » — et dont l'absence de réponse fait envoyer
+ * deux fois la même accroche à deux collègues.
+ */
 export async function getCompany(id: string): Promise<CompanyRecord | null> {
   const row = await prisma.company.findUnique({ where: { id }, include: companyInclude });
-  return row === null ? null : toRecord(row);
+  if (row === null) return null;
+  return { ...toRecord(row), lastEmail: await readCompanyLastEmail(id) };
 }
 
 export async function createCompany(input: CreateCompanyInput): Promise<CompanyRecord> {

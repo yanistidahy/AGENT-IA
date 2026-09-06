@@ -16,6 +16,7 @@ import { listAgentProfiles } from "@/lib/api/agents";
 import { readMailStatus, PASSWORD_ENV } from "@/lib/api/mail";
 import { readImapStatus } from "@/lib/api/imap";
 import { inboxHealth } from "@/lib/api/inbox-health";
+import { readRoleCoverage } from "@/lib/api/role-angles";
 import { readTrackingConfig } from "@/lib/api/email-sends";
 import { readLimits } from "@/lib/api/send-rate";
 import { listSequences as listEmailSequences } from "@/lib/api/email-sequences";
@@ -75,6 +76,7 @@ export default async function ReglagesPage() {
   // Lu après `imap` : « configuré » veut dire que le relevé pourrait tourner,
   // ce qui dépend de l'hôte, de l'identifiant et du secret.
   const inbox = await inboxHealth(imap.ready);
+  const roleAngles = await readRoleCoverage();
   const tracking = await readTrackingConfig();
   const limits = await readLimits();
   const openAudit = await readOpenAudit();
@@ -125,6 +127,7 @@ export default async function ReglagesPage() {
         })),
       }))}
       agents={agents}
+      roleAngles={roleAngles}
       mail={mail}
       passwordEnv={PASSWORD_ENV}
       signatories={signatories}
@@ -154,6 +157,7 @@ export default async function ReglagesPage() {
       costs={<CostPanel report={usage} />}
       opens={<OpenAuditPanel audit={openAudit} />}
       delays={delays}
+      colleagueWarningDays={settingsRow?.colleagueWarningDays ?? 30}
       targets={{
         calls: settingsRow?.objectifAppelsSemaine ?? 0,
         emails: settingsRow?.objectifEmailsSemaine ?? 0,

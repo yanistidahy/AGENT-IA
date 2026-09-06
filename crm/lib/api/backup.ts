@@ -27,6 +27,8 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     settingsLists,
     sequences,
     sequenceSteps,
+    roleAngles,
+    roleAngleLabels,
   ] = await Promise.all([
     prisma.stage.findMany({ orderBy: { position: "asc" } }),
     prisma.company.findMany(),
@@ -38,6 +40,8 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     prisma.settingsList.findMany(),
     prisma.sequence.findMany(),
     prisma.sequenceStep.findMany(),
+    prisma.roleAngle.findMany({ orderBy: { position: "asc" } }),
+    prisma.roleAngleLabel.findMany(),
   ]);
 
   return {
@@ -53,6 +57,8 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     settingsLists,
     sequences,
     sequenceSteps,
+    roleAngles,
+    roleAngleLabels,
   };
 }
 
@@ -121,6 +127,8 @@ const contactRow = z.object({
   email: optionalText,
   phone: optionalText,
   linkedin: optionalText,
+  /** La note écrite pour Alex : perdue, il réécrit à l'aveugle. */
+  alexNote: optionalText,
   lifecycle: text,
   source: optionalText,
   owner: optionalText,
@@ -212,6 +220,7 @@ const taskRow = z.object({
  */
 const settingsRow = z.object({
   id: z.string(),
+  colleagueWarningDays: z.number().int().optional(),
   staleDays: z.number().int(),
   coldDays: z.number().int(),
   objectifMensuel: z.number().int(),
@@ -291,6 +300,29 @@ const sequenceStepRow = z.object({
   sequenceId: z.string(),
 });
 
+/**
+ * Un rôle destinataire et sa note d'angle.
+ *
+ * Sauvegardés parce qu'ils sont **écrits à la main** : une note d'angle est du
+ * travail de réflexion, pas une donnée dérivée. La perdre à une restauration
+ * serait exactement l'incident du jalon 42 — la configuration SMTP effacée en
+ * silence par un schéma de sauvegarde trop court.
+ */
+const roleAngleRow = z.object({
+  id: z.string(),
+  name: text,
+  angle: optionalText,
+  position: z.number().int(),
+  createdAt: day,
+});
+
+const roleAngleLabelRow = z.object({
+  id: z.string(),
+  label: text,
+  normalized: text,
+  roleId: z.string(),
+});
+
 export const backupSchema = z.object({
   version: z.number().int(),
   stages: z.array(stageRow),
@@ -303,6 +335,10 @@ export const backupSchema = z.object({
   settingsLists: z.array(settingsListRow),
   sequences: z.array(sequenceRow),
   sequenceSteps: z.array(sequenceStepRow),
+  /** Optionnels : une sauvegarde antérieure au jalon 53 n'en porte pas, et la
+   *  refuser rendrait le filet inutile au moment précis où l'on en a besoin. */
+  roleAngles: z.array(roleAngleRow).optional(),
+  roleAngleLabels: z.array(roleAngleLabelRow).optional(),
 });
 
 export type BackupPayload = z.infer<typeof backupSchema>;
@@ -333,6 +369,8 @@ export async function restoreBackup(payload: BackupPayload): Promise<RestoreResu
         await tx.sequence.deleteMany();
         await tx.settingsList.deleteMany();
         await tx.settings.deleteMany();
+        await tx.roleAngleLabel.deleteMany();
+        await tx.roleAngle.deleteMany();
 
         await tx.stage.createMany({ data: payload.stages });
         await tx.company.createMany({ data: payload.companies });
@@ -343,6 +381,13 @@ export async function restoreBackup(payload: BackupPayload): Promise<RestoreResu
         await tx.sequence.createMany({ data: payload.sequences });
         await tx.sequenceStep.createMany({ data: payload.sequenceSteps });
         await tx.settingsList.createMany({ data: payload.settingsLists });
+        // Les rôles avant leurs étiquettes : la clé étrangère l'impose.
+        if (payload.roleAngles !== undefined) {
+          await tx.roleAngle.createMany({ data: payload.roleAngles });
+        }
+        if (payload.roleAngleLabels !== undefined) {
+          await tx.roleAngleLabel.createMany({ data: payload.roleAngleLabels });
+        }
         if (payload.settings != null) {
           await tx.settings.create({ data: payload.settings });
         }

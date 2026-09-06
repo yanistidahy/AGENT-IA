@@ -80,6 +80,8 @@ export interface ContactRecord {
   /** Date de la dernière interaction, pour repérer un statut figé. */
   readonly lastActivityAt: Date | null;
   readonly notes: string;
+  /** Le fait précis qu'Alex doit connaître sur cette personne. Voir le schéma. */
+  readonly alexNote: string;
   readonly createdAt: Date;
   readonly lastContact: Date | null;
   readonly nextReminder: Date | null;
@@ -294,6 +296,7 @@ function toRecord(
     companyIndustry: row.company?.industry ?? "",
     ageDays: daysSince(row.createdAt, now),
     notes: row.notes,
+    alexNote: row.alexNote,
     createdAt: row.createdAt,
     lastContact: row.lastContact,
     nextReminder: row.nextReminder,
@@ -342,6 +345,10 @@ function orderBy(query: ListContactsQuery): Prisma.ContactOrderByWithRelationInp
       return [{ firstName: dir }];
     case "company":
       return [{ company: { name: dir } }, { lastName: "asc" }];
+    case "title":
+      // Les fiches sans fonction en fin de liste : une absence n'est pas un
+      // intitulé qui commencerait par un espace.
+      return [{ title: dir }, { lastName: "asc" }];
     case "lifecycle":
       return [{ lifecycle: dir }, { lastName: "asc" }];
     case "owner":
@@ -435,6 +442,12 @@ function contactsWhere(
   now: Date,
 ): Prisma.ContactWhereInput {
   const and: Prisma.ContactWhereInput[] = [];
+
+  // Travailler un compte plutôt qu'une personne : toutes les fiches d'une même
+  // maison, quel que soit leur cycle de vie si l'appelant l'a demandé.
+  if (query.societe !== undefined && query.societe !== "") {
+    and.push({ companyId: query.societe });
+  }
 
   if (query.lifecycle !== undefined && query.lifecycle !== "all") {
     and.push({ lifecycle: query.lifecycle });
@@ -605,6 +618,7 @@ function applyDerived(
 function toFacetRow(contact: ContactRecord): ContactFacetRow {
   return {
     id: contact.id,
+    title: contact.title,
     lifecycle: contact.lifecycle,
     owner: contact.owner,
     source: contact.source,
@@ -639,6 +653,7 @@ export async function contactFacets(
     where: contactsWhere(query, {}, now),
     select: {
       id: true,
+      title: true,
       lifecycle: true,
       owner: true,
       source: true,
@@ -654,6 +669,7 @@ export async function contactFacets(
 
   const projected: ContactFacetRow[] = rows.map((row) => ({
     id: row.id,
+    title: row.title,
     lifecycle: row.lifecycle,
     owner: row.owner,
     source: row.source,

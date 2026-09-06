@@ -34,6 +34,11 @@ export const updateSettingsSchema = z
     relanceApresNote: delayField,
     /** Objectifs hebdomadaires de « Ma performance ». `0` = pas d'objectif. */
     objectifAppelsSemaine: z.number().int().min(0).max(1000).optional(),
+    /**
+     * Fenêtre de l'avertissement « un collègue a déjà été écrit », en jours.
+     * `0` le coupe — sans cette convention on ne pourrait plus le désactiver.
+     */
+    colleagueWarningDays: z.number().int().min(0).max(365).optional(),
     objectifEmailsSemaine: z.number().int().min(0).max(1000).optional(),
     /**
      * Plafond de jetons de sortie par vacation.
@@ -117,6 +122,8 @@ export async function updateSettings(
     relanceApresNote:
       input.relanceApresNote ?? current?.relanceApresNote ?? DEFAULT_REMINDER_DELAYS.note,
     objectifAppelsSemaine: input.objectifAppelsSemaine ?? current?.objectifAppelsSemaine ?? 0,
+    colleagueWarningDays:
+      input.colleagueWarningDays ?? current?.colleagueWarningDays ?? 30,
     objectifEmailsSemaine: input.objectifEmailsSemaine ?? current?.objectifEmailsSemaine ?? 0,
     shiftTokenBudget: input.shiftTokenBudget ?? current?.shiftTokenBudget ?? 4000,
     modelDraft: input.modelDraft ?? current?.modelDraft ?? DEFAULT_MODELS.draft,
