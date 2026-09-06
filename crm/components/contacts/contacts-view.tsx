@@ -17,6 +17,7 @@ import { ColumnPicker } from "@/components/table/column-picker";
 import { CONTACT_COLUMNS, DEFAULT_COLUMNS, LOCKED_COLUMN } from "./contact-table-columns";
 import { usePersistedSet } from "@/lib/client/persisted";
 import { ContactDrawer } from "./contact-drawer";
+import type { Colleague } from "@/lib/api/account";
 import { ContactForm, type ContactFormOptions } from "./contact-form";
 import { ContactsTable, type ContactSortKey } from "./contacts-table";
 import { ImportDialog } from "./import-dialog";
@@ -37,6 +38,8 @@ interface ContactsViewProps extends ContactFormOptions {
   readonly instagramCounts: Readonly<Record<string, number>>;
   /** Fiche désignée par `?fiche=` mais absente de la liste filtrée. */
   readonly focused: ContactRecord | null;
+  /** Les collègues de la fiche ouverte — chargés par la page, jamais par ligne. */
+  readonly colleagues: readonly Colleague[];
   /** Valeurs distinctes par colonne, calculées côté serveur. */
   readonly facets: Readonly<Record<string, readonly FacetValue[]>>;
   /** Total avant filtres de colonne, pour le « 54 sur 138 ». */
@@ -59,6 +62,7 @@ export function ContactsView({
   sequences,
   alerts,
   focused,
+  colleagues,
   reminderCounts,
   account,
   dm,
@@ -111,6 +115,7 @@ export function ContactsView({
   // du centre de pilotage peut donc ouvrir directement la bonne fiche, le lien
   // est partageable, et le bouton « précédent » referme le tiroir.
   const fiche = params.get("fiche");
+  const societe = params.get("societe");
   const selected =
     fiche === null ? null : (contacts.find((c) => c.id === fiche) ?? focused);
 
@@ -156,6 +161,31 @@ export function ContactsView({
           </button>
         </div>
       </header>
+
+      {/*
+        Un filtre par société actif se **nomme**. Sans cette ligne, arriver par
+        « Travailler ce compte » filtrerait la liste sans qu'aucun contrôle à
+        l'écran ne dise lequel, et on ne pourrait l'annuler qu'en éditant l'URL —
+        exactement le filtre invisible que le jalon 31 s'est interdit.
+      */}
+      {societe !== null && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-card border border-brand-l bg-brand-l/40 px-3 py-2 text-[12.5px]">
+          <span>
+            Compte :{" "}
+            <strong className="font-semibold">
+              {companyOptions.find((company) => company.id === societe)?.name ??
+                "société inconnue"}
+            </strong>
+          </span>
+          <button
+            type="button"
+            onClick={() => setParam({ societe: null })}
+            className="ml-auto min-h-[44px] text-brand-d hover:underline lg:min-h-0"
+          >
+            Voir tous les contacts
+          </button>
+        </div>
+      )}
 
       <ContactsFilters
         lifecycle={lifecycle}
@@ -212,6 +242,8 @@ export function ContactsView({
       <ContactDrawer
         {...options}
         contact={selected ?? null}
+        colleagues={colleagues}
+        onOpenContact={(id) => setParam({ fiche: id })}
         linkableDeals={linkableDeals}
         sequences={sequences}
         alerts={

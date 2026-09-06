@@ -30,6 +30,7 @@ function contact(overrides: Partial<ContactRecord> = {}): ContactRecord {
     linkedin: "linkedin.com/in/nadia",
     website: "nutrivia.fr",
     instagram: "",
+    alexNote: "",
     dmAt: null,
     lifecycle: "Prospect",
     source: "Salon",
@@ -67,6 +68,8 @@ function render(record: ContactRecord): string {
     <ContactDrawer
       contact={record}
       linkableDeals={[]}
+      colleagues={[]}
+      onOpenContact={() => undefined}
       sequences={[]}
       alerts={[]}
       owners={["Yanis"]}

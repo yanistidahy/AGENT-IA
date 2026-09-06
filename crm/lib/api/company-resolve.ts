@@ -29,10 +29,18 @@ export function normalizeCompanyName(value: string): string {
     .toLowerCase();
 }
 
-export async function resolveCompanyByName(
+/**
+ * Le rapprochement, **et** ce qu'il a fait.
+ *
+ * L'import annonce à l'utilisateur les sociétés qu'il a créées : il lui faut
+ * donc savoir si l'identifiant rendu vient d'une lecture ou d'une écriture.
+ * Le déduire en comptant la table avant et après serait deux requêtes de plus
+ * par ligne, et surtout une déduction là où la fonction qui écrit **sait**.
+ */
+export async function resolveCompanyDetailed(
   tx: TransactionClient,
   name: string,
-): Promise<string> {
+): Promise<{ readonly id: string; readonly created: boolean }> {
   const trimmed = name.trim();
   const needle = normalizeCompanyName(trimmed);
 
@@ -40,7 +48,7 @@ export async function resolveCompanyByName(
   const existing = candidates.find(
     (company) => normalizeCompanyName(company.name) === needle,
   );
-  if (existing !== undefined) return existing.id;
+  if (existing !== undefined) return { id: existing.id, created: false };
 
   // Le nom seul : le reste de la fiche se remplit depuis son propre tiroir.
   const created = await tx.company.create({
@@ -49,7 +57,14 @@ export async function resolveCompanyByName(
     data: { name: trimmed, searchText: searchText([trimmed]) },
     select: { id: true },
   });
-  return created.id;
+  return { id: created.id, created: true };
+}
+
+export async function resolveCompanyByName(
+  tx: TransactionClient,
+  name: string,
+): Promise<string> {
+  return (await resolveCompanyDetailed(tx, name)).id;
 }
 
 /**

@@ -37,7 +37,7 @@ model Stage {
   /// chose. Affiché au survol de la colonne.
   exitCriterion String @default("")
 
-  deals      Deal[]
+  deals       Deal[]
   stageVisits DealStageVisit[]
 
   @@map("stages")
@@ -134,6 +134,13 @@ model Contact {
   /// dans les interactions — connaître le compte n'est pas l'avoir contacté.
   instagram String @default("")
 
+  /// Ce qu'on sait de **cette personne** et qu'Alex doit savoir : « elle vient
+  /// de poster sur les délais de livraison », « ils refont leur site ce
+  /// trimestre ». Distinct de `notes`, qui porte le déversoir de l'import
+  /// (lignes `SITE :`, `N° :`…) et qu'on ne peut pas envoyer telles quelles à
+  /// un modèle sans lui faire prendre un titre de page pour un fait.
+  alexNote String @default("")
+
   /// Miroir normalisé des champs cherchables — voir Company.searchText.
   searchText String @default("")
 
@@ -150,12 +157,12 @@ model Contact {
   emailCount  Int       @default(0)
   lastEmailAt DateTime?
 
-  deals      Deal[]
-  activities Activity[]
-  tasks       Task[]
-  emailSends  EmailSend[]
+  deals        Deal[]
+  activities   Activity[]
+  tasks        Task[]
+  emailSends   EmailSend[]
   emailReplies EmailReply[]
-  enrollments SequenceEnrollment[]
+  enrollments  SequenceEnrollment[]
 
   @@index([companyId])
   @@index([lifecycle])
@@ -167,14 +174,14 @@ model Contact {
 /// `prob` surcharge la probabilité de l'étape quand elle est renseignée.
 /// `lastActivityAt` pilote la chaleur de l'affaire (active / tiède / froide).
 model Deal {
-  id             String    @id @default(cuid())
-  name           String
-  amount         Int       @default(0)
-  owner          String
-  offer          String    @default("")
-  status         String    @default("open")
-  prob           Int?
-  notes          String    @default("")
+  id     String @id @default(cuid())
+  name   String
+  amount Int    @default(0)
+  owner  String
+  offer  String @default("")
+  status String @default("open")
+  prob   Int?
+  notes  String @default("")
 
   /// Pourquoi l'affaire a été perdue. Vocabulaire de la fiche contact moins
   /// l'opposition au démarchage, qui n'appartient qu'à la personne — voir
@@ -331,21 +338,28 @@ model Settings {
 
   /// Délais de relance proposés après une interaction, par type. Ce sont des
   /// propositions pré-remplies dans le formulaire, jamais des écritures muettes.
-  relanceApresAppel   Int @default(7)
-  relanceApresEmail   Int @default(4)
-  relanceApresDemo    Int @default(2)
-  relanceApresReunion Int @default(3)
-  relanceApresLinkedin Int @default(4)
+  relanceApresAppel     Int @default(7)
+  relanceApresEmail     Int @default(4)
+  relanceApresDemo      Int @default(2)
+  relanceApresReunion   Int @default(3)
+  relanceApresLinkedin  Int @default(4)
   /// Un DM Instagram est le premier geste de la nouvelle approche : le délai
   /// suit celui de LinkedIn, autre canal social où la réponse ne vient pas
   /// dans l'heure.
   relanceApresInstagram Int @default(4)
-  relanceApresNote    Int @default(7)
+  relanceApresNote      Int @default(7)
 
   /// Objectifs hebdomadaires de « Ma performance ». `0` = pas d'objectif —
   /// sans objectif, l'écran n'affiche pas de progression plutôt qu'un « 4 sur 0 ».
   objectifAppelsSemaine Int @default(0)
   objectifEmailsSemaine Int @default(0)
+
+  /// Fenêtre de l'avertissement « un collègue a déjà été écrit », en jours.
+  /// Ce n'est pas un blocage : deux personnes d'une même maison comparent
+  /// leurs messages, et c'est le fait de ne pas le savoir qui fait écrire une
+  /// bêtise. `0` désactive l'avertissement — sans cette convention, on ne
+  /// pourrait plus le couper.
+  colleagueWarningDays Int @default(30)
 
   /// Relevé de la boîte de réception (jalon 41).
   ///
@@ -364,13 +378,13 @@ model Settings {
   /// variable d'environnement `SMTP_PASSWORD`, comme `ANTHROPIC_API_KEY` : une
   /// sauvegarde JSON, un export ou une lecture de table ne doivent jamais le
   /// contenir. Ce qui est ci-dessous est de la configuration, pas un secret.
-  smtpHost       String  @default("")
-  smtpPort       Int     @default(587)
+  smtpHost       String @default("")
+  smtpPort       Int    @default(587)
   /// tls | starttls — `tls` pour le port 465, `starttls` pour le 587.
-  smtpEncryption String  @default("starttls")
-  smtpUser       String  @default("")
-  smtpFrom       String  @default("")
-  smtpFromName   String  @default("")
+  smtpEncryption String @default("starttls")
+  smtpUser       String @default("")
+  smtpFrom       String @default("")
+  smtpFromName   String @default("")
 
   /// Signature par défaut, conservée pour les bases antérieures au jalon 35.
   ///
@@ -716,9 +730,9 @@ model QueueDay {
 /// et un compteur l'aurait comptée deux fois. La contrainte d'unicité porte la
 /// règle, plutôt qu'un test applicatif qui perdrait aux écritures concurrentes.
 model QueueMark {
-  id String @id @default(cuid())
+  id     String   @id @default(cuid())
   /// Même clé que `QueueDay.day`.
-  day String
+  day    String
   /// Identifiant de ligne de file : `reminder-<contact>`, `task-<id>`, `deal-<id>`.
   itemId String
   /// L'action qui a retiré la ligne, pour le journal. Sans valeur de calcul.
@@ -729,7 +743,6 @@ model QueueMark {
   @@index([day])
   @@map("queue_marks")
 }
-
 
 /// Passage d'une affaire dans une étape.
 ///
@@ -764,9 +777,9 @@ model DealStageVisit {
 /// se choisit à la rédaction, message par message — ce n'est pas un réglage
 /// global mais une propriété de l'envoi.
 model Signatory {
-  id    String @id @default(cuid())
-  name  String
-  title String @default("")
+  id        String  @id @default(cuid())
+  name      String
+  title     String  @default("")
   /// Le signataire proposé quand rien d'autre ne tranche.
   isDefault Boolean @default(false)
   position  Int     @default(0)
@@ -804,19 +817,19 @@ model EmailSend {
 
   /// Suivi d'ouverture. `tracked = false` quand l'expéditeur l'a coupé pour cet
   /// envoi ou globalement — auquel cas `trackToken` est nul et rien n'est mesuré.
-  tracked     Boolean   @default(false)
+  tracked     Boolean        @default(false)
   /// Jeton opaque du pixel. **C'est tout ce qu'on stocke du destinataire** :
   /// pas d'adresse IP, pas d'agent utilisateur, pas de profil.
-  trackToken  String?   @unique
+  trackToken  String?        @unique
   firstOpenAt DateTime?
   lastOpenAt  DateTime?
-  openCount   Int       @default(0)
+  openCount   Int            @default(0)
   /**
    * Chargements du pixel écartés du compte : rafales d'un même client, et
    * chargements survenus dans les secondes qui suivent l'envoi — un antivirus
    * ou un relais qui récupère les images à la livraison, pas une lecture.
    */
-  openNoise   Int       @default(0)
+  openNoise   Int            @default(0)
   hits        EmailOpenHit[]
   /// Vidé par la purge de rétention, sans supprimer l'envoi lui-même.
   purgedAt    DateTime?
@@ -872,16 +885,16 @@ model EmailSequence {
 /// Une séquence qui s'arrête d'elle-même au bout de trois messages limite les
 /// dégâts d'une réponse non détectée mieux que n'importe quel mécanisme.
 model EmailSequenceStep {
-  id         String @id @default(cuid())
+  id         String        @id @default(cuid())
   sequenceId String
   sequence   EmailSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
 
   /// 1, 2 ou 3.
-  position Int
+  position  Int
   /// Jours après l'étape précédente. L'étape 1 part le jour de l'inscription.
-  delayDays Int @default(0)
+  delayDays Int    @default(0)
   /// Ce qu'Alex doit faire de cette étape, en une phrase.
-  brief String @default("")
+  brief     String @default("")
 
   @@unique([sequenceId, position])
   @@map("email_sequence_steps")
@@ -889,15 +902,15 @@ model EmailSequenceStep {
 
 /// L'inscription d'un contact à une séquence.
 model SequenceEnrollment {
-  id         String   @id @default(cuid())
+  id         String        @id @default(cuid())
   sequenceId String
   sequence   EmailSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
   contactId  String
-  contact    Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  enrolledAt DateTime @default(now())
+  contact    Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  enrolledAt DateTime      @default(now())
 
   /// active | done | stopped
-  status String @default("active")
+  status     String @default("active")
   /// Pourquoi elle s'est arrêtée, en français.
   ///
   /// **Une séquence qui s'arrête sans dire pourquoi ressemble à une panne.**
@@ -920,11 +933,11 @@ model SequenceEnrollment {
 /// et envoyé lundi matin décrit l'état de vendredi : la réponse arrivée samedi
 /// ne l'aurait pas arrêté. La file du lundi se construit lundi.
 model SequenceDeparture {
-  id           String   @id @default(cuid())
+  id           String             @id @default(cuid())
   enrollmentId String
   enrollment   SequenceEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
   step         Int
-  createdAt    DateTime @default(now())
+  createdAt    DateTime           @default(now())
   /// Le jour pour lequel il a été composé, `YYYY-MM-DD`.
   day          String
 
@@ -994,17 +1007,66 @@ model EmailReply {
 ///
 /// Purgée avec le reste du suivi, à la même échéance.
 model EmailOpenHit {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   emailSendId String
   emailSend   EmailSend @relation(fields: [emailSendId], references: [id], onDelete: Cascade)
 
-  at DateTime @default(now())
+  at           DateTime @default(now())
   /// Secondes écoulées depuis l'envoi. Stocké plutôt que recalculé : il survit
   /// à la purge de l'envoi et se lit sans jointure.
-  delaySeconds Int @default(0)
+  delaySeconds Int      @default(0)
   /// `counted` | `burst` | `delivery` — pourquoi ce chargement compte ou non.
-  kind String @default("counted")
+  kind         String   @default("counted")
 
   @@index([emailSendId])
   @@map("email_open_hits")
+}
+
+/// Un rôle destinataire, et ce qui compte pour lui.
+///
+/// La campagne écrit à plusieurs personnes d'une même maison : le pitch ne
+/// change pas, l'angle si. La note est **écrite à la main**, dans les mots de
+/// l'utilisateur — c'est elle qui rejoint le contexte entreprise et le mail de
+/// référence dans le prompt d'Alex, comme instruction la plus spécifique.
+///
+/// Sauvegardée et restaurée : c'est de la configuration écrite à la main, donc
+/// exactement ce que le jalon 42 s'est juré de ne plus perdre.
+model RoleAngle {
+  id       String @id @default(cuid())
+  name     String
+  /// Ce que cette personne mesure, la douleur à nommer, ce qu'il faut éviter.
+  /// Vide = rôle reconnu mais sans note : Alex retombe sur l'angle générique
+  /// plutôt que de combler le silence (voir lib/domain/role-angles.ts).
+  angle    String @default("")
+  position Int    @default(0)
+
+  createdAt DateTime @default(now())
+
+  labels RoleAngleLabel[]
+
+  @@map("role_angles")
+}
+
+/// Un intitulé de fonction qui désigne ce rôle.
+///
+/// Les fichiers d'enrichissement disent « Head of Customer Care », « SAV
+/// Manager » ou « Responsable service client » pour un même métier : c'est
+/// l'utilisateur qui déclare les équivalences, jamais une ressemblance devinée.
+///
+/// `normalized` est **unique en base** : une même étiquette ne peut pas
+/// désigner deux rôles. Une contrainte plutôt qu'une vérification applicative —
+/// une course ne contourne pas une contrainte d'unicité.
+model RoleAngleLabel {
+  id String @id @default(cuid())
+
+  /// L'étiquette telle qu'elle a été saisie, pour la réafficher fidèlement.
+  label      String
+  /// Sa clé normalisée — voir normalizeRoleLabel(). Ce qui compare, c'est elle.
+  normalized String @unique
+
+  roleId String
+  role   RoleAngle @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@index([roleId])
+  @@map("role_angle_labels")
 }

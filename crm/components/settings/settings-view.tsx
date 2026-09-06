@@ -23,6 +23,8 @@ import { CouncilPanel } from "./council-panel";
 import { ShiftsPanel } from "./shifts-panel";
 import { ModelsForm, type ModelsSettings } from "./models-form";
 import { StagesEditor } from "./stages-editor";
+import { RoleAnglesPanel } from "./role-angles-panel";
+import type { RoleCoverage } from "@/lib/api/role-angles";
 
 interface SettingsViewProps {
   readonly sequences: readonly SequenceEditable[];
@@ -41,6 +43,8 @@ interface SettingsViewProps {
   readonly delays: ReminderDelays;
   /** Objectifs hebdomadaires de « Ma performance ». `0` = pas d'objectif. */
   readonly targets: { readonly calls: number; readonly emails: number };
+  /** Fenêtre de l'avertissement « collègue déjà écrit », en jours. */
+  readonly colleagueWarningDays: number;
   readonly lists: Record<SettingsListKind, readonly string[]>;
   readonly tags: ReadonlyArray<{ value: string; count: number }>;
   readonly agents: readonly AgentProfile[];
@@ -55,6 +59,7 @@ interface SettingsViewProps {
    * L'identité du déploiement, rendue **côté serveur** — elle vient de
    * `process.env`, qui n'existe pas dans le navigateur.
    */
+  readonly roleAngles: RoleCoverage;
   readonly deploy: React.ReactNode;
   readonly costs: React.ReactNode;
   /**
@@ -89,9 +94,11 @@ export function SettingsView({
   emailSequences,
   delays,
   targets,
+  colleagueWarningDays,
   lists,
   tags,
   agents,
+  roleAngles,
   modelSettings,
   costs,
   deploy,
@@ -121,6 +128,17 @@ export function SettingsView({
         hint="nom, rôle, photo et cadence de chaque agent — l'identifiant technique ne bouge pas"
       >
         <CouncilPanel agents={agents} />
+      </Section>
+
+      <Section
+        title="Notes d'angle par rôle"
+        hint="ce qui compte pour chaque interlocuteur — Alex écrit avec, jamais sans"
+      >
+        <RoleAnglesPanel
+          initial={roleAngles}
+          warningDays={colleagueWarningDays}
+          onSaved={refresh}
+        />
       </Section>
 
       <Section

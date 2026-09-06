@@ -99,6 +99,20 @@ export const EXTRA_COLUMNS: readonly ContactColumn[] = [
     // depuis trois mois, là où « 08/05/2026 » demande un calcul.
     cell: (contact) => <span className="font-mono tabular-nums">{contact.ageDays} j</span>,
   },
+  /**
+   * La fonction, hors des six colonnes par défaut mais **triable et
+   * filtrable** : c'est elle qui porte l'angle depuis ce jalon, et voir d'un
+   * coup d'œil qui est fondateur et qui est responsable SAV change la façon
+   * dont on travaille un compte.
+   */
+  {
+    key: "title",
+    label: "Fonction",
+    sort: "title",
+    filterKey: "title",
+    cell: (contact) =>
+      contact.title === "" ? MUTED : <span className="text-[12.5px]">{contact.title}</span>,
+  },
   {
     key: "website",
     label: "Site",

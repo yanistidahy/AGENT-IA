@@ -26,6 +26,8 @@ export interface ContactFacetRow {
   readonly status: string;
   /** Compte Instagram, brut. La facette n'en garde que la présence. */
   readonly instagram: string;
+  /** La fonction, telle qu'importée. Vide = non renseignée, donc « (vide) ». */
+  readonly title: string;
   readonly companyName: string | null;
   readonly lastContact: Date | null;
   readonly nextReminder: Date | null;
@@ -33,6 +35,14 @@ export interface ContactFacetRow {
 
 export const CONTACT_FILTER_COLUMNS: readonly ColumnSpec[] = [
   { key: "company", label: "Société", kind: "text" },
+  /**
+   * La fonction, telle qu'elle arrive des fichiers d'enrichissement. Filtrable
+   * sur la **valeur** et non sur la présence, à la différence d'Instagram : les
+   * intitulés se répètent d'une maison à l'autre (« Fondatrice », « CMO »), donc
+   * la liste des facettes est courte et utile. C'est elle qui permet d'écrire à
+   * tous les responsables SAV du portefeuille d'un coup.
+   */
+  { key: "title", label: "Fonction", kind: "text" },
   { key: "lifecycle", label: "Cycle de vie", kind: "text" },
   { key: "tag", label: "Étiquette", kind: "text" },
   { key: "owner", label: "Propriétaire", kind: "text" },
@@ -59,6 +69,7 @@ export const CONTACT_FILTER_COLUMNS: readonly ColumnSpec[] = [
 
 export const CONTACT_DB_COLUMNS: readonly DbColumn[] = [
   { key: "company", source: { kind: "relation", path: "company", field: "name" } },
+  { key: "title", source: { kind: "scalar", field: "title" } },
   { key: "lifecycle", source: { kind: "scalar", field: "lifecycle" } },
   { key: "tag", source: { kind: "scalar", field: "tag" } },
   { key: "owner", source: { kind: "scalar", field: "owner" } },
@@ -75,6 +86,7 @@ export const CONTACT_DB_COLUMNS: readonly DbColumn[] = [
 
 export const CONTACT_FACET_COLUMNS: readonly FacetColumn<ContactFacetRow>[] = [
   { key: "company", label: "Société", value: (row) => row.companyName },
+  { key: "title", label: "Fonction", value: (row) => row.title },
   { key: "lifecycle", label: "Cycle de vie", value: (row) => row.lifecycle },
   { key: "tag", label: "Étiquette", value: (row) => row.tag },
   { key: "owner", label: "Propriétaire", value: (row) => row.owner },

@@ -12,6 +12,8 @@ import type { SequenceOption } from "@/components/activities/run-sequence";
 import type { Alert } from "@/lib/domain/types";
 import { ContactForm, type ContactFormOptions } from "./contact-form";
 import { ContactFields } from "./contact-fields";
+import { AccountLink, AlexNote, Colleagues } from "./account-block";
+import type { Colleague } from "@/lib/api/account";
 import { ContactHeader } from "./contact-header";
 import { ComposePanel } from "@/components/emails/compose-panel";
 import { ContactEmails } from "@/components/emails/contact-emails";
@@ -45,6 +47,10 @@ type TabKey = "fiche" | "historique" | "suivi";
 interface ContactDrawerProps extends ContactFormOptions {
   readonly contact: ContactRecord | null;
   readonly linkableDeals: readonly LinkableDeal[];
+  /** Les autres fiches de la même maison. Vide si la fiche n'a pas de société. */
+  readonly colleagues: readonly Colleague[];
+  /** Ouvre la fiche d'un collègue sans quitter la liste. */
+  readonly onOpenContact: (id: string) => void;
   readonly sequences: readonly SequenceOption[];
   readonly alerts: readonly Alert[];
   /** Statuts déjà employés ailleurs, proposés avant la liste de départ. */
@@ -59,6 +65,8 @@ interface ContactDrawerProps extends ContactFormOptions {
 export function ContactDrawer({
   contact,
   linkableDeals,
+  colleagues,
+  onOpenContact,
   sequences,
   alerts,
   statusSuggestions = [],
@@ -214,6 +222,15 @@ export function ContactDrawer({
 
           <TabPanel tabKey="fiche" active={tab} idPrefix="contact">
             <ContactFields contact={contact} />
+            <AlexNote
+              contactId={contact.id}
+              value={contact.alexNote}
+              onSaved={onChanged}
+            />
+            <Colleagues colleagues={colleagues} onOpen={onOpenContact} />
+            {contact.company !== null && (
+              <AccountLink companyId={contact.company.id} companyName={contact.company.name} />
+            )}
           </TabPanel>
 
           <TabPanel tabKey="suivi" active={tab} idPrefix="contact">

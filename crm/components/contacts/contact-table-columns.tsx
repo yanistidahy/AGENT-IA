@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { ContactStatusTag, LifecycleTag } from "@/components/ui/primitives";
 import type { ContactRecord } from "@/lib/api/contacts";
+import { CONTACT_SORT_KEYS } from "@/lib/api/contact-schemas";
 import { describeReminder } from "@/lib/domain/follow-up";
 import { contactAttention } from "@/lib/domain/contact-status";
 import { formatDate } from "@/lib/format";
@@ -26,19 +27,16 @@ import {
  * qui, où, dans quel état, quand relancer, depuis quand silence, et le numéro.
  * Le reste reste à un clic, et le choix est conservé.
  */
-export type ContactSortKey =
-  | "lastName"
-  | "firstName"
-  | "company"
-  | "lifecycle"
-  | "owner"
-  | "lastContact"
-  | "tag"
-  | "followUp"
-  | "nextReminder"
-  | "createdAt"
-  | "emailCount"
-  | "lastEmailAt";
+/**
+ * **Dérivée de `CONTACT_SORT_KEYS`, jamais recopiée.**
+ *
+ * L'union était écrite à la main à côté de la liste que le schéma Zod valide :
+ * deux sources pour un même vocabulaire, donc deux occasions de diverger. Une
+ * clé ajoutée à l'une et pas à l'autre donne soit une colonne dont le tri est
+ * refusé en 400, soit un tri accepté par l'API qu'aucune colonne n'offre — et
+ * dans les deux cas rien n'échoue à la compilation.
+ */
+export type ContactSortKey = (typeof CONTACT_SORT_KEYS)[number];
 
 export interface ContactColumn {
   /** Clé stable : elle est conservée dans le stockage local. */

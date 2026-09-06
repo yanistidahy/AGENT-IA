@@ -123,6 +123,29 @@ export function CompanyDrawer({
           <h3 className="mt-6 mb-2.5 font-display text-sm font-semibold">
             Contacts ({company.contacts.length})
           </h3>
+          {company.lastEmail !== undefined && (
+            <p className="mb-2 text-[12.5px] text-muted">
+              {company.lastEmail === null
+                ? "Personne n'a encore reçu d'email dans cette maison."
+                : `Dernier email : ${company.lastEmail.contactName}, le ${formatDate(
+                    company.lastEmail.at,
+                  )}${
+                    company.lastEmail.signatoryName === ""
+                      ? ""
+                      : ` — signé ${company.lastEmail.signatoryName}`
+                  } · « ${company.lastEmail.subject} »`}
+            </p>
+          )}
+          {company.contacts.length > 1 && (
+            <p className="mb-2 text-[12.5px]">
+              <Link
+                href={`/contacts?lifecycle=all&societe=${encodeURIComponent(company.id)}`}
+                className="text-brand-d hover:underline"
+              >
+                Travailler ce compte dans /contacts
+              </Link>
+            </p>
+          )}
           {company.contacts.length === 0 ? (
             <p className="rounded-card border border-dashed border-line px-3.5 py-4 text-[12.5px] text-muted">
               Aucun contact rattaché.{" "}
@@ -137,8 +160,16 @@ export function CompanyDrawer({
                   key={contact.id}
                   className="flex flex-wrap items-center gap-2 rounded-card border border-line px-3 py-2 text-[13px]"
                 >
+                  {/*
+                    Vers la **fiche**, pas vers une recherche par nom : `?fiche=`
+                    ouvre le tiroir du bon enregistrement (jalon 5), là où
+                    `?q=<nom>` retombait sur une liste — et sur une liste vide
+                    pour une fiche sans personne nommée, que le jalon 50 a
+                    rendues possibles. Le cycle de vie est ouvert parce qu'une
+                    maison compte souvent des fiches perdues, exclues par défaut.
+                  */}
                   <Link
-                    href={`/contacts?q=${encodeURIComponent(contact.lastName)}`}
+                    href={`/contacts?lifecycle=all&fiche=${encodeURIComponent(contact.id)}`}
                     className="font-semibold hover:underline"
                   >
                     {contactTitle({ ...contact, company: null })}

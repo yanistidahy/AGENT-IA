@@ -33,6 +33,13 @@ interface Draft {
   contactName: string;
   signatories: Signatory[];
   signatoryId: string | null;
+  /** Un collègue de la même maison écrit récemment — voir l'avertissement. */
+  colleagueWarning: {
+    name: string;
+    title: string;
+    date: string;
+    days: number;
+  } | null;
 }
 
 interface Sent {
@@ -244,6 +251,27 @@ export function ComposePanel({
             {draft.to}
           </p>
           <p className="mt-0.5 text-[12.5px] text-brand-d">{draft.contactName}</p>
+        </div>
+      )}
+
+      {/*
+        **Un avertissement, jamais un blocage.** Écrire à deux personnes d'une
+        même maison est l'intention même de la campagne ; ce qui fait écrire une
+        bêtise, c'est de ne pas savoir que l'autre a déjà reçu quelque chose. Il
+        nomme donc le collègue et la date, et laisse partir le message — refuser
+        à la place de l'utilisateur serait décider pour lui (jalon 8).
+
+        Alex, lui, l'a déjà reçu dans son instruction : le brouillon affiché
+        évite normalement l'accroche du collègue. Cette ligne sert à le relire
+        en le sachant.
+      */}
+      {draft?.colleagueWarning != null && (
+        <div className="mb-3 rounded-control border border-warn bg-warn-l px-3.5 py-2.5 text-[12.5px] text-warn-d">
+          <strong className="font-semibold">{draft.colleagueWarning.name}</strong>
+          {draft.colleagueWarning.title === "" ? "" : `, ${draft.colleagueWarning.title}`}, de la
+          même maison, a reçu un email le {draft.colleagueWarning.date} — il y a{" "}
+          {draft.colleagueWarning.days} jour
+          {draft.colleagueWarning.days > 1 ? "s" : ""}. Les deux se parlent : relisez l'accroche.
         </div>
       )}
 

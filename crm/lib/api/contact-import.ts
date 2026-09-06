@@ -12,6 +12,7 @@ import {
 } from "../domain/csv";
 import { LIFECYCLES, type Lifecycle } from "../domain/types";
 import { createContactSchema } from "./contact-schemas";
+import { normalizeCompanyName, resolveCompanyDetailed } from "./company-resolve";
 
 /**
  * Import de contacts collés depuis un tableur.
@@ -70,9 +71,24 @@ function toLifecycleLoose(value: string): Lifecycle {
 /**
  * Société par son nom, créée si elle n'existe pas.
  *
- * La comparaison est insensible à la casse : « acme » et « ACME » sont la même
- * société, et un import ne doit pas fabriquer un doublon pour une majuscule.
- * Le cache évite de recréer la même société deux fois dans un même import.
+ * **La règle vit dans `resolveCompanyByName`, et nulle part ailleurs.** Cette
+ * fonction comparait auparavant en SQL (`mode: "insensitive"`), donc à la casse
+ * seulement : « MiYé » et « Miye » produisaient deux sociétés, là où le
+ * formulaire — qui normalise en mémoire, accents compris — les rapprochait
+ * depuis le jalon 6. Deux règles pour une même question, et c'est celle des
+ * fichiers importés en masse qui était la plus faible. Mesuré avant correction
+ * sur quatre lignes d'une même maison : trois sociétés au lieu de deux.
+ *
+ * Second défaut, réparé par le même passage : les sociétés créées ici
+ * n'écrivaient pas `searchText`, donc restaient introuvables à la recherche
+ * jusqu'à leur prochaine modification. C'est exactement la régression que le
+ * jalon 12 avait corrigée dans `company-resolve.ts` — sans jamais l'appliquer
+ * ici, faute d'un chemin unique.
+ *
+ * Le cache reste : il évite de relire la table pour chaque ligne d'un même
+ * collage, et sa clé est la **forme normalisée**, pas la chaîne brute — sinon
+ * « Miye » et « MIYE » occuperaient deux entrées et le cache ne servirait qu'à
+ * moitié.
  */
 async function resolveCompany(
   name: string,
@@ -82,23 +98,15 @@ async function resolveCompany(
   const trimmed = name.trim();
   if (trimmed === "") return null;
 
-  const key = trimmed.toLowerCase();
+  const key = normalizeCompanyName(trimmed);
   const cached = cache.get(key);
   if (cached !== undefined) return cached;
 
-  const existing = await prisma.company.findFirst({
-    where: { name: { equals: trimmed, mode: "insensitive" } },
-    select: { id: true },
-  });
-  if (existing !== null) {
-    cache.set(key, existing.id);
-    return existing.id;
-  }
+  const resolved = await resolveCompanyDetailed(prisma, trimmed);
+  if (resolved.created) created.push(trimmed);
 
-  const company = await prisma.company.create({ data: { name: trimmed }, select: { id: true } });
-  cache.set(key, company.id);
-  created.push(trimmed);
-  return company.id;
+  cache.set(key, resolved.id);
+  return resolved.id;
 }
 
 /**

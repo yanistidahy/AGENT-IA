@@ -1,3 +1,4 @@
+import { readColleagues } from "@/lib/api/account";
 import { ContactsView } from "@/components/contacts/contacts-view";
 import { parseContactsQuery } from "@/lib/api/contact-schemas";
 import {
@@ -112,6 +113,10 @@ export default async function ContactsPage({
       ? null
       : await getContact(ficheId, settings, now);
 
+  // Les collègues de la seule fiche ouverte : une requête par rendu de tiroir,
+  // jamais une par ligne de la liste.
+  const colleagues = ficheId === undefined ? [] : await readColleagues(ficheId);
+
   return (
     <ContactsView
       contacts={contacts}
@@ -125,6 +130,7 @@ export default async function ContactsPage({
       sequences={sequences}
       alerts={alerts}
       focused={focused}
+      colleagues={colleagues}
       reminderCounts={reminderCounts}
       account={query.account}
       dm={query.dm}

@@ -16,6 +16,12 @@ import { formatDate } from "@/lib/format";
 import { enforceSignature, sanitizeSubject } from "@/lib/domain/email-format";
 import { signatureBlock } from "./prompts/company";
 import { demoTarget, demoTargetRule } from "@/lib/domain/demo-target";
+import { angleFor } from "@/lib/api/role-angles";
+import {
+  readColleagueWarning,
+  readColleagueWindow,
+  type ColleagueContact,
+} from "@/lib/api/account";
 import { alexDynamicRules } from "./alex-rules";
 import { AGENTS } from "./registry";
 import { readMailConfig, type MailConfig } from "@/lib/api/mail";
@@ -112,6 +118,20 @@ export interface EmailDraft {
   readonly signatories: readonly Signatory[];
   /** Celui qui a été retenu — le propriétaire de la fiche s'il correspond. */
   readonly signatoryId: string | null;
+  /**
+   * Un collègue de la même maison écrit récemment, ou `null`.
+   *
+   * **Un avertissement, pas un refus** : le panneau le nomme et laisse partir
+   * le message. La date est déjà formatée — la sérialiser en ISO pour la
+   * reformater côté client ferait deux formats d'une même date, et c'est ainsi
+   * qu'un écran finit par en afficher une fausse.
+   */
+  readonly colleagueWarning: {
+    readonly name: string;
+    readonly title: string;
+    readonly date: string;
+    readonly days: number;
+  } | null;
 }
 
 export type DraftResult =
@@ -133,6 +153,7 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
       lastContact: true,
       nextReminder: true,
       notes: true,
+      alexNote: true,
       website: true,
       company: { select: { name: true, industry: true, size: true, domain: true } },
       deals: {
@@ -175,6 +196,15 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
     select: { date: true },
     orderBy: { date: "desc" },
   });
+
+  // L'angle du rôle et le collègue déjà écrit : deux faits **cherchés**, comme
+  // le DM. Les laisser se déduire du dossier serait un pari — sur une fiche
+  // bavarde ils en sortiraient, sur une autre non, et Alex écrirait alors à une
+  // responsable SAV comme à une fondatrice sans que rien ne le signale.
+  const [angle, warning] = await Promise.all([
+    angleFor(contact.title),
+    readColleagueWindow().then((days) => readColleagueWarning(contactId, days)),
+  ]);
 
   const target = demoTarget({
     website: contact.website,
@@ -224,6 +254,37 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
         : "Site à citer : AUCUN site ni nom de marque connu.",
   );
 
+  // La fonction, annoncée sous ses deux formes comme le prénom et le DM :
+  // « Responsable SAV » et « Fondatrice » n'attendent pas le même message, et
+  // c'est toute la raison d'être de cette campagne.
+  lines.push(
+    contact.title.trim() === ""
+      ? "Fonction du destinataire : NON RENSEIGNÉE."
+      : `Fonction du destinataire : ${contact.title.trim()}`,
+  );
+
+  // Le collègue déjà écrit, **toujours annoncé**, y compris à la forme
+  // négative. Deux personnes d'une même maison se montrent leurs emails : ce
+  // qui fait écrire une bêtise, ce n'est pas d'écrire aux deux, c'est de ne
+  // pas savoir que l'autre a déjà reçu quelque chose.
+  if (warning.recent === null) {
+    lines.push(
+      warning.colleagues.length === 0
+        ? "Collègue déjà écrit : AUCUN — personne d'autre de cette maison n'est en base."
+        : "Collègue déjà écrit : AUCUN récemment.",
+    );
+  } else {
+    const { colleague, at, days } = warning.recent;
+    const role = colleague.title === "" ? "" : `, ${colleague.title}`;
+    lines.push(`Collègue déjà écrit : ${colleague.name}${role}, le ${formatDate(at)} (il y a ${days} j).`);
+    if (colleague.lastSubject !== "") {
+      lines.push(`  Objet de ce message : ${colleague.lastSubject}`);
+    }
+    if (colleague.lastOpening !== "") {
+      lines.push(`  Sa phrase d'ouverture : ${colleague.lastOpening.slice(0, 300)}`);
+    }
+  }
+
   for (const deal of contact.deals) {
     lines.push(`Affaire : « ${deal.name} », ${deal.amount} €, étape ${deal.stage.name}, ${deal.status}`);
   }
@@ -247,6 +308,16 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
     }
   }
 
+  // La note écrite à la main pour Alex — un fait délibéré sur cette personne.
+  // Elle est annoncée comme telle et **séparée des Notes** : celles-ci portent
+  // le déversoir de l'import (lignes `SITE :`, `N° :`, titres de page), et les
+  // mêler ferait prendre un titre d'onglet pour une information sur la marque.
+  const alexNote = contact.alexNote.trim();
+  if (alexNote !== "") {
+    lines.push("");
+    lines.push(`Ce qu'on sait de cette personne, écrit à la main : ${alexNote.slice(0, 1000)}`);
+  }
+
   const notes = contact.notes.trim();
   if (notes !== "") {
     lines.push("");
@@ -258,6 +329,8 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
     target,
     dmSent: dm !== null,
     greeting: greetingRule(contact),
+    angleRule: angle.rule,
+    colleague: warning.recent,
   };
 }
 
@@ -271,6 +344,13 @@ interface ContextResult {
   readonly dmSent: boolean;
   /** L'appel à écrire, décidé sur la donnée — jamais laissé au modèle. */
   readonly greeting: string;
+  /**
+   * L'angle du rôle, ou l'interdiction d'en inventer un. **Toujours présent** :
+   * voir `roleAngleRule` dans lib/domain/role-angles.ts.
+   */
+  readonly angleRule: string;
+  /** Le collègue écrit récemment, s'il y en a un dans la fenêtre réglée. */
+  readonly colleague: ColleagueContact | null;
 }
 
 /**
@@ -296,6 +376,10 @@ règles de forme, de signature et de lien données plus haut.
 ${demoTargetRule(context.target)}
 
 ${dmRule(context.dmSent)}
+
+${context.angleRule}
+
+${colleagueRule(context.colleague)}
 
 ${context.greeting}
 
@@ -325,6 +409,35 @@ function dmRule(dmSent: boolean): string {
     return `**Un DM Instagram a bien été envoyé à cette personne**, et le dossier en donne la date. Mentionne-le dans le corps du message, après l'accroche : dis que tu lui as écrit sur Instagram et invite-la à regarder ses messages privés. C'est une raison concrète et vérifiable de prêter attention à cet email — jamais « je me permets de vous relancer », qui ne parle que de ton agenda.`;
   }
   return `**Aucun DM Instagram n'a été envoyé à cette personne.** N'en mentionne donc aucun, sous aucune forme : ni « comme je vous l'écrivais sur Instagram », ni « vous avez dû voir mon message ». Ce serait une affirmation fausse, vérifiable en trois secondes par le destinataire. Écris l'email sans cette mention.`;
+}
+
+/**
+ * **Ne pas resservir l'accroche du collègue.**
+ *
+ * Deux personnes d'une même maison se montrent leurs emails — c'est même ce qui
+ * rend la campagne par compte efficace, et ce qui la rend ridicule quand les
+ * deux messages sont le même. Le pitch, lui, ne doit pas changer : une
+ * entreprise qui raconte deux histoires différentes à deux collègues n'est pas
+ * plus crédible. C'est donc **l'accroche et l'angle** qui diffèrent, et le
+ * positionnement qui tient.
+ *
+ * La consigne porte la **phrase exacte** à ne pas reprendre, plutôt qu'un
+ * « varie un peu » : un modèle à qui l'on montre ce qu'il ne doit pas écrire
+ * s'en écarte, un modèle à qui l'on demande de la variété reformule la même
+ * idée avec d'autres mots — ce qu'un lecteur humain reconnaît immédiatement.
+ */
+function colleagueRule(colleague: ColleagueContact | null): string {
+  if (colleague === null) {
+    return "**Personne d'autre de cette maison n'a reçu d'email récemment.** Écris cet email sans référence à un collègue.";
+  }
+
+  const role = colleague.colleague.title === "" ? "" : `, ${colleague.colleague.title}`;
+  const opening =
+    colleague.colleague.lastOpening === ""
+      ? ""
+      : ` Sa phrase d'ouverture était : « ${colleague.colleague.lastOpening.slice(0, 300)} ». **N'écris ni cette phrase, ni une reformulation de cette phrase.** Trouve une autre entrée en matière, ancrée sur le rôle de ton destinataire.`;
+
+  return `**Un collègue de cette maison a reçu un email il y a ${colleague.days} jour(s)** : ${colleague.colleague.name}${role}. Ces deux personnes se parlent et compareront leurs messages. Le positionnement, l'offre et la proposition ne changent pas — c'est la même entreprise qui écrit. Ce sont l'accroche et l'angle qui doivent différer.${opening}`;
 }
 
 export async function draftEmail(
@@ -376,7 +489,7 @@ export async function draftEmail(
   const system = await promptForAgent(ALEX_SLUG, await alexDynamicRules(signatory));
   if (system === null) return { ok: false, message: "L'agent Alex est introuvable." };
 
-  return complete(
+  const result = await complete(
     system,
     `${context.dossier}\n\n---\n\n${draftInstruction(context)}${
       stepBrief === undefined || stepBrief.trim() === ""
@@ -389,6 +502,28 @@ export async function draftEmail(
     signatories,
     signatory,
   );
+
+  // L'avertissement est **posé après la rédaction**, pas passé à `complete()` :
+  // il ne change rien à l'appel au modèle — celui-ci a déjà reçu la consigne
+  // dans son instruction —, il ne concerne que ce que l'écran doit dire à la
+  // personne qui s'apprête à envoyer.
+  if (!result.ok) return result;
+  const { colleague } = context;
+  return {
+    ok: true,
+    draft: {
+      ...result.draft,
+      colleagueWarning:
+        colleague === null
+          ? null
+          : {
+              name: colleague.colleague.name,
+              title: colleague.colleague.title,
+              date: formatDate(colleague.at),
+              days: colleague.days,
+            },
+    },
+  };
 }
 
 /**
@@ -477,6 +612,11 @@ async function complete(
         contactName: contactTitle(identity),
         signatories,
         signatoryId: signatory?.id ?? null,
+        // `complete()` ne connaît pas le compte : la rédaction et la reprise
+        // partagent ce chemin, et seule la première dispose du contexte. Elle
+        // pose l'avertissement au retour ; la reprise n'en a pas besoin, le
+        // brouillon étant déjà sous les yeux de son auteur.
+        colleagueWarning: null,
       },
     };
   } catch (error) {
