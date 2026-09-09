@@ -7738,7 +7738,16 @@ fil :
   **entonnoir 3 écrits / 3 messages / 1 réponse = journal 3 / 3 / 1** — mêmes
   nombres, une seule addition ; le premier étage de l'entonnoir égale « personnes
   écrites » ;
-- **5 · garde-fous** : la réponse arrête l'inscription avec son motif,
+- **2 bis · deux filtres successifs** : une fiche cochée sous `f.title=Head of
+  Customer Care`, une autre sous `owner=Mohamed` → **les deux sont inscrites**,
+  aucune perdue au changement de filtre ; re-cocher une déjà inscrite →
+  « 0 nouvelle, 1 déjà », pas de doublon ;
+- **5 · une réponse relevée par IMAP** (et non saisie à la main), sur une
+  campagne **vivante** : déposée dans la boîte d'où la campagne part →
+  `replies: 1`, rattachée à « Nova octobre » étape 1, inscription passée à
+  `stopped` « Le contact a répondu », la liste des inscrits la montre « a
+  répondu », et **entonnoir 1 réponse = journal filtré 1** ;
+- **6 · garde-fous** : la réponse arrête l'inscription avec son motif,
   l'interdiction d'accroche entre collègues (jalon 54) est toujours sur le fil,
   aucun départ en attente sur une campagne archivée ;
 - `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1056 tests**) verts.
@@ -7758,6 +7767,15 @@ avec son écriture explicite.
 **Une campagne archivée peut être désarchivée sans repartir.** Sa séquence reste
 inactive : c'est délibéré — relancer des envois doit être un geste séparé — mais
 rien à l'écran ne le rappelle au moment de désarchiver.
+
+**Une réponse datée dans la même seconde que son envoi n'entre pas dans
+l'entonnoir.** L'en-tête `Date` d'un message est à la seconde, l'envoi porte des
+millisecondes : une réponse arrivée 400 ms après tombe donc *avant* son propre
+envoi, et `readReplyFacts` l'écarte — à raison, puisque c'est la règle qui
+empêche de compter comme réponse une conversation antérieure (jalon 39). Trouvé
+en écrivant la recette, où l'envoi et la réponse tenaient dans la même seconde.
+Sans conséquence réelle : personne ne répond dans la seconde. À savoir avant de
+conclure qu'un relevé « n'a rien compté ».
 
 **Les envois antérieurs à la migration portent la campagne de leur séquence**,
 déduite après coup. C'est exact tant qu'une séquence n'a jamais changé de
