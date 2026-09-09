@@ -180,6 +180,20 @@ export interface ComposeOutcome {
 export async function composeForCampaign(
   campaignId: string,
   now = new Date(),
+  /**
+   * `"auto"` compose dans la requête en dessous du seuil ; `"background"` rend
+   * la main tout de suite, quel que soit le nombre.
+   *
+   * **Les gestes du parcours prennent `"background"`**, et c'est mesuré : un
+   * brouillon demande un appel au modèle, soit quelques secondes, et trois
+   * collègues d'une même maison se composent **l'un après l'autre** — la règle
+   * du jalon 53 interdit de reprendre l'accroche du voisin, ce qui suppose de
+   * l'avoir déjà écrite. Trois brouillons, c'est donc une vingtaine de secondes
+   * de travail réel. Les attendre dans la requête ferait tourner un sablier
+   * tout ce temps sur un clic qui, lui, a déjà tout déclenché. On rend la main,
+   * et la file se remplit sous les yeux.
+   */
+  mode: "auto" | "background" = "auto",
 ): Promise<ComposeOutcome> {
   const plan = await planComposition(campaignId, now);
   const base = {
@@ -194,7 +208,7 @@ export async function composeForCampaign(
   const sequenceId = await sequenceOf(campaignId);
   if (sequenceId === null) return { ...base, composed: 0, background: false };
 
-  if (!plan.estimate.background) {
+  if (mode === "auto" && !plan.estimate.background) {
     const report = await composeDepartures(now, { sequenceId });
     return { ...base, composed: report.composed, background: false };
   }
@@ -213,6 +227,29 @@ export async function composeForCampaign(
 
   void runInBackground(job.id, sequenceId, now);
   return { ...base, composed: 0, background: true };
+}
+
+/**
+ * Composer après un enregistrement de séquence — **le geste qui manquait**.
+ *
+ * L'écran des étapes est monté dans la carte de campagne (jalon 54) : y cliquer
+ * « Enregistrer » est le moment où l'on écrit la consigne et où la campagne
+ * devient prête. C'était pourtant le seul geste du parcours qui ne composait
+ * pas.
+ *
+ * Une séquence sans campagne — il n'en existe plus depuis le jalon 54, mais le
+ * schéma l'autorise — ne compose pas : elle n'a pas d'écran d'où la relire.
+ */
+export async function composeAfterSave(
+  sequenceId: string,
+  now = new Date(),
+): Promise<ComposeOutcome | null> {
+  const sequence = await prisma.emailSequence.findUnique({
+    where: { id: sequenceId },
+    select: { campaignId: true },
+  });
+  if (sequence?.campaignId == null) return null;
+  return composeForCampaign(sequence.campaignId, now, "background");
 }
 
 async function sequenceOf(campaignId: string): Promise<string | null> {

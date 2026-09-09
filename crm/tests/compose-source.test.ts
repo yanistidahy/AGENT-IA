@@ -88,6 +88,37 @@ describe("la portée est un paramètre, pas une seconde fonction", () => {
   });
 });
 
+describe("« Enregistrer » compose, et c'est tout l'objet du jalon", () => {
+  it("l'enregistrement d'une séquence compose pour sa campagne", () => {
+    // C'était le seul geste du parcours qui ne composait pas : on
+    // enregistrait, la file restait vide, et il fallait trouver un second
+    // bouton ou attendre le lendemain.
+    const route = sourceOf("app/api/sequences-email/route.ts");
+    expect(route).toContain("composeAfterSave");
+    const post = route.slice(route.indexOf("export async function POST"), route.indexOf("export async function PUT"));
+    expect(post).toContain("composeAfterSave");
+    expect(post).toContain("composition");
+  });
+
+  it("l'inscription compose aussi, sans second geste", () => {
+    const route = sourceOf("app/api/campaigns/route.ts");
+    const put = route.slice(route.indexOf("export async function PUT"), route.indexOf("export async function DELETE"));
+    expect(put).toContain("composeForCampaign");
+  });
+
+  it("une campagne naît avec une séquence active, sinon rien ne composerait", () => {
+    // `active: false` ne protégeait de rien — un départ ne part que sur un clic
+    // — et empêchait la composition qu'on venait de demander.
+    const campaigns = sourceOf("lib/api/campaigns.ts");
+    const create = campaigns.slice(
+      campaigns.indexOf("export async function createCampaign"),
+      campaigns.indexOf("export const updateCampaignSchema"),
+    );
+    expect(create).toMatch(/active:\s*true/);
+    expect(create).not.toMatch(/active:\s*false/);
+  });
+});
+
 describe("le coût est annoncé avant d'être dépensé", () => {
   it("la route sépare le plan du travail", () => {
     const route = sourceOf("app/api/campaigns/compose/route.ts");

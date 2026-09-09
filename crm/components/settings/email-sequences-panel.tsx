@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import { AUTO_MIN_VALIDATED, MAX_STEPS } from "@/lib/domain/sequence-rules";
@@ -35,7 +36,17 @@ export interface SequenceView {
   unlock: { unlocked: boolean; validated: number; replies: number; reason: string };
 }
 
-function isPayload(value: unknown): value is { sequences: SequenceView[] } {
+/** Ce que l'enregistrement compose, quand la séquence appartient à une campagne. */
+interface SavedComposition {
+  readonly composed: number;
+  readonly background: boolean;
+  readonly drafts: number;
+  readonly blocked: string | null;
+}
+
+function isPayload(
+  value: unknown,
+): value is { sequences: SequenceView[]; composition?: SavedComposition | null } {
   return typeof value === "object" && value !== null && "sequences" in value;
 }
 
@@ -60,6 +71,8 @@ export function EmailSequencesPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  /** Vrai dès qu'un enregistrement a rempli la file : on renvoie l'y lire. */
+  const [queued, setQueued] = useState(false);
 
   const patch = (id: string, change: Partial<SequenceView>) =>
     setSequences((current) =>
@@ -90,7 +103,23 @@ export function EmailSequencesPanel({
     setBusy(false);
     if (result.ok) {
       setSequences(result.data.sequences);
-      setDone("Séquence enregistrée.");
+      // **Enregistrer compose.** Le message dit ce que le clic vient de
+      // produire, et où le lire : « Séquence enregistrée » seul laissait croire
+      // qu'il ne s'était rien passé d'autre — ce qui était vrai, et c'était le
+      // défaut.
+      const composed = result.data.composition ?? null;
+      setDone(
+        composed === null
+          ? "Séquence enregistrée."
+          : composed.background
+            ? `Séquence enregistrée · ${composed.drafts} départs en préparation — la file se remplit à mesure.`
+            : composed.composed > 0
+              ? `Séquence enregistrée · ${composed.composed} départ${composed.composed > 1 ? "s" : ""} composé${composed.composed > 1 ? "s" : ""}.`
+              : `Séquence enregistrée · aucun départ composé. ${composed.blocked ?? ""}`,
+      );
+      if (composed !== null && (composed.composed > 0 || composed.background)) {
+        setQueued(true);
+      }
     } else setError(result.message);
   };
 
@@ -258,6 +287,14 @@ export function EmailSequencesPanel({
       {done !== null && (
         <p className="rounded-control border border-[#BEE3DA] bg-win-l px-3 py-2 text-[12.5px] text-win-d">
           {done}
+          {queued && (
+            <>
+              {" "}
+              <Link href="/departs" className="font-medium underline">
+                Ouvrir « Départs du jour »
+              </Link>
+            </>
+          )}
         </p>
       )}
 

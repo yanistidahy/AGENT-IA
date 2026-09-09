@@ -2,6 +2,7 @@ import { listDepartures } from "@/lib/api/departures";
 import { readCompositionJobs } from "@/lib/api/compose-now";
 import { DeparturesView, type Departure } from "@/components/sequences/departures-view";
 import { CompositionBanner } from "@/components/sequences/composition-banner";
+import { CompositionRefresh } from "@/components/sequences/composition-refresh";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ export default async function DepartsPage() {
 
   return (
     <>
+      <CompositionRefresh running={jobs.some((job) => job.running)} />
       <CompositionBanner jobs={jobs} />
       <DeparturesView initial={initial} />
     </>

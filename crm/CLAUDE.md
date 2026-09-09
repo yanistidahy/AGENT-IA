@@ -359,7 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
-| 56 | **Composer sans attendre demain** — départs de l'étape 1 à l'enregistrement, coût annoncé avant le clic, arrière-plan au-delà de dix, planificateur diagnostiqué | **livré, à valider** |
+| 56 | **« Enregistrer » compose** — la file se remplit au clic, sans second geste ni passage quotidien ; coût annoncé, avancement à l'écran, planificateur diagnostiqué | **livré, à valider** |
 | 55 | **Une campagne au quotidien** — archiver contre supprimer, sélection cochée qui survit au filtre, liste des inscrits, campagne nommée dans /emails | **livré, à valider** |
 | 54 | **Trois boîtes et /campagnes** — SMTP/IMAP/signature par boîte, secret par slug, relevé multi-boîtes, campagnes avec sélection /contacts et entonnoir | **livré, à valider** |
 | 53 | **Plusieurs personnes par maison** — société dédoublonnée sur les accents, collègues sur la fiche, notes d'angle par rôle, note pour Alex, avertissement collègue | **livré, à valider** |
@@ -7949,12 +7949,92 @@ nommant.
 jalon, au-dessus de la limite de 250. Deux extractions (`compose-action.tsx`,
 `campaign-delete.tsx`) le ramènent à **220**.
 
+### Le défaut qui restait, et sa correction
+
+La première version de ce jalon composait à l'**inscription** et derrière un
+bouton « Composer les départs ». Elle ne composait **pas** au geste que l'on
+fait réellement : « Enregistrer », dans l'éditeur d'étapes monté au sein de la
+carte de campagne. On enregistrait, la file restait vide, et il fallait trouver
+un second bouton — c'est-à-dire exactement le défaut que le jalon prétendait
+fermer.
+
+Deux verrous, tous deux fermés :
+
+1. **`POST /api/sequences-email` ne composait pas.** C'est pourtant là qu'on
+   écrit la consigne d'une étape, donc le moment où la campagne devient prête.
+   Elle appelle désormais `composeAfterSave`, qui retrouve la campagne de la
+   séquence et compose pour elle ;
+2. **une campagne naissait avec une séquence `active: false`** (jalon 54), si
+   bien que même la composition à l'inscription répondait « séquence inactive »
+   et n'écrivait rien. Or `active` n'a jamais été le garde-fou qui protège de
+   l'envoi : **ce qui protège, c'est qu'un départ ne part que sur un clic**, et
+   que le mode automatique garde son double verrou et ne couvre jamais la
+   première étape. Une campagne naît donc active, et la migration
+   `27_campaign_sequences_active` répare les campagnes existantes — **sauf les
+   archivées**, dont la séquence a été désactivée délibérément.
+
+Ce qui empêche encore d'écrire n'importe quoi n'a pas bougé : **aucune étape
+sans consigne ne compose**, et la cause est dite.
+
+### Le clic rend la main, la file se remplit sous les yeux
+
+Composer trois brouillons, c'est trois appels au modèle — et **trois collègues
+d'une même maison se composent l'un après l'autre**, parce que la règle du jalon
+53 interdit de reprendre l'accroche du voisin, ce qui suppose de l'avoir déjà
+écrite. Une vingtaine de secondes de travail réel, donc.
+
+Les attendre dans la requête ferait tourner un sablier pendant tout ce temps sur
+un clic qui a déjà tout déclenché. Les gestes du parcours — « Enregistrer » et
+« Inscrire » — composent donc **en arrière-plan systématiquement** : la main est
+rendue immédiatement, et « Départs du jour » se rafraîchit tout seul toutes les
+trois secondes tant qu'un travail tourne (`CompositionRefresh`), en affichant
+« 2 sur 3 préparés » et sa barre.
+
+Le rafraîchissement **s'arrête de lui-même** dès que la composition est finie :
+une page qui clignote pendant qu'on la lit rendrait la validation en lot
+désagréable.
+
+### Le substitut mentait sur le temps
+
+Mesurer « le temps entre le clic et les brouillons » contre un substitut qui
+répond instantanément donnait **317 ms** — un chiffre qu'on ne reverrait jamais
+en production. `scripts/mock-anthropic.ts` accepte désormais `MOCK_DELAY`, et la
+mesure est faite à **8 s par appel**, la latence d'un vrai brouillon. C'est la
+discipline du jalon 43 : le substitut doit reproduire ce que la production nous
+a appris, y compris ce qui est désagréable.
+
+### Jalon 56 — le parcours, chronométré
+
+Par **HTTP contre le serveur standalone de production**, avec une session, donc
+par les mêmes routes que le navigateur, middleware compris — appeler les
+services en direct sauterait précisément l'endroit où le défaut vivait :
+
+| Étape | Mesure |
+|---|---|
+| campagne créée, séquence **active** | 200 |
+| trois contacts inscrits | 3 — et la cause du silence dite : « aucune étape ne porte de consigne » |
+| **« Enregistrer » rend la main** | **76 ms** |
+| premier brouillon lisible dans la file | **8,3 s** |
+| **les trois lisibles** | **24,8 s** |
+| envois | **0** |
+| la page `/departs` les rend côté serveur | Nina, Paul, Rita |
+
+Le plancher est physique : trois appels au modèle, en série parce que ce sont
+des collègues d'une même maison.
+
 ### Jalon 56 — ce qui n'est pas vérifié
 
-**Rien n'a été cliqué dans un navigateur.** La confirmation qui porte le prix,
-la bannière de préparation et sa barre d'avancement sont vérifiées par leurs
-services et par le rendu, pas par une frappe — cette suite n'a pas de DOM. C'est
-le premier point à regarder sur le déploiement.
+**Rien n'a été cliqué dans un navigateur.** Le parcours est exercé par HTTP sur
+le serveur de production, ce qui couvre les routes, le middleware et le rendu
+serveur de `/departs` — mais le rafraîchissement automatique de la file est du
+code client, vérifié par lecture et non par une frappe.
+
+**La composition reste séquentielle, y compris entre maisons différentes.** Elle
+doit l'être **au sein** d'une maison (règle des accroches, jalon 53) ; elle
+pourrait tourner en parallèle d'une maison à l'autre, ce qui diviserait
+l'attente sur une campagne large. Ce n'est pas fait : le cas mesuré ici — trois
+collègues d'une même société — n'en aurait tiré aucun gain, et paralléliser des
+appels facturés demande son propre garde-fou.
 
 **L'arrière-plan vit dans le processus du serveur.** Un redéploiement ou un
 redémarrage de conteneur au milieu d'une composition la coupe : les brouillons

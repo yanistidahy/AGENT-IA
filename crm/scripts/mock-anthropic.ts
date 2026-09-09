@@ -43,6 +43,22 @@ const PORT = Number(process.argv[2] ?? 3399);
  */
 const DUMP = process.env.MOCK_DUMP ?? "";
 
+/**
+ * Latence simulée, en millisecondes (`MOCK_DELAY`).
+ *
+ * Un substitut qui répond instantanément **ment sur le temps** : il ferait
+ * passer une composition de dix brouillons pour un aller-retour immédiat, alors
+ * qu'un vrai appel demande plusieurs secondes. Mesurer « le temps entre le clic
+ * et les brouillons » contre une réponse instantanée donnerait un chiffre qu'on
+ * ne reverrait jamais en production. C'est la même discipline qu'au jalon 43 :
+ * le substitut doit reproduire ce que la production nous a appris, y compris
+ * ce qui est désagréable.
+ */
+const DELAY = Number.parseInt(process.env.MOCK_DELAY ?? "0", 10) || 0;
+
+const wait = (ms: number): Promise<void> =>
+  ms <= 0 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, ms));
+
 /** Paramètres retirés sur Claude Opus 5 : la vraie API répond 400. */
 const REMOVED_PARAMS = ["budget_tokens", "temperature", "top_p", "top_k"] as const;
 
@@ -238,7 +254,7 @@ function draftAnswer(brief: string): string {
 createServer((req, res) => {
   let raw = "";
   req.on("data", (chunk) => (raw += chunk));
-  req.on("end", () => {
+  req.on("end", () => { void (async () => {
     let body: Body;
     try {
       body = JSON.parse(raw) as Body;
@@ -274,6 +290,8 @@ createServer((req, res) => {
       );
       return;
     }
+
+    await wait(DELAY);
 
     const messages = body.messages as { content?: unknown }[];
     /**
@@ -354,7 +372,7 @@ createServer((req, res) => {
         usage: { input_tokens: estimatedInput(body), output_tokens: Math.ceil(text.length / 4) },
       }),
     );
-  });
+  })(); });
 }).listen(PORT, () => {
   console.log(`Substitut Anthropic sur http://127.0.0.1:${PORT} — valide la forme des outils.`);
 });

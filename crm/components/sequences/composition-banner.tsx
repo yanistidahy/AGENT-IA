@@ -36,10 +36,10 @@ export function CompositionBanner({ jobs }: { readonly jobs: readonly Compositio
             <>
               <p>
                 <strong className="font-semibold">
-                  {job.total} départ{job.total > 1 ? "s" : ""} en préparation
+                  {job.done} sur {job.total} préparé{job.total > 1 ? "s" : ""}
                 </strong>{" "}
-                — {job.done} sur {job.total} écrit{job.done > 1 ? "s" : ""}. La file se remplit à
-                mesure ; rechargez pour voir la suite. Rien n'est envoyé.
+                — la composition tourne, la file se remplit sous vos yeux. Chaque brouillon est un
+                appel au modèle : comptez quelques secondes par personne. Rien n'est envoyé.
               </p>
               {/* Barre en SVG écrit à la main, comme tous les graphiques du
                   produit : aucune librairie, aucun JavaScript envoyé. */}
