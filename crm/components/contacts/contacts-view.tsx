@@ -18,7 +18,7 @@ import { CONTACT_COLUMNS, DEFAULT_COLUMNS, LOCKED_COLUMN } from "./contact-table
 import { usePersistedSet } from "@/lib/client/persisted";
 import { ContactDrawer } from "./contact-drawer";
 import type { Colleague } from "@/lib/api/account";
-import { CampaignBanner } from "./campaign-banner";
+import { CampaignBanner, useCampaignSelection } from "./campaign-banner";
 import { ContactForm, type ContactFormOptions } from "./contact-form";
 import { ContactsTable, type ContactSortKey } from "./contacts-table";
 import { ImportDialog } from "./import-dialog";
@@ -43,6 +43,8 @@ interface ContactsViewProps extends ContactFormOptions {
   readonly colleagues: readonly Colleague[];
   /** La campagne dont on choisit les contacts, quand on arrive par /campagnes. */
   readonly campaignTarget: { readonly id: string; readonly name: string } | null;
+  /** Les fiches déjà inscrites à cette campagne : marquées, jamais recochables. */
+  readonly enrolledIds: readonly string[];
   /** Valeurs distinctes par colonne, calculées côté serveur. */
   readonly facets: Readonly<Record<string, readonly FacetValue[]>>;
   /** Total avant filtres de colonne, pour le « 54 sur 138 ». */
@@ -67,6 +69,7 @@ export function ContactsView({
   focused,
   colleagues,
   campaignTarget,
+  enrolledIds,
   reminderCounts,
   account,
   dm,
@@ -120,6 +123,10 @@ export function ContactsView({
   // est partageable, et le bouton « précédent » referme le tiroir.
   const fiche = params.get("fiche");
   const societe = params.get("societe");
+  // La sélection de campagne : rechargée depuis sessionStorage à chaque montage,
+  // donc à chaque changement de filtre — filtrer navigue.
+  const selection = useCampaignSelection(campaignTarget?.id ?? null);
+  const enrolled = new Set(enrolledIds);
   const selected =
     fiche === null ? null : (contacts.find((c) => c.id === fiche) ?? focused);
 
@@ -167,7 +174,13 @@ export function ContactsView({
       </header>
 
       {campaignTarget !== null && (
-        <CampaignBanner campaign={campaignTarget} params={params} shown={contacts.length} />
+        <CampaignBanner
+          campaign={campaignTarget}
+          params={params}
+          shown={contacts.length}
+          selected={selection.selected}
+          onCleared={selection.reset}
+        />
       )}
 
       {/*
@@ -240,6 +253,16 @@ export function ContactsView({
           setParam({ sort: key, dir: sortParam === key && dir === "asc" ? "desc" : "asc" })
         }
         onSelect={(contact) => setParam({ fiche: contact.id })}
+        selection={
+          campaignTarget === null
+            ? undefined
+            : {
+                selected: selection.selected,
+                enrolled,
+                onToggle: selection.toggle,
+                onToggleAll: selection.toggleAll,
+              }
+        }
         filter={followUp !== null && isContactFilter(followUp) ? followUp : null}
         facets={facets}
         filters={filters}

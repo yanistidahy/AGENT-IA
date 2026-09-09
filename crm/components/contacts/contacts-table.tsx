@@ -39,6 +39,21 @@ interface ContactsTableProps {
   readonly onFilter: (key: string, filter: ColumnFilter | null) => void;
   /** Clés des colonnes à rendre, dans l'ordre de `CONTACT_COLUMNS`. */
   readonly visible: ReadonlySet<string>;
+  /**
+   * Mode sélection : une case par ligne, plus une en tête.
+   *
+   * Absent (le cas ordinaire), le tableau ne rend aucune case — la sélection
+   * n'existe que quand on compose une campagne, et une colonne de cases
+   * permanente serait une invitation à un geste sans destination.
+   */
+  readonly selection?: {
+    readonly selected: ReadonlySet<string>;
+    /** Déjà inscrits : montrés comme tels, jamais re-sélectionnables. */
+    readonly enrolled: ReadonlySet<string>;
+    readonly onToggle: (id: string) => void;
+    /** Coche ou décoche **tout le filtre courant**, hors déjà inscrits. */
+    readonly onToggleAll: (ids: readonly string[], checked: boolean) => void;
+  };
 }
 
 function specFor(key: string | null): ColumnSpec | null {
@@ -58,9 +73,16 @@ export function ContactsTable({
   filters,
   onFilter,
   visible,
+  selection,
 }: ContactsTableProps) {
   const now = new Date();
   const columns = CONTACT_COLUMNS.filter((column) => visible.has(column.key));
+  // Les fiches que la case d'en-tête peut réellement cocher : celles qui sont
+  // affichées **et** pas déjà inscrites.
+  const selectableIds =
+    selection === undefined
+      ? []
+      : contacts.filter((contact) => !selection.enrolled.has(contact.id)).map((contact) => contact.id);
 
   if (contacts.length === 0) {
     return (
@@ -120,6 +142,29 @@ export function ContactsTable({
       <table className="w-full border-collapse">
         <thead>
           <tr>
+            {selection !== undefined && (
+              <th
+                scope="col"
+                className="w-11 border-b border-line bg-surface-2 px-3 py-2.5 text-left"
+              >
+                {/*
+                  Coche **tout ce que le filtre courant affiche**, jamais toute
+                  la base : ce qu'on voit est ce qu'on sélectionne. Les fiches
+                  déjà inscrites sont hors du compte des deux côtés — les
+                  recocher ne ferait rien, et une case qui ne fait rien laisse
+                  croire qu'elle a fait quelque chose.
+                */}
+                <input
+                  type="checkbox"
+                  aria-label="Sélectionner toutes les fiches affichées"
+                  className="h-5 w-5"
+                  checked={selectableIds.length > 0 && selectableIds.every((id) => selection.selected.has(id))}
+                  onChange={(event) =>
+                    selection.onToggleAll(selectableIds, event.target.checked)
+                  }
+                />
+              </th>
+            )}
             {columns.map((column) => {
               const spec = specFor(column.filterKey);
               return (
@@ -169,6 +214,31 @@ export function ContactsTable({
               }}
               className="cursor-pointer transition-colors hover:bg-surface-2 focus-visible:bg-surface-2"
             >
+              {selection !== undefined && (
+                <td
+                  className="border-b border-line-2 px-3 py-3"
+                  // Cocher n'ouvre pas la fiche : deux gestes distincts sur la
+                  // même ligne, et c'est le clic sur la case qui gagne.
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  {selection.enrolled.has(contact.id) ? (
+                    <span
+                      title="Déjà inscrite à cette campagne"
+                      className="font-mono text-[11px] text-win-d"
+                    >
+                      ✓ inscrite
+                    </span>
+                  ) : (
+                    <input
+                      type="checkbox"
+                      aria-label={`Sélectionner ${contactTitle(contact)}`}
+                      className="h-5 w-5"
+                      checked={selection.selected.has(contact.id)}
+                      onChange={() => selection.onToggle(contact.id)}
+                    />
+                  )}
+                </td>
+              )}
               {columns.map((column) => (
                 <td
                   key={column.key}

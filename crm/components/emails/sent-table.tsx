@@ -140,13 +140,28 @@ export function SentTable({ list, query }: { readonly list: SentList; readonly q
                     <span className="min-w-0 truncate" title={row.subject}>
                       {row.subject}
                     </span>
-                    {row.sequence !== "" && (
-                      <span
-                        className="shrink-0 rounded-full bg-brand-l px-1.5 py-[1px] text-[10px] font-medium text-brand-d"
-                        title={`Séquence « ${row.sequence} », étape ${row.step ?? "?"}`}
+                    {/* La pastille nomme la **campagne** et l'étape : « seq. 2 »
+                        ne disait pas de quoi, et c'est la question qu'on se pose
+                        en relisant un journal. Elle mène au journal filtré sur
+                        cette campagne — les mêmes lignes que son entonnoir. */}
+                    {row.campaignId !== "" ? (
+                      <Link
+                        href={`/emails?campagne=${encodeURIComponent(row.campaignId)}`}
+                        scroll={false}
+                        className="shrink-0 rounded-full bg-brand-l px-1.5 py-[1px] text-[10px] font-medium text-brand-d hover:underline"
+                        title={`Campagne « ${row.campaign} », étape ${row.step ?? "?"}`}
                       >
-                        seq. {row.step ?? "?"}
-                      </span>
+                        {row.campaign} · {row.step ?? "?"}
+                      </Link>
+                    ) : (
+                      row.sequence !== "" && (
+                        <span
+                          className="shrink-0 rounded-full bg-brand-l px-1.5 py-[1px] text-[10px] font-medium text-brand-d"
+                          title={`Séquence « ${row.sequence} », étape ${row.step ?? "?"}`}
+                        >
+                          seq. {row.step ?? "?"}
+                        </span>
+                      )
                     )}
                     {row.copyFailed && (
                       <span

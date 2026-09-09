@@ -97,6 +97,9 @@ export interface RecordSendInput {
   readonly sequenceId: string;
   readonly sequenceName: string;
   readonly sequenceStep: number | null;
+  /** La campagne, déduite de la séquence — voir `campaignOfSequence`. */
+  readonly campaignId: string;
+  readonly campaignName: string;
   readonly copyStatus: "copied" | "failed" | "disabled" | "unconfigured";
   readonly copyError: string;
 }
@@ -127,6 +130,8 @@ export async function recordSend(input: RecordSendInput, now: Date): Promise<str
         sequenceId: input.sequenceId,
         sequenceName: input.sequenceName,
         sequenceStep: input.sequenceStep,
+        campaignId: input.campaignId,
+        campaignName: input.campaignName,
         copyStatus: input.copyStatus,
         copyError: input.copyError,
       },
@@ -248,6 +253,9 @@ export async function purgeOpens(now = new Date()): Promise<number> {
 
 export interface ContactEmail {
   readonly id: string;
+  /** La campagne d'où part ce message, s'il en vient une. Vide sinon. */
+  readonly campaignId: string;
+  readonly campaignName: string;
   readonly sequenceName: string;
   readonly sequenceStep: number | null;
   readonly sentAt: Date;
@@ -267,6 +275,8 @@ export async function listContactEmails(contactId: string): Promise<ContactEmail
     orderBy: { sentAt: "desc" },
     select: {
       id: true,
+      campaignId: true,
+      campaignName: true,
       sequenceName: true,
       sequenceStep: true,
       sentAt: true,

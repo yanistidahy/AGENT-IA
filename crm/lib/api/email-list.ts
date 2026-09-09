@@ -36,6 +36,7 @@ export const SENT_SORTS = [
   "ouvertures",
   "signataire",
   "sequence",
+  "campagne",
 ] as const;
 export type SentSort = (typeof SENT_SORTS)[number];
 
@@ -47,6 +48,7 @@ export interface SentQuery {
   readonly dir?: "asc" | "desc";
   readonly signatory?: string;
   readonly sequence?: string;
+  readonly campaign?: string;
   readonly state?: SentState;
 }
 
@@ -74,6 +76,10 @@ export function parseSentQuery(raw: Record<string, string | string[] | undefined
     dir: dir === "asc" || dir === "desc" ? dir : undefined,
     signatory: one("signataire"),
     sequence: one("sequence"),
+    // `campagne` porte l'**identifiant**, pas le nom : un renommage ne doit pas
+    // casser un lien mis en favori, et deux campagnes peuvent porter le même
+    // nom. Le libellé affiché vient de la ligne d'envoi.
+    campaign: one("campagne"),
     state: SENT_STATES.find((candidate) => candidate === state),
   };
 }
@@ -92,6 +98,8 @@ export interface SentRow {
   readonly signatory: string;
   readonly sequence: string;
   readonly step: number | null;
+  readonly campaignId: string;
+  readonly campaign: string;
   readonly copyFailed: boolean;
 }
 
@@ -101,6 +109,8 @@ export interface SentList {
   readonly total: number;
   readonly signatories: readonly string[];
   readonly sequences: readonly string[];
+  /** Les campagnes présentes dans la fenêtre, pour le sélecteur. */
+  readonly campaigns: ReadonlyArray<{ readonly id: string; readonly name: string }>;
 }
 
 function windowStart(now: Date): Date {
@@ -124,6 +134,8 @@ export async function readSentEmails(query: SentQuery, now = new Date()): Promis
       signatoryName: true,
       sequenceName: true,
       sequenceStep: true,
+      campaignId: true,
+      campaignName: true,
       copyStatus: true,
       contact: { select: { firstName: true, lastName: true, company: { select: { name: true } } } },
     },
@@ -163,6 +175,8 @@ export async function readSentEmails(query: SentQuery, now = new Date()): Promis
       signatory: signatoryName(send.signatoryName),
       sequence: send.sequenceName.trim(),
       step: send.sequenceStep,
+      campaignId: send.campaignId,
+      campaign: send.campaignName.trim(),
       copyFailed: send.copyStatus === "failed",
     };
   });
@@ -174,16 +188,31 @@ export async function readSentEmails(query: SentQuery, now = new Date()): Promis
     .filter((name) => name !== "")
     .sort((a, b) => a.localeCompare(b));
 
+  const campaigns = [
+    ...new Map(
+      rows.filter((row) => row.campaignId !== "").map((row) => [row.campaignId, row.campaign]),
+    ),
+  ]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   const filtered = rows.filter((row) => {
     if (query.signatory !== undefined && row.signatory !== query.signatory) return false;
     if (query.sequence !== undefined && row.sequence !== query.sequence) return false;
+    if (query.campaign !== undefined && row.campaignId !== query.campaign) return false;
     if (query.state === "repondu" && !row.replied) return false;
     if (query.state === "sans-reponse" && row.replied) return false;
     if (query.state === "ouvert" && row.openedAt === null) return false;
     return true;
   });
 
-  return { rows: sortRows(filtered, query), total: rows.length, signatories, sequences };
+  return {
+    rows: sortRows(filtered, query),
+    total: rows.length,
+    signatories,
+    sequences,
+    campaigns,
+  };
 }
 
 function sortRows(rows: readonly SentRow[], query: SentQuery): SentRow[] {
@@ -207,6 +236,10 @@ function sortRows(rows: readonly SentRow[], query: SentQuery): SentRow[] {
         return a.signatory.localeCompare(b.signatory);
       case "sequence":
         return `${a.sequence}${a.step ?? ""}`.localeCompare(`${b.sequence}${b.step ?? ""}`);
+      // Campagne puis étape : trier par campagne pour lire une campagne dans le
+      // désordre de ses étapes n'apprendrait rien.
+      case "campagne":
+        return `${a.campaign}${a.step ?? ""}`.localeCompare(`${b.campaign}${b.step ?? ""}`);
       default:
         return a.sentAt.getTime() - b.sentAt.getTime();
     }

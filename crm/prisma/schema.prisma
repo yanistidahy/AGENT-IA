@@ -848,6 +848,13 @@ model EmailSend {
   sequenceName String @default("")
   sequenceStep Int?
 
+  /// La campagne qui a produit ce message, **nommée sur place** pour la même
+  /// raison que la séquence : /emails doit pouvoir dire « ceci vient de
+  /// « Prospection SAV — septembre » » même après un renommage, et une campagne
+  /// supprimée (donc sans envoi, jalon 55) ne laisse de toute façon rien ici.
+  campaignId   String @default("")
+  campaignName String @default("")
+
   /// Les réponses détectées comme rattachées à ce message.
   replies EmailReply[]
 
@@ -1153,6 +1160,15 @@ model Campaign {
   selection String @default("")
 
   createdAt DateTime @default(now())
+
+  /// Quand la campagne a été archivée. `null` = active.
+  ///
+  /// **Archiver n'est pas supprimer** (règle du jalon 47, transposée) : une
+  /// campagne archivée sort de la liste active et cesse d'envoyer, mais ses
+  /// envois, ses ouvertures et ses réponses restent des faits — ce sont eux que
+  /// /emails compte. Supprimer une campagne qui a envoyé ferait mentir ces
+  /// chiffres, et c'est refusé.
+  archivedAt DateTime?
 
   sequence EmailSequence?
 

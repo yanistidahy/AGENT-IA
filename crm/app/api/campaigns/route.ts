@@ -3,6 +3,7 @@ import { readJson } from "@/lib/api/request";
 import {
   createCampaign,
   createCampaignSchema,
+  deleteCampaign,
   enrollSelection,
   listCampaigns,
   updateCampaign,
@@ -66,6 +67,8 @@ const enrollSchema = z.object({
   campaignId: z.string().min(1),
   /** La query string de /contacts qui décrit la sélection. Vide = tout le vivier. */
   selection: z.string().max(4000),
+  /** Les fiches cochées. Prioritaires sur le filtre — voir `enrollSelection`. */
+  contactIds: z.array(z.string().min(1)).max(2000).optional(),
 });
 
 export async function PUT(request: Request) {
@@ -76,10 +79,34 @@ export async function PUT(request: Request) {
   if (!parsed.success) return invalidPayload(parsed.error);
 
   try {
-    const result = await enrollSelection(parsed.data.campaignId, parsed.data.selection);
+    const result = await enrollSelection(
+      parsed.data.campaignId,
+      parsed.data.selection,
+      parsed.data.contactIds,
+    );
     if (!result.ok) return badRequest(result.message);
     return jsonOk({ outcome: result.outcome, campaigns: await listCampaigns() });
   } catch (error) {
     return serverError("PUT /api/campaigns", error);
+  }
+}
+
+/**
+ * Supprime une campagne — **refusé dès qu'elle a envoyé**.
+ *
+ * Le verdict est relu au moment d'écrire, dans le service : la confirmation
+ * peut rester ouverte pendant qu'un départ part, et c'est exactement l'instant
+ * où la campagne cesse d'être supprimable (leçon du jalon 47).
+ */
+export async function DELETE(request: Request) {
+  const id = new URL(request.url).searchParams.get("id") ?? "";
+  if (id === "") return badRequest("Campagne non désignée.");
+
+  try {
+    const result = await deleteCampaign(id);
+    if (!result.ok) return badRequest(result.message);
+    return jsonOk({ campaigns: await listCampaigns() });
+  } catch (error) {
+    return serverError("DELETE /api/campaigns", error);
   }
 }
