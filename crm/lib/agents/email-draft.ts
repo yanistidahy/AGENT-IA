@@ -16,6 +16,7 @@ import { formatDate } from "@/lib/format";
 import { enforceSignature, sanitizeSubject } from "@/lib/domain/email-format";
 import { signatureBlock } from "./prompts/company";
 import { demoTarget, demoTargetRule } from "@/lib/domain/demo-target";
+import { sizeFact, teamMentionRule } from "@/lib/domain/team-mention";
 import { angleFor } from "@/lib/api/role-angles";
 import {
   readColleagueWarning,
@@ -312,6 +313,12 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
   // Elle est annoncée comme telle et **séparée des Notes** : celles-ci portent
   // le déversoir de l'import (lignes `SITE :`, `N° :`, titres de page), et les
   // mêler ferait prendre un titre d'onglet pour une information sur la marque.
+  // La taille de la société, **sous ses deux formes** — renseignée ou non.
+  // C'est un fait du dossier, jamais une permission : seule la note écrite à la
+  // main autorise à parler d'équipe (voir `teamMentionRule`).
+  lines.push("");
+  lines.push(sizeFact(contact.company?.size ?? ""));
+
   const alexNote = contact.alexNote.trim();
   if (alexNote !== "") {
     lines.push("");
@@ -326,6 +333,7 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
 
   return {
     dossier: lines.join("\n"),
+    alexNote,
     target,
     dmSent: dm !== null,
     greeting: greetingRule(contact),
@@ -340,6 +348,8 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
  */
 interface ContextResult {
   readonly dossier: string;
+  /** La note écrite à la main : elle seule autorise à parler d'équipe. */
+  readonly alexNote: string;
   readonly target: ReturnType<typeof demoTarget>;
   readonly dmSent: boolean;
   /** L'appel à écrire, décidé sur la donnée — jamais laissé au modèle. */
@@ -378,6 +388,8 @@ ${demoTargetRule(context.target)}
 ${dmRule(context.dmSent)}
 
 ${context.angleRule}
+
+${teamMentionRule(context.alexNote)}
 
 ${colleagueRule(context.colleague)}
 

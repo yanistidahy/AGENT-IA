@@ -17,6 +17,8 @@ import {
   stopsEnrollment,
 } from "../domain/sequence-rules";
 import { contactTitle } from "../domain/contact-identity";
+import { listSignatories, pickSignatory } from "./signatories";
+import { sanitizeSubject } from "../domain/email-format";
 
 /**
  * « Départs du jour » : la file du matin, et ce qu'on en fait.
@@ -589,4 +591,114 @@ export async function removeFromSequence(id: string, now = new Date()): Promise<
   ]);
 
   return { ok: true, message: "Contact retiré de la séquence." };
+}
+
+/**
+ * Un départ ouvert dans le panneau de rédaction — **sans appeler le modèle**.
+ *
+ * Le brouillon existe déjà : il a été composé et payé. Le rouvrir doit donc
+ * rendre *ce* texte, pas en écrire un second — sans quoi ouvrir une ligne pour
+ * la relire coûterait un appel, et l'on perdrait le brouillon qu'on venait
+ * regarder.
+ *
+ * L'enveloppe est celle du panneau — destinataire, signataires, boîte de la
+ * campagne — pour qu'il n'existe **qu'une seule surface de rédaction**. Le fil
+ * avec Alex, la reprise depuis le texte affiché et le retour en arrière sont
+ * ceux du jalon 34, inchangés.
+ */
+export async function departureDraft(
+  departureId: string,
+): Promise<{ ok: true; draft: DepartureDraft } | { ok: false; message: string }> {
+  const departure = await prisma.sequenceDeparture.findUnique({
+    where: { id: departureId },
+    select: {
+      subject: true,
+      body: true,
+      status: true,
+      step: true,
+      enrollment: {
+        select: {
+          contact: {
+            select: { id: true, firstName: true, lastName: true, email: true, owner: true,
+              company: { select: { name: true } } },
+          },
+          sequence: { select: { name: true, campaign: { select: { mailboxId: true } } } },
+        },
+      },
+    },
+  });
+  if (departure === null) return { ok: false, message: "Ce départ n'existe pas." };
+  if (departure.status !== "pending") {
+    return {
+      ok: false,
+      message: `Ce départ n'est plus en attente (${departure.status}) : il n'y a plus de brouillon à retravailler.`,
+    };
+  }
+
+  const contact = departure.enrollment.contact;
+  const mailboxId = departure.enrollment.sequence.campaign?.mailboxId;
+  const signatories = await listSignatories();
+  const signatory =
+    (mailboxId === undefined || mailboxId === ""
+      ? undefined
+      : signatories.find((entry) => entry.id === mailboxId)) ?? pickSignatory(signatories, contact.owner);
+
+  return {
+    ok: true,
+    draft: {
+      subject: departure.subject,
+      body: departure.body,
+      to: contact.email,
+      contactId: contact.id,
+      contactName: contactTitle(contact),
+      step: departure.step,
+      sequenceName: departure.enrollment.sequence.name,
+      signatories,
+      signatoryId: signatory?.id ?? null,
+    },
+  };
+}
+
+export interface DepartureDraft {
+  readonly subject: string;
+  readonly body: string;
+  readonly to: string;
+  readonly contactId: string;
+  readonly contactName: string;
+  readonly step: number;
+  readonly sequenceName: string;
+  readonly signatories: Awaited<ReturnType<typeof listSignatories>>;
+  readonly signatoryId: string | null;
+}
+
+/**
+ * Enregistre un brouillon retravaillé — **sans l'envoyer, sans le recomposer**.
+ *
+ * La ligne garde son identité `(inscription, étape)`, donc la composition ne
+ * repassera jamais dessus : la contrainte d'unicité qui empêche de composer
+ * deux fois protège aussi le travail qu'on vient de faire à la main.
+ */
+export async function saveDeparture(
+  departureId: string,
+  subject: string,
+  body: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const departure = await prisma.sequenceDeparture.findUnique({
+    where: { id: departureId },
+    select: { status: true },
+  });
+  if (departure === null) return { ok: false, message: "Ce départ n'existe pas." };
+  if (departure.status !== "pending") {
+    return { ok: false, message: "Ce départ n'est plus en attente : il ne peut plus être modifié." };
+  }
+
+  const cleanSubject = sanitizeSubject(subject).trim();
+  if (cleanSubject === "") return { ok: false, message: "L'objet ne peut pas être vide." };
+  if (body.trim() === "") return { ok: false, message: "Le message ne peut pas être vide." };
+
+  await prisma.sequenceDeparture.update({
+    where: { id: departureId },
+    data: { subject: cleanSubject, body },
+  });
+  return { ok: true };
 }

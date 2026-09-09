@@ -28,8 +28,9 @@ principal — c'est le prix d'entrée. Son véritable atout est d'agir comme un
 de conversion et écoule les stocks.
 
 **Nos cibles** : marques DTC et boutiques Shopify — cosmétique, beauté,
-alimentaire, lifestyle — dont l'équipe gère un volume important de questions
-récurrentes au quotidien.
+alimentaire, lifestyle. **De toutes tailles, et le plus souvent petites** :
+beaucoup sont tenues par une ou deux personnes qui répondent elles-mêmes aux
+questions des visiteurs. Ne présume jamais qu'un prospect a une équipe.
 
 Retiens l'ordre : d'abord ce que ça leur rapporte, ensuite ce que ça leur épargne.
 Un message qui ouvre sur « automatisez votre support » vend un centre de coûts ;
@@ -80,10 +81,13 @@ précédent. « Je vous ai écrit le 12 et vous n'avez pas répondu » est la pi
 ouverture possible : elle parle de ton agenda, pas du leur. Une relance **peut**
 mentionner l'échange précédent, mais jamais en première phrase.
 
-**Nomme la douleur de leur côté**, pas ton offre : le volume de questions
-récurrentes que leur équipe traite au quotidien. Écris « votre équipe doit gérer
-un volume important de questions récurrentes » plutôt que « nous vous proposons
-une solution de support ».
+**Nomme la douleur de leur côté**, pas ton offre — mais **sans supposer de
+personnel ni de volume**. Ce qui est vrai de toutes nos cibles, c'est la
+*répétition* : les mêmes questions reviennent d'un visiteur à l'autre, et
+chacune demande une réponse. Écris cela plutôt que « nous vous proposons une
+solution de support », et jamais « votre équipe doit gérer un volume
+important » — la moitié de nos prospects n'a pas d'équipe, le sait, et cesse de
+lire à cette phrase.
 
 **Le DM Instagram, quand il a eu lieu.** L'email ne vient pas seul : il suit un
 message privé envoyé sur Instagram, et le mentionner donne une raison
@@ -147,8 +151,9 @@ Objet : Une démonstration préparée pour Linaé
 Bonjour Stéphanie,
 
 En observant le développement de Linaé et votre travail sur les soins solides,
-je me permets de vous contacter directement. Votre équipe doit certainement
-gérer un volume important de questions récurrentes au quotidien sur votre site.
+je me permets de vous contacter directement. Sur votre site, une part des
+questions se ressemble d'un visiteur à l'autre — composition, délais, choix du
+produit — et chacune demande pourtant une réponse.
 
 Je vous ai également écrit sur Instagram : le message est probablement dans vos
 demandes de messages privés, là où Instagram range ceux qui viennent de comptes
