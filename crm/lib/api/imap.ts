@@ -1,7 +1,7 @@
 import "server-only";
 import { ImapFlow } from "imapflow";
-import { prisma } from "../db";
-import { PASSWORD_ENV, type MailConfig } from "./mail";
+import type { MailConfig } from "./mail";
+import { defaultMailbox, getMailbox, passwordEnvFor } from "./mailboxes";
 
 /**
  * La copie du message envoyé dans le dossier « Envoyés » de la boîte.
@@ -36,24 +36,25 @@ export interface ImapStatus extends ImapConfig {
   readonly missing: readonly string[];
 }
 
-export async function readImapConfig(): Promise<ImapConfig> {
-  const row = await prisma.settings.findUnique({
-    where: { id: "singleton" },
-    select: {
-      imapHost: true,
-      imapPort: true,
-      imapEncryption: true,
-      imapSentMailbox: true,
-      imapCopyEnabled: true,
-    },
-  });
+/**
+ * L'IMAP d'une boîte — la boîte demandée, sinon la boîte par défaut.
+ *
+ * Depuis le jalon 54, l'IMAP appartient à la **boîte** (même adresse, même
+ * secret que son SMTP — jalon 37) et non plus à la ligne de réglages : trois
+ * boîtes, trois dossiers « Envoyés », trois relevés.
+ */
+export async function readImapConfig(mailboxId?: string): Promise<ImapConfig> {
+  const mailbox =
+    mailboxId === undefined || mailboxId === ""
+      ? await defaultMailbox()
+      : await getMailbox(mailboxId);
 
   return {
-    host: row?.imapHost ?? "",
-    port: row?.imapPort ?? 993,
-    encryption: row?.imapEncryption === "starttls" ? "starttls" : "tls",
-    sentMailbox: row?.imapSentMailbox ?? "",
-    enabled: row?.imapCopyEnabled ?? true,
+    host: mailbox?.imapHost ?? "",
+    port: mailbox?.imapPort ?? 993,
+    encryption: mailbox?.imapEncryption === "starttls" ? "starttls" : "tls",
+    sentMailbox: mailbox?.imapSentMailbox ?? "",
+    enabled: mailbox?.imapCopyEnabled ?? true,
   };
 }
 
@@ -61,12 +62,14 @@ export function imapMissingFields(config: ImapConfig, mail: MailConfig, hasPassw
   const missing: string[] = [];
   if (config.host.trim() === "") missing.push("l'hôte IMAP");
   if (mail.user.trim() === "") missing.push("l'identifiant (celui du SMTP)");
-  if (!hasPassword) missing.push(`le mot de passe (variable ${PASSWORD_ENV})`);
+  if (!hasPassword) missing.push(`le mot de passe (variable ${passwordEnvFor(mail.slug)})`);
   return missing;
 }
 
 export async function readImapStatus(mail: MailConfig, hasPassword: boolean): Promise<ImapStatus> {
-  const config = await readImapConfig();
+  // La même boîte que la configuration d'envoi reçue : les deux moitiés d'une
+  // boîte ne peuvent pas se désynchroniser.
+  const config = await readImapConfig(mail.mailboxId);
   const missing = imapMissingFields(config, mail, hasPassword);
   return { ...config, ready: missing.length === 0, missing };
 }
@@ -162,13 +165,18 @@ export async function copyToSent(
   password: string,
   sentAt: Date,
 ): Promise<CopyResult> {
-  const config = await readImapConfig();
+  const config = await readImapConfig(mail.mailboxId);
 
-  if (!config.enabled) return { ok: false, message: "Copie IMAP désactivée dans les réglages." };
+  if (!config.enabled) {
+    return { ok: false, message: `Copie IMAP désactivée pour la boîte « ${mail.label} ».` };
+  }
 
   const missing = imapMissingFields(config, mail, password !== "");
   if (missing.length > 0) {
-    return { ok: false, message: `Copie IMAP non configurée : il manque ${missing.join(", ")}.` };
+    return {
+      ok: false,
+      message: `Copie IMAP de « ${mail.label} » non configurée : il manque ${missing.join(", ")}.`,
+    };
   }
 
   const client = new ImapFlow({

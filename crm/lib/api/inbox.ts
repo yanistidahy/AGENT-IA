@@ -2,7 +2,8 @@ import "server-only";
 import { ImapFlow } from "imapflow";
 import { prisma } from "../db";
 import { anyOursMissing } from "../domain/message-id";
-import { PASSWORD_ENV, readMailConfig } from "./mail";
+import { configOf } from "./mail";
+import { listMailboxes, mailboxPassword, type Mailbox } from "./mailboxes";
 import { describeImapError, imapMissingFields, readImapConfig } from "./imap";
 import { classify, type InboxHeaders } from "../domain/inbox-replies";
 import { BLOCK_LABELS } from "../domain/sequence-rules";
@@ -213,55 +214,36 @@ interface SentRow {
   readonly toAddress: string;
 }
 
-export async function pollInbox(now = new Date()): Promise<PollReport> {
-  // Le secret est lu ici et nulle part ailleurs de ce fichier : il ne voyage
-  // pas dans un état, il n'entre dans aucun journal, il n'est jamais rendu.
-  const password = process.env[PASSWORD_ENV] ?? "";
-
-  const [config, mail, settings] = await Promise.all([
-    readImapConfig(),
-    readMailConfig(),
-    prisma.settings.findUnique({
-      where: { id: "singleton" },
-      select: { inboxPollEnabled: true, lastInboxPollAt: true },
-    }),
-  ]);
-
-  if (settings?.inboxPollEnabled === false) {
-    return { ...EMPTY, skipped: "Relevé de la boîte désactivé dans les réglages." };
-  }
+/**
+ * Le relevé d'**une** boîte — la mécanique du jalon 41, paramétrée.
+ *
+ * Rien n'y a changé de ce qui avait coûté quatre jalons : lecture seule
+ * (`EXAMINE`), sept en-têtes par `BODY.PEEK`, rapprochement exact sur nos
+ * `Message-ID`, automates écartés avant tout. Ce qui change est **d'où** vient
+ * la configuration : de la boîte, plus de la ligne de réglages.
+ */
+async function pollOneMailbox(
+  box: Mailbox,
+  byMessageId: ReadonlyMap<string, SentRow>,
+  lastPollAt: Date | null,
+  since: Date,
+  now: Date,
+): Promise<PollReport> {
+  const demo = { label: "", url: "" };
+  const mail = configOf(box, demo);
+  // Le secret est lu ici et nulle part ailleurs : il ne voyage pas dans un
+  // état, il n'entre dans aucun journal, il n'est jamais rendu.
+  const password = mailboxPassword(box);
+  const config = await readImapConfig(box.id);
 
   const missing = imapMissingFields(config, mail, password !== "");
   if (missing.length > 0) {
-    return { ...EMPTY, skipped: `Relevé non configuré : il manque ${missing.join(", ")}.` };
-  }
-
-  // Les envois susceptibles de recevoir une réponse, indexés par `Message-ID`.
-  // Sans envoi connu, il n'y a rien à rapprocher — et se connecter pour rien
-  // consomme une session IMAP que le serveur compte.
-  const since = new Date(now);
-  since.setDate(since.getDate() - SENT_WINDOW_DAYS);
-  const sends = await prisma.emailSend.findMany({
-    where: { sentAt: { gte: since }, messageId: { not: "" } },
-    select: {
-      id: true,
-      messageId: true,
-      contactId: true,
-      sentAt: true,
-      subject: true,
-      toAddress: true,
-    },
-  });
-  if (sends.length === 0) {
     return {
       ...EMPTY,
       mailbox: mail.user,
-      skipped: "Aucun envoi récent : rien à rapprocher.",
+      skipped: `Relevé de « ${box.label} » non configuré : il manque ${missing.join(", ")}.`,
     };
   }
-
-  const byMessageId = new Map<string, SentRow>();
-  for (const send of sends) byMessageId.set(send.messageId, send);
 
   // La boîte réellement ouverte est celle de l'identifiant IMAP, qui est celui
   // du SMTP. Si l'adresse d'expédition est un alias posé sur une **autre**
@@ -297,7 +279,7 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
     // dernier relevé réussi. Le recouvrement est sans conséquence — la
     // contrainte d'unicité écarte ce qui a déjà été vu — et il rattrape un
     // message arrivé pendant l'exécution du relevé précédent.
-    const from = new Date(settings?.lastInboxPollAt ?? since);
+    const from = new Date(lastPollAt ?? since);
     from.setDate(from.getDate() - OVERLAP_DAYS);
 
     // `search()` rend `false` quand le serveur refuse la requête : le traiter
@@ -306,14 +288,12 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
 
     const uids = await client.search({ since: from }, { uid: true });
     if (uids === false) {
-      return { ...report, error: "Le serveur IMAP a refusé la recherche dans INBOX." };
+      return { ...report, error: `« ${box.label} » : le serveur IMAP a refusé la recherche dans INBOX.` };
     }
     const slice = uids.slice(-MAX_MESSAGES);
     if (slice.length === 0) {
-      await markPolled(now);
       return report;
     }
-
 
     const matched: Array<{ headers: InboxHeaders; send: SentRow }> = [];
     const unlinkedAddresses: string[] = [];
@@ -385,12 +365,9 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
       }
     }
 
-    // Le battement de cœur est écrit **en dernier et seulement en cas de
-    // succès**, comme `lastCronAt` : c'est son absence qui doit alerter.
-    await markPolled(now);
     return { ...report, messages: examinedDetail, unlinkedAddresses };
   } catch (error) {
-    const message = describeImapError(error);
+    const message = `« ${box.label} » : ${describeImapError(error)}`;
     console.error("[inbox] relevé échoué :", message);
     return { ...report, messages: examinedDetail, error: message };
   } finally {
@@ -400,6 +377,107 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
       // Une fermeture qui échoue n'a rien à dire sur le sort du relevé.
     }
   }
+}
+
+/**
+ * Le relevé de **toutes** les boîtes, séquentiel.
+ *
+ * Chaque boîte ouvre sa propre connexion courte, l'une après l'autre — jamais
+ * en parallèle : la contrainte d'IONOS porte sur les connexions simultanées
+ * (jalon 41), et trois relevés concurrents sur trois boîtes du même compte
+ * seraient exactement ce qu'on s'est promis d'éviter. À trois boîtes et un
+ * passage par quart d'heure, cela fait 288 sessions par jour au total.
+ *
+ * **Une boîte en échec n'arrête pas les autres** : Mohamed peut avoir changé
+ * son mot de passe sans que les réponses de Yanis cessent d'être détectées.
+ * Le rapport agrégé additionne les compteurs et nomme chaque échec avec sa
+ * boîte ; le battement de cœur (`lastInboxPollAt`) n'avance que si **toutes
+ * les boîtes prêtes** ont réussi — un échec partiel doit finir par allumer le
+ * bandeau, pas s'endormir derrière le succès des voisines.
+ */
+export async function pollInbox(now = new Date()): Promise<PollReport> {
+  const settings = await prisma.settings.findUnique({
+    where: { id: "singleton" },
+    select: { inboxPollEnabled: true, lastInboxPollAt: true },
+  });
+
+  if (settings?.inboxPollEnabled === false) {
+    return { ...EMPTY, skipped: "Relevé de la boîte désactivé dans les réglages." };
+  }
+
+  const boxes = (await listMailboxes()).filter((box) => box.active);
+  if (boxes.length === 0) {
+    return { ...EMPTY, skipped: "Aucune boîte d'envoi configurée." };
+  }
+
+  // Les envois susceptibles de recevoir une réponse, indexés par `Message-ID`,
+  // lus **une fois** pour toutes les boîtes : le rapprochement est global — une
+  // réponse arrivée chez Mohamed à un message parti de la boîte principale
+  // reste une réponse.
+  const since = new Date(now);
+  since.setDate(since.getDate() - SENT_WINDOW_DAYS);
+  const sends = await prisma.emailSend.findMany({
+    where: { sentAt: { gte: since }, messageId: { not: "" } },
+    select: {
+      id: true,
+      messageId: true,
+      contactId: true,
+      sentAt: true,
+      subject: true,
+      toAddress: true,
+    },
+  });
+  if (sends.length === 0) {
+    return {
+      ...EMPTY,
+      mailbox: boxes.map((box) => box.smtpUser).filter((user) => user !== "").join(", "),
+      skipped: "Aucun envoi récent : rien à rapprocher.",
+    };
+  }
+
+  const byMessageId = new Map<string, SentRow>();
+  for (const send of sends) byMessageId.set(send.messageId, send);
+
+  const reports: PollReport[] = [];
+  for (const box of boxes) {
+    reports.push(
+      await pollOneMailbox(box, byMessageId, settings?.lastInboxPollAt ?? null, since, now),
+    );
+  }
+
+  const polled = reports.filter((entry) => entry.skipped === null);
+  if (polled.length === 0) {
+    // Aucune boîte prête : le premier motif nommé vaut pour l'écran.
+    return reports[0] ?? { ...EMPTY, skipped: "Aucune boîte prête." };
+  }
+
+  const failed = polled.filter((entry) => entry.error !== null);
+  if (failed.length === 0) {
+    await markPolled(now);
+  }
+
+  const sum = (pick: (entry: PollReport) => number) =>
+    polled.reduce((total, entry) => total + pick(entry), 0);
+
+  return {
+    skipped: null,
+    examined: sum((entry) => entry.examined),
+    replies: sum((entry) => entry.replies),
+    alreadyLogged: sum((entry) => entry.alreadyLogged),
+    sequencesStopped: sum((entry) => entry.sequencesStopped),
+    ignoredAuto: sum((entry) => entry.ignoredAuto),
+    ignoredBounce: sum((entry) => entry.ignoredBounce),
+    unrelated: sum((entry) => entry.unrelated),
+    error: failed.length === 0 ? null : failed.map((entry) => entry.error).join(" · "),
+    messages: polled.flatMap((entry) => entry.messages),
+    knownSent: byMessageId.size,
+    searchSince: polled[0]?.searchSince ?? null,
+    mailbox: polled.map((entry) => entry.mailbox).join(", "),
+    sendingDomain: polled[0]?.sendingDomain ?? "",
+    unlinked: sum((entry) => entry.unlinked),
+    unlinkedAddresses: polled.flatMap((entry) => entry.unlinkedAddresses),
+    repaired: sum((entry) => entry.repaired),
+  };
 }
 
 async function markPolled(now: Date): Promise<void> {

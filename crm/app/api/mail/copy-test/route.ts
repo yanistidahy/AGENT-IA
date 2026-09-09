@@ -1,5 +1,8 @@
 import { badRequest, jsonOk, serverError } from "@/lib/api/errors";
-import { buildMime, messageId, readMailConfig, readMailStatus, PASSWORD_ENV } from "@/lib/api/mail";
+import { readJson } from "@/lib/api/request";
+import { buildMime, messageId, readMailConfig, readMailStatus } from "@/lib/api/mail";
+import { mailboxPassword } from "@/lib/api/mailboxes";
+import { z } from "zod";
 import { copyToSent, readImapStatus } from "@/lib/api/imap";
 import { formatSender } from "@/lib/domain/email-format";
 
@@ -20,16 +23,26 @@ export const dynamic = "force-dynamic";
  * `POST` et non `GET` : la route écrit dans une boîte réelle, et une route qui
  * produit un effet ne doit pas répondre à un préchargement de navigateur.
  */
-export async function POST() {
+const testSchema = z.object({ mailboxId: z.string().optional() });
+
+export async function POST(request: Request) {
+  const body = await readJson(request);
+  const parsed = testSchema.safeParse(body.ok ? body.value : {});
+  const mailboxId = parsed.success ? parsed.data.mailboxId : undefined;
+
   try {
-    const mail = await readMailStatus();
+    const mail = await readMailStatus(mailboxId);
     const imap = await readImapStatus(mail, mail.passwordSet);
 
     if (!imap.ready) {
-      return badRequest(`Copie IMAP non configurée : il manque ${imap.missing.join(", ")}.`);
+      // La boîte en échec est nommée : c'est ce que « report which one failed »
+      // veut dire quand il y en a trois.
+      return badRequest(
+        `Copie IMAP de « ${mail.label} » non configurée : il manque ${imap.missing.join(", ")}.`,
+      );
     }
 
-    const config = await readMailConfig();
+    const config = await readMailConfig(mailboxId);
     const now = new Date();
 
     const raw = await buildMime({
@@ -42,10 +55,11 @@ export async function POST() {
         "Ce message a été déposé directement dans votre dossier « Envoyés » par le CRM, sans passer par SMTP.\n\nS'il est là, la copie des messages envoyés fonctionne.",
     });
 
-    const result = await copyToSent(raw, config, process.env[PASSWORD_ENV] ?? "", now);
+    const result = await copyToSent(raw, config, mailboxPassword(config), now);
     if (!result.ok) return badRequest(result.message);
 
     return jsonOk({
+      mailboxLabel: config.label,
       mailbox: result.mailbox,
       // Dire **comment** le dossier a été trouvé : par son drapeau, ou par le
       // nom de repli. Le second cas mérite d'être su, parce qu'il cassera le

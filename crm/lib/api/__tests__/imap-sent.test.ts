@@ -67,7 +67,7 @@ describe("l'erreur IMAP dit quoi faire", () => {
 });
 
 describe("ce qui manque est nommé, jamais deviné", () => {
-  const mail = { user: "", fromName: "", from: "", host: "", port: 587, encryption: "starttls" as const, signName: "", signTitle: "", demoLabel: "", demoUrl: "" };
+  const mail = { mailboxId: "mbx_principale", slug: "principale", label: "Boîte principale", user: "", fromName: "", from: "", host: "", port: 587, encryption: "starttls" as const, signName: "", signTitle: "", demoLabel: "", demoUrl: "" };
 
   it("réclame l'hôte, l'identifiant du SMTP et le secret", () => {
     const missing = imapMissingFields({ host: "", port: 993, encryption: "tls", sentMailbox: "", enabled: true }, mail, false);

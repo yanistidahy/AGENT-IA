@@ -20,6 +20,10 @@ import { ComposeThread } from "./compose-thread";
  * — se corrige par un second message ; le destinataire, non.
  */
 interface Signatory {
+  /** Le libellé de la boîte d'envoi — le choix porte la boîte ET la signature. */
+  label?: string;
+  /** L'adresse d'expédition de la boîte. */
+  from?: string;
   id: string;
   name: string;
   title: string;
@@ -281,7 +285,11 @@ export function ComposePanel({
       */}
       {draft !== null && signatories.length > 0 && (
         <label className="mb-3 block">
-          <span className="block text-[12px] font-semibold text-muted">Signé par</span>
+          {/*
+            Choisir la boîte choisit la signature (jalon 54) : le libellé nomme
+            l'adresse d'où part le message, et le nom qui le clôt suit.
+          */}
+          <span className="block text-[12px] font-semibold text-muted">Envoyé depuis</span>
           <select
             className={FIELD}
             value={signatoryId ?? ""}
@@ -289,8 +297,9 @@ export function ComposePanel({
           >
             {signatories.map((entry) => (
               <option key={entry.id} value={entry.id}>
+                {(entry.label ?? "") !== "" ? `${entry.label} · ` : ""}
                 {entry.name}
-                {entry.title === "" ? "" : ` — ${entry.title}`}
+                {(entry.from ?? "") !== "" ? ` (${entry.from})` : ""}
               </option>
             ))}
           </select>

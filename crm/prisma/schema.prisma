@@ -799,6 +799,10 @@ model EmailSend {
   id     String   @id @default(cuid())
   sentAt DateTime @default(now())
 
+  /// La boîte qui a envoyé. Vide pour les envois antérieurs au jalon 54 —
+  /// une absence est une information, pas un zéro à inventer.
+  mailboxId String @default("")
+
   contactId String?
   /// `SetNull` : supprimer une fiche ne doit pas effacer l'historique d'envoi,
   /// même règle qu'au jalon 3 pour les affaires et les interactions.
@@ -873,6 +877,12 @@ model EmailSequence {
   /// validation. Il ne se déverrouille qu'à deux conditions, vérifiées au
   /// serveur et pas seulement à l'écran — voir `lib/domain/sequence-rules.ts`.
   autoMode Boolean @default(false)
+
+  /// La campagne qui possède cette séquence. Nullable le temps de la
+  /// transition — la migration 23 enveloppe chaque séquence existante — mais
+  /// l'écran ne sait plus créer de séquence sans campagne.
+  campaignId String?   @unique
+  campaign   Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
   steps       EmailSequenceStep[]
   enrollments SequenceEnrollment[]
@@ -1069,4 +1079,82 @@ model RoleAngleLabel {
 
   @@index([roleId])
   @@map("role_angle_labels")
+}
+
+/// Une boîte d'envoi IONOS — SMTP, IMAP et signature ensemble.
+///
+/// La configuration unique du jalon 32 devient une liste : trois personnes
+/// envoient, chacune depuis sa propre adresse, avec sa propre copie « Envoyés »
+/// et son propre relevé de réponses. **Le mot de passe n'entre jamais ici** :
+/// il vit dans `SMTP_PASSWORD_<SLUG>` (voir lib/api/mailboxes.ts), même
+/// discipline que depuis le jalon 32, et le même secret sert SMTP et IMAP —
+/// c'est la même boîte (jalon 37).
+///
+/// La signature est une **propriété de la boîte** : cette adresse signe de ce
+/// nom et de ce titre, et choisir la boîte choisit la signature. Le sélecteur
+/// de signataire du jalon 35 devient un sélecteur de boîte.
+model Mailbox {
+  id String @id @default(cuid())
+
+  /// Indexe la variable d'environnement du mot de passe. **Immuable**, comme le
+  /// slug d'un agent (jalon 15) : le rendre modifiable transformerait un
+  /// renommage d'étiquette en panne d'authentification. Le libellé, lui, se
+  /// renomme librement.
+  slug  String @unique
+  label String
+
+  position Int     @default(0)
+  active   Boolean @default(true)
+
+  smtpHost       String @default("")
+  smtpPort       Int    @default(587)
+  smtpEncryption String @default("starttls")
+  smtpUser       String @default("")
+  smtpFrom       String @default("")
+  smtpFromName   String @default("")
+
+  imapHost        String  @default("")
+  imapPort        Int     @default(993)
+  imapEncryption  String  @default("tls")
+  /// Repli seulement : le dossier « Envoyés » se cherche par son drapeau
+  /// SPECIAL-USE (jalon 37).
+  imapSentMailbox String  @default("")
+  imapCopyEnabled Boolean @default(true)
+
+  /// La signature de cette adresse.
+  signName  String @default("")
+  signTitle String @default("")
+
+  createdAt DateTime @default(now())
+
+  campaigns Campaign[]
+
+  @@map("mailboxes")
+}
+
+/// Une campagne : une boîte d'envoi, une sélection de contacts, une séquence.
+///
+/// La séquence appartient à la campagne (relation portée par
+/// `EmailSequence.campaignId`) : configuration et lancement vivent au même
+/// endroit, et une séquence sans campagne n'est plus qu'un gabarit orphelin.
+/// La migration 23 enveloppe chaque séquence existante dans une campagne pour
+/// qu'aucune inscription en cours ne soit interrompue.
+model Campaign {
+  id   String @id @default(cuid())
+  name String
+
+  mailboxId String
+  mailbox   Mailbox @relation(fields: [mailboxId], references: [id])
+
+  /// La sélection de contacts, stockée comme **query string de /contacts** —
+  /// le même vocabulaire, parsé par le même schéma (`parseContactsQuery`).
+  /// Ni Json (portabilité, règle du schéma), ni copie des identifiants : la
+  /// sélection décrit une intention, l'inscription fige les personnes.
+  selection String @default("")
+
+  createdAt DateTime @default(now())
+
+  sequence EmailSequence?
+
+  @@map("campaigns")
 }

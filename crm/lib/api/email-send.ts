@@ -5,6 +5,7 @@ import { logActivity } from "./activities";
 import { ownerOrDefault } from "./automation";
 import { prisma as db } from "../db";
 import { readMailConfig, readMailStatus, sendMail, PASSWORD_ENV } from "./mail";
+import { getMailbox, listMailboxes, mailboxPassword, pickMailbox } from "./mailboxes";
 import { copyToSent } from "./imap";
 import {
   newTrackToken,
@@ -126,7 +127,20 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
   const trackToken =
     wanted && tracking.enabled && tracking.baseUrl !== "" ? newTrackToken() : null;
 
+  // La boîte : celle demandée (`signatoryId` désigne une boîte depuis le
+  // jalon 54), sinon celle dont le signataire est le propriétaire de la fiche.
+  // Résolue **avant** l'envoi : la copie « Envoyés » et la ligne de journal
+  // doivent parler de la même boîte que le transport.
+  const mailbox =
+    (input.signatoryId !== undefined && input.signatoryId !== ""
+      ? await getMailbox(input.signatoryId)
+      : null) ?? pickMailbox(await listMailboxes(), contact.owner);
+  if (mailbox === null) {
+    return { ok: false, message: "Aucune boîte d'envoi n'est configurée. Réglages → Messagerie." };
+  }
+
   const sent = await sendMail({
+    mailboxId: mailbox.id,
     to,
     subject,
     body: input.body,
@@ -161,10 +175,10 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
   // **La copie « Envoyés » vient après**, et son échec ne remonte jamais comme
   // un échec d'envoi. Le message est parti : ce qui reste à faire, c'est le
   // dire.
-  const config = await readMailConfig();
+  const config = await readMailConfig(mailbox.id);
   // **La copie déposée ne porte pas le pixel** (jalon 43) : sans quoi ouvrir son
   // propre dossier « Envoyés » compterait comme une ouverture du prospect.
-  const copy = await copyToSent(sent.rawForArchive, config, process.env[PASSWORD_ENV] ?? "", now);
+  const copy = await copyToSent(sent.rawForArchive, config, mailboxPassword(mailbox), now);
 
   await recordSend(
     {
@@ -173,8 +187,11 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
       subject,
       body: input.body,
       messageId: sent.messageId,
-      signatoryId: input.signatoryId ?? "",
-      signatoryName: input.signatoryName ?? "",
+      mailboxId: mailbox.id,
+      signatoryId: mailbox.id,
+      // Le nom qui signe est celui de la **boîte**, jamais celui que l'écran a
+      // envoyé : les deux ne peuvent pas diverger puisqu'un seul est écrit.
+      signatoryName: mailbox.signName,
       trackToken,
       sequenceId: input.sequenceId ?? "",
       sequenceName: input.sequenceName ?? "",

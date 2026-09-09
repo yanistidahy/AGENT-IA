@@ -9,12 +9,14 @@ import { replaceSignature, lastLine, signsWithName } from "@/lib/domain/email-fo
  * la conséquence n'était pas cosmétique : la moitié des messages seraient partis
  * sous la mauvaise identité, et l'erreur ne se serait vue qu'à la réception.
  */
-const YANIS = { id: "s1", name: "Yanis Tidahy", title: "Fondateur, Aura Flow AI", isDefault: true };
+const YANIS = { id: "s1", name: "Yanis Tidahy", title: "Fondateur, Aura Flow AI", isDefault: true , label: "", from: "" };
 const MOHAMED = {
   id: "s2",
   name: "Mohamed Targani",
   title: "Co-Fondateur, Aura Flow AI",
   isDefault: false,
+  label: "",
+  from: "",
 };
 const TOUS = [YANIS, MOHAMED];
 
@@ -36,7 +38,7 @@ describe("qui signe ce message", () => {
     // « Marc » ne doit pas correspondre à « Marceau » : la comparaison porte sur
     // des mots entiers, pas sur un préfixe. Faute de correspondance, on retombe
     // sur le défaut — ici Yanis — plutôt que d'attribuer le message à Marceau.
-    const marceau = { id: "s3", name: "Marceau Blin", title: "", isDefault: false };
+    const marceau = { id: "s3", name: "Marceau Blin", title: "", isDefault: false , label: "", from: "" };
     expect(pickSignatory([YANIS, marceau], "Marc")?.id).toBe("s1");
   });
 

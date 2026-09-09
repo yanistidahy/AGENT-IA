@@ -18,6 +18,7 @@ import { CONTACT_COLUMNS, DEFAULT_COLUMNS, LOCKED_COLUMN } from "./contact-table
 import { usePersistedSet } from "@/lib/client/persisted";
 import { ContactDrawer } from "./contact-drawer";
 import type { Colleague } from "@/lib/api/account";
+import { CampaignBanner } from "./campaign-banner";
 import { ContactForm, type ContactFormOptions } from "./contact-form";
 import { ContactsTable, type ContactSortKey } from "./contacts-table";
 import { ImportDialog } from "./import-dialog";
@@ -40,6 +41,8 @@ interface ContactsViewProps extends ContactFormOptions {
   readonly focused: ContactRecord | null;
   /** Les collègues de la fiche ouverte — chargés par la page, jamais par ligne. */
   readonly colleagues: readonly Colleague[];
+  /** La campagne dont on choisit les contacts, quand on arrive par /campagnes. */
+  readonly campaignTarget: { readonly id: string; readonly name: string } | null;
   /** Valeurs distinctes par colonne, calculées côté serveur. */
   readonly facets: Readonly<Record<string, readonly FacetValue[]>>;
   /** Total avant filtres de colonne, pour le « 54 sur 138 ». */
@@ -63,6 +66,7 @@ export function ContactsView({
   alerts,
   focused,
   colleagues,
+  campaignTarget,
   reminderCounts,
   account,
   dm,
@@ -161,6 +165,10 @@ export function ContactsView({
           </button>
         </div>
       </header>
+
+      {campaignTarget !== null && (
+        <CampaignBanner campaign={campaignTarget} params={params} shown={contacts.length} />
+      )}
 
       {/*
         Un filtre par société actif se **nomme**. Sans cette ligne, arriver par

@@ -1,60 +1,64 @@
 import "server-only";
-import { z } from "zod";
-import { prisma } from "../db";
+
 import { signatureBlock } from "../agents/prompts/company";
+import { listMailboxes, ownerMatches, type Mailbox } from "./mailboxes";
 
 /**
- * Les personnes qui peuvent signer un email.
+ * Les signataires — désormais une **projection des boîtes d'envoi**.
  *
- * Deux personnes envoient depuis ce CRM ; le couple « nom / titre » unique du
- * jalon 34 ne savait en décrire qu'une. **Le signataire n'est pas un réglage
- * global mais une propriété de l'envoi** : il se choisit message par message,
- * dans le panneau de rédaction.
+ * Le jalon 35 avait fait du signataire une propriété de l'envoi, choisie
+ * message par message. Le jalon 54 déplace cette propriété d'un cran : la
+ * signature appartient à la **boîte** — cette adresse signe de ce nom et de ce
+ * titre — et choisir la boîte choisit la signature. La table `signatories`
+ * n'est plus lue : ce module dérive la même forme depuis `mailboxes`, pour que
+ * le panneau de rédaction, le dossier d'Alex et `replaceSignature` continuent
+ * de fonctionner sans réapprendre un vocabulaire.
+ *
+ * **`Signatory.id` est un identifiant de boîte.** C'est ce qui fait que le
+ * sélecteur « Envoyé depuis » du panneau et le `signatoryId` du journal des
+ * envois désignent la même chose sans colonne de plus.
  */
 export interface Signatory {
   readonly id: string;
   readonly name: string;
   readonly title: string;
   readonly isDefault: boolean;
+  /** Le libellé de la boîte, pour que le sélecteur dise d'où part le message. */
+  readonly label: string;
+  /** L'adresse d'expédition, affichée à côté du libellé. */
+  readonly from: string;
 }
 
+function toSignatory(mailbox: Mailbox, index: number): Signatory {
+  return {
+    id: mailbox.id,
+    name: mailbox.signName,
+    title: mailbox.signTitle,
+    isDefault: index === 0,
+    label: mailbox.label,
+    from: mailbox.smtpFrom,
+  };
+}
+
+/** Les boîtes actives, sous leur forme de signataire. */
 export async function listSignatories(): Promise<Signatory[]> {
-  const rows = await prisma.signatory.findMany({
-    orderBy: [{ position: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, title: true, isDefault: true },
-  });
-  return rows;
+  const mailboxes = await listMailboxes();
+  const active = mailboxes.filter((box) => box.active);
+  return (active.length > 0 ? active : mailboxes).map(toSignatory);
 }
 
 /**
- * Le signataire proposé pour un contact donné.
- *
- * **Le propriétaire de la fiche d'abord.** Si « Yanis » suit ce prospect, c'est
- * lui qui écrit : proposer systématiquement le signataire par défaut ferait
- * partir la moitié des messages sous la mauvaise identité, et l'erreur ne se
- * verrait qu'à la réception.
- *
- * La correspondance est volontairement souple — le propriétaire d'une fiche est
- * un prénom (« Yanis »), le signataire un nom complet (« Yanis Tidahy ») — mais
- * elle reste ancrée : on compare des mots entiers, pour que « Marc » ne
- * corresponde pas à « Marceau ».
+ * Le signataire proposé pour un contact donné — la boîte dont le signataire est
+ * le propriétaire de la fiche (règle du jalon 35, portée par `pickMailbox`).
  */
 export function pickSignatory(
   signatories: readonly Signatory[],
   owner: string,
 ): Signatory | null {
   if (signatories.length === 0) return null;
-
-  const needle = owner.trim().toLowerCase();
-  if (needle !== "") {
-    const match = signatories.find((signatory) => {
-      const words = signatory.name.toLowerCase().split(/\s+/);
-      return signatory.name.toLowerCase() === needle || words.includes(needle);
-    });
-    if (match !== undefined) return match;
-  }
-
-  return signatories.find((signatory) => signatory.isDefault) ?? signatories[0] ?? null;
+  return (
+    signatories.find((entry) => ownerMatches(entry.name, owner)) ?? signatories[0] ?? null
+  );
 }
 
 /** Tous les blocs de signature connus — ce que `replaceSignature` cherche. */
@@ -79,50 +83,4 @@ export function signatoryNames(signatories: readonly Signatory[]): string[] {
     if (first !== "") names.add(first);
   }
   return [...names];
-}
-
-export const signatoriesSchema = z.object({
-  signatories: z
-    .array(
-      z.object({
-        id: z.string().optional(),
-        name: z.string().trim().min(1, "Le nom ne peut pas être vide").max(80),
-        title: z.string().trim().max(120),
-        isDefault: z.boolean(),
-      }),
-    )
-    .min(1, "Il faut au moins un signataire")
-    .max(10),
-});
-
-export type SignatoriesInput = z.infer<typeof signatoriesSchema>;
-
-/**
- * Enregistre la liste, en garantissant **exactement un** défaut.
- *
- * Zéro défaut laisserait `pickSignatory()` retomber sur le premier de la liste,
- * donc sur l'ordre d'affichage — un choix implicite que personne n'a fait. Deux
- * défauts poseraient la même question sans réponse. La règle est appliquée ici
- * plutôt qu'espérée de l'écran, parce que l'API est aussi appelable directement.
- */
-export async function saveSignatories(input: SignatoriesInput): Promise<Signatory[]> {
-  const wanted = input.signatories;
-  const firstDefault = wanted.findIndex((signatory) => signatory.isDefault);
-  const defaultIndex = firstDefault === -1 ? 0 : firstDefault;
-
-  await prisma.$transaction(async (tx) => {
-    await tx.signatory.deleteMany({});
-    for (const [index, signatory] of wanted.entries()) {
-      await tx.signatory.create({
-        data: {
-          name: signatory.name,
-          title: signatory.title,
-          isDefault: index === defaultIndex,
-          position: index,
-        },
-      });
-    }
-  });
-
-  return listSignatories();
 }

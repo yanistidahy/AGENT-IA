@@ -29,6 +29,7 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     sequenceSteps,
     roleAngles,
     roleAngleLabels,
+    mailboxes,
   ] = await Promise.all([
     prisma.stage.findMany({ orderBy: { position: "asc" } }),
     prisma.company.findMany(),
@@ -42,6 +43,7 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     prisma.sequenceStep.findMany(),
     prisma.roleAngle.findMany({ orderBy: { position: "asc" } }),
     prisma.roleAngleLabel.findMany(),
+    prisma.mailbox.findMany({ orderBy: { position: "asc" } }),
   ]);
 
   return {
@@ -59,6 +61,7 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     sequenceSteps,
     roleAngles,
     roleAngleLabels,
+    mailboxes,
   };
 }
 
@@ -323,6 +326,34 @@ const roleAngleLabelRow = z.object({
   roleId: z.string(),
 });
 
+/**
+ * Une boîte d'envoi — configuration écrite à la main, donc sauvegardée.
+ *
+ * **Jamais de mot de passe** : il vit dans l'environnement, pas en base, et
+ * n'apparaît donc ni ici ni dans le JSON exporté (jalon 32).
+ */
+const mailboxRow = z.object({
+  id: z.string(),
+  slug: text,
+  label: text,
+  position: z.number().int(),
+  active: z.boolean(),
+  smtpHost: optionalText,
+  smtpPort: z.number().int(),
+  smtpEncryption: text,
+  smtpUser: optionalText,
+  smtpFrom: optionalText,
+  smtpFromName: optionalText,
+  imapHost: optionalText,
+  imapPort: z.number().int(),
+  imapEncryption: text,
+  imapSentMailbox: optionalText,
+  imapCopyEnabled: z.boolean(),
+  signName: optionalText,
+  signTitle: optionalText,
+  createdAt: day,
+});
+
 export const backupSchema = z.object({
   version: z.number().int(),
   stages: z.array(stageRow),
@@ -339,6 +370,7 @@ export const backupSchema = z.object({
    *  refuser rendrait le filet inutile au moment précis où l'on en a besoin. */
   roleAngles: z.array(roleAngleRow).optional(),
   roleAngleLabels: z.array(roleAngleLabelRow).optional(),
+  mailboxes: z.array(mailboxRow).optional(),
 });
 
 export type BackupPayload = z.infer<typeof backupSchema>;
@@ -369,8 +401,7 @@ export async function restoreBackup(payload: BackupPayload): Promise<RestoreResu
         await tx.sequence.deleteMany();
         await tx.settingsList.deleteMany();
         await tx.settings.deleteMany();
-        await tx.roleAngleLabel.deleteMany();
-        await tx.roleAngle.deleteMany();
+
 
         await tx.stage.createMany({ data: payload.stages });
         await tx.company.createMany({ data: payload.companies });
@@ -381,12 +412,33 @@ export async function restoreBackup(payload: BackupPayload): Promise<RestoreResu
         await tx.sequence.createMany({ data: payload.sequences });
         await tx.sequenceStep.createMany({ data: payload.sequenceSteps });
         await tx.settingsList.createMany({ data: payload.settingsLists });
-        // Les rôles avant leurs étiquettes : la clé étrangère l'impose.
+        // **Une table née après la sauvegarde n'est pas effacée par elle.**
+        // La suppression n'a lieu que si le fichier porte la section : une
+        // sauvegarde d'avant le jalon 53 qui viderait les rôles — ou d'avant le
+        // jalon 54 qui viderait les boîtes, donc couperait l'envoi — serait
+        // exactement l'incident du jalon 42 sous une autre forme. (Corrige au
+        // passage le comportement du jalon 53, qui vidait puis ne recréait pas.)
         if (payload.roleAngles !== undefined) {
+          await tx.roleAngleLabel.deleteMany();
+          await tx.roleAngle.deleteMany();
+          // Les rôles avant leurs étiquettes : la clé étrangère l'impose.
           await tx.roleAngle.createMany({ data: payload.roleAngles });
+          if (payload.roleAngleLabels !== undefined) {
+            await tx.roleAngleLabel.createMany({ data: payload.roleAngleLabels });
+          }
         }
-        if (payload.roleAngleLabels !== undefined) {
-          await tx.roleAngleLabel.createMany({ data: payload.roleAngleLabels });
+        if (payload.mailboxes !== undefined) {
+          // `deleteMany` échouerait sur une boîte tenue par une campagne : on
+          // réécrit **par identifiant** au lieu de vider, et les boîtes
+          // inconnues de la sauvegarde survivent — une restauration ne doit
+          // pas couper une adresse d'envoi qu'elle ne connaît pas.
+          for (const mailbox of payload.mailboxes) {
+            await tx.mailbox.upsert({
+              where: { id: mailbox.id },
+              create: mailbox,
+              update: mailbox,
+            });
+          }
         }
         if (payload.settings != null) {
           await tx.settings.create({ data: payload.settings });

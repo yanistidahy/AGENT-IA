@@ -4,17 +4,12 @@ import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
 
 /**
- * Messagerie sortante : la configuration, et l'essai d'envoi.
+ * Ce qui reste de messagerie **globale** : le lien de démonstration.
  *
- * **Le mot de passe n'apparaît nulle part.** Il n'est ni saisi ici, ni stocké en
- * base, ni renvoyé par l'API : il vit dans une variable d'environnement du
- * service, comme la clé Anthropic. Le panneau dit seulement s'il est **défini**.
- * Un champ de saisie aurait été plus commode et aurait mis un mot de passe de
- * messagerie dans la base, donc dans chaque sauvegarde JSON téléchargée.
- *
- * Le bouton d'essai suit la leçon du jalon 16 : il ne dit pas « échec », il dit
- * **ce que le serveur SMTP a répondu**. C'est la différence entre corriger un
- * port et ouvrir un ticket.
+ * Tout le reste — SMTP, IMAP, signature, essais — appartient désormais aux
+ * boîtes (jalon 54, `MailboxesPanel`). Le lien de démo, lui, n'est la propriété
+ * d'aucune adresse : c'est le même Calendly quel que soit l'expéditeur, et le
+ * dupliquer par boîte aurait fait trois liens qui finissent par diverger.
  */
 export interface MailStatus {
   host: string;
@@ -31,6 +26,7 @@ export interface MailStatus {
   demoUrl: string;
 }
 
+/** Conservé pour les écrans qui affichent encore qui signe — dérivé des boîtes. */
 export interface Signatory {
   id?: string;
   name: string;
@@ -38,353 +34,74 @@ export interface Signatory {
   isDefault: boolean;
 }
 
-function isPayload(value: unknown): value is { mail: MailStatus; passwordEnv: string } {
+function isPayload(value: unknown): value is { mail: MailStatus } {
   return typeof value === "object" && value !== null && "mail" in value;
-}
-
-function isSignatories(value: unknown): value is { signatories: Signatory[] } {
-  return typeof value === "object" && value !== null && "signatories" in value;
-}
-
-function isSent(value: unknown): value is { sentTo: string } {
-  return typeof value === "object" && value !== null && "sentTo" in value;
 }
 
 const FIELD =
   "w-full rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] focus:border-brand focus:outline-none";
 const LABEL = "block text-[12px] font-semibold text-muted";
-const BUTTON =
-  "rounded-control px-3.5 py-1.5 text-[12.5px] font-semibold transition-colors disabled:opacity-50";
 
-export function MailPanel({
-  initial,
-  passwordEnv,
-  initialSignatories,
-}: {
-  initial: MailStatus;
-  passwordEnv: string;
-  initialSignatories: readonly Signatory[];
-}) {
-  const [mail, setMail] = useState(initial);
-  const [signatories, setSignatories] = useState<Signatory[]>([...initialSignatories]);
+export function MailPanel({ initial }: { readonly initial: MailStatus }) {
+  const [demoLabel, setDemoLabel] = useState(initial.demoLabel);
+  const [demoUrl, setDemoUrl] = useState(initial.demoUrl);
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
-
-  const set = <K extends keyof MailStatus>(key: K, value: MailStatus[K]) =>
-    setMail((current) => ({ ...current, [key]: value }));
 
   const save = async () => {
     setBusy(true);
     setError(null);
-    setDone(null);
     const result = await requestJson(
       "/api/mail",
-      {
-        method: "PATCH",
-        body: JSON.stringify({
-          host: mail.host,
-          port: mail.port,
-          encryption: mail.encryption,
-          user: mail.user,
-          from: mail.from,
-          fromName: mail.fromName,
-          demoLabel: mail.demoLabel,
-          demoUrl: mail.demoUrl,
-        }),
-      },
+      { method: "PATCH", body: JSON.stringify({ demoLabel, demoUrl }) },
       isPayload,
     );
     setBusy(false);
-    if (result.ok) {
-      setMail(result.data.mail);
-      setDone("Configuration enregistrée.");
-    } else setError(result.message);
-  };
-
-  const saveSigners = async () => {
-    setBusy(true);
-    setError(null);
-    setDone(null);
-    const result = await requestJson(
-      "/api/mail",
-      { method: "PUT", body: JSON.stringify({ signatories }) },
-      isSignatories,
-    );
-    setBusy(false);
-    if (result.ok) {
-      setSignatories(result.data.signatories);
-      setDone("Signataires enregistrés.");
-    } else setError(result.message);
-  };
-
-  const test = async () => {
-    setBusy(true);
-    setError(null);
-    setDone(null);
-    const result = await requestJson("/api/mail", { method: "POST" }, isSent);
-    setBusy(false);
-    if (result.ok) setDone(`Message d'essai envoyé à ${result.data.sentTo}. Vérifiez la boîte.`);
+    if (result.ok) setSaved(true);
     else setError(result.message);
   };
 
   return (
     <section className="rounded-card border border-line bg-surface p-4 shadow-card">
-      <h3 className="font-display text-[15px] font-semibold">Messagerie</h3>
-      <p className="mt-1 text-[12.5px] text-muted">
-        Ce bloc règle <b className="font-semibold text-ink">l'envoi</b>, par SMTP. Les messages
-        de vos destinataires continuent d'arriver dans votre boîte habituelle : le CRM ne la
-        remplace pas. Il en lit seulement les en-têtes pour reconnaître les réponses — voir
-        « Détection des réponses » plus bas.
-      </p>
-
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <label>
-          <span className={LABEL}>Hôte SMTP</span>
+      <h3 className="mb-2 font-display text-sm font-semibold">Lien de démonstration</h3>
+      <div className="grid max-w-[560px] gap-2.5 sm:grid-cols-2">
+        <label className="block">
+          <span className={LABEL}>Libellé du lien</span>
           <input
+            value={demoLabel}
+            onChange={(event) => {
+              setSaved(false);
+              setDemoLabel(event.target.value);
+            }}
             className={FIELD}
-            value={mail.host}
-            placeholder="smtp.ionos.fr"
-            onChange={(event) => set("host", event.target.value)}
           />
         </label>
-        <div className="grid grid-cols-2 gap-2">
-          <label>
-            <span className={LABEL}>Port</span>
-            <input
-              className={FIELD}
-              type="number"
-              value={mail.port}
-              onChange={(event) => set("port", Number(event.target.value))}
-            />
-          </label>
-          <label>
-            <span className={LABEL}>Chiffrement</span>
-            <select
-              className={FIELD}
-              value={mail.encryption}
-              onChange={(event) =>
-                set("encryption", event.target.value === "tls" ? "tls" : "starttls")
-              }
-            >
-              <option value="starttls">STARTTLS (587)</option>
-              <option value="tls">TLS direct (465)</option>
-            </select>
-          </label>
-        </div>
-        <label>
-          <span className={LABEL}>Identifiant</span>
+        <label className="block">
+          <span className={LABEL}>Adresse du lien</span>
           <input
+            value={demoUrl}
+            placeholder="vide = Alex supprime la phrase"
+            onChange={(event) => {
+              setSaved(false);
+              setDemoUrl(event.target.value);
+            }}
             className={FIELD}
-            value={mail.user}
-            placeholder="vous@votredomaine.fr"
-            onChange={(event) => set("user", event.target.value)}
           />
         </label>
-        <label>
-          <span className={LABEL}>Adresse d'expédition</span>
-          <input
-            className={FIELD}
-            value={mail.from}
-            placeholder="vous@votredomaine.fr"
-            onChange={(event) => set("from", event.target.value)}
-          />
-        </label>
-        <label className="sm:col-span-2">
-          <span className={LABEL}>Nom affiché</span>
-          <input
-            className={FIELD}
-            value={mail.fromName}
-            placeholder="Yanis Tidahy"
-            onChange={(event) => set("fromName", event.target.value)}
-          />
-          <span className="mt-1 block text-[11.5px] text-muted">
-            Ce que le destinataire voit à la place de l'adresse.
-          </span>
-        </label>
       </div>
-
-      {/*
-        Signature et lien : de la donnée, pas du code. Le jalon 33 avait figé
-        « L'équipe AuraFLOW AI » dans un fichier de prompt — une valeur écrite en
-        dur qui contredit l'écran le jour où on la change.
-      */}
-      {/*
-        Les signataires : une liste, parce qu'ils sont deux. Le couple unique du
-        jalon 34 ne savait décrire qu'une personne, et le choix se fait de toute
-        façon message par message — c'est une propriété de l'envoi, pas un
-        réglage global.
-      */}
-      <div className="mt-4 border-t border-line pt-3">
-        <h4 className="text-[13px] font-semibold">Signataires</h4>
-        <p className="mt-0.5 text-[11.5px] text-muted">
-          Les deux dernières lignes de chaque email. Celui coché sert de proposition quand le
-          propriétaire de la fiche ne correspond à personne.
-        </p>
-
-        <ul className="mt-2 grid gap-2">
-          {signatories.map((signatory, index) => (
-            <li key={signatory.id ?? index} className="flex flex-wrap items-end gap-2">
-              <label className="min-w-[140px] flex-1">
-                <span className={LABEL}>Nom</span>
-                <input
-                  className={FIELD}
-                  value={signatory.name}
-                  onChange={(event) =>
-                    setSignatories((current) =>
-                      current.map((entry, at) =>
-                        at === index ? { ...entry, name: event.target.value } : entry,
-                      ),
-                    )
-                  }
-                />
-              </label>
-              <label className="min-w-[180px] flex-1">
-                <span className={LABEL}>Titre</span>
-                <input
-                  className={FIELD}
-                  value={signatory.title}
-                  onChange={(event) =>
-                    setSignatories((current) =>
-                      current.map((entry, at) =>
-                        at === index ? { ...entry, title: event.target.value } : entry,
-                      ),
-                    )
-                  }
-                />
-              </label>
-              <label className="flex items-center gap-1.5 pb-2 text-[12px] text-muted">
-                <input
-                  type="radio"
-                  name="signatory-default"
-                  checked={signatory.isDefault}
-                  onChange={() =>
-                    setSignatories((current) =>
-                      current.map((entry, at) => ({ ...entry, isDefault: at === index })),
-                    )
-                  }
-                />
-                par défaut
-              </label>
-              {signatories.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setSignatories((current) => current.filter((_, at) => at !== index))
-                  }
-                  className="rounded-control border border-line px-2 py-1.5 pb-1.5 text-[11.5px] text-muted transition-colors hover:bg-surface-2"
-                >
-                  Retirer
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() =>
-              setSignatories((current) => [...current, { name: "", title: "", isDefault: false }])
-            }
-            className={`${BUTTON} border border-line bg-surface hover:bg-surface-2`}
-          >
-            Ajouter un signataire
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void saveSigners()}
-            className={`${BUTTON} bg-brand text-white hover:bg-brand-d`}
-          >
-            Enregistrer les signataires
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-4 border-t border-line pt-3">
-        <h4 className="text-[13px] font-semibold">Lien de démonstration</h4>
-        <p className="mt-0.5 text-[11.5px] text-muted">
-          Le libellé devient un lien cliquable dans le message ; l'adresse reste visible dans la
-          version texte. <b className="font-semibold text-ink">Laissez l'adresse vide et Alex
-          supprimera la phrase</b> plutôt que d'inventer un lien.
-        </p>
-        <div className="mt-2 grid gap-3 sm:grid-cols-2">
-          <label>
-            <span className={LABEL}>Libellé du lien</span>
-            <input
-              className={FIELD}
-              value={mail.demoLabel}
-              placeholder="Diagnostic offert"
-              onChange={(event) => set("demoLabel", event.target.value)}
-            />
-          </label>
-          <label>
-            <span className={LABEL}>URL du lien</span>
-            <input
-              className={FIELD}
-              value={mail.demoUrl}
-              placeholder="https://…"
-              onChange={(event) => set("demoUrl", event.target.value)}
-            />
-          </label>
-        </div>
-      </div>
-
-      {/* Le mot de passe : un état, jamais une valeur. */}
-      <div className="mt-3 rounded-control border border-line bg-surface-2 px-3 py-2.5">
-        <span className={LABEL}>Mot de passe</span>
-        <p className="mt-0.5 text-[12.5px]">
-          {mail.passwordSet ? (
-            <span className="font-semibold text-win-d">
-              ✓ Défini dans la variable {passwordEnv} du service.
-            </span>
-          ) : (
-            <span className="font-semibold text-[#B2311F]">
-              ✗ Absent. Ajoutez {passwordEnv} aux variables du service Railway, puis redéployez.
-            </span>
-          )}
-        </p>
-        <p className="mt-1 text-[11.5px] text-muted">
-          Il n'est jamais enregistré en base ni renvoyé au navigateur — même règle que la clé
-          Anthropic. Cet écran sait seulement s'il existe.
-        </p>
-      </div>
-
-      {!mail.ready && mail.missing.length > 0 && (
-        <p className="mt-2 rounded-control border border-[#F3E0BC] bg-gold-l px-3 py-2 text-[12.5px] text-[#9A6410]">
-          Envoi impossible : il manque {mail.missing.join(", ")}.
-        </p>
-      )}
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          disabled={busy}
           onClick={() => void save()}
-          className={`${BUTTON} bg-brand text-white hover:bg-brand-d`}
+          disabled={busy}
+          className="min-h-[44px] rounded-control border border-line px-3 text-[13px] hover:border-brand disabled:opacity-50 lg:min-h-0 lg:py-1.5"
         >
-          Enregistrer
+          {busy ? "Enregistrement…" : "Enregistrer"}
         </button>
-        <button
-          type="button"
-          disabled={busy || !mail.ready}
-          onClick={() => void test()}
-          className={`${BUTTON} border border-line bg-surface hover:bg-surface-2`}
-        >
-          {busy ? "Envoi…" : "Tester l'envoi"}
-        </button>
-        <span className="text-[12px] text-muted">
-          L'essai envoie un vrai message à {mail.from || "votre adresse d'expédition"}.
-        </span>
+        {saved && <span className="text-[12px] text-win-d">Enregistré.</span>}
+        {error !== null && <span className="text-[12px] text-danger">{error}</span>}
       </div>
-
-      {error !== null && (
-        <p className="mt-2 rounded-control border border-[#F5D5CF] bg-pulse-l px-3 py-2 text-[12.5px] whitespace-pre-wrap text-[#B2311F]">
-          {error}
-        </p>
-      )}
-      {done !== null && <p className="mt-2 text-[12.5px] text-win-d">{done}</p>}
     </section>
   );
 }

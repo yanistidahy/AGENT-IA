@@ -2,7 +2,8 @@ import { badRequest, invalidPayload, jsonOk, serverError } from "@/lib/api/error
 import { readJson } from "@/lib/api/request";
 import { prisma } from "@/lib/db";
 import { readMailStatus, sendMail, PASSWORD_ENV } from "@/lib/api/mail";
-import { listSignatories, saveSignatories, signatoriesSchema } from "@/lib/api/signatories";
+import { listSignatories } from "@/lib/api/signatories";
+import { listMailboxViews, mailboxesSchema, saveMailboxes } from "@/lib/api/mailboxes";
 import { readImapStatus } from "@/lib/api/imap";
 import { readTrackingConfig } from "@/lib/api/email-sends";
 import { z } from "zod";
@@ -21,12 +22,6 @@ export const dynamic = "force-dynamic";
  * navigateur. Même raison que le diagnostic d'API du jalon 16.
  */
 const configSchema = z.object({
-  host: z.string().trim().max(200),
-  port: z.number().int().min(1).max(65535),
-  encryption: z.enum(["tls", "starttls"], { error: "Mode de chiffrement inconnu" }),
-  user: z.string().trim().max(200),
-  from: z.union([z.literal(""), z.email("Adresse d'expédition invalide")]),
-  fromName: z.string().trim().max(120),
   demoLabel: z.string().trim().max(80),
   /**
    * Vide **est** une valeur valide : elle demande à Alex de supprimer la phrase
@@ -42,6 +37,9 @@ async function mailState() {
   return {
     mail,
     passwordEnv: PASSWORD_ENV,
+    // Chaque boîte avec la variable qui porte son secret : c'est ce que le
+    // panneau affiche à côté du champ, pour qu'on sache quoi poser sur Railway.
+    mailboxes: await listMailboxViews(),
     signatories: await listSignatories(),
     imap: await readImapStatus(mail, mail.passwordSet),
     tracking: await readTrackingConfig(),
@@ -65,12 +63,6 @@ export async function PATCH(request: Request) {
 
   try {
     const data = {
-      smtpHost: parsed.data.host,
-      smtpPort: parsed.data.port,
-      smtpEncryption: parsed.data.encryption,
-      smtpUser: parsed.data.user,
-      smtpFrom: parsed.data.from,
-      smtpFromName: parsed.data.fromName,
       demoLabel: parsed.data.demoLabel,
       demoUrl: parsed.data.demoUrl,
     };
@@ -88,35 +80,49 @@ export async function PATCH(request: Request) {
 }
 
 /**
- * La liste des signataires, remplacée d'un bloc.
+ * La liste des boîtes, remplacée d'un bloc.
  *
- * `PUT` et non `PATCH` : c'est la liste entière qui est posée, pas un champ
- * modifié. Une mise à jour partielle demanderait de décrire des suppressions,
- * et l'écran manipule de toute façon la liste complète.
+ * `PUT` et non `PATCH` : c'est la liste entière qui est posée — l'écran la
+ * manipule complète. Le service, lui, met à jour **par identifiant** (le slug
+ * ne bouge jamais) et refuse de supprimer une boîte tenue par une campagne, en
+ * la nommant.
  */
 export async function PUT(request: Request) {
   const body = await readJson(request);
   if (body.ok === false) return badRequest("Corps de requête JSON illisible.");
 
-  const parsed = signatoriesSchema.safeParse(body.value);
+  const parsed = mailboxesSchema.safeParse(body.value);
   if (!parsed.success) return invalidPayload(parsed.error);
 
   try {
-    return jsonOk({ signatories: await saveSignatories(parsed.data) });
+    const saved = await saveMailboxes(parsed.data);
+    if (!saved.ok) return badRequest(saved.message);
+    return jsonOk(await mailState());
   } catch (error) {
     return serverError("PUT /api/mail", error);
   }
 }
 
-export async function POST() {
+const testSchema = z.object({ mailboxId: z.string().optional() });
+
+export async function POST(request: Request) {
+  const body = await readJson(request);
+  const parsed = testSchema.safeParse(body.ok ? body.value : {});
+  const mailboxId = parsed.success ? parsed.data.mailboxId : undefined;
+
   try {
-    const status = await readMailStatus();
+    const status = await readMailStatus(mailboxId);
     if (!status.ready) {
-      return badRequest(`Configuration incomplète : il manque ${status.missing.join(", ")}.`);
+      // La boîte est nommée : à trois boîtes, « configuration incomplète » sans
+      // dire laquelle ferait vérifier les deux mauvaises d'abord.
+      return badRequest(
+        `Boîte « ${status.label} » incomplète : il manque ${status.missing.join(", ")}.`,
+      );
     }
 
     const now = new Date();
     const result = await sendMail({
+      mailboxId: status.mailboxId,
       to: status.from,
       subject: "Essai d'envoi depuis AuraFLOW",
       // Deux paragraphes séparés d'une ligne vide : le message d'essai vérifie
@@ -126,7 +132,7 @@ export async function POST() {
     });
 
     if (!result.ok) return badRequest(result.message);
-    return jsonOk({ sentTo: status.from, messageId: result.messageId });
+    return jsonOk({ sentTo: status.from, mailboxLabel: status.label, messageId: result.messageId });
   } catch (error) {
     return serverError("POST /api/mail", error);
   }
