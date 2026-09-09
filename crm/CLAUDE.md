@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 55 | **Une campagne au quotidien** — archiver contre supprimer, sélection cochée qui survit au filtre, liste des inscrits, campagne nommée dans /emails | **livré, à valider** |
 | 54 | **Trois boîtes et /campagnes** — SMTP/IMAP/signature par boîte, secret par slug, relevé multi-boîtes, campagnes avec sélection /contacts et entonnoir | **livré, à valider** |
 | 53 | **Plusieurs personnes par maison** — société dédoublonnée sur les accents, collègues sur la fiche, notes d'angle par rôle, note pour Alex, avertissement collègue | **livré, à valider** |
 | 52 | **Le healthcheck traversait le verrou** — cible `/` redirigée, `/api/health` liée à la base ; sonde `/api/live` muette et sans dépendance, contrat sous test | **livré, à valider** |
@@ -7579,3 +7580,203 @@ joue ce rôle — la file est déjà une relecture humaine. **Le rattrapage des
 `Message-ID`** (jalon 44) ne relit que la boîte principale : les envois
 antérieurs au jalon 54 partaient tous d'elle, les autres n'ont pas de passé à
 réparer.
+
+---
+
+## Jalon 55 — travailler une campagne au quotidien
+
+### Archiver contre supprimer, la distinction du jalon 47 appliquée
+
+| | « Archiver » | « Supprimer » |
+|---|---|---|
+| Pour | la campagne finie, tous les jours | la campagne créée par erreur |
+| Garde | envois, ouvertures, réponses, entonnoir | rien |
+| Réversible | oui, « Désarchiver » | non |
+| Refusée si | jamais | **la campagne a envoyé au moins un message** |
+
+**Un envoi est un fait ; l'effacer ferait mentir /emails.** Le refus le dit
+mot pour mot et renvoie vers « Archiver » — un blocage qui ne nomme pas
+l'alternative se lit comme une panne. Le bouton « Supprimer » est **absent**
+plutôt que grisé sur une campagne qui a envoyé (jalon 26), et une phrase à sa
+place dit combien de messages retiennent la suppression.
+
+**Le verdict est relu au moment d'écrire**, jamais repris de l'affichage : la
+confirmation peut rester ouverte pendant qu'un départ part, et c'est exactement
+l'instant où la campagne cesse d'être supprimable (leçon du jalon 47).
+
+**Ni l'un ni l'autre ne touche aux contacts**, et la confirmation l'écrit :
+archiver arrête les inscriptions actives avec le motif « Campagne archivée » et
+écarte les départs en attente ; supprimer emporte la séquence, ses étapes et ses
+inscriptions. Les fiches, leur historique et leurs envois restent — ce ne sont
+pas des enfants de la campagne.
+
+### La sélection est une vraie sélection
+
+Case par ligne, case d'en-tête qui prend **tout ce que le filtre courant
+affiche**, moins les déjà inscrits — qui apparaissent « ✓ inscrite » plutôt que
+cochables. Barre collée en haut (`sticky`) portant « 23 sélectionné(s) » et le
+bouton de confirmation : une barre qui défile hors du champ obligerait à
+remonter pour valider, et l'on finirait par cocher sans jamais confirmer.
+
+**Elle survit au filtrage, et c'est ce qui décide de tout le reste.** Filtrer,
+sur cet écran, est une **navigation** : la page est rendue côté serveur et
+l'état React repart de zéro. Trois rangements possibles, et pourquoi
+`sessionStorage` (`lib/client/campaign-selection.ts`) :
+
+| Où | Verdict |
+|---|---|
+| l'URL | **non** : cent cinquante identifiants dans la barre d'adresse, une limite de longueur, un favori qui fige une sélection périmée |
+| la base | **non** : une sélection en cours de composition n'est pas un fait, et chaque clic de case deviendrait une écriture — une inscription sans témoin, ce que le jalon 8 s'interdit |
+| `sessionStorage` | **retenu** : par onglet, survit à la navigation, disparaît à la fermeture — la durée de vie exacte d'un brouillon de sélection |
+
+Toutes les lectures et écritures sont gardées : un navigateur qui refuse le
+stockage rend l'écran **dégradé mais jamais faux** — la sélection ne survit
+alors pas au filtre, au lieu de casser la page.
+
+**Les fiches cochées font foi quand il y en a**, le filtre n'étant alors qu'un
+souvenir de la façon dont on les a trouvées : cocher huit fiches sur un filtre
+puis cinq sur un autre ne se décrit par aucune requête unique.
+
+Cibles à 44 px, comme partout depuis le jalon 46.
+
+### Qui est dans la campagne
+
+Par ligne : nom (vers sa fiche), société, rôle, étape `n/total`, dernier message
+avec `◔` s'il a été ouvert, état et — quand elle est arrêtée — **pourquoi**.
+
+**L'état est dérivé, jamais stocké** : `memberState()` (pur) rend « a répondu »
+en premier, puis « arrêtée », puis « pas encore écrit » / « silencieux ». Le
+dériver garantit qu'il ne peut pas contredire l'entonnoir affiché au-dessus —
+c'est la règle du statut de relance du jalon 6. Les puces filtrent exactement
+là-dessus, et un test vérifie que **chaque état produit a sa puce**.
+
+**Retirer arrête l'inscription, ne la supprime pas.** La supprimer sortirait la
+personne du dénominateur, et le taux de réponse s'améliorerait à chaque
+retrait — une statistique qui se bonifie quand on renonce est une statistique
+qui ment. La fiche, son historique et ses envois passés restent, et /emails
+continue de les compter.
+
+Les inscrits sont lus **côté serveur** et `onRefresh` rejoue la page : après un
+retrait, c'est le serveur qui redit qui reste, pas le navigateur qui devine.
+
+### Un seul entonnoir, et la campagne nommée sur chaque envoi
+
+**Le jalon 54 avait écrit `readCampaignFunnel` comme un second calcul** — ses
+propres requêtes, ses propres additions, à côté de celles de /emails. Deux
+séries qui comptent les mêmes personnes finissent par se contredire, et
+personne ne sait alors laquelle croire.
+
+`readFunnelFacts(scope)` est extraite d'`email-stats.ts` : /emails l'appelle
+sans portée, la campagne avec `{ sequenceId }`. `buildFunnel` par-dessus, et la
+carte rend **le même composant `FunnelRow`** que la page des emails. Il n'y a
+plus qu'une addition.
+
+`EmailSend.campaignId` / `campaignName` (migration `25_send_campaign`) : le nom
+est **copié**, comme celui de la séquence au jalon 38 — un renommage ne doit pas
+réécrire l'histoire. Et la campagne est **déduite de la séquence**
+(`campaignOfSequence`), jamais reçue de l'écran : `EmailSequence.campaignId` est
+unique, donc une seule campagne peut revendiquer un message. Un champ transmis
+par la requête laisserait un écran s'attribuer les envois d'un autre, et
+l'entonnoir compterait ce qu'on lui dit. La migration rattache les envois déjà
+partis à la campagne qui portait leur séquence.
+
+Dans /emails, la pastille de l'objet nomme la campagne et l'étape — « seq. 2 »
+ne disait pas de quoi — et mène au journal filtré sur elle. **Les puces
+filtrent par campagne plutôt que par séquence** : depuis le jalon 54 une
+séquence n'existe qu'au sein d'une campagne et porte son nom, deux rangées de
+puces identiques feraient choisir entre deux formulations d'une même question
+(c'est ce qui avait fait retirer « Déjà contactés » au jalon 31). `sequence`
+reste une **valeur valide sans puce**, avec sa puce de rattrapage quand elle est
+active : un lien mis en favori doit continuer d'ouvrir sa liste, et un filtre
+actif qu'aucun contrôle ne nomme est un écran qui ment.
+
+Sur la fiche d'un contact, un envoi de campagne le dit et renvoie vers son
+journal : sans cette ligne, un message de séquence et un message écrit à la main
+se ressemblent, et l'on relance quelqu'un qu'une campagne relance déjà.
+
+### La garde
+
+`tests/campaign-funnel-source.test.ts` fixe qu'aucun étage de l'entonnoir n'est
+recomposé dans `campaigns.ts` (chacun vient de `facts.input`), qu'il n'y a
+aucune seconde définition de « a répondu », que `readFunnelFacts` accepte une
+portée et sert bien les deux écrans, et que la campagne d'un envoi est déduite
+plutôt que reçue. Statique parce que le défaut l'est : deux additions justes
+chacune de son côté ne lèvent rien et ne font échouer aucun type.
+
+**Éprouvée en réintroduisant les deux régressions exactes** — l'addition locale
+des messages, et `campaignId` repris de la requête : deux tests tombent en les
+nommant. Une première version de la garde était **trop large** (elle interdisait
+tout `emailSend.count`, donc aussi le verdict de suppression, qui ne demande pas
+un étage d'entonnoir mais un fait binaire) : resserrée, comme la garde de
+rapprochement des sociétés au jalon 53.
+
+### Un défaut de frontière, attrapé par le build
+
+`components/campaigns/campaign-members.tsx` importait `MEMBER_STATES` de
+`lib/api/campaigns.ts`, qui porte `import "server-only"` : Prisma entrait dans
+le paquet du navigateur et le build refusait — à raison. Le vocabulaire des
+inscrits (états, libellés, `memberState`) vit désormais dans
+`lib/domain/campaign-members.ts`, pur. Le typecheck ne pouvait rien voir : les
+types sont effacés, seul l'import de valeur comptait.
+
+### Jalon 55 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `25_send_campaign` appliquée puis
+`migrate diff` **vide**), les substituts SMTP/IMAP/Anthropic avec capture du
+fil :
+
+- **1 · supprimer refusé** : 3 messages partis → `deletable: false`, refus citant
+  le compte **et** « Archivez », campagne toujours en base ; archivage → date
+  posée, **3 envois et 3 fiches intacts**, 3 inscriptions arrêtées ; campagne
+  vide → supprimée avec sa séquence, **les 3 fiches ne bougent pas** ;
+- **2 · inscrits** : 3 lignes portant nom, société, rôle, étape 1/1 et date du
+  dernier message ; une réponse consignée → l'état passe à « a répondu »
+  **par-dessus « arrêtée »** ; retrait → **toujours 3 lignes**, fiches et envois
+  intacts ;
+- **3 · traçabilité** : les 3 envois portent « SAV septembre » et leur étape ;
+- **4 · l'accord des nombres** : journal filtré par campagne = 3 lignes, et
+  **entonnoir 3 écrits / 3 messages / 1 réponse = journal 3 / 3 / 1** — mêmes
+  nombres, une seule addition ; le premier étage de l'entonnoir égale « personnes
+  écrites » ;
+- **2 bis · deux filtres successifs** : une fiche cochée sous `f.title=Head of
+  Customer Care`, une autre sous `owner=Mohamed` → **les deux sont inscrites**,
+  aucune perdue au changement de filtre ; re-cocher une déjà inscrite →
+  « 0 nouvelle, 1 déjà », pas de doublon ;
+- **5 · une réponse relevée par IMAP** (et non saisie à la main), sur une
+  campagne **vivante** : déposée dans la boîte d'où la campagne part →
+  `replies: 1`, rattachée à « Nova octobre » étape 1, inscription passée à
+  `stopped` « Le contact a répondu », la liste des inscrits la montre « a
+  répondu », et **entonnoir 1 réponse = journal filtré 1** ;
+- **6 · garde-fous** : la réponse arrête l'inscription avec son motif,
+  l'interdiction d'accroche entre collègues (jalon 54) est toujours sur le fil,
+  aucun départ en attente sur une campagne archivée ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1056 tests**) verts.
+
+### Jalon 55 — ce qui n'est pas fait
+
+**La sélection à la case n'a pas été exercée dans un navigateur.** Le service
+qu'elle appelle est vérifié de bout en bout ; les cases, la barre collante et la
+survie au changement de filtre sont du code client, et cette suite n'a pas de
+DOM. C'est le point à regarder en premier sur le déploiement.
+
+**Un onglet fermé perd sa sélection.** C'est la durée de vie choisie, pas un
+oubli — mais quelqu'un qui compose une sélection sur deux jours devra la
+reprendre. Le jour où cela gêne, la réponse est une sélection nommée en base,
+avec son écriture explicite.
+
+**Une campagne archivée peut être désarchivée sans repartir.** Sa séquence reste
+inactive : c'est délibéré — relancer des envois doit être un geste séparé — mais
+rien à l'écran ne le rappelle au moment de désarchiver.
+
+**Une réponse datée dans la même seconde que son envoi n'entre pas dans
+l'entonnoir.** L'en-tête `Date` d'un message est à la seconde, l'envoi porte des
+millisecondes : une réponse arrivée 400 ms après tombe donc *avant* son propre
+envoi, et `readReplyFacts` l'écarte — à raison, puisque c'est la règle qui
+empêche de compter comme réponse une conversation antérieure (jalon 39). Trouvé
+en écrivant la recette, où l'envoi et la réponse tenaient dans la même seconde.
+Sans conséquence réelle : personne ne répond dans la seconde. À savoir avant de
+conclure qu'un relevé « n'a rien compté ».
+
+**Les envois antérieurs à la migration portent la campagne de leur séquence**,
+déduite après coup. C'est exact tant qu'une séquence n'a jamais changé de
+campagne, ce que le produit n'a jamais permis.

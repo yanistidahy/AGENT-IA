@@ -1,4 +1,5 @@
 import { readColleagues } from "@/lib/api/account";
+import { enrolledContactIds } from "@/lib/api/campaigns";
 import { ContactsView } from "@/components/contacts/contacts-view";
 import { parseContactsQuery } from "@/lib/api/contact-schemas";
 import {
@@ -124,8 +125,15 @@ export default async function ContactsPage({
       ? null
       : await prisma.campaign.findUnique({
           where: { id: campagneId },
-          select: { id: true, name: true },
+          select: { id: true, name: true, sequence: { select: { id: true } } },
         });
+
+  // Les fiches déjà inscrites : marquées dans la liste et exclues du réajout,
+  // plutôt que silencieusement dédoublonnées à l'inscription — voir jalon 55.
+  const enrolledIds =
+    campaignTarget?.sequence == null
+      ? []
+      : [...(await enrolledContactIds(campaignTarget.sequence.id))];
 
   return (
     <ContactsView
@@ -141,7 +149,8 @@ export default async function ContactsPage({
       alerts={alerts}
       focused={focused}
       colleagues={colleagues}
-      campaignTarget={campaignTarget}
+      campaignTarget={campaignTarget === null ? null : { id: campaignTarget.id, name: campaignTarget.name }}
+      enrolledIds={enrolledIds}
       reminderCounts={reminderCounts}
       account={query.account}
       dm={query.dm}

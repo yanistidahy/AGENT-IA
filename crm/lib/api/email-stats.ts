@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "../db";
 import { readReplyFacts, replyDates } from "./email-replies";
-import { buildFunnel, type FunnelStep } from "../domain/email-funnel";
+import { buildFunnel, type FunnelInput, type FunnelStep } from "../domain/email-funnel";
 import { historyDepth, type HistoryDepth } from "../domain/email-history";
 import {
   byDay,
@@ -61,12 +61,66 @@ export interface EmailStats {
 export const EMAIL_WINDOW_DAYS = 90;
 const WINDOW_DAYS = EMAIL_WINDOW_DAYS;
 
-export async function readEmailStats(now = new Date()): Promise<EmailStats> {
-  const since = new Date(now);
-  since.setDate(since.getDate() - WINDOW_DAYS);
+/**
+ * La portée d'un entonnoir : une fenêtre, une campagne, ou les deux.
+ *
+ * `sequenceId` borne à une campagne — la relation campagne ↔ séquence est
+ * un-à-un depuis le jalon 54, et c'est `EmailSend.sequenceId` qui porte
+ * l'appartenance sur chaque envoi.
+ */
+export interface FunnelScope {
+  readonly since?: Date;
+  readonly sequenceId?: string;
+}
 
+/** Ce qu'il faut pour construire un entonnoir, plus les lignes qui l'ont produit. */
+export interface FunnelFacts {
+  readonly input: FunnelInput;
+  readonly unaudited: number;
+  readonly sends: SendRow[];
+  readonly firstSend: Map<string, Date>;
+}
+
+type SendRow = {
+  sentAt: Date;
+  signatoryName: string;
+  sequenceName: string;
+  sequenceStep: number | null;
+  contactId: string | null;
+  tracked: boolean;
+  firstOpenAt: Date | null;
+  openCount: number;
+  _count: { hits: number };
+  copyStatus: string;
+};
+
+/**
+ * **Le calcul de l'entonnoir, en un seul endroit.**
+ *
+ * `/emails` et la carte d'une campagne affichaient le même entonnoir calculé
+ * deux fois — écrit ainsi au jalon 54, et c'était une faute : deux additions
+ * d'une même chose finissent par diverger, et le jour venu on ne sait plus
+ * laquelle croire. Elles appellent désormais cette fonction, l'une avec une
+ * fenêtre, l'autre avec une campagne. **Les nombres ne peuvent plus se
+ * contredire, parce qu'il n'y en a qu'une série.**
+ *
+ * Les règles qu'elle porte sont celles des jalons 37 et 39, inchangées :
+ *
+ * - la réponse se compte **par personne**, jamais par envoi — relancer trois
+ *   fois quelqu'un qui répond une fois ne fait pas trois réponses ;
+ * - le dénominateur de l'ouverture est le nombre de personnes **suivies**, pas
+ *   écrites : un message parti sans pixel n'avait aucune chance d'être compté ;
+ * - un envoi orphelin (fiche supprimée) reste **une personne écrite** — le
+ *   compter pour rien flatterait tous les taux ;
+ * - la borne de la réponse est le **premier** envoi à cette personne dans la
+ *   portée : une réponse antérieure ne répond pas à un message postérieur.
+ */
+export async function readFunnelFacts(scope: FunnelScope): Promise<FunnelFacts> {
   const sends = await prisma.emailSend.findMany({
-    where: { sentAt: { gte: since } },
+    where: {
+      ...(scope.since === undefined ? {} : { sentAt: { gte: scope.since } }),
+      ...(scope.sequenceId === undefined ? {} : { sequenceId: scope.sequenceId }),
+    },
     select: {
       sentAt: true,
       signatoryName: true,
@@ -82,13 +136,6 @@ export async function readEmailStats(now = new Date()): Promise<EmailStats> {
     orderBy: { sentAt: "asc" },
   });
 
-  const dates = sends.map((send) => send.sentAt);
-  const depth = historyDepth(dates, now);
-
-  // **La réponse se compte par contact, pas par envoi.** Quelqu'un qui a reçu
-  // trois messages et répond une fois a répondu une fois : compter la réponse
-  // pour chacun des trois gonflerait le taux d'un facteur trois, et gonflerait
-  // d'autant plus qu'on relance.
   const firstSend = new Map<string, Date>();
   for (const send of sends) {
     if (send.contactId === null) continue;
@@ -105,9 +152,6 @@ export async function readEmailStats(now = new Date()): Promise<EmailStats> {
     if (fact.metAt !== null) meetings += 1;
   }
 
-  // Les personnes, et non les messages, à chacune des trois étapes suivies. Un
-  // envoi orphelin (fiche supprimée) reste une personne écrite : le compter
-  // pour rien flatterait tous les taux.
   const people = new Set<string>();
   const trackedPeople = new Set<string>();
   const openedPeople = new Set<string>();
@@ -128,17 +172,35 @@ export async function readEmailStats(now = new Date()): Promise<EmailStats> {
   ).length;
 
   return {
-    total: sends.length,
-    windowDays: WINDOW_DAYS,
-    depth,
-    funnel: buildFunnel({
+    input: {
       written: people.size,
       messages: sends.length,
       opened: openedPeople.size,
       tracked: trackedPeople.size,
       replied,
       meetings,
-    }),
+    },
+    unaudited,
+    sends,
+    firstSend,
+  };
+}
+
+export async function readEmailStats(now = new Date()): Promise<EmailStats> {
+  const since = new Date(now);
+  since.setDate(since.getDate() - WINDOW_DAYS);
+
+  const { input, unaudited, sends, firstSend } = await readFunnelFacts({ since });
+  const facts = await readReplyFacts(firstSend);
+
+  const dates = sends.map((send) => send.sentAt);
+  const depth = historyDepth(dates, now);
+
+  return {
+    total: sends.length,
+    windowDays: WINDOW_DAYS,
+    depth,
+    funnel: buildFunnel(input),
     // Les deux graphiques suivent l'histoire disponible : `dailyDays` et
     // `weeklyWeeks` valent 0 quand la série ne porte pas encore de quoi
     // affirmer quoi que ce soit, et la page rend alors la phrase qui dit

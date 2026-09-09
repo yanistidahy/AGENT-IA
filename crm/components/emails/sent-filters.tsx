@@ -17,6 +17,7 @@ export function sentHref(query: SentQuery, patch: Partial<SentQuery>): string {
   if (merged.dir !== undefined) params.set("sens", merged.dir);
   if (merged.signatory !== undefined) params.set("signataire", merged.signatory);
   if (merged.sequence !== undefined) params.set("sequence", merged.sequence);
+  if (merged.campaign !== undefined) params.set("campagne", merged.campaign);
   if (merged.state !== undefined) params.set("etat", merged.state);
   const text = params.toString();
   return text === "" ? "/emails" : `/emails?${text}`;
@@ -24,7 +25,10 @@ export function sentHref(query: SentQuery, patch: Partial<SentQuery>): string {
 
 export function SentFilters({ list, query }: { readonly list: SentList; readonly query: SentQuery }) {
   const active =
-    query.signatory !== undefined || query.sequence !== undefined || query.state !== undefined;
+    query.signatory !== undefined ||
+    query.sequence !== undefined ||
+    query.campaign !== undefined ||
+    query.state !== undefined;
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 border-b border-line bg-surface px-3 py-2">
@@ -55,14 +59,35 @@ export function SentFilters({ list, query }: { readonly list: SentList; readonly
           />
         ))}
 
-      {list.sequences.map((name) => (
+      {/*
+        **Les campagnes plutôt que les séquences.** Depuis le jalon 54 une
+        séquence n'existe qu'au sein d'une campagne et porte son nom : deux
+        rangées de puces identiques feraient choisir entre deux formulations
+        d'une même question — c'est ce qui avait fait retirer « Déjà contactés »
+        au jalon 31. La puce filtre sur l'**identifiant** ; le nom n'est que son
+        libellé.
+      */}
+      {list.campaigns.map((campaign) => (
         <Chip
-          key={name}
-          href={sentHref(query, { sequence: name })}
-          active={query.sequence === name}
-          label={name}
+          key={campaign.id}
+          href={sentHref(query, { campaign: campaign.id })}
+          active={query.campaign === campaign.id}
+          label={campaign.name}
         />
       ))}
+
+      {/*
+        `sequence` reste une valeur valide sans puce : un lien mis en favori
+        avant ce jalon doit continuer d'ouvrir sa liste, et un filtre actif
+        qu'aucun contrôle ne nomme est un écran qui ment (jalon 31).
+      */}
+      {query.sequence !== undefined && (
+        <Chip
+          href={sentHref(query, { sequence: undefined })}
+          active
+          label={`Séquence : ${query.sequence}`}
+        />
+      )}
 
       {active && (
         <Link

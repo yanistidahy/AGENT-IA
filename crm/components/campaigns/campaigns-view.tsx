@@ -1,8 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
-import type { CampaignView } from "@/lib/api/campaigns";
+import type { CampaignMember, CampaignView } from "@/lib/api/campaigns";
 import type { SequenceView } from "@/components/settings/email-sequences-panel";
 import { CampaignCard } from "./campaign-card";
 
@@ -36,13 +37,17 @@ const CONTROL =
 
 export function CampaignsView({
   initial,
+  members,
   sequences,
   mailboxes,
 }: {
   readonly initial: readonly CampaignView[];
+  /** Les inscrits par campagne, rendus par le serveur — voir la page. */
+  readonly members: Readonly<Record<string, readonly CampaignMember[]>>;
   readonly sequences: readonly SequenceView[];
   readonly mailboxes: readonly MailboxOption[];
 }) {
+  const router = useRouter();
   const [campaigns, setCampaigns] = useState<CampaignView[]>([...initial]);
   const [name, setName] = useState("");
   const [mailboxId, setMailboxId] = useState(mailboxes[0]?.id ?? "");
@@ -130,8 +135,10 @@ export function CampaignsView({
               key={campaign.id}
               campaign={campaign}
               sequence={sequences.find((entry) => entry.id === campaign.sequenceId) ?? null}
+              members={members[campaign.id] ?? []}
               mailboxes={mailboxes}
               onChanged={setCampaigns}
+              onRefresh={() => router.refresh()}
             />
           ))}
         </div>

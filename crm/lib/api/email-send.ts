@@ -7,6 +7,7 @@ import { prisma as db } from "../db";
 import { readMailConfig, readMailStatus, sendMail, PASSWORD_ENV } from "./mail";
 import { getMailbox, listMailboxes, mailboxPassword, pickMailbox } from "./mailboxes";
 import { copyToSent } from "./imap";
+import { campaignOfSequence } from "./campaigns";
 import {
   newTrackToken,
   pixelUrl,
@@ -175,6 +176,7 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
   // **La copie « Envoyés » vient après**, et son échec ne remonte jamais comme
   // un échec d'envoi. Le message est parti : ce qui reste à faire, c'est le
   // dire.
+  const campaign = await campaignOfSequence(input.sequenceId ?? "");
   const config = await readMailConfig(mailbox.id);
   // **La copie déposée ne porte pas le pixel** (jalon 43) : sans quoi ouvrir son
   // propre dossier « Envoyés » compterait comme une ouverture du prospect.
@@ -196,6 +198,8 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
       sequenceId: input.sequenceId ?? "",
       sequenceName: input.sequenceName ?? "",
       sequenceStep: input.sequenceStep ?? null,
+      campaignId: campaign?.id ?? "",
+      campaignName: campaign?.name ?? "",
       copyStatus: copy.ok ? "copied" : "failed",
       copyError: copy.ok ? "" : copy.message,
     },

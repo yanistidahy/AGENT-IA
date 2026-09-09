@@ -1,5 +1,5 @@
 import { CampaignsView } from "@/components/campaigns/campaigns-view";
-import { listCampaigns } from "@/lib/api/campaigns";
+import { listCampaigns, listCampaignMembers } from "@/lib/api/campaigns";
 import { listSequences } from "@/lib/api/email-sequences";
 import { listMailboxes } from "@/lib/api/mailboxes";
 
@@ -20,9 +20,27 @@ export default async function CampagnesPage() {
     listMailboxes(),
   ]);
 
+  /*
+    Les inscrits sont lus **ici**, côté serveur, une requête par campagne : la
+    liste n'existe qu'au dépli, mais la charger au clic demanderait une route de
+    plus et un état de chargement pour une lecture qui tient dans le même
+    aller-retour. `onRefresh` (un `router.refresh()`) rejoue cette page : après
+    un retrait, c'est le serveur qui redit qui reste, pas le navigateur qui
+    devine.
+  */
+  const members = Object.fromEntries(
+    await Promise.all(
+      campaigns.map(
+        async (campaign) =>
+          [campaign.id, await listCampaignMembers(campaign.sequenceId)] as const,
+      ),
+    ),
+  );
+
   return (
     <CampaignsView
       initial={campaigns}
+      members={members}
       sequences={sequences.map((sequence) => ({
         ...sequence,
         steps: [...sequence.steps],

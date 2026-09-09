@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useEffect, useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import { formatDate } from "@/lib/format";
@@ -20,6 +22,9 @@ import { formatDate } from "@/lib/format";
 
 interface ContactEmail {
   readonly id: string;
+  readonly campaignId: string;
+  readonly campaignName: string;
+  readonly sequenceStep: number | null;
   readonly sentAt: string;
   readonly subject: string;
   readonly signatoryName: string;
@@ -78,6 +83,23 @@ export function ContactEmails({ contactId }: { readonly contactId: string }) {
                 {email.signatoryName !== "" && ` · ${email.signatoryName}`}
               </span>
             </p>
+            {/* **Quel envoi vient d'une campagne, et laquelle.** Sans cette
+                ligne, un message de séquence et un message écrit à la main se
+                ressemblent sur la fiche — et l'on relance quelqu'un qu'une
+                campagne relance déjà. */}
+            {email.campaignId !== "" && (
+              <p className="text-[11.5px]">
+                <Link
+                  href={`/emails?campagne=${encodeURIComponent(email.campaignId)}`}
+                  className="text-brand-d hover:underline"
+                >
+                  Campagne « {email.campaignName} »
+                </Link>
+                {email.sequenceStep !== null && (
+                  <span className="text-muted"> · étape {email.sequenceStep}</span>
+                )}
+              </p>
+            )}
             <p className="text-[11.5px] text-muted">
               {email.tracked
                 ? email.firstOpenAt === null

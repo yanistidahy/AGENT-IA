@@ -5,6 +5,9 @@ import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import type { CampaignView } from "@/lib/api/campaigns";
 import { EmailSequencesPanel, type SequenceView } from "@/components/settings/email-sequences-panel";
+import { FunnelRow } from "@/components/emails/funnel-row";
+import { CampaignMembers } from "./campaign-members";
+import type { CampaignMember } from "@/lib/domain/campaign-members";
 
 /**
  * Une campagne : son entonnoir, sa boîte, sa sélection, ses étapes.
@@ -40,17 +43,24 @@ function Stat({ label, value }: { readonly label: string; readonly value: number
 export function CampaignCard({
   campaign,
   sequence,
+  members,
   mailboxes,
   onChanged,
+  onRefresh,
 }: {
   readonly campaign: CampaignView;
   readonly sequence: SequenceView | null;
+  readonly members: readonly CampaignMember[];
   readonly mailboxes: readonly MailboxOption[];
   readonly onChanged: (campaigns: CampaignView[]) => void;
+  /** Recharge la page : les inscrits sont rendus côté serveur. */
+  readonly onRefresh: () => void;
 }) {
   const [name, setName] = useState(campaign.name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [open, setOpen] = useState(false);
 
   const patch = async (change: { name?: string; mailboxId?: string }) => {
     setBusy(true);
@@ -65,6 +75,41 @@ export function CampaignCard({
     else setError(result.message);
   };
 
+  const act = async (body: Record<string, unknown>) => {
+    setBusy(true);
+    setError(null);
+    const result = await requestJson(
+      "/api/campaigns/actions",
+      { method: "POST", body: JSON.stringify(body) },
+      isCampaigns,
+    );
+    setBusy(false);
+    if (result.ok) {
+      onChanged(result.data.campaigns);
+      onRefresh();
+    } else {
+      setError(result.message);
+    }
+  };
+
+  const destroy = async () => {
+    setBusy(true);
+    setError(null);
+    const result = await requestJson(
+      `/api/campaigns?id=${encodeURIComponent(campaign.id)}`,
+      { method: "DELETE" },
+      isCampaigns,
+    );
+    setBusy(false);
+    setConfirming(false);
+    if (result.ok) {
+      onChanged(result.data.campaigns);
+      onRefresh();
+    } else {
+      setError(result.message);
+    }
+  };
+
   const { funnel } = campaign;
   const contactsHref = `/contacts?campagne=${encodeURIComponent(campaign.id)}${
     campaign.selection === "" ? "" : `&${campaign.selection}`
@@ -73,6 +118,11 @@ export function CampaignCard({
   return (
     <section className="rounded-card border border-line bg-surface p-4 shadow-card">
       <div className="mb-3 flex flex-wrap items-center gap-2">
+        {campaign.archivedAt !== null && (
+          <span className="rounded-control border border-line bg-surface-2 px-2 py-0.5 font-mono text-[10px] tracking-[0.08em] text-muted uppercase">
+            Archivée
+          </span>
+        )}
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -101,11 +151,16 @@ export function CampaignCard({
       <div className="mb-3 flex flex-wrap gap-2">
         <Stat label="Inscrits" value={funnel.enrolled} />
         <Stat label="En cours" value={funnel.running} />
-        <Stat label="Écrits" value={funnel.contacted} />
-        <Stat label="Messages" value={funnel.sent} />
-        <Stat label="Ouverts (est.)" value={funnel.opened} />
-        <Stat label="Réponses" value={funnel.replied} />
-        <Stat label="RDV" value={funnel.meetings} />
+      </div>
+
+      {/*
+        **Le même entonnoir que /emails, et le même composant.** Les nombres
+        viennent de `readFunnelFacts`, la fonction qui sert la page des emails,
+        bornée à cette campagne : deux additions d'une même chose finiraient par
+        se contredire, et personne ne saurait laquelle croire.
+      */}
+      <div className="mb-3">
+        <FunnelRow steps={funnel.steps} />
       </div>
 
       <div className="mb-3 rounded-control border border-line-2 px-3 py-2 text-[12.5px]">
@@ -123,6 +178,89 @@ export function CampaignCard({
           </Link>
         </div>
       </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2 border-t border-line-2 pt-3 text-[12.5px]">
+        <button
+          type="button"
+          onClick={() => setOpen((current) => !current)}
+          className="min-h-[44px] rounded-control border border-line px-3 hover:border-brand lg:min-h-0 lg:py-1"
+        >
+          {open ? "Masquer les inscrits" : `Voir les ${funnel.enrolled} inscrit${funnel.enrolled > 1 ? "s" : ""}`}
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            void act({
+              action: "archive",
+              campaignId: campaign.id,
+              archived: campaign.archivedAt === null,
+            })
+          }
+          disabled={busy}
+          title={
+            campaign.archivedAt === null
+              ? "Sort de la liste active et arrête les envois. L'histoire et les statistiques restent."
+              : "Remet la campagne dans la liste active. La séquence reste inactive tant qu'on ne la rouvre pas."
+          }
+          className="min-h-[44px] rounded-control border border-line px-3 hover:border-brand disabled:opacity-50 lg:min-h-0 lg:py-1"
+        >
+          {campaign.archivedAt === null ? "Archiver" : "Désarchiver"}
+        </button>
+
+        {/*
+          « Supprimer » n'apparaît que sur une campagne qui n'a rien envoyé.
+          Absent plutôt que grisé : un bouton grisé invite à chercher comment
+          l'activer, un bouton absent ne pose pas la question (jalon 26) — et
+          l'explication est donnée juste à côté.
+        */}
+        {campaign.deletable ? (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            disabled={busy}
+            className="ml-auto min-h-[44px] text-muted hover:text-danger disabled:opacity-50 lg:min-h-0"
+          >
+            Supprimer
+          </button>
+        ) : (
+          <span className="ml-auto text-[12px] text-muted">
+            {funnel.messages} message{funnel.messages > 1 ? "s" : ""} envoyé
+            {funnel.messages > 1 ? "s" : ""} : suppression impossible, archivez.
+          </span>
+        )}
+      </div>
+
+      {confirming && (
+        <div className="mb-3 rounded-control border border-danger bg-pulse-l px-3 py-2 text-[12.5px]">
+          <p>
+            Supprimer « <strong className="font-semibold">{campaign.name}</strong> »
+            définitivement ? Partiront avec elle : sa séquence, ses étapes et ses{" "}
+            {funnel.enrolled} inscription{funnel.enrolled > 1 ? "s" : ""}.{" "}
+            <strong className="font-semibold">Les contacts ne sont pas touchés</strong> — ils
+            restent dans le CRM avec tout leur historique.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void destroy()}
+              disabled={busy}
+              className="min-h-[44px] rounded-control bg-danger px-3 font-medium text-white disabled:opacity-50 lg:min-h-0 lg:py-1"
+            >
+              Supprimer définitivement
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              className="min-h-[44px] rounded-control border border-line px-3 lg:min-h-0 lg:py-1"
+            >
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
+
+      {open && <CampaignMembers members={members} onChanged={onRefresh} />}
 
       {/*
         Les étapes : l'éditeur du jalon 38, monté tel quel. Mêmes règles — trois
