@@ -89,6 +89,8 @@ export interface RecordSendInput {
   readonly subject: string;
   readonly body: string;
   readonly messageId: string;
+  /** La boîte qui a envoyé — celle dont la signature clôt le message. */
+  readonly mailboxId: string;
   readonly signatoryId: string;
   readonly signatoryName: string;
   readonly trackToken: string | null;
@@ -117,6 +119,7 @@ export async function recordSend(input: RecordSendInput, now: Date): Promise<str
         subject: input.subject,
         body: input.body,
         messageId: input.messageId,
+        mailboxId: input.mailboxId,
         signatoryId: input.signatoryId,
         signatoryName: input.signatoryName,
         tracked: input.trackToken !== null,

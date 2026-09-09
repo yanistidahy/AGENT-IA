@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { describeSmtpError, messageId, missingFields, PASSWORD_ENV } from "../mail";
+import { describeSmtpError, messageId, missingFields } from "../mail";
+import { passwordEnvFor } from "../mailboxes";
 
 /**
  * Ce que le panneau de messagerie doit savoir dire.
@@ -10,6 +11,9 @@ import { describeSmtpError, messageId, missingFields, PASSWORD_ENV } from "../ma
  * « 535 authentication failed » désigne le coupable en une ligne.
  */
 const CONFIG = {
+  mailboxId: "mbx_principale",
+  slug: "principale",
+  label: "Boîte principale",
   host: "smtp.ionos.fr",
   port: 587,
   encryption: "starttls" as const,
@@ -30,7 +34,7 @@ describe("ce qui manque pour envoyer", () => {
   it("nomme le mot de passe par sa variable d'environnement", () => {
     // Le nom de la variable est la seule information actionnable : le mot de
     // passe ne se règle pas dans l'application, il se pose sur le service.
-    expect(missingFields(CONFIG, false)).toEqual([`le mot de passe (variable ${PASSWORD_ENV})`]);
+    expect(missingFields(CONFIG, false)).toEqual([`le mot de passe (variable ${passwordEnvFor(CONFIG.slug)})`]);
   });
 
   it("nomme chaque champ absent, pas seulement le premier", () => {
@@ -39,7 +43,7 @@ describe("ce qui manque pour envoyer", () => {
       "l'hôte SMTP",
       "l'identifiant",
       "l'adresse d'expédition",
-      `le mot de passe (variable ${PASSWORD_ENV})`,
+      `le mot de passe (variable ${passwordEnvFor(CONFIG.slug)})`,
     ]);
   });
 });

@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "../db";
 import { draftEmail } from "../agents/email-draft";
+import { openingLine } from "./account";
 import { sendEmailToContact } from "./email-send";
 import { checkRate } from "./send-rate";
 import { REAL_ACTIVITY } from "./real-activity";
@@ -81,6 +82,50 @@ export interface ComposeReport {
  * pas produire deux messages pour la même étape — c'est une contrainte de base,
  * pas une vérification applicative (leçon du jalon 8).
  */
+/**
+ * L'accroche d'un départ **déjà composé ce matin** pour un collègue.
+ *
+ * Toutes séquences confondues : deux campagnes différentes qui écrivent le même
+ * matin à deux personnes de la même maison posent exactement le même problème
+ * qu'une seule. Le plus récent composé fait foi — c'est lui que le destinataire
+ * comparera.
+ */
+async function pendingColleagueOpening(
+  contactId: string,
+  day: string,
+): Promise<{ readonly name: string; readonly opening: string } | null> {
+  const contact = await prisma.contact.findUnique({
+    where: { id: contactId },
+    select: { companyId: true },
+  });
+  if (contact?.companyId == null) return null;
+
+  const pending = await prisma.sequenceDeparture.findFirst({
+    where: {
+      day,
+      status: "pending",
+      enrollment: {
+        contactId: { not: contactId },
+        contact: { companyId: contact.companyId },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      body: true,
+      enrollment: { select: { contact: { select: { firstName: true, lastName: true } } } },
+    },
+  });
+  if (pending === null || pending.body.trim() === "") return null;
+
+  const opening = openingLine(pending.body);
+  if (opening === "") return null;
+
+  // `contactTitle`, jamais une recomposition : la garde du jalon 50 veille, et
+  // elle vient de le prouver en attrapant la première version de cette ligne.
+  const name = contactTitle({ ...pending.enrollment.contact, company: null });
+  return { name, opening: opening.slice(0, 300) };
+}
+
 export async function composeDepartures(now = new Date()): Promise<ComposeReport> {
   const empty = { composed: 0, sentAutomatically: 0, stopped: 0, waiting: 0 };
 
@@ -91,7 +136,14 @@ export async function composeDepartures(now = new Date()): Promise<ComposeReport
   const enrollments = await prisma.sequenceEnrollment.findMany({
     where: { status: "active", sequence: { active: true } },
     include: {
-      sequence: { include: { steps: { orderBy: { position: "asc" } } } },
+      sequence: {
+        include: {
+          steps: { orderBy: { position: "asc" } },
+          // La boîte de la campagne : chaque message de la séquence part de la
+          // même adresse, avec la même signature (jalon 54).
+          campaign: { select: { mailboxId: true } },
+        },
+      },
       contact: { select: { id: true, lifecycle: true, lostReason: true, email: true } },
     },
   });
@@ -144,7 +196,25 @@ export async function composeDepartures(now = new Date()): Promise<ComposeReport
     if (existing !== null) continue;
 
     const step = enrollment.sequence.steps.find((entry) => entry.position === verdict.step);
-    const draft = await draftEmail(enrollment.contactId, undefined, step?.brief);
+
+    // **L'accroche du collègue composée ce matin même.** La règle du jalon 53
+    // lit les envois — mais dans cette boucle, deux collègues d'une même maison
+    // sont composés avant que quiconque soit envoyé : le second ne verrait
+    // rien, et les deux brouillons partiraient avec la même entrée en matière.
+    // On relit donc les départs déjà composés aujourd'hui pour la même maison,
+    // et la phrase à ne pas reprendre entre dans la consigne de l'étape.
+    const colleagueOpening = await pendingColleagueOpening(enrollment.contactId, dayKey(now));
+    const brief =
+      colleagueOpening === null
+        ? step?.brief
+        : `${step?.brief ?? ""}\n\nUn collègue de la même maison (${colleagueOpening.name}) a un message composé ce matin dont la phrase d'ouverture est : « ${colleagueOpening.opening} ». N'écris ni cette phrase, ni une reformulation de cette phrase — trouve une autre entrée en matière, ancrée sur le rôle de ton destinataire.`;
+
+    const draft = await draftEmail(
+      enrollment.contactId,
+      undefined,
+      brief,
+      enrollment.sequence.campaign?.mailboxId,
+    );
     if (!draft.ok) {
       await prisma.sequenceDeparture.create({
         data: {
@@ -283,7 +353,15 @@ export async function sendDeparture(
     include: {
       enrollment: {
         include: {
-          sequence: { select: { id: true, name: true, steps: true, autoMode: true } },
+          sequence: {
+            select: {
+              id: true,
+              name: true,
+              steps: true,
+              autoMode: true,
+              campaign: { select: { mailboxId: true } },
+            },
+          },
           contact: { select: { id: true, lifecycle: true, lostReason: true, email: true } },
         },
       },
@@ -345,6 +423,10 @@ export async function sendDeparture(
     contactId: enrollment.contactId,
     subject: departure.subject,
     body: departure.body,
+    // La boîte de la campagne, ou le choix par propriétaire à défaut — un
+    // départ composé avant le jalon 54 n'a pas de campagne, et il doit partir
+    // quand même.
+    signatoryId: enrollment.sequence.campaign?.mailboxId ?? "",
     sequenceId: enrollment.sequence.id,
     sequenceName: enrollment.sequence.name,
     sequenceStep: departure.step,

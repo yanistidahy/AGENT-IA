@@ -15,9 +15,10 @@ import { TagsEditor } from "./tags-editor";
 import { MaintenancePanel } from "./maintenance-panel";
 import { ApiDiagnostic } from "./api-diagnostic";
 import { MailPanel, type MailStatus, type Signatory } from "./mail-panel";
+import { MailboxesPanel } from "./mailboxes-panel";
+import type { MailboxDraft } from "./mailbox-fields";
 import { ImapPanel, type ImapStatus, type TrackingStatus, type SendLimits } from "./imap-panel";
 import { InboxPanel, type InboxStatus } from "./inbox-panel";
-import { EmailSequencesPanel, type SequenceView } from "./email-sequences-panel";
 import { SnapshotsPanel } from "./snapshots-panel";
 import { CouncilPanel } from "./council-panel";
 import { ShiftsPanel } from "./shifts-panel";
@@ -33,13 +34,14 @@ interface SettingsViewProps {
   readonly settings: PilotageSettings;
   readonly tokenBudget: number;
   readonly mail: MailStatus;
+  /** Les boîtes, avec la variable d'environnement de chacune. */
+  readonly mailboxes: readonly MailboxDraft[];
   readonly passwordEnv: string;
   readonly signatories: readonly Signatory[];
   readonly imap: ImapStatus;
   readonly inbox: InboxStatus;
   readonly tracking: TrackingStatus;
   readonly limits: SendLimits;
-  readonly emailSequences: readonly SequenceView[];
   readonly delays: ReminderDelays;
   /** Objectifs hebdomadaires de « Ma performance ». `0` = pas d'objectif. */
   readonly targets: { readonly calls: number; readonly emails: number };
@@ -84,6 +86,7 @@ export function SettingsView({
   settings,
   tokenBudget,
   mail,
+  mailboxes,
   passwordEnv,
   signatories,
   imap,
@@ -91,7 +94,6 @@ export function SettingsView({
   opens,
   tracking,
   limits,
-  emailSequences,
   delays,
   targets,
   colleagueWarningDays,
@@ -146,18 +148,12 @@ export function SettingsView({
         hint="envoi par SMTP, copie dans « Envoyés », et détection des réponses"
       >
         <div className="space-y-4">
-          <MailPanel initial={mail} passwordEnv={passwordEnv} initialSignatories={signatories} />
+          <MailboxesPanel initial={mailboxes} />
+          <MailPanel initial={mail} />
           <ImapPanel initial={imap} initialTracking={tracking} initialLimits={limits} />
           <InboxPanel initial={inbox} />
           {opens}
         </div>
-      </Section>
-
-      <Section
-        title="Séquences d'emails"
-        hint="trois étapes au maximum ; le mode automatique ne couvre jamais la première"
-      >
-        <EmailSequencesPanel initial={emailSequences} />
       </Section>
 
       <Section

@@ -90,6 +90,35 @@ vi.mock("@/lib/db", () => ({
     // réponses dont l'envoi ne désigne aucune fiche. Aucune ici : le test
     // « aucun bandeau » vérifie qu'il reste silencieux.
     emailReply: { findMany: () => Promise.resolve([]) },
+    // Quatrième occurrence du même oubli (jalons 36, 42, 45) : une lecture
+    // ajoutée à la page sans compléter le substitut. La boîte factice est
+    // « prête » pour que la bannière de messagerie ne détourne pas les tests.
+    mailbox: {
+      findUnique: () => Promise.resolve(null),
+      findMany: () =>
+        Promise.resolve([
+          {
+            id: "mbx_principale",
+            slug: "principale",
+            label: "Boîte principale",
+            position: 0,
+            active: true,
+            smtpHost: "smtp.test",
+            smtpPort: 587,
+            smtpEncryption: "starttls",
+            smtpUser: "u@test",
+            smtpFrom: "u@test",
+            smtpFromName: "Test",
+            imapHost: "imap.test",
+            imapPort: 993,
+            imapEncryption: "tls",
+            imapSentMailbox: "",
+            imapCopyEnabled: true,
+            signName: "Yanis Tidahy",
+            signTitle: "Fondateur",
+          },
+        ]),
+    },
     // Aucun appel au modèle consigné : le bandeau de budget ne doit donc pas
     // apparaître, et c'est ce que le test « aucun bandeau » vérifie plus bas.
     apiUsage: {

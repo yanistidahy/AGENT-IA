@@ -14,12 +14,12 @@ import { stageDealCounts } from "@/lib/api/settings";
 import { prisma } from "@/lib/db";
 import { listAgentProfiles } from "@/lib/api/agents";
 import { readMailStatus, PASSWORD_ENV } from "@/lib/api/mail";
+import { listMailboxViews } from "@/lib/api/mailboxes";
 import { readImapStatus } from "@/lib/api/imap";
 import { inboxHealth } from "@/lib/api/inbox-health";
 import { readRoleCoverage } from "@/lib/api/role-angles";
 import { readTrackingConfig } from "@/lib/api/email-sends";
 import { readLimits } from "@/lib/api/send-rate";
-import { listSequences as listEmailSequences } from "@/lib/api/email-sequences";
 import { listSignatories } from "@/lib/api/signatories";
 import { LIFECYCLES } from "@/lib/domain/types";
 import { readUsageReport } from "@/lib/api/usage";
@@ -80,14 +80,6 @@ export default async function ReglagesPage() {
   const tracking = await readTrackingConfig();
   const limits = await readLimits();
   const openAudit = await readOpenAudit();
-  // Recopié en structures muables : le panneau édite la liste sur place, et un
-  // `readonly` du service n'a pas à imposer sa forme au formulaire.
-  const emailSequences = (await listEmailSequences()).map((sequence) => ({
-    ...sequence,
-    steps: sequence.steps.map((step) => ({ ...step })),
-    unlock: { ...sequence.unlock },
-  }));
-
   const lifecycles = lifecycleRows.map((row) => row.value);
 
   return (
@@ -130,6 +122,7 @@ export default async function ReglagesPage() {
       roleAngles={roleAngles}
       mail={mail}
       passwordEnv={PASSWORD_ENV}
+      mailboxes={await listMailboxViews()}
       signatories={signatories}
       imap={imap}
       inbox={{
@@ -141,7 +134,6 @@ export default async function ReglagesPage() {
       }}
       tracking={tracking}
       limits={limits}
-      emailSequences={emailSequences}
       stages={stages}
       dealCounts={dealCounts}
       settings={settings}

@@ -35,8 +35,8 @@ export interface Colleague {
   readonly lastOpening: string;
 }
 
-/** La première ligne non vide d'un corps de message. */
-function openingLine(body: string): string {
+/** La première ligne non vide d'un corps de message — l'accroche. */
+export function openingLine(body: string): string {
   for (const line of body.split("\n")) {
     const trimmed = line.trim();
     // L'appel (« Bonjour Camille, ») est la même formule partout : ce n'est pas

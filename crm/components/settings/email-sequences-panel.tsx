@@ -44,7 +44,18 @@ const FIELD =
 const BUTTON =
   "rounded-control px-3 py-1.5 text-[12.5px] font-semibold transition-colors disabled:opacity-50";
 
-export function EmailSequencesPanel({ initial }: { readonly initial: readonly SequenceView[] }) {
+export function EmailSequencesPanel({
+  initial,
+  embedded = false,
+}: {
+  readonly initial: readonly SequenceView[];
+  /**
+   * Monté dans une carte de campagne : la séquence appartient alors à la
+   * campagne, donc ni paragraphe d'introduction, ni bouton de création — une
+   * séquence naît avec sa campagne, jamais seule (jalon 54).
+   */
+  readonly embedded?: boolean;
+}) {
   const [sequences, setSequences] = useState<SequenceView[]>([...initial]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,12 +111,12 @@ export function EmailSequencesPanel({ initial }: { readonly initial: readonly Se
 
   return (
     <div className="space-y-4">
-      <p className="text-[12.5px] text-muted">
+      {!embedded && <p className="text-[12.5px] text-muted">
         Ces séquences <b className="font-semibold text-ink">envoient des emails</b> — à ne pas
         confondre avec les séquences de tâches plus bas, qui créent des rappels à faire à la
         main. Trois étapes au maximum : une séquence qui s'arrête d'elle-même limite les dégâts
         d'une réponse non repérée mieux que n'importe quel mécanisme.
-      </p>
+      </p>}
 
       {sequences.map((sequence) => (
         <section
@@ -250,13 +261,15 @@ export function EmailSequencesPanel({ initial }: { readonly initial: readonly Se
         </p>
       )}
 
-      <button
-        type="button"
-        className={`${BUTTON} border border-line hover:bg-surface-2`}
-        onClick={create}
-      >
-        Nouvelle séquence d'emails
-      </button>
+      {!embedded && (
+        <button
+          type="button"
+          className={`${BUTTON} border border-line hover:bg-surface-2`}
+          onClick={create}
+        >
+          Nouvelle séquence d'emails
+        </button>
+      )}
     </div>
   );
 }

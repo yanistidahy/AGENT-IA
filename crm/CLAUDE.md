@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 54 | **Trois boîtes et /campagnes** — SMTP/IMAP/signature par boîte, secret par slug, relevé multi-boîtes, campagnes avec sélection /contacts et entonnoir | **livré, à valider** |
 | 53 | **Plusieurs personnes par maison** — société dédoublonnée sur les accents, collègues sur la fiche, notes d'angle par rôle, note pour Alex, avertissement collègue | **livré, à valider** |
 | 52 | **Le healthcheck traversait le verrou** — cible `/` redirigée, `/api/health` liée à la base ; sonde `/api/live` muette et sans dépendance, contrat sous test | **livré, à valider** |
 | 51 | **Quel code sert cet écran** — commit et instant de démarrage lisibles dans le pied de page, dans `/reglages` et sur `/api/version` | **livré, à valider** |
@@ -7446,3 +7447,135 @@ production, qu'il tenterait de rejouer. La correction sûre est un jalon à elle
 seule — renommer **et** réécrire `_prisma_migrations` dans la même transaction,
 ou repartir d'une migration de consolidation. À traiter avant le prochain
 changement d'environnement.
+
+---
+
+## Jalon 54 — trois boîtes d'envoi, et une section Campagnes
+
+### Les boîtes : la configuration unique du jalon 32 devient une liste
+
+Table `mailboxes` : libellé, SMTP, IMAP (copie « Envoyés » **et** relevé — même
+boîte, même secret, jalon 37), et **la signature**. Le signataire du jalon 35
+cesse d'être une table : c'est une propriété de la boîte, et `signatories.ts`
+devient une projection de `mailboxes` — `Signatory.id` **est** un identifiant de
+boîte, ce qui a laissé le panneau de rédaction, le dossier d'Alex et
+`replaceSignature` fonctionner sans réapprendre un vocabulaire. Le sélecteur du
+panneau s'appelle désormais « Envoyé depuis » : choisir la boîte choisit la
+signature.
+
+**Le mot de passe : `SMTP_PASSWORD_<SLUG>`, jamais en base.** Le slug est choisi
+à la création et **immuable** (comme celui des agents, jalon 15) : il indexe une
+variable d'environnement, et le rendre modifiable transformerait un renommage
+d'étiquette en panne d'authentification. La boîte migrée porte le slug
+`principale` et **retombe sur `SMTP_PASSWORD`** quand
+`SMTP_PASSWORD_PRINCIPALE` n'est pas posée — le déploiement en cours continue
+d'envoyer sans qu'on touche à Railway. Le repli est réservé à cette boîte :
+l'étendre ferait authentifier la boîte de Mohamed avec le mot de passe de
+Yanis, et l'erreur ne se verrait qu'au refus du serveur.
+
+**À poser sur Railway** : `SMTP_PASSWORD_MOHAMED` et la variable de la
+troisième boîte (affichée dans Réglages à côté de son état). `SMTP_PASSWORD`
+existant continue de servir la boîte principale.
+
+**Le relevé passe sur toutes les boîtes, séquentiellement.** Une connexion
+IMAP courte par boîte, l'une après l'autre — jamais en parallèle : la
+contrainte d'IONOS porte sur les connexions simultanées (jalon 41). Trois
+boîtes × un passage par quart d'heure = 288 sessions par jour au total, cadence
+du workflow inchangée. **Une boîte en échec n'arrête pas les autres** ; le
+rapport nomme chaque échec avec sa boîte, et le battement de cœur
+(`lastInboxPollAt`) n'avance que si toutes les boîtes prêtes ont réussi — un
+échec partiel doit finir par allumer le bandeau, pas s'endormir derrière le
+succès des voisines. Le rapprochement, lui, reste **global** : les envois sont
+indexés une fois pour toutes les boîtes, une réponse arrivée chez Mohamed à un
+message parti d'ailleurs reste une réponse.
+
+« Tester l'envoi » et « Tester la copie » sont par boîte, et **la réponse la
+nomme** : à trois boîtes, un échec anonyme ferait vérifier les deux mauvaises
+d'abord. `EmailSend.mailboxId` dit qui a réellement expédié (vide pour les
+envois antérieurs — une absence est une information).
+
+### Les campagnes : une boîte, une sélection, une séquence
+
+`/campagnes` entre dans le rail. Une campagne ne réinvente rien : sa séquence
+est celle du jalon 38 (relation `EmailSequence.campaignId`), et la migration 23
+enveloppe chaque séquence existante dans une campagne portée par la boîte
+principale — aucune inscription en cours n'est interrompue. La définition des
+étapes déménage de /reglages : l'éditeur du jalon 38 est monté tel quel dans la
+carte de campagne (prop `embedded`), même route, mêmes règles — trois étapes au
+plus, mode automatique à double verrou.
+
+**La sélection est une query string de /contacts.** On choisit ses contacts
+avec les outils qu'on utilise déjà — la carte renvoie vers
+`/contacts?campagne=<id>`, une bannière y affiche la campagne et le compte, et
+« Inscrire cette sélection » ré-évalue le filtre **côté serveur avec les mêmes
+fonctions que la page** (`parseContactsQuery` + `parseFilters` +
+`listContacts`) avant d'appeler l'`enroll()` du jalon 38. Rien ne s'inscrit
+sans ce clic ; l'inscription est idempotente par la contrainte d'unicité.
+
+**Aucun garde-fou ne bouge** : première étape par la file des départs du matin,
+fiches closes et oppositions refusées à l'envoi (`sequence-rules.ts`), plafonds
+de débit, arrêt sur réponse. Les messages d'une campagne partent de **sa**
+boîte : `departures.ts` passe le `mailboxId` de la campagne à `draftEmail` et à
+l'envoi, et la signature suit.
+
+**L'entonnoir par campagne** reprend les définitions de /emails, bornées :
+inscrits, en cours, personnes écrites, messages, ouverts (estimation, jalon
+37), réponses et rendez-vous via `readReplyFacts` — la seule définition de
+« a répondu » du produit (jalon 39).
+
+### Le trou fermé : deux collègues composés le même matin
+
+La règle du jalon 53 lit les **envois** — or dans la boucle de composition,
+deux collègues d'une même maison sont composés avant que quiconque soit envoyé :
+le second n'aurait rien vu, et les deux brouillons seraient partis avec la même
+accroche. `departures.ts` relit donc les départs **déjà composés ce matin** pour
+la même maison (toutes séquences confondues) et joint la phrase d'ouverture du
+premier à la consigne du second, en interdiction — la garde `contact-name-source`
+du jalon 50 a d'ailleurs attrapé la première version de cette ligne, qui
+recomposait un nom à la main.
+
+### Restauration : une table née après la sauvegarde n'est plus effacée par elle
+
+Les boîtes sont sauvegardées (configuration écrite à la main, jamais le mot de
+passe), et restaurées **par identifiant** : une boîte tenue par une campagne ne
+peut pas disparaître sous elle, et une boîte inconnue de la sauvegarde survit.
+Corrigé au passage : le jalon 53 vidait les rôles avant de vérifier que la
+sauvegarde en portait — une sauvegarde antérieure les aurait effacés. La
+suppression est désormais conditionnelle à la présence de la section.
+
+### Jalon 54 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `23_mailboxes` appliquée puis
+`migrate diff` **vide**, seed rejoué sans doublon), un puits SMTP STARTTLS,
+**trois** serveurs IMAP substitués (un par boîte, identifiants distincts) et le
+substitut Anthropic avec capture du fil :
+
+- **1 · trois boîtes indépendantes** : envoi et copie « Envoyés » réussis pour
+  chacune, `From` conforme, un dépôt par dossier ; variable absente → l'échec
+  nomme `SMTP_PASSWORD_TROISIEME`, pas une autre ;
+- **2 · réponse sur la deuxième boîte** : envoi depuis « Mohamed »
+  (`mailboxId` et `signatoryName` corrects), réponse déposée dans **son** INBOX
+  → `replies: 1`, interaction « Répondu » consignée, les trois boîtes relevées
+  (`yanis@…, mohamed@…, tiers@…`), zéro erreur ;
+- **3 · campagne** : créée sur la boîte Mohamed, sélection
+  `societe=<id>&lifecycle=all` → 2 inscrits ; 2 départs composés, **les deux
+  brouillons signés « Mohamed Targani / Co-Fondateur »** ; l'angle SAV du rôle
+  part sur le fil pour la fiche appariée ;
+- **4 · collègues** : le second brouillon reçoit l'accroche du premier en
+  interdiction (« composé ce matin … ni une reformulation »), sur le fil ;
+- **5 · entonnoir** : 2 inscrits · 2 écrits · 2 messages · 1 ouvert · envois
+  partis de la boîte de la campagne ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1046 tests**) verts.
+
+### Jalon 54 — ce qui ne l'est pas
+
+**Rien n'a touché IONOS**, comme toujours : trois boîtes réelles restent à
+éprouver au premier clic sur leurs boutons d'essai — c'est exactement ce qu'ils
+citent en réponse. **La qualité des brouillons de campagne** relève du modèle ;
+le fil prouve la signature, l'angle et l'interdiction d'accroche, pas la prose.
+**L'avertissement « collègue déjà écrit » du panneau** reste celui du jalon 53
+(fondé sur les envois) ; dans la file du matin, c'est la consigne d'accroche qui
+joue ce rôle — la file est déjà une relecture humaine. **Le rattrapage des
+`Message-ID`** (jalon 44) ne relit que la boîte principale : les envois
+antérieurs au jalon 54 partaient tous d'elle, les autres n'ont pas de passé à
+réparer.

@@ -452,6 +452,12 @@ export async function draftEmail(
    * le jalon 36 vient de supprimer.
    */
   stepBrief?: string,
+  /**
+   * La boîte imposée par l'appelant — une campagne, typiquement : tous ses
+   * messages partent de la même adresse, avec la même signature. Absente, la
+   * boîte se choisit par le propriétaire de la fiche (règle du jalon 35).
+   */
+  mailboxId?: string,
 ): Promise<DraftResult> {
   const contact = await prisma.contact.findUnique({
     where: { id: contactId },
@@ -480,11 +486,15 @@ export async function draftEmail(
   const context = await contextFor(contactId, focusActivityId);
   if (context === null) return { ok: false, message: "Contact introuvable." };
 
-  const [config, signatories] = await Promise.all([readMailConfig(), listSignatories()]);
-  // Le propriétaire de la fiche d'abord : si « Yanis » suit ce prospect, c'est
-  // lui qui écrit. Proposer systématiquement le signataire par défaut ferait
-  // partir la moitié des messages sous la mauvaise identité.
-  const signatory = pickSignatory(signatories, contact.owner);
+  const [config, signatories] = await Promise.all([readMailConfig(mailboxId), listSignatories()]);
+  // La boîte imposée d'abord ; sinon le propriétaire de la fiche : si « Yanis »
+  // suit ce prospect, c'est sa boîte qui écrit. Proposer systématiquement la
+  // boîte par défaut ferait partir la moitié des messages sous la mauvaise
+  // identité — et depuis le jalon 54, un signataire **est** une boîte.
+  const signatory =
+    (mailboxId !== undefined && mailboxId !== ""
+      ? signatories.find((entry) => entry.id === mailboxId)
+      : undefined) ?? pickSignatory(signatories, contact.owner);
 
   const system = await promptForAgent(ALEX_SLUG, await alexDynamicRules(signatory));
   if (system === null) return { ok: false, message: "L'agent Alex est introuvable." };

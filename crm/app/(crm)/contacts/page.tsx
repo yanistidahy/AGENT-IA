@@ -117,6 +117,16 @@ export default async function ContactsPage({
   // jamais une par ligne de la liste.
   const colleagues = ficheId === undefined ? [] : await readColleagues(ficheId);
 
+  // La campagne dont on choisit les contacts, quand on arrive par /campagnes.
+  const campagneId = flat.campagne;
+  const campaignTarget =
+    campagneId === undefined
+      ? null
+      : await prisma.campaign.findUnique({
+          where: { id: campagneId },
+          select: { id: true, name: true },
+        });
+
   return (
     <ContactsView
       contacts={contacts}
@@ -131,6 +141,7 @@ export default async function ContactsPage({
       alerts={alerts}
       focused={focused}
       colleagues={colleagues}
+      campaignTarget={campaignTarget}
       reminderCounts={reminderCounts}
       account={query.account}
       dm={query.dm}

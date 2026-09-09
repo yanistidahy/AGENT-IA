@@ -5,6 +5,14 @@ import { noteRateRefusal } from "./send-rate";
 import type Mail from "nodemailer/lib/mailer";
 import { prisma } from "../db";
 import {
+  defaultMailbox,
+  getMailbox,
+  listMailboxes,
+  mailboxPassword,
+  passwordEnvFor,
+  type Mailbox,
+} from "./mailboxes";
+import {
   formatSender,
   hasBody,
   sanitizeSubject,
@@ -36,6 +44,10 @@ import { DEFAULT_DEMO, DEFAULT_SIGNATURE } from "../agents/prompts/company";
  */
 
 export interface MailConfig {
+  /** La boîte dont vient cette configuration. Vide = aucune boîte en base. */
+  readonly mailboxId: string;
+  readonly slug: string;
+  readonly label: string;
   readonly host: string;
   readonly port: number;
   readonly encryption: "tls" | "starttls";
@@ -59,45 +71,88 @@ export interface MailStatus extends MailConfig {
   readonly missing: readonly string[];
 }
 
+/**
+ * Conservée pour les messages d'aide : c'est la variable historique, devenue le
+ * **repli** de la boîte « principale ». Chaque boîte a la sienne — voir
+ * `passwordEnvFor` dans lib/api/mailboxes.ts.
+ */
 export const PASSWORD_ENV = "SMTP_PASSWORD";
 
-function password(): string {
-  return process.env[PASSWORD_ENV] ?? "";
+function password(config: Pick<MailConfig, "slug">): string {
+  return mailboxPassword(config);
 }
 
 function toEncryption(value: string): "tls" | "starttls" {
   return value === "tls" ? "tls" : "starttls";
 }
 
-export async function readMailConfig(): Promise<MailConfig> {
+/** Le lien de démonstration — global, pas une propriété de boîte. */
+async function readDemoLink(): Promise<{ label: string; url: string }> {
   const row = await prisma.settings.findUnique({
     where: { id: "singleton" },
-    select: {
-      smtpHost: true,
-      smtpPort: true,
-      smtpEncryption: true,
-      smtpUser: true,
-      smtpFrom: true,
-      smtpFromName: true,
-      signName: true,
-      signTitle: true,
-      demoLabel: true,
-      demoUrl: true,
-    },
+    select: { demoLabel: true, demoUrl: true },
   });
-
   return {
-    host: row?.smtpHost ?? "",
-    port: row?.smtpPort ?? 587,
-    encryption: toEncryption(row?.smtpEncryption ?? "starttls"),
-    user: row?.smtpUser ?? "",
-    from: row?.smtpFrom ?? "",
-    fromName: row?.smtpFromName ?? "",
-    signName: row?.signName ?? DEFAULT_SIGNATURE.name,
-    signTitle: row?.signTitle ?? DEFAULT_SIGNATURE.title,
-    demoLabel: row?.demoLabel ?? DEFAULT_DEMO.label,
-    demoUrl: row?.demoUrl ?? DEFAULT_DEMO.url,
+    label: row?.demoLabel ?? DEFAULT_DEMO.label,
+    url: row?.demoUrl ?? DEFAULT_DEMO.url,
   };
+}
+
+/** La configuration d'envoi d'une boîte, prête pour le transport. */
+export function configOf(
+  mailbox: Mailbox,
+  demo: { readonly label: string; readonly url: string },
+): MailConfig {
+  return {
+    mailboxId: mailbox.id,
+    slug: mailbox.slug,
+    label: mailbox.label,
+    host: mailbox.smtpHost,
+    port: mailbox.smtpPort,
+    encryption: toEncryption(mailbox.smtpEncryption),
+    user: mailbox.smtpUser,
+    from: mailbox.smtpFrom,
+    fromName: mailbox.smtpFromName,
+    signName: mailbox.signName === "" ? DEFAULT_SIGNATURE.name : mailbox.signName,
+    signTitle: mailbox.signTitle === "" ? DEFAULT_SIGNATURE.title : mailbox.signTitle,
+    demoLabel: demo.label,
+    demoUrl: demo.url,
+  };
+}
+
+/**
+ * La configuration d'une boîte — celle demandée, sinon la boîte par défaut.
+ *
+ * Les lectures qui ne dépendent d'aucune boîte précise (le lien de démo, le
+ * repli sans aucune boîte en base) rendent une configuration vide : elle échoue
+ * en nommant ce qui manque, jamais en levant.
+ */
+export async function readMailConfig(mailboxId?: string): Promise<MailConfig> {
+  const demo = await readDemoLink();
+  const mailbox =
+    mailboxId === undefined || mailboxId === ""
+      ? await defaultMailbox()
+      : await getMailbox(mailboxId);
+
+  if (mailbox === null) {
+    return {
+      mailboxId: "",
+      slug: "",
+      label: "",
+      host: "",
+      port: 587,
+      encryption: "starttls",
+      user: "",
+      from: "",
+      fromName: "",
+      signName: DEFAULT_SIGNATURE.name,
+      signTitle: DEFAULT_SIGNATURE.title,
+      demoLabel: demo.label,
+      demoUrl: demo.url,
+    };
+  }
+
+  return configOf(mailbox, demo);
 }
 
 /** Le lien de démonstration tel que le formateur l'attend. */
@@ -111,16 +166,32 @@ export function missingFields(config: MailConfig, hasPassword: boolean): string[
   if (config.host.trim() === "") missing.push("l'hôte SMTP");
   if (config.user.trim() === "") missing.push("l'identifiant");
   if (config.from.trim() === "") missing.push("l'adresse d'expédition");
-  if (!hasPassword) missing.push(`le mot de passe (variable ${PASSWORD_ENV})`);
+  if (!hasPassword) {
+    // La variable de **cette** boîte, pas la variable historique : trois boîtes,
+    // trois secrets, et un message qui nomme le mauvais coûte un aller-retour.
+    missing.push(`le mot de passe (variable ${passwordEnvFor(config.slug)})`);
+  }
   return missing;
 }
 
-export async function readMailStatus(): Promise<MailStatus> {
-  const config = await readMailConfig();
-  const passwordSet = password() !== "";
+export async function readMailStatus(mailboxId?: string): Promise<MailStatus> {
+  const config = await readMailConfig(mailboxId);
+  const passwordSet = password(config) !== "";
   const missing = missingFields(config, passwordSet);
 
   return { ...config, passwordSet, ready: missing.length === 0, missing };
+}
+
+/** L'état de **chaque** boîte, pour le panneau — jamais un secret, son existence. */
+export async function readMailboxStatuses(): Promise<MailStatus[]> {
+  const demo = await readDemoLink();
+  const mailboxes = await listMailboxes();
+  return mailboxes.map((mailbox) => {
+    const config = configOf(mailbox, demo);
+    const passwordSet = password(config) !== "";
+    const missing = missingFields(config, passwordSet);
+    return { ...config, passwordSet, ready: missing.length === 0, missing };
+  });
 }
 
 /**
@@ -178,6 +249,8 @@ export async function buildMime(message: Mail.Options): Promise<Buffer> {
 }
 
 export interface SendInput {
+  /** La boîte qui envoie. Absente = la boîte par défaut. */
+  readonly mailboxId?: string;
   readonly to: string;
   readonly subject: string;
   readonly body: string;
@@ -261,12 +334,20 @@ export function describeSmtpError(error: unknown): string {
  * l'écran, pas une trace d'exécution.
  */
 export async function sendMail(input: SendInput): Promise<SendResult> {
-  const config = await readMailConfig();
-  const secret = password();
+  const config = await readMailConfig(input.mailboxId);
+  if (config.mailboxId === "") {
+    return { ok: false, message: "Aucune boîte d'envoi n'est configurée. Réglages → Messagerie." };
+  }
+  const secret = password(config);
   const missing = missingFields(config, secret !== "");
 
   if (missing.length > 0) {
-    return { ok: false, message: `Messagerie incomplète : il manque ${missing.join(", ")}.` };
+    // La boîte est nommée : « incomplète » sans dire laquelle, à trois boîtes,
+    // ferait vérifier les deux mauvaises d'abord.
+    return {
+      ok: false,
+      message: `Boîte « ${config.label} » incomplète : il manque ${missing.join(", ")}.`,
+    };
   }
 
   const subject = sanitizeSubject(input.subject);

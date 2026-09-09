@@ -1,7 +1,8 @@
 import "server-only";
 import { ImapFlow } from "imapflow";
 import { prisma } from "../db";
-import { readMailConfig, PASSWORD_ENV } from "./mail";
+import { readMailConfig } from "./mail";
+import { mailboxPassword } from "./mailboxes";
 import { describeImapError, imapMissingFields, pickSentMailbox, readImapConfig } from "./imap";
 import { headerDate, readHeaders } from "./inbox";
 import { planBackfill, type BackfillPlan, type SendLike, type SentHeaderLike } from "../domain/sent-match";
@@ -68,9 +69,13 @@ export async function backfillMessageIds(
   apply: boolean,
   now = new Date(),
 ): Promise<BackfillReport> {
+  // Le rattrapage relit le dossier « Envoyés » de la **boîte par défaut** : les
+  // envois antérieurs au jalon 54 partaient tous d'elle, et ce sont eux que ce
+  // rattrapage existe pour réparer (jalon 44). Les autres boîtes n'ont pas de
+  // passé à corriger — leurs identifiants sont nés justes.
   const mail = await readMailConfig();
-  const config = await readImapConfig();
-  const password = process.env[PASSWORD_ENV] ?? "";
+  const config = await readImapConfig(mail.mailboxId);
+  const password = mailboxPassword(mail);
 
   const missing = imapMissingFields(config, mail, password !== "");
   if (missing.length > 0) {
