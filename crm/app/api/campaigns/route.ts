@@ -10,6 +10,7 @@ import {
   updateCampaignSchema,
 } from "@/lib/api/campaigns";
 import { z } from "zod";
+import { composeForCampaign } from "@/lib/api/compose-now";
 
 export const dynamic = "force-dynamic";
 
@@ -85,7 +86,19 @@ export async function PUT(request: Request) {
       parsed.data.contactIds,
     );
     if (!result.ok) return badRequest(result.message);
-    return jsonOk({ outcome: result.outcome, campaigns: await listCampaigns() });
+
+    // **Composer dans la foulée, pas demain matin.** Attendre le passage
+    // quotidien pour découvrir qu'une étape était vide, c'est une boucle de
+    // vingt-quatre heures pour une faute de saisie. Rien n'est envoyé : la file
+    // se remplit, on la relit, on valide à la main — la distinction du jalon 38
+    // ne bouge pas.
+    const composition = await composeForCampaign(parsed.data.campaignId);
+
+    return jsonOk({
+      outcome: result.outcome,
+      composition,
+      campaigns: await listCampaigns(),
+    });
   } catch (error) {
     return serverError("PUT /api/campaigns", error);
   }

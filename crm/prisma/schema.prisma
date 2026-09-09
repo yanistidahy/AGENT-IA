@@ -1172,5 +1172,50 @@ model Campaign {
 
   sequence EmailSequence?
 
+  jobs CompositionJob[]
+
   @@map("campaigns")
+}
+
+/**
+ * Une composition en cours, pour que l'écran puisse dire « 47 départs en
+ * préparation » au lieu de paraître ne rien faire.
+ *
+ * **Une table plutôt qu'un compteur en mémoire** : le travail dure plus qu'une
+ * requête, l'écran qui l'observe est rendu par le serveur, et un état gardé
+ * dans le processus disparaîtrait au redéploiement en laissant une bannière
+ * éternelle. Ici, un travail interrompu se voit — sa date de fin manque, et son
+ * avancement s'est arrêté.
+ *
+ * Elle ne porte **aucun brouillon** : les départs composés vont dans
+ * `sequence_departures`, comme ceux du matin. Ce n'est pas une file parallèle,
+ * c'est le compte rendu d'un remplissage.
+ */
+model CompositionJob {
+  id String @id @default(cuid())
+
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  /// Combien de brouillons étaient attendus au lancement — le dénominateur
+  /// annoncé. Il ne bouge pas : une barre dont le total change en route ne
+  /// mesure plus rien.
+  total Int @default(0)
+  /// Combien ont abouti, quel que soit leur sort (composé ou refusé par le
+  /// modèle) : c'est l'avancement, pas la réussite.
+  done  Int @default(0)
+
+  /// Le coût annoncé sur la confirmation, en micro-dollars — pour pouvoir
+  /// comparer après coup ce qui a été promis à ce qui a été facturé.
+  estimateMicros Int @default(0)
+
+  startedAt  DateTime  @default(now())
+  /// `null` tant que ça tourne. Une composition sans fin ni erreur, très
+  /// ancienne, est un conteneur qui a redémarré en route — et ça se lit.
+  finishedAt DateTime?
+  /// L'échec, en clair. Vide si tout s'est bien passé.
+  error      String    @default("")
+
+  @@index([campaignId])
+  @@map("composition_jobs")
 }
