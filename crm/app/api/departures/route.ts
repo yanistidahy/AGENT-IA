@@ -5,6 +5,7 @@ import {
   listDepartures,
   postponeDeparture,
   removeFromSequence,
+  saveDeparture,
   sendDeparture,
 } from "@/lib/api/departures";
 
@@ -23,6 +24,37 @@ const decisionSchema = z.object({
   id: z.string().min(1),
   action: z.enum(["send", "postpone", "remove"], { error: "Action inconnue" }),
 });
+
+/**
+ * Enregistrer un brouillon retravaillé — **et rien d'autre**.
+ *
+ * Schéma distinct de `decisionSchema` : les trois décisions ne portent pas de
+ * texte, et les mêler sous un seul verbe aurait obligé la charge utile à porter
+ * un champ que le serveur n'aurait pu que croire. Surtout, un `action: "send"`
+ * mal formé qui traînerait un objet et un corps ferait partir un message qu'on
+ * voulait seulement enregistrer.
+ */
+const saveSchema = z.object({
+  id: z.string().min(1),
+  subject: z.string().min(1, "L'objet ne peut pas être vide").max(200),
+  body: z.string().min(1, "Le message ne peut pas être vide"),
+});
+
+export async function PATCH(request: Request) {
+  const body = await readJson(request);
+  if (body.ok === false) return badRequest("Corps de requête JSON illisible.");
+
+  const parsed = saveSchema.safeParse(body.value);
+  if (!parsed.success) return invalidPayload(parsed.error);
+
+  try {
+    const result = await saveDeparture(parsed.data.id, parsed.data.subject, parsed.data.body);
+    if (!result.ok) return badRequest(result.message);
+    return jsonOk({ departures: await listDepartures() });
+  } catch (error) {
+    return serverError("PATCH /api/departures", error);
+  }
+}
 
 export async function GET() {
   try {

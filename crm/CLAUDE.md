@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 57 | **Retravailler un départ, et ne plus supposer d'équipe** — le panneau de rédaction rouvert depuis la file, discours conditionnel à ce qu'on sait | **livré, à valider** |
 | 56 | **« Enregistrer » compose** — la file se remplit au clic, sans second geste ni passage quotidien ; coût annoncé, avancement à l'écran, planificateur diagnostiqué | **livré, à valider** |
 | 55 | **Une campagne au quotidien** — archiver contre supprimer, sélection cochée qui survit au filtre, liste des inscrits, campagne nommée dans /emails | **livré, à valider** |
 | 54 | **Trois boîtes et /campagnes** — SMTP/IMAP/signature par boîte, secret par slug, relevé multi-boîtes, campagnes avec sélection /contacts et entonnoir | **livré, à valider** |
@@ -8057,3 +8058,133 @@ plus que ce qui sera dépensé est le bon sens de l'erreur.
 **Le coût réel n'est pas comparé au coût annoncé.** Le journal stocke
 l'estimation, et le compteur du jalon 36 stocke la facture : le rapprochement
 est possible, il n'est pas affiché.
+
+
+---
+
+## Jalon 57 — retravailler un départ, et ne plus supposer d'équipe
+
+### Une seule surface de rédaction, rouverte depuis la file
+
+La file proposait trois gestes — envoyer, reporter, retirer. Il en manquait un :
+**ouvrir le brouillon et le retravailler avec Alex**, comme depuis une fiche
+contact.
+
+C'est le **même `ComposePanel`**, avec une prop `departureId`. Pas un second
+éditeur : le fil avec Alex, la reprise depuis le texte affiché (retouches
+manuelles comprises), le retour en arrière et le changement de signataire sont
+ceux du jalon 34 — parce que c'est le même code. Deux surfaces de rédaction
+auraient fini par ne plus se ressembler, et c'est la deuxième qu'on aurait
+oublié de corriger.
+
+Trois différences, et trois seulement :
+
+| | Depuis une fiche | Depuis la file |
+|---|---|---|
+| d'où vient le texte | Alex l'écrit (un appel) | **la file** — `mode: "departure"`, aucun appel |
+| bouton principal | « Envoyer maintenant » | **« Enregistrer le brouillon »** |
+| après | le message part | la ligne garde sa place, en attente |
+
+**Rouvrir ne coûte rien.** Le brouillon a déjà été composé et payé : le
+recomposer à l'ouverture écrirait un second texte et effacerait celui qu'on
+venait relire. Vérifié : 90 appels facturés avant l'ouverture, 90 après.
+
+**Enregistrer n'envoie pas**, et ne se contourne pas : le schéma d'enregistrement
+est distinct de celui des trois décisions, parce qu'un `action: "send"` mal formé
+qui traînerait un objet et un corps ferait partir un message qu'on voulait
+seulement ranger. C'est la distinction du jalon 38, tenue jusque dans la forme
+de la requête.
+
+**Une recomposition ne l'écrase pas** : la contrainte d'unicité
+`(inscription, étape)` qui empêche de composer deux fois protège aussi le
+travail fait à la main. Un départ qui n'est plus en attente refuse d'être
+rouvert **et** modifié, en disant son état.
+
+### Le discours ne suppose plus d'équipe
+
+« Votre équipe doit certainement gérer un volume important de questions
+récurrentes » se lit faux à une marque de trois personnes — et la moitié du
+vivier en est une. Le prospect sait qu'il n'a pas d'équipe : la phrase le lui
+rappelle, et le message est mort à la première ligne.
+
+**L'erreur n'est pas symétrique**, et c'est ce qui décide du défaut : écrire à
+une grande marque sans mentionner son équipe ne coûte rien ; l'inverse coûte le
+prospect. En l'absence d'information — **le cas de toutes les fiches
+aujourd'hui**, `Company.size` étant vide partout — c'est donc la formulation
+sans supposition qui s'applique.
+
+Trois endroits du discours présumaient du personnel ; les trois sont corrigés :
+
+| Où | Avant | Après |
+|---|---|---|
+| ciblage (`COMPANY_CONTEXT`) | « dont **l'équipe gère un volume important** » | « de toutes tailles, et **le plus souvent petites** […] ne présume jamais qu'un prospect a une équipe » |
+| règle de rédaction | ordonnait d'écrire « votre équipe doit gérer un volume important » | nomme la **répétition** des mêmes questions, et interdit nommément l'ancienne formule |
+| mail de référence, §2 | « Votre équipe doit certainement gérer… » | « Sur votre site, une part des questions se ressemble d'un visiteur à l'autre — composition, délais, choix du produit — et chacune demande pourtant une réponse. » |
+
+Le nouveau paragraphe a été **approuvé avant d'être câblé**, comme le DM du
+jalon 48 et la fiche sans personne nommée du jalon 50.
+
+**« Soulage l'équipe quand l'activité grimpe » est introuvable dans le dépôt** —
+ni dans les prompts, ni ailleurs. C'est vraisemblablement une formulation
+produite par le modèle sous l'ancienne consigne, pas une phrase écrite : elle
+disparaît avec la consigne qui l'engendrait.
+
+### La permission vient de la note, jamais de la taille
+
+Décision prise par le propriétaire du produit : la formulation « équipe » n'est
+autorisée **que lorsqu'il l'écrit dans la note pour Alex**. Ni le champ
+`size` de la fiche société, ni une déduction du modèle.
+
+C'est défendable au-delà de la préférence : `size` est un champ libre rempli au
+fil de l'eau, et rien ne garantit qu'il décrive encore l'entreprise ; une
+déduction, elle, est exactement le pari qu'on refuse. La taille est donc **dite**
+au modèle comme un fait du dossier — sous ses deux formes, « NON RENSEIGNÉE »
+comprise — accompagnée de la mention qu'elle **n'autorise rien**.
+
+`noteAllowsTeam()` est volontairement étroite : quelques formules qui ne peuvent
+pas apparaître par hasard dans une note de prospection. Une reconnaissance large
+autoriserait la mention sur « j'ai vu leur équipe au salon », qui n'affirme rien
+sur le service client — et un test fixe précisément ce cas.
+
+La consigne est émise **dans les deux sens**, comme le DM du jalon 48 et l'angle
+de rôle du jalon 53 : une absence de ligne se lit comme une absence
+d'information, une ligne qui dit « non » se lit comme une règle.
+
+### Jalon 57 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (aucune migration — `migrate diff` **vide**) et le
+substitut qui capte ce qui part réellement sur le fil, **cinq sections, zéro
+échec** :
+
+- **1 · le discours** : taille inconnue → interdiction explicite, autorisation
+  absente ; « 3 personnes » → idem ; « 250 personnes » **avec la note qui
+  l'affirme** → autorisation, interdiction absente. La taille figure au dossier
+  dans les trois cas, et l'ancienne formule n'est plus donnée en exemple ;
+- **2 · rouvrir** : le texte rendu est **celui de la file**, destinataire et
+  signataire (la boîte de la campagne) corrects, **0 appel facturé** (90 → 90) ;
+- **3 · enregistrer** : la file porte le texte retravaillé, la ligne reste
+  `pending`, **0 envoi** ;
+- **4 · recomposer** : « personne n'est éligible », le brouillon retravaillé
+  **intact** ;
+- **5 · un départ envoyé** refuse d'être rouvert et modifié, en nommant son état ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1084 tests**) verts.
+
+`tests/team-assumption-source.test.ts` fixe que **chaque mention restante
+d'« équipe » dans le discours est une interdiction** — un test qui compte les
+lignes plutôt qu'une chaîne, pour qu'une reformulation ne le rende pas vert par
+accident.
+
+### Jalon 57 — ce qui n'est pas vérifié
+
+**Rien n'a été cliqué dans un navigateur.** Le panneau rouvert depuis la file,
+son fil et son bouton d'enregistrement sont vérifiés par leurs services et par
+le typage, pas par une frappe.
+
+**La qualité du nouveau paragraphe n'est pas établie.** Le substitut prouve que
+la bonne consigne part et que l'ancienne a disparu ; qu'Alex écrive un meilleur
+deuxième paragraphe se jugera sur les trois premiers brouillons réels.
+
+**`noteAllowsTeam` reconnaît des formules, pas du sens.** Écrire « ils ont une
+grosse équipe » dans la note n'autorisera pas la mention : il faut l'une des
+tournures reconnues. C'est le prix d'une règle étroite, et le choix est assumé
+dans ce sens-là.

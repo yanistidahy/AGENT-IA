@@ -79,15 +79,29 @@ export function ComposePanel({
   open,
   contactId,
   fromActivityId,
+  departureId,
   onClose,
   onSent,
+  onSaved,
 }: {
   readonly open: boolean;
   readonly contactId: string | null;
   /** L'échange qui vient d'être consigné : le brouillon doit s'y référer. */
   readonly fromActivityId?: string;
+  /**
+   * Un départ de la file, à retravailler.
+   *
+   * **Le même panneau, pas un second.** Le brouillon est chargé depuis la file
+   * au lieu d'être écrit par le modèle, et le bouton principal enregistre au
+   * lieu d'envoyer — tout le reste (fil avec Alex, reprise depuis le texte
+   * affiché, retour en arrière, changement de signataire) est identique, parce
+   * que c'est le même code.
+   */
+  readonly departureId?: string;
   readonly onClose: () => void;
   readonly onSent: (sent: Sent) => void;
+  /** Appelé après l'enregistrement d'un départ retravaillé. */
+  readonly onSaved?: () => void;
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [subject, setSubject] = useState("");
@@ -119,7 +133,7 @@ export function ComposePanel({
       return;
     }
 
-    const key = `${contactId}:${fromActivityId ?? ""}`;
+    const key = `${contactId}:${fromActivityId ?? ""}:${departureId ?? ""}`;
     if (asked.current === key) return;
     asked.current = key;
 
@@ -132,7 +146,15 @@ export function ComposePanel({
 
     void requestJson(
       "/api/emails",
-      { method: "POST", body: JSON.stringify({ mode: "draft", contactId, fromActivityId }) },
+      {
+        method: "POST",
+        body: JSON.stringify(
+          departureId === undefined
+            ? { mode: "draft", contactId, fromActivityId }
+            : // Aucun appel au modèle : le texte vient de la file.
+              { mode: "departure", departureId },
+        ),
+      },
       isDraft,
     ).then((result) => {
       setBusy(false);
@@ -144,7 +166,7 @@ export function ComposePanel({
         setSignatoryId(result.data.draft.signatoryId);
       } else setError(result.message);
     });
-  }, [open, contactId, fromActivityId]);
+  }, [open, contactId, fromActivityId, departureId]);
 
   /**
    * Appliquer un brouillon rendu par Alex dans le fil.
@@ -165,6 +187,29 @@ export function ComposePanel({
     setSubject(popped.restored.subject);
     setBody(popped.restored.body);
     setHistory(popped.rest);
+  };
+
+  /**
+   * Enregistrer le brouillon retravaillé — **sans envoyer**.
+   *
+   * La ligne garde son identité dans la file : elle ne sera ni recomposée, ni
+   * expédiée. C'est le clic sur « Envoyer » de la file qui décide, plus tard.
+   */
+  const save = async () => {
+    if (departureId === undefined) return;
+    setBusy(true);
+    setError(null);
+    const result = await requestJson(
+      "/api/departures",
+      { method: "PATCH", body: JSON.stringify({ id: departureId, subject, body }) },
+      (value): value is { departures: unknown } =>
+        typeof value === "object" && value !== null && "departures" in value,
+    );
+    setBusy(false);
+    if (result.ok) {
+      onSaved?.();
+      onClose();
+    } else setError(result.message);
   };
 
   const send = async () => {
@@ -219,18 +264,33 @@ export function ComposePanel({
   return (
     <Drawer
       open={open}
-      title="Rédiger un email"
-      subtitle={draft === null ? "Alex prépare un brouillon…" : `à ${draft.contactName}`}
+      title={departureId === undefined ? "Rédiger un email" : "Retravailler le départ"}
+      subtitle={
+        draft === null
+          ? departureId === undefined
+            ? "Alex prépare un brouillon…"
+            : "Chargement du brouillon…"
+          : `à ${draft.contactName}`
+      }
       onClose={onClose}
       footer={
         <>
           <button
             type="button"
             disabled={busy || draft === null || subject.trim() === "" || body.trim() === ""}
-            onClick={() => void send()}
+            onClick={() => void (departureId === undefined ? send() : save())}
             className="rounded-control bg-brand px-4 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-brand-d disabled:opacity-50 max-lg:min-h-11 max-lg:flex-1 max-lg:text-[15px]"
           >
-            {busy ? "Envoi…" : "Envoyer maintenant"}
+            {/* **Un départ s'enregistre, il ne s'envoie pas d'ici.** L'envoi
+                reste le clic de la file, après relecture — la distinction du
+                jalon 38 ne se contourne pas par un panneau. */}
+            {departureId === undefined
+              ? busy
+                ? "Envoi…"
+                : "Envoyer maintenant"
+              : busy
+                ? "Enregistrement…"
+                : "Enregistrer le brouillon"}
           </button>
           <button
             type="button"

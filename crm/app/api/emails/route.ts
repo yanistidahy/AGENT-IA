@@ -1,6 +1,7 @@
 import { badRequest, invalidPayload, jsonOk, serverError } from "@/lib/api/errors";
 import { readJson } from "@/lib/api/request";
 import { draftEmail } from "@/lib/agents/email-draft";
+import { departureDraft } from "@/lib/api/departures";
 import { sendEmailSchema, sendEmailToContact } from "@/lib/api/email-send";
 import { z } from "zod";
 
@@ -23,6 +24,17 @@ export const dynamic = "force-dynamic";
  * un formulaire, relu par un humain qui voit l'adresse du destinataire, qui
  * déclenche `send`. Aucun outil d'agent ne peut envoyer de courriel.
  */
+/**
+ * Rouvrir un départ déjà composé — **sans appeler le modèle**.
+ *
+ * Le brouillon existe et a été payé : le rouvrir doit rendre *ce* texte. Passer
+ * par `draft` en écrirait un second, effaçant celui qu'on venait relire.
+ */
+const departureSchema = z.object({
+  mode: z.literal("departure"),
+  departureId: z.string().min(1, "Départ requis"),
+});
+
 const draftSchema = z.object({
   mode: z.literal("draft"),
   contactId: z.string().min(1, "Contact requis"),
@@ -32,6 +44,7 @@ const draftSchema = z.object({
 
 const bodySchema = z.discriminatedUnion("mode", [
   draftSchema,
+  departureSchema,
   sendEmailSchema.extend({ mode: z.literal("send") }),
 ]);
 
@@ -43,6 +56,12 @@ export async function POST(request: Request) {
   if (!parsed.success) return invalidPayload(parsed.error);
 
   try {
+    if (parsed.data.mode === "departure") {
+      const result = await departureDraft(parsed.data.departureId);
+      if (!result.ok) return badRequest(result.message);
+      return jsonOk({ draft: result.draft });
+    }
+
     if (parsed.data.mode === "draft") {
       const result = await draftEmail(parsed.data.contactId, parsed.data.fromActivityId);
       if (!result.ok) return badRequest(result.message);

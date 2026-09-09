@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { requestJson } from "@/lib/client/http";
 import { formatDate } from "@/lib/format";
+import { ComposePanel } from "@/components/emails/compose-panel";
 
 /**
  * « Départs du jour » — la file du matin.
@@ -74,6 +76,9 @@ export function DeparturesView({ initial }: { readonly initial: readonly Departu
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  /** Le départ ouvert dans le panneau de rédaction, le cas échéant. */
+  const [reworking, setReworking] = useState<Departure | null>(null);
+  const router = useRouter();
 
   const decide = async (id: string, action: "send" | "postpone" | "remove") => {
     setBusy(id);
@@ -170,6 +175,21 @@ export function DeparturesView({ initial }: { readonly initial: readonly Departu
                 >
                   {busy === departure.id ? "…" : "Envoyer"}
                 </button>
+                {/*
+                  **Retravailler avec Alex, depuis la file.** Le même panneau
+                  que la fiche contact — même fil, même reprise depuis le texte
+                  affiché, même retour en arrière — parce que c'est le même
+                  composant. Deux surfaces de rédaction auraient fini par ne
+                  plus se ressembler.
+                */}
+                <button
+                  type="button"
+                  className={`${BUTTON} border border-brand text-brand-d hover:bg-brand-l`}
+                  disabled={busy !== null || departure.status === "failed"}
+                  onClick={() => setReworking(departure)}
+                >
+                  Retravailler avec Alex
+                </button>
                 <button
                   type="button"
                   className={`${BUTTON} border border-line hover:bg-surface-2`}
@@ -191,6 +211,20 @@ export function DeparturesView({ initial }: { readonly initial: readonly Departu
           ))}
         </ul>
       )}
+
+      <ComposePanel
+        open={reworking !== null}
+        contactId={reworking?.contactId ?? null}
+        departureId={reworking?.id}
+        onClose={() => setReworking(null)}
+        onSent={() => setReworking(null)}
+        onSaved={() => {
+          // La file est rendue par le serveur : c'est lui qui redit le texte
+          // enregistré, plutôt que le navigateur qui le devine.
+          setReworking(null);
+          router.refresh();
+        }}
+      />
     </div>
   );
 }
