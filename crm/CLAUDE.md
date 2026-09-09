@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 56 | **« Enregistrer » compose** — la file se remplit au clic, sans second geste ni passage quotidien ; coût annoncé, avancement à l'écran, planificateur diagnostiqué | **livré, à valider** |
 | 55 | **Une campagne au quotidien** — archiver contre supprimer, sélection cochée qui survit au filtre, liste des inscrits, campagne nommée dans /emails | **livré, à valider** |
 | 54 | **Trois boîtes et /campagnes** — SMTP/IMAP/signature par boîte, secret par slug, relevé multi-boîtes, campagnes avec sélection /contacts et entonnoir | **livré, à valider** |
 | 53 | **Plusieurs personnes par maison** — société dédoublonnée sur les accents, collègues sur la fiche, notes d'angle par rôle, note pour Alex, avertissement collègue | **livré, à valider** |
@@ -7780,3 +7781,279 @@ conclure qu'un relevé « n'a rien compté ».
 **Les envois antérieurs à la migration portent la campagne de leur séquence**,
 déduite après coup. C'est exact tant qu'une séquence n'a jamais changé de
 campagne, ce que le produit n'a jamais permis.
+
+
+---
+
+## Jalon 56 — composer maintenant, plutôt que demain matin
+
+### Le diagnostic d'abord : le planificateur va très bien
+
+C'était la première question, et la réponse change ce qu'il fallait construire.
+**Le workflow tourne, tous les jours, et il a réussi ce matin même** — 32
+exécutions, toutes en succès, la dernière le 09/09 à 09:26 UTC sur `main`.
+
+Ce que son journal a rendu, mot pour mot :
+
+```json
+"departures":{"skipped":null,"composed":0,"sentAutomatically":0,"stopped":0,"waiting":0}
+```
+
+**`waiting: 0` est le chiffre qui tranche.** Il ne dit pas « personne n'était
+prêt », il dit que la requête n'a **ramené aucune inscription** : au moment du
+passage, il n'existait aucune inscription active sur une séquence active. Deux
+causes se cumulaient, et aucune n'est une panne :
+
+1. **la campagne n'existait pas encore** à 09:26 — elle a été créée après. Un
+   passage quotidien ne peut pas composer pour une campagne qui n'existe pas,
+   et c'est exactement la boucle de vingt-quatre heures que ce jalon supprime ;
+2. **la séquence d'une campagne neuve est inactive**, et son unique étape est
+   vide : `createCampaign` (jalon 54) la crée ainsi délibérément — rien ne doit
+   pouvoir partir avant d'avoir été relu. Mais **rien à l'écran ne le disait**,
+   si bien qu'attendre le lendemain n'aurait rien donné non plus.
+
+Le jalon 54-55 n'a rien cassé de ce dont le planificateur dépend : la clause de
+composition a gagné `sequence: { active: true }` bien avant (jalon 38), et
+l'archivage désactive la séquence — c'est voulu, et c'est nommé.
+
+### Comment le vérifier soi-même
+
+| Question | Où | Ce qu'on lit |
+|---|---|---|
+| Le passage a-t-il eu lieu ? | onglet **Actions** du dépôt → « AuraFLOW — passage quotidien » | une exécution par jour, en vert |
+| Qu'a-t-il fait ? | le journal de l'exécution, dernière ligne | le JSON complet, `composed` compris |
+| Le CRM l'a-t-il vu ? | `/accueil` | le bandeau apparaît au-delà de 36 h de silence (jalon 38) |
+
+**Deux constats de plus, trouvés dans ce même journal**, sans rapport avec les
+campagnes mais qui méritent d'être dits :
+
+- **les sauvegardes ne tournent pas.** `"snapshot":{"ok":false,"message":"Sauvegardes
+  non configurées : renseignez SNAPSHOT_GITHUB_REPO et SNAPSHOT_GITHUB_TOKEN"}` —
+  le filet du jalon 19 est en place dans le code et **n'a jamais été branché sur
+  le service**. C'est deux variables à poser sur Railway, et c'est la chose la
+  plus importante de cette liste ;
+- **la vacation de Sabrina échoue** : « Réponse du modèle non conforme au format
+  attendu. » Elle échoue proprement — le reste du passage n'en souffre pas — mais
+  elle ne produit rien depuis au moins ce matin.
+
+### La composition immédiate est une **portée**, pas une seconde boucle
+
+C'est la décision qui structure tout le reste, et c'est la leçon du jalon 55
+appliquée une fois de plus : `composeDepartures(now, scope?)`. Le passage
+quotidien appelle sans portée et balaie tout le CRM ; l'enregistrement d'une
+campagne appelle avec `{ sequenceId }`.
+
+Écrire une seconde boucle aurait donné deux jeux de garde-fous, et le second
+aurait fini par oublier la fiche passée en « Perdu » depuis l'inscription ou
+l'opposition au démarchage. Les deux chemins auraient écrit des brouillons
+plausibles — l'un d'eux à des gens à qui l'on n'a plus le droit d'écrire.
+
+**Tout ce qui vaut le matin vaut ici**, par construction : cycle de vie
+terminal, opposition, réponse déjà reçue, adresse manquante, week-end,
+espacement des accroches entre collègues d'une même maison, et la contrainte
+d'unicité `(inscription, étape)` qui empêche de recomposer ce qui est déjà en
+file — donc de payer un appel pour remplacer un brouillon qu'on est peut-être
+en train de relire.
+
+**Rien n'est envoyé.** La distinction du jalon 38 ne bouge pas d'un pouce : la
+composition remplit la file, on la relit, on valide à la main. Le mode
+automatique reste le seul chemin qui envoie sans clic, avec son double verrou.
+
+### Le prix, annoncé avant d'être dépensé
+
+`GET /api/campaigns/compose` rend le **plan** et **n'appelle aucun modèle** ;
+`POST` fait le travail. Un point d'entrée unique ferait payer l'affichage d'un
+écran — et « aucune écriture sans clic » (jalon 8) vaut d'autant plus quand
+l'écriture se facture.
+
+L'estimation **apprend de ce qui a réellement été facturé** : la moyenne des
+brouillons du modèle courant sur quatre-vingt-dix jours, lue dans le compteur du
+jalon 36. Une constante cesserait d'être vraie au premier changement de prompt,
+et le prompt d'Alex a grossi à chaque jalon. En dessous de trois appels mesurés,
+la moyenne ne décrit rien : on retombe sur les repères mesurés au jalon 36
+(3 000 jetons d'entrée, 1 500 de sortie) — et **l'écran dit laquelle des deux
+sources il utilise**, parce qu'une estimation dont on ignore la provenance ne se
+conteste pas.
+
+Vérifié par test : un brouillon à ces repères, au tarif Sonnet 5, coûte
+**0,021 $** — les deux centimes annoncés. Cinquante coûtent 1,05 $.
+
+Le rendu refuse deux facilités : « 0,00 $ » n'est écrit que pour zéro brouillon
+(un coût réel arrondi à zéro se lirait « gratuit », et l'on composerait sans y
+penser), et en dessous du centime on écrit « moins de 0,01 $ ».
+
+### Au-delà de dix, l'arrière-plan
+
+**Le seuil n'est pas une préférence, c'est une limite de transport.** Un
+brouillon prend quelques secondes ; cinquante dépasseraient le délai du proxy et
+l'écran afficherait un échec sur un travail à moitié fait — le pire des deux
+mondes, puisque les brouillons déjà écrits ont bel et bien été payés.
+
+`composition_jobs` (migration `26_composition_jobs`) porte le compte rendu :
+attendu, avancement, coût annoncé, début, fin, erreur. **Une table plutôt qu'un
+compteur en mémoire** — le travail dure plus qu'une requête, l'écran qui
+l'observe est rendu par le serveur, et un état gardé dans le processus
+disparaîtrait au redéploiement en laissant une bannière éternelle. Ici, un
+travail interrompu se voit : sa date de fin manque, ou son erreur est écrite en
+clair.
+
+L'avancement affiché est **le nombre de départs réellement en file**, pas le
+compteur du journal : celui-ci n'est écrit qu'à la fin, et une barre qui saute
+de 0 à 47 d'un coup n'est pas un avancement.
+
+### Le silence est nommé, et c'est la moitié du jalon
+
+« 0 départ » sans raison est exactement ce qui a fait chercher du côté du
+planificateur. Chaque cause a désormais sa phrase, sur la confirmation :
+séquence inactive (« une campagne neuve l'est toujours »), étape sans consigne
+(« Alex écrirait sans savoir quoi dire »), campagne archivée, week-end, et
+« personne n'est éligible ».
+
+**Le week-end reste refusé**, y compris ici, et c'est un choix : un brouillon
+écrit le samedi décrirait un état vieux de deux jours au moment de partir
+(jalon 38). Mais il est désormais **dit** au lieu d'être un silence.
+
+### Jalon 56 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `26_composition_jobs` appliquée puis
+`migrate diff` **vide**), les substituts SMTP/IMAP/Anthropic avec capture du
+fil — **sept sections, zéro échec** :
+
+- **1 · le silence est nommé** : séquence inactive puis étape sans consigne, la
+  cause citée à chaque fois ; 4 inscrits sur 5, la fiche sans adresse refusée
+  **dès l'inscription** avec son motif ;
+- **2 · le plan** : 2 brouillons annoncés (5 sélectionnés − perdue − opposition
+  − sans adresse), coût et modèle affichés, **0 appel facturé** par le plan
+  lui-même (47 → 47) ;
+- **3 · composer** : 2 départs en file, **0 envoi**, l'angle du rôle et
+  l'interdiction d'accroche entre collègues bien partis sur le fil, les deux
+  inéligibles arrêtées avec leur motif en clair ;
+- **4 · rejouer** : 0 recomposé, la file ne double pas ; une inscription
+  ajoutée ensuite → 1 composé **pour elle seule**, les deux premiers intacts ;
+- **5 · arrière-plan** : 12 brouillons → plan à 0,09 $, `background: true`, **la
+  main rendue en 37 ms**, bannière « 12 départs en préparation », avancement
+  observé 11 → 12, terminé sans erreur, 12 départs en file, **toujours 0
+  envoi** ;
+- **6 · la boucle complète** : 15 départs validés en lot et envoyés, chacun
+  portant sa campagne, son étape et la boîte de la campagne ;
+- **7 · le passage quotidien** : inchangé, sans portée, il balaie tout le CRM et
+  ne recompose rien de déjà en file ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1072 tests**) verts.
+
+**La garde `compose-source.test.ts`** ferme les deux façons de rater ce jalon —
+une seconde boucle, et un envoi enchaîné à la composition. **Éprouvée en
+réintroduisant les deux régressions exactes** : deux tests tombent en les
+nommant.
+
+**Dette payée au passage** : `campaign-card.tsx` était à 275 lignes **avant** ce
+jalon, au-dessus de la limite de 250. Deux extractions (`compose-action.tsx`,
+`campaign-delete.tsx`) le ramènent à **220**.
+
+### Le défaut qui restait, et sa correction
+
+La première version de ce jalon composait à l'**inscription** et derrière un
+bouton « Composer les départs ». Elle ne composait **pas** au geste que l'on
+fait réellement : « Enregistrer », dans l'éditeur d'étapes monté au sein de la
+carte de campagne. On enregistrait, la file restait vide, et il fallait trouver
+un second bouton — c'est-à-dire exactement le défaut que le jalon prétendait
+fermer.
+
+Deux verrous, tous deux fermés :
+
+1. **`POST /api/sequences-email` ne composait pas.** C'est pourtant là qu'on
+   écrit la consigne d'une étape, donc le moment où la campagne devient prête.
+   Elle appelle désormais `composeAfterSave`, qui retrouve la campagne de la
+   séquence et compose pour elle ;
+2. **une campagne naissait avec une séquence `active: false`** (jalon 54), si
+   bien que même la composition à l'inscription répondait « séquence inactive »
+   et n'écrivait rien. Or `active` n'a jamais été le garde-fou qui protège de
+   l'envoi : **ce qui protège, c'est qu'un départ ne part que sur un clic**, et
+   que le mode automatique garde son double verrou et ne couvre jamais la
+   première étape. Une campagne naît donc active, et la migration
+   `27_campaign_sequences_active` répare les campagnes existantes — **sauf les
+   archivées**, dont la séquence a été désactivée délibérément.
+
+Ce qui empêche encore d'écrire n'importe quoi n'a pas bougé : **aucune étape
+sans consigne ne compose**, et la cause est dite.
+
+### Le clic rend la main, la file se remplit sous les yeux
+
+Composer trois brouillons, c'est trois appels au modèle — et **trois collègues
+d'une même maison se composent l'un après l'autre**, parce que la règle du jalon
+53 interdit de reprendre l'accroche du voisin, ce qui suppose de l'avoir déjà
+écrite. Une vingtaine de secondes de travail réel, donc.
+
+Les attendre dans la requête ferait tourner un sablier pendant tout ce temps sur
+un clic qui a déjà tout déclenché. Les gestes du parcours — « Enregistrer » et
+« Inscrire » — composent donc **en arrière-plan systématiquement** : la main est
+rendue immédiatement, et « Départs du jour » se rafraîchit tout seul toutes les
+trois secondes tant qu'un travail tourne (`CompositionRefresh`), en affichant
+« 2 sur 3 préparés » et sa barre.
+
+Le rafraîchissement **s'arrête de lui-même** dès que la composition est finie :
+une page qui clignote pendant qu'on la lit rendrait la validation en lot
+désagréable.
+
+### Le substitut mentait sur le temps
+
+Mesurer « le temps entre le clic et les brouillons » contre un substitut qui
+répond instantanément donnait **317 ms** — un chiffre qu'on ne reverrait jamais
+en production. `scripts/mock-anthropic.ts` accepte désormais `MOCK_DELAY`, et la
+mesure est faite à **8 s par appel**, la latence d'un vrai brouillon. C'est la
+discipline du jalon 43 : le substitut doit reproduire ce que la production nous
+a appris, y compris ce qui est désagréable.
+
+### Jalon 56 — le parcours, chronométré
+
+Par **HTTP contre le serveur standalone de production**, avec une session, donc
+par les mêmes routes que le navigateur, middleware compris — appeler les
+services en direct sauterait précisément l'endroit où le défaut vivait :
+
+| Étape | Mesure |
+|---|---|
+| campagne créée, séquence **active** | 200 |
+| trois contacts inscrits | 3 — et la cause du silence dite : « aucune étape ne porte de consigne » |
+| **« Enregistrer » rend la main** | **76 ms** |
+| premier brouillon lisible dans la file | **8,3 s** |
+| **les trois lisibles** | **24,8 s** |
+| envois | **0** |
+| la page `/departs` les rend côté serveur | Nina, Paul, Rita |
+
+Le plancher est physique : trois appels au modèle, en série parce que ce sont
+des collègues d'une même maison.
+
+### Jalon 56 — ce qui n'est pas vérifié
+
+**Rien n'a été cliqué dans un navigateur.** Le parcours est exercé par HTTP sur
+le serveur de production, ce qui couvre les routes, le middleware et le rendu
+serveur de `/departs` — mais le rafraîchissement automatique de la file est du
+code client, vérifié par lecture et non par une frappe.
+
+**La composition reste séquentielle, y compris entre maisons différentes.** Elle
+doit l'être **au sein** d'une maison (règle des accroches, jalon 53) ; elle
+pourrait tourner en parallèle d'une maison à l'autre, ce qui diviserait
+l'attente sur une campagne large. Ce n'est pas fait : le cas mesuré ici — trois
+collègues d'une même société — n'en aurait tiré aucun gain, et paralléliser des
+appels facturés demande son propre garde-fou.
+
+**L'arrière-plan vit dans le processus du serveur.** Un redéploiement ou un
+redémarrage de conteneur au milieu d'une composition la coupe : les brouillons
+déjà écrits restent en file, le journal garde sa date de fin vide, et la
+bannière le dit. Il n'y a **pas de reprise automatique** — relancer la
+composition depuis la campagne compose ce qui manque, sans repayer ce qui existe.
+Une vraie file de travaux persistante serait un jalon à elle seule.
+
+**Les plafonds de débit ne s'appliquent pas à la composition**, et c'est
+conforme au planificateur : ils portent sur l'**envoi** (`checkRate`), qui est le
+seul geste qui touche le serveur SMTP. Composer cinquante brouillons ne
+consomme aucun quota d'envoi ; les valider en fera cinquante envois, et c'est là
+que le plafond mord — exactement comme le matin.
+
+**L'estimation est un majorant quand des inscriptions sont en cours.** Sur la
+confirmation d'inscription, chaque fiche cochée compte pour un brouillon ; les
+garde-fous s'appliquent ensuite, et une fiche close n'appellera rien. Annoncer
+plus que ce qui sera dépensé est le bon sens de l'erreur.
+
+**Le coût réel n'est pas comparé au coût annoncé.** Le journal stocke
+l'estimation, et le compteur du jalon 36 stocke la facture : le rapprochement
+est possible, il n'est pas affiché.

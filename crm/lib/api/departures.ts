@@ -126,7 +126,24 @@ async function pendingColleagueOpening(
   return { name, opening: opening.slice(0, 300) };
 }
 
-export async function composeDepartures(now = new Date()): Promise<ComposeReport> {
+/**
+ * La portée d'une composition : tout le CRM, ou une seule séquence.
+ *
+ * **Une portée, pas une seconde fonction.** Le passage quotidien compose sans
+ * portée ; l'enregistrement d'une campagne compose la sienne. Écrire deux
+ * boucles ferait deux jeux de garde-fous, et le second oublierait un jour la
+ * fiche close ou l'opposition au démarchage — c'est exactement le défaut que le
+ * jalon 55 a payé sur l'entonnoir, et la leçon est la même : une seule addition,
+ * une seule décision.
+ */
+export interface ComposeScope {
+  readonly sequenceId?: string;
+}
+
+export async function composeDepartures(
+  now = new Date(),
+  scope: ComposeScope = {},
+): Promise<ComposeReport> {
   const empty = { composed: 0, sentAutomatically: 0, stopped: 0, waiting: 0 };
 
   if (isWeekend(now)) {
@@ -134,7 +151,11 @@ export async function composeDepartures(now = new Date()): Promise<ComposeReport
   }
 
   const enrollments = await prisma.sequenceEnrollment.findMany({
-    where: { status: "active", sequence: { active: true } },
+    where: {
+      status: "active",
+      sequence: { active: true },
+      ...(scope.sequenceId === undefined ? {} : { sequenceId: scope.sequenceId }),
+    },
     include: {
       sequence: {
         include: {
@@ -252,6 +273,67 @@ export async function composeDepartures(now = new Date()): Promise<ComposeReport
   }
 
   return { skipped: null, composed, sentAutomatically, stopped, waiting };
+}
+
+/**
+ * Combien de brouillons la composition écrirait — **sans rien appeler ni rien
+ * écrire**.
+ *
+ * C'est ce qui permet d'annoncer le coût avant de le dépenser. La décision est
+ * prise par `nextStep`, la même fonction que la boucle réelle : un compte fondé
+ * sur une autre règle annoncerait un prix pour un travail qui n'aurait pas lieu.
+ *
+ * Elle ne **stoppe** aucune inscription, contrairement à la boucle : une
+ * consultation qui écrit n'est plus une consultation (jalon 8). Les
+ * inéligibles sont donc comptés, pas rangés — la boucle les rangera.
+ */
+export async function countComposable(
+  scope: ComposeScope,
+  now = new Date(),
+): Promise<{ readonly eligible: number; readonly weekend: boolean }> {
+  if (isWeekend(now)) return { eligible: 0, weekend: true };
+
+  const enrollments = await prisma.sequenceEnrollment.findMany({
+    where: {
+      status: "active",
+      sequence: { active: true },
+      ...(scope.sequenceId === undefined ? {} : { sequenceId: scope.sequenceId }),
+    },
+    include: {
+      sequence: { include: { steps: { orderBy: { position: "asc" } } } },
+      contact: { select: { id: true, lifecycle: true, lostReason: true, email: true } },
+    },
+  });
+
+  let eligible = 0;
+  for (const enrollment of enrollments) {
+    const replied = await repliedAfter(
+      enrollment.contactId,
+      enrollment.lastSentAt ?? enrollment.enrolledAt,
+    );
+
+    const verdict = nextStep(
+      {
+        lifecycle: toLifecycle(enrollment.contact.lifecycle),
+        lostReason: enrollment.contact.lostReason,
+        email: enrollment.contact.email,
+      },
+      { repliedAt: replied, lastSentAt: enrollment.lastSentAt, lastStep: enrollment.lastStep },
+      enrollment.sequence.steps,
+      now,
+    );
+    if (!verdict.ok) continue;
+
+    // Déjà en file : recomposer coûterait un appel pour remplacer un brouillon
+    // que l'on est peut-être en train de relire.
+    const existing = await prisma.sequenceDeparture.findUnique({
+      where: { enrollmentId_step: { enrollmentId: enrollment.id, step: verdict.step } },
+      select: { id: true },
+    });
+    if (existing === null) eligible += 1;
+  }
+
+  return { eligible, weekend: false };
 }
 
 async function unlockOf(sequenceId: string) {

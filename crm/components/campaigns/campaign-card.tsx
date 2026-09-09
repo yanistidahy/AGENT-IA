@@ -7,6 +7,8 @@ import type { CampaignView } from "@/lib/api/campaigns";
 import { EmailSequencesPanel, type SequenceView } from "@/components/settings/email-sequences-panel";
 import { FunnelRow } from "@/components/emails/funnel-row";
 import { CampaignMembers } from "./campaign-members";
+import { ComposeAction } from "./compose-action";
+import { CampaignDelete } from "./campaign-delete";
 import type { CampaignMember } from "@/lib/domain/campaign-members";
 
 /**
@@ -27,6 +29,7 @@ interface MailboxOption {
 function isCampaigns(value: unknown): value is { campaigns: CampaignView[] } {
   return typeof value === "object" && value !== null && "campaigns" in value;
 }
+
 
 const CONTROL =
   "rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-brand";
@@ -59,7 +62,6 @@ export function CampaignCard({
   const [name, setName] = useState(campaign.name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState(false);
   const [open, setOpen] = useState(false);
 
   const patch = async (change: { name?: string; mailboxId?: string }) => {
@@ -92,23 +94,6 @@ export function CampaignCard({
     }
   };
 
-  const destroy = async () => {
-    setBusy(true);
-    setError(null);
-    const result = await requestJson(
-      `/api/campaigns?id=${encodeURIComponent(campaign.id)}`,
-      { method: "DELETE" },
-      isCampaigns,
-    );
-    setBusy(false);
-    setConfirming(false);
-    if (result.ok) {
-      onChanged(result.data.campaigns);
-      onRefresh();
-    } else {
-      setError(result.message);
-    }
-  };
 
   const { funnel } = campaign;
   const contactsHref = `/contacts?campagne=${encodeURIComponent(campaign.id)}${
@@ -188,6 +173,8 @@ export function CampaignCard({
           {open ? "Masquer les inscrits" : `Voir les ${funnel.enrolled} inscrit${funnel.enrolled > 1 ? "s" : ""}`}
         </button>
 
+        <ComposeAction campaignId={campaign.id} onDone={onRefresh} />
+
         <button
           type="button"
           onClick={() =>
@@ -208,57 +195,15 @@ export function CampaignCard({
           {campaign.archivedAt === null ? "Archiver" : "Désarchiver"}
         </button>
 
-        {/*
-          « Supprimer » n'apparaît que sur une campagne qui n'a rien envoyé.
-          Absent plutôt que grisé : un bouton grisé invite à chercher comment
-          l'activer, un bouton absent ne pose pas la question (jalon 26) — et
-          l'explication est donnée juste à côté.
-        */}
-        {campaign.deletable ? (
-          <button
-            type="button"
-            onClick={() => setConfirming(true)}
-            disabled={busy}
-            className="ml-auto min-h-[44px] text-muted hover:text-danger disabled:opacity-50 lg:min-h-0"
-          >
-            Supprimer
-          </button>
-        ) : (
-          <span className="ml-auto text-[12px] text-muted">
-            {funnel.messages} message{funnel.messages > 1 ? "s" : ""} envoyé
-            {funnel.messages > 1 ? "s" : ""} : suppression impossible, archivez.
-          </span>
-        )}
+        <CampaignDelete
+          campaign={campaign}
+          busy={busy}
+          onBusy={setBusy}
+          onChanged={onChanged}
+          onRefresh={onRefresh}
+          onError={setError}
+        />
       </div>
-
-      {confirming && (
-        <div className="mb-3 rounded-control border border-danger bg-pulse-l px-3 py-2 text-[12.5px]">
-          <p>
-            Supprimer « <strong className="font-semibold">{campaign.name}</strong> »
-            définitivement ? Partiront avec elle : sa séquence, ses étapes et ses{" "}
-            {funnel.enrolled} inscription{funnel.enrolled > 1 ? "s" : ""}.{" "}
-            <strong className="font-semibold">Les contacts ne sont pas touchés</strong> — ils
-            restent dans le CRM avec tout leur historique.
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void destroy()}
-              disabled={busy}
-              className="min-h-[44px] rounded-control bg-danger px-3 font-medium text-white disabled:opacity-50 lg:min-h-0 lg:py-1"
-            >
-              Supprimer définitivement
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirming(false)}
-              className="min-h-[44px] rounded-control border border-line px-3 lg:min-h-0 lg:py-1"
-            >
-              Annuler
-            </button>
-          </div>
-        </div>
-      )}
 
       {open && <CampaignMembers members={members} onChanged={onRefresh} />}
 

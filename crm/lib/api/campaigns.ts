@@ -174,7 +174,20 @@ export async function createCampaign(
     await tx.emailSequence.create({
       data: {
         name: input.name,
-        active: false,
+        // **Active dès la création, et ce n'est pas un relâchement.**
+        //
+        // Pour une campagne, `active` n'a jamais été le garde-fou qui protège de
+        // l'envoi : ce qui protège, c'est qu'un départ ne part **que sur un
+        // clic** dans la file (jalon 38), et que le mode automatique — le seul
+        // chemin sans clic — garde son double verrou et ne couvre jamais la
+        // première étape. Une campagne créée inactive ne protégeait donc de
+        // rien ; elle empêchait seulement la composition, y compris celle qu'on
+        // vient de demander, et sans le dire.
+        //
+        // Rien ne se compose pour autant tant qu'aucune étape ne porte de
+        // consigne : c'est cette condition-là qui empêche d'écrire n'importe
+        // quoi, et elle est vérifiée à chaque composition.
+        active: true,
         campaignId: campaign.id,
         steps: { create: [{ position: 1, delayDays: 0, brief: "" }] },
       },
