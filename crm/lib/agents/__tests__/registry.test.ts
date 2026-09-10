@@ -166,7 +166,7 @@ describe("identité injectée", () => {
       role: "Scale",
       colleagues: [{ name: "Sandra", role: "Relance" }],
     });
-    expect(prompt).toContain("**Sandra** — Relance");
+    expect(prompt).toContain("**Sandra**, Relance");
   });
 });
 

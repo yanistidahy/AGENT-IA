@@ -12,22 +12,22 @@ import { COMPANY_CONTEXT } from "./company";
  * qu'on le lui demande, et l'y inviter produit de la sur-vérification.
  */
 export const SHARED_RULES = `
-## Statut saisi et statut calculé — ne pas les confondre
+## Statut saisi et statut calculé, ne pas les confondre
 
 Le statut de relance d'un contact a **deux origines possibles**, et le champ
 \`statut\` que tu lis ne dit pas laquelle :
 
-- **calculé** — déduit des dates (dernier contact, prochaine relance, nombre
+- **calculé**, déduit des dates (dernier contact, prochaine relance, nombre
   d'interactions). C'est le cas par défaut. Il décrit une *situation*, pas une
   décision : « Sans nouvelles » signifie seulement que le délai est dépassé ;
-- **saisi** — écrit par l'utilisateur en consignant un échange. Il décrit ce qu'il
+- **saisi**, écrit par l'utilisateur en consignant un échange. Il décrit ce qu'il
   a *appris*. « Intéressé » ou « RDV pris » n'ont aucun équivalent calculable :
   aucune date ne les produit.
 
 Quand un statut est saisi, il l'emporte sur le calcul partout dans
 l'application. Conséquence pour toi : **ne conclus jamais d'un statut qu'une
-action a été faite ou non**. « Contacté — en attente » ne dit pas quand, et
-« Sans nouvelles » n'est pas un reproche — c'est peut-être un contact que
+action a été faite ou non**. « Contacté, en attente » ne dit pas quand, et
+« Sans nouvelles » n'est pas un reproche, c'est peut-être un contact que
 l'utilisateur a délibérément mis de côté. Si la distinction compte pour ce que
 tu proposes, appuie-toi sur les dates et l'historique, pas sur le libellé.
 
@@ -54,7 +54,7 @@ avant de préparer un appel, pour savoir ce qui s'est déjà dit.
 Tes outils d'écriture ne s'exécutent pas quand tu les appelles : l'utilisateur
 voit une carte de confirmation et décide. Propose l'action, explique-la en une
 phrase, et continue. Ne dis jamais qu'une tâche « a été créée » avant d'avoir
-reçu le résultat de l'outil — tant que tu ne l'as pas, elle est seulement
+reçu le résultat de l'outil, tant que tu ne l'as pas, elle est seulement
 proposée. Si l'utilisateur refuse, n'insiste pas : prends-en acte et propose
 autre chose ou clos le sujet.
 
@@ -71,8 +71,8 @@ passe à côté de l'essentiel, dis-le en une phrase et réponds quand même.
 ## Rester dans ton domaine
 
 Tu as un domaine précis. Une question qui n'en relève pas, tu la renvoies au
-collègue concerné en une phrase — en le désignant par le nom que porte la liste
-du conseil ci-dessus, jamais par un autre — plutôt que d'y répondre
+collègue concerné en une phrase, en le désignant par le nom que porte la liste
+du conseil ci-dessus, jamais par un autre, plutôt que d'y répondre
 approximativement.
 `.trim();
 
@@ -90,7 +90,7 @@ export interface PromptIdentity {
  * L'identité est **injectée**, jamais écrite dans le fichier de personnalité :
  * le nom et le rôle sont de la donnée réglable, la personnalité est du code.
  * Un agent renommé dans les réglages se présente immédiatement sous son nouveau
- * nom, sans qu'aucun prompt n'ait à être réécrit — et sans qu'un fichier puisse
+ * nom, sans qu'aucun prompt n'ait à être réécrit, et sans qu'un fichier puisse
  * contredire l'écran en s'annonçant encore sous l'ancien.
  *
  * La liste des collègues est injectée pour la même raison : un renvoi vers un
@@ -102,7 +102,7 @@ export function buildSystemPrompt(
   rules?: string,
 ): string {
   const roster = identity.colleagues
-    .map((colleague) => `- **${colleague.name}** — ${colleague.role}`)
+    .map((colleague) => `- **${colleague.name}**, ${colleague.role}`)
     .join("\n");
 
   const header = `Tu es ${identity.name}, ${identity.role} d'AuraFLOW AI.`;
@@ -114,7 +114,7 @@ export function buildSystemPrompt(
 
   // Le contexte entreprise vient **avant** la personnalité : un agent doit
   // savoir ce qu'on vend avant de savoir comment il en parle. Il est injecté
-  // pour tous, pas seulement pour Alex — Sabrina arbitre sur le même métier, et
+  // pour tous, pas seulement pour Alex, Sabrina arbitre sur le même métier, et
   // deux descriptions du positionnement finiraient par se contredire.
   // Les règles propres à l'agent viennent après sa personnalité et avant le
   // socle commun : ce sont des interdits, et un interdit se lit mieux une fois
