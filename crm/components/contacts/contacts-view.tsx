@@ -1,5 +1,6 @@
 "use client";
 
+import type { AddedPreset } from "@/lib/domain/added-window";
 import type { AccountState, DmState } from "@/lib/domain/instagram-filter";
 
 import { useRouter, useSearchParams } from "next/navigation";
@@ -37,6 +38,11 @@ interface ContactsViewProps extends ContactFormOptions {
   readonly account: AccountState | undefined;
   readonly dm: DmState | undefined;
   readonly instagramCounts: Readonly<Record<string, number>>;
+  /** Le filtre d'ajout, porté par l'URL comme les autres. */
+  readonly ajout: AddedPreset | undefined;
+  readonly du: string | undefined;
+  readonly au: string | undefined;
+  readonly addedWeekCount: number;
   /** Fiche désignée par `?fiche=` mais absente de la liste filtrée. */
   readonly focused: ContactRecord | null;
   /** Les collègues de la fiche ouverte — chargés par la page, jamais par ligne. */
@@ -74,6 +80,10 @@ export function ContactsView({
   account,
   dm,
   instagramCounts,
+  ajout,
+  du,
+  au,
+  addedWeekCount,
   facets,
   totalRows,
   incompleteCount,
@@ -218,6 +228,10 @@ export function ContactsView({
         account={account}
         dm={dm}
         instagramCounts={instagramCounts}
+        ajout={ajout}
+        du={du}
+        au={au}
+        addedWeekCount={addedWeekCount}
         owners={options.owners}
         sources={options.sources}
         companies={companyOptions}

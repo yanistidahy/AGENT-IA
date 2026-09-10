@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "../db";
 import { CORRECTION_OWNER } from "./real-activity";
 import { ANSWERED_OUTCOMES } from "../domain/status";
-import { rate, type Rate } from "../domain/email-stats";
+import { byWeek, rate, weekStart, type Bucket, type Rate } from "../domain/email-stats";
 import type { FunnelStep } from "../domain/email-funnel";
 import { toActivityType } from "../domain/guards";
 import { ACTIVITY_TYPES, type ActivityType } from "../domain/types";
@@ -36,6 +36,9 @@ import {
  * jalon 27) : les compter ferait apparaître les reports de feuille comme des
  * semaines de prospection. Même exclusion que les rapports.
  */
+
+/** Douze semaines, comme le rythme de prospection de `/rapports`. */
+const ADDED_WEEKS = 12;
 
 export interface PerformanceQuery {
   readonly period: PeriodKind;
@@ -76,6 +79,14 @@ export interface Performance {
   /** Issues des appels : pas de réponse / parlé / mauvais interlocuteur… */
   readonly callOutcomes: ReadonlyArray<{ readonly outcome: string; readonly count: number }>;
   readonly perDay: readonly DayStack[];
+  /**
+   * Fiches entrées dans le vivier, par semaine, sur douze semaines.
+   *
+   * À côté de l'activité et non dedans : consigner un appel n'alimente pas le
+   * vivier, et une semaine chargée sur des fiches anciennes ne se distingue
+   * d'une semaine de sourcing que si les deux séries sont lues ensemble.
+   */
+  readonly addedPerWeek: readonly Bucket[];
   /* — ce que ça a produit — */
   readonly firstReached: Delta;
   readonly booked: Delta;
@@ -112,7 +123,15 @@ export async function readPerformance(
   const previous = previousPeriod(period, now);
   const owner = query.owner?.trim() === "" ? null : (query.owner ?? null);
 
-  const [activityRows, firstTouches, deals, reminderTasks, settings] = await Promise.all([
+  // Douze semaines pleines, la semaine en cours comprise. La borne basse est le
+  // lundi de la douzième semaine en arrière : demander « il y a 84 jours »
+  // couperait la plus ancienne en son milieu et ferait une première barre
+  // toujours plus courte que les autres.
+  const addedSince = weekStart(now);
+  addedSince.setDate(addedSince.getDate() - (ADDED_WEEKS - 1) * 7);
+
+  const [activityRows, firstTouches, deals, reminderTasks, settings, addedRows] =
+    await Promise.all([
     prisma.activity.findMany({
       where: {
         date: { gte: previous.from, lt: period.to },
@@ -143,6 +162,13 @@ export async function readPerformance(
     prisma.settings.findUnique({
       where: { id: "singleton" },
       select: { objectifAppelsSemaine: true, objectifEmailsSemaine: true },
+    }),
+    // Le vivier, pas le travail : `Contact.createdAt` est écrit par la base à
+    // la création de la fiche. Aucune exclusion de cycle de vie — une fiche
+    // ajoutée puis perdue a bel et bien été ajoutée cette semaine-là.
+    prisma.contact.findMany({
+      where: { createdAt: { gte: addedSince } },
+      select: { createdAt: true, owner: true },
     }),
   ]);
 
@@ -255,6 +281,13 @@ export async function readPerformance(
     channels,
     callOutcomes,
     perDay: dailyStacks(current, period, now),
+    // Filtré par propriétaire comme le reste de l'écran : « ma performance »
+    // mesure une personne, y compris quand elle alimente le vivier.
+    addedPerWeek: byWeek(
+      addedRows.filter((row) => matches(row, owner)).map((row) => row.createdAt),
+      now,
+      ADDED_WEEKS,
+    ),
     firstReached: delta(firstNow, firstBefore),
     booked: delta(bookedNow, peopleBooked(before)),
     qualified: delta(qualifiedNow, qualifiedBefore),

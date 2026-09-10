@@ -43,11 +43,16 @@ export function BarChart({
   const slot = width / points.length;
   const barWidth = Math.min(30, slot * 0.55);
 
+  // La barre la plus haute occupe toute la hauteur, et sa valeur se dessine
+  // cinq pixels au-dessus : sans cette marge, `viewBox` la coupe — le seul
+  // chiffre systématiquement illisible était celui du maximum.
+  const top = 14;
+
   return (
     <svg
-      viewBox={`0 0 ${width} ${height + 34}`}
+      viewBox={`0 -${top} ${width} ${height + 34 + top}`}
       width="100%"
-      height={height + 34}
+      height={height + 34 + top}
       role="img"
       aria-label={points.map((p) => `${p.label} : ${format(p.value)}`).join(", ")}
     >

@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 59 | **Filtrer par date d'ajout** — quatre préréglages et une plage libre dans l'URL, colonne « Ajouté le » triable, fiches ajoutées par semaine sur /performance | **livré, à valider** |
 | 58 | **Nouveau discours, et le tiret long banni** — conseiller de vente, accroche sur le fait, quatre paragraphes, tirets retirés à la source et au retour | **livré, à valider** |
 | 57 | **Retravailler un départ, et ne plus supposer d'équipe** — le panneau de rédaction rouvert depuis la file, discours conditionnel à ce qu'on sait | **livré, à valider** |
 | 56 | **« Enregistrer » compose** — la file se remplit au clic, sans second geste ni passage quotidien ; coût annoncé, avancement à l'écran, planificateur diagnostiqué | **livré, à valider** |
@@ -8304,3 +8305,131 @@ le conteste, la source est à ajouter.
 porte sur ce qu'Alex lit, qui est le périmètre demandé : Sabrina et les autres
 ne rédigent pas de courriel de prospection, et leurs constats ne partent chez
 personne.
+
+
+---
+
+## Jalon 59 — depuis quand une fiche est dans le vivier
+
+### Ce que `createdAt` contient réellement, vérifié plutôt que supposé
+
+La question posée avant tout le reste, et sa réponse tient au code de l'import.
+`importContacts()` **ne renseigne jamais `createdAt`** : c'est `@default(now())`
+qui l'écrit, à l'instant de l'import. Les 122 fiches entrées d'un même collage
+portent donc **le même horodatage à la milliseconde près**, et non la date à
+laquelle elles ont été trouvées.
+
+Mesuré sur une base reconstituée à cette image (122 importées d'un coup, 19
+ajoutées une par une depuis) :
+
+```
+141 fiches, 20 instants distincts, 18 jours distincts
+plus gros lot au même instant : 122 fiches à 2026-07-11T09:14:32.118Z
+```
+
+**Les deux populations sont donc parfaitement distinguables** — pas parce que le
+CRM porte un marqueur, mais parce qu'un lot de cent vingt-deux fiches à la même
+milliseconde ne peut être qu'un import. Ce que le filtre en fait :
+
+- **les préréglages restent utiles tels quels** : « aujourd'hui », « cette
+  semaine » et « ce mois » ne peuvent pas ramener le lot, qui est plus vieux
+  qu'eux. C'est précisément la question qu'on se pose le matin — ce que j'ai
+  ajouté depuis, pas ce que j'ai importé une fois ;
+- **« 30 derniers jours » et la plage libre peuvent le ramener**, et c'est
+  correct : ces fiches ont bien été ajoutées ce jour-là ;
+- **la semaine de l'import se voit d'un coup d'œil sur /performance** — une
+  barre à 123 au milieu de barres à 1 ou 2. L'écran ne la masque pas et n'a pas
+  à la masquer : c'est un fait de sourcing, et c'est le seul graphique où l'on
+  distingue « j'alimente » de « j'ai importé une fois ».
+
+**Ce que je n'ai pas fait, et pourquoi.** Aucune colonne « source de création »,
+aucune exclusion du lot d'import. Les deux exigeraient d'écrire en base une
+information qu'on peut lire, et une exclusion codée en dur sur un instant
+choisi cesserait d'être vraie au prochain import. Si le lot devient gênant, la
+réponse la moins chère est un filtre de colonne sur `source` (« Import »), qui
+existe déjà — les fiches importées le portent.
+
+**Les chiffres ci-dessus viennent de la base de vérification, pas de la vôtre.**
+Le fait de code — l'import ne pose pas `createdAt` — vaut pour les deux ; la
+répartition exacte de production se lira sur `/performance` au premier
+affichage.
+
+### Semaine et mois calendaires, trente jours glissants
+
+`lib/domain/added-window.ts`, pur et testé, porte les quatre préréglages et la
+plage libre. Trois décisions y sont écrites :
+
+- **« cette semaine » part du lundi**, pas de sept jours en arrière : c'est
+  ainsi qu'on juge sa semaine de travail, et sept jours glissants feraient d'un
+  lundi matin le bilan de la semaine passée. « Les 30 derniers jours » reste
+  glissant, parce que c'est une mesure de rythme ;
+- **la borne haute est exclue**, au lendemain à minuit. Une borne inclusive
+  posée à 23:59:59 laisse passer entre les mailles une fiche créée à
+  23:59:59,400 : le jour a des millisecondes ;
+- **l'horloge est injectée** — sans quoi « cette semaine » serait vrai six jours
+  sur sept dans les tests.
+
+Une plage à une seule borne reste valide (« depuis le 1er mars » est une
+question légitime), deux bornes inversées sont remises dans l'ordre plutôt que
+refusées, et **un préréglage l'emporte sur une plage** : deux fenêtres actives à
+la fois ne décrivent aucune question.
+
+### La puce dit ce qu'elle cache, et porte le nombre qui déclenche
+
+Une seule puce « Ajoutés » ouvre les quatre préréglages et la plage libre, comme
+la puce Instagram du jalon 49 replie ses quatre lectures. Active, elle porte son
+libellé court et reste en surbrillance — **y compris pour une plage écrite à la
+main dans l'URL** (`describeWindow`), parce qu'une liste filtrée dont rien ne
+nomme le filtre est un écran qui ment (jalon 31). Hors sélection, elle porte le
+nombre de la semaine, comme « À relancer » porte le sien.
+
+La colonne « Ajouté le » rejoint le sélecteur « Colonnes », **hors des six par
+défaut**, triable dans les deux sens en SQL — `createdAt` est une vraie colonne,
+donc le tri est réel et non promis.
+
+### Un défaut d'affichage antérieur, trouvé en dessinant une grande barre
+
+`BarChart` calculait `y = height - barHeight - 5` pour l'étiquette de valeur : la
+barre la plus haute occupant toute la hauteur, **son étiquette tombait à `y = -5`,
+hors du `viewBox`**. Le seul chiffre systématiquement illisible était donc celui
+du maximum, sur tous les graphiques en barres du produit depuis le jalon 5. Il
+ne s'était jamais vu parce que les valeurs y sont proches ; une barre à 123 au
+milieu de barres à 1 l'a rendu évident. Corrigé par une marge haute de 14 px
+dans le `viewBox`.
+
+### Jalon 59 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide** — aucune migration,
+`createdAt` existant depuis le jalon 0) et le serveur standalone de production,
+par le **chemin réel de la page** (URL → schéma Zod → filtres → `listContacts`) :
+
+- **1 · « cette semaine »** : fenêtre du lundi 07/09 inclus au 11/09 exclu,
+  **SQL 5 = liste rendue 5**, 0 fiche hors fenêtre dans la liste ;
+- **2 · plage libre** : `?du=2026-08-21&au=2026-08-31` → SQL 3 = rendu 3 =
+  **rechargé 3** (même URL, second rendu serveur) ; croisée avec
+  `lifecycle=Lead` → SQL 1 = rendu 1 ;
+- **3 · tri** : 141 lignes croissant et décroissant, ordre vérifié ligne à
+  ligne, **premier croissant = dernier décroissant** ; croisé avec
+  `lifecycle=Lead` → 36 = 36 ;
+- **4 · /performance** : 12 semaines rendues, **total de la série 140 = SQL sur
+  la même fenêtre**, dernière barre = « cette semaine » = 5 ; rendu **côté
+  serveur** vérifié sur le HTML (« Fiches ajoutées — 140 sur 12 semaines · dont
+  5 cette semaine », les douze étiquettes, le lien vers la semaine) ;
+- **5 · le rapport `createdAt`** : ci-dessus ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1111 tests**) verts.
+
+### Jalon 59 — ce qui n'est pas fait
+
+**Le menu de la puce n'a pas été cliqué dans un navigateur**, comme tous les
+composants clients de ce projet : les deux champs de date, « Appliquer la plage »
+et l'exclusion mutuelle préréglage/plage sont vérifiés par leurs paramètres
+d'URL et par le rendu serveur, pas par une frappe.
+
+**La série de /performance suit le propriétaire sélectionné**, comme le reste de
+l'écran ; le compteur de la puce de `/contacts`, lui, porte sur tout le
+portefeuille (règle du jalon 6). Les deux nombres peuvent donc différer, et ils
+répondent à deux questions différentes.
+
+**Aucune exclusion de cycle de vie dans la série** : une fiche ajoutée puis
+perdue a bel et bien été ajoutée cette semaine-là. C'est une mesure de sourcing,
+pas une file de travail.
