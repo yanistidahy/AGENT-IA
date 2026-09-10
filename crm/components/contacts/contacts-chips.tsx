@@ -91,6 +91,20 @@ export function ContactChips({
         travail quotidienne, pas un filtre qu'on ouvre une fois sur dix. */}
     <InstagramChip account={account} dm={dm} counts={instagramCounts} onChange={onChange} />
 
+    {/*
+      « Ajoutés » vit sur la **première rangée**, à côté de la puce Instagram et
+      pour les deux mêmes raisons.
+
+      1. C'est une lecture quotidienne — « qu'est-ce que j'ai ajouté cette
+         semaine » — pas un filtre qu'on ouvre une fois sur dix ;
+      2. et surtout : la seconde rangée est un groupe segmenté
+         `overflow-hidden`, qui **découpe tout ce qui en dépasse**. Le panneau
+         d'une puce à menu est posé en `absolute` sous son bouton, donc
+         entièrement hors du groupe : il s'ouvrait, et rien ne s'affichait.
+         Une puce à menu ne peut pas vivre dans un conteneur qui rogne.
+    */}
+    <AddedChip preset={ajout} from={du} to={au} weekCount={addedWeekCount} onChange={onChange} />
+
     <button
       type="button"
       aria-expanded={expanded}
@@ -164,18 +178,6 @@ export function ContactChips({
         par l'import. C'est une file de travail — les fiches qu'on ne sait pas
         joindre — et non un statut de relance, d'où sa place à part.
       */}
-      {/*
-        « Ajoutés » : depuis quand la fiche est dans le vivier. Une puce à menu
-        plutôt que quatre de plus, même geste que la puce Instagram du jalon 49.
-      */}
-      <AddedChip
-        preset={ajout}
-        from={du}
-        to={au}
-        weekCount={addedWeekCount}
-        onChange={onChange}
-      />
-
       <button
         type="button"
         onClick={() => onChange({ incomplete: incomplete ? null : "1", followUp: null })}
