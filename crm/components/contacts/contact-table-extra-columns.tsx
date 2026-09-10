@@ -50,6 +50,21 @@ export const EXTRA_COLUMNS: readonly ContactColumn[] = [
       contact.lastEmailAt === null ? MUTED : <span>{formatDate(contact.lastEmailAt)}</span>,
   },
   {
+    /**
+     * Depuis quand la fiche est dans le vivier.
+     *
+     * Vraie colonne de la table, donc **triable dans les deux sens** : le plus
+     * récent répond à « qu'ai-je ajouté cette semaine », le plus ancien à « qui
+     * dort ici depuis six mois sans que je l'aie touché ». La seconde question
+     * est celle qui fait le ménage, et elle demande le tri croissant.
+     */
+    key: "createdAt",
+    label: "Ajouté le",
+    sort: "createdAt",
+    filterKey: null,
+    cell: (contact) => <span>{formatDate(contact.createdAt)}</span>,
+  },
+  {
     key: "attempts",
     label: "Tentatives",
     sort: null,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ADDED_PRESETS } from "../domain/added-window";
 import { ACCOUNT_STATES, DM_STATES } from "../domain/instagram-filter";
 import { CONTACT_FILTERS } from "../domain/follow-up";
 import { LIFECYCLES } from "../domain/types";
@@ -189,6 +190,17 @@ export const listContactsQuerySchema = z.object({
    * dénomination du jour.
    */
   societe: z.string().optional(),
+  /**
+   * Depuis quand la fiche est dans le vivier : un préréglage, ou une plage.
+   *
+   * Trois paramètres plutôt qu'un seul encodé : `ajout=semaine` se lit dans la
+   * barre d'adresse, se met en favori et se corrige à la main. Un jeton opaque
+   * du genre `d=w1` aurait demandé une table de correspondance pour relire son
+   * propre lien. Voir lib/domain/added-window.ts.
+   */
+  ajout: z.enum(ADDED_PRESETS).optional(),
+  du: z.string().optional(),
+  au: z.string().optional(),
   sort: z.enum(CONTACT_SORT_KEYS).optional(),
   dir: z.enum(["asc", "desc"]).optional(),
 });

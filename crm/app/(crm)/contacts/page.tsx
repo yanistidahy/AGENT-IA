@@ -19,6 +19,7 @@ import { getPilotage, listOffers, listOwners, listSources } from "@/lib/api/refe
 import { lastSoldOffer } from "@/lib/api/qualification";
 import { listSequences } from "@/lib/api/sequences";
 import { prisma } from "@/lib/db";
+import { presetWindow } from "@/lib/domain/added-window";
 import { startOfDay } from "@/lib/domain/dates";
 
 export const dynamic = "force-dynamic";
@@ -101,6 +102,14 @@ export default async function ContactsPage({
     select: { nextReminder: true },
   });
   const startOfToday = startOfDay(now);
+  // **Combien de fiches ajoutées cette semaine**, sur tout le portefeuille.
+  // C'est le nombre qui dit si le sourcing tourne, et il porte sur tout le
+  // vivier, jamais sur la liste filtrée : une puce qui compte son propre
+  // résultat afficherait toujours le total de ce qu'elle vient de sélectionner.
+  const addedWeekCount = await prisma.contact.count({
+    where: { createdAt: { gte: presetWindow("semaine", now).from } },
+  });
+
   const reminderCounts = {
     total: withReminder.length,
     late: withReminder.filter(
@@ -155,6 +164,10 @@ export default async function ContactsPage({
       account={query.account}
       dm={query.dm}
       instagramCounts={instaCounts}
+      ajout={query.ajout}
+      du={query.du}
+      au={query.au}
+      addedWeekCount={addedWeekCount}
       facets={facetData.facets}
       totalRows={facetData.total}
       incompleteCount={incompleteCount}

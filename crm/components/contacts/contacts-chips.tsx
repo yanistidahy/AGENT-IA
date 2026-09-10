@@ -9,6 +9,8 @@ import {
 import { LIFECYCLES } from "@/lib/domain/types";
 import type { AccountState, DmState } from "@/lib/domain/instagram-filter";
 import { InstagramChip } from "./instagram-chip";
+import { AddedChip } from "./added-chip";
+import type { AddedPreset } from "@/lib/domain/added-window";
 
 /**
  * Les puces de `/contacts` : cycle de vie, puis relances.
@@ -34,6 +36,10 @@ export function ContactChips({
   account,
   dm,
   instagramCounts,
+  ajout,
+  du,
+  au,
+  addedWeekCount,
   expanded,
   onExpand,
   onChange,
@@ -47,6 +53,10 @@ export function ContactChips({
   account: AccountState | undefined;
   dm: DmState | undefined;
   instagramCounts: Readonly<Record<string, number>>;
+  ajout: AddedPreset | undefined;
+  du: string | undefined;
+  au: string | undefined;
+  addedWeekCount: number;
   expanded: boolean;
   onExpand: () => void;
   onChange: (updates: Record<string, string | null>) => void;
@@ -154,6 +164,18 @@ export function ContactChips({
         par l'import. C'est une file de travail — les fiches qu'on ne sait pas
         joindre — et non un statut de relance, d'où sa place à part.
       */}
+      {/*
+        « Ajoutés » : depuis quand la fiche est dans le vivier. Une puce à menu
+        plutôt que quatre de plus, même geste que la puce Instagram du jalon 49.
+      */}
+      <AddedChip
+        preset={ajout}
+        from={du}
+        to={au}
+        weekCount={addedWeekCount}
+        onChange={onChange}
+      />
+
       <button
         type="button"
         onClick={() => onChange({ incomplete: incomplete ? null : "1", followUp: null })}

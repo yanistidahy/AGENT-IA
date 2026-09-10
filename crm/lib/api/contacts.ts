@@ -12,6 +12,7 @@ import { isLost, isTerminal, LOST_LIFECYCLE, TERMINAL_RESET, TERMINAL_LIFECYCLES
 import { ANSWERED_OUTCOMES, isStale, nameOverflow } from "../domain/status";
 import { compareByStatus, matchesContactFilter } from "../domain/contact-status";
 import { REAL_ACTIVITY } from "./real-activity";
+import { resolveWindow } from "../domain/added-window";
 import { searchText, searchTerm } from "../domain/text";
 import { addDays, daysSince, startOfDay } from "../domain/dates";
 import type { FilterState } from "../domain/column-filters";
@@ -453,6 +454,14 @@ function contactsWhere(
     and.push({ lifecycle: query.lifecycle });
   } else if (query.lifecycle === undefined && filters.lifecycle === undefined) {
     and.push({ NOT: { lifecycle: LOST_LIFECYCLE } });
+  }
+
+  // **La fenêtre d'ajout, tranchée en SQL.** `createdAt` est une colonne, donc
+  // la base sait le faire : la filtrer en mémoire obligerait à charger tout le
+  // vivier pour en garder vingt lignes.
+  const added = resolveWindow({ preset: query.ajout, from: query.du, to: query.au }, now);
+  if (added !== null) {
+    and.push({ createdAt: { gte: added.from, lt: added.to } });
   }
 
   if (query.owner !== undefined) and.push({ owner: query.owner });

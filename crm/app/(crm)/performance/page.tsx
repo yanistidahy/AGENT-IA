@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { readPerformance } from "@/lib/api/performance";
+import { BarChart } from "@/components/charts/primitives";
 import { PERIOD_LABELS, PERIODS, type PeriodKind } from "@/lib/domain/performance";
 import { ACTIVITY_LABELS } from "@/lib/domain/types";
 import { FunnelRow } from "@/components/emails/funnel-row";
@@ -73,6 +75,10 @@ export default async function PerformancePage({
   ]);
 
   const vs = VS[kind];
+  const addedTotal = perf.addedPerWeek.reduce((sum, bucket) => sum + bucket.count, 0);
+  // La dernière barre est la semaine en cours : `byWeek` finit toujours sur le
+  // lundi courant, donc c'est ce chiffre-là et pas une seconde requête.
+  const addedThisWeek = perf.addedPerWeek[perf.addedPerWeek.length - 1]?.count ?? 0;
   const calls = perf.channels.find((channel) => channel.channel === "call");
   const emails = perf.channels.find((channel) => channel.channel === "email");
   const meetings = perf.channels.filter(
@@ -144,6 +150,37 @@ export default async function PerformancePage({
         ) : (
           <StackedBars stacks={perf.perDay} />
         )}
+      </section>
+
+      {/*
+        Le vivier à côté de l'activité : les deux séries répondent à la seule
+        question qui décide de la suite — est-ce que j'alimente, ou est-ce que
+        je ne fais que retravailler ce qui est déjà là ?
+      */}
+      <section className="mb-4 rounded-card border border-line bg-surface px-3.5 py-3 shadow-card">
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-display text-[13px] font-semibold">
+            Fiches ajoutées — {addedTotal} sur 12 semaines{" "}
+            <span className="font-sans text-[11px] font-normal text-muted">
+              dont {addedThisWeek} cette semaine
+            </span>
+          </h2>
+          <Link
+            href="/contacts?ajout=semaine"
+            className="text-[11.5px] font-semibold text-brand hover:text-brand-d"
+          >
+            Voir les fiches de la semaine →
+          </Link>
+        </div>
+        <BarChart
+          points={perf.addedPerWeek.map((bucket) => ({
+            label: bucket.label,
+            value: bucket.count,
+          }))}
+          height={120}
+          format={(value) => String(value)}
+          empty="Aucune fiche ajoutée sur les douze dernières semaines."
+        />
       </section>
 
       {/* — ce que ça a produit — */}
