@@ -3,24 +3,23 @@
  *
  * Une campagne qui écrit à plusieurs personnes d'une même maison ne peut pas
  * leur servir le même paragraphe. La responsable SAV mesure des tickets ; le
- * fondateur regarde la marge. Le pitch ne change pas — l'angle, si.
+ * fondateur regarde la marge. Le pitch ne change pas, l'angle, si.
  *
  * Ce module ne connaît ni Prisma, ni les écrans : il reçoit les rôles tels
  * qu'ils sont réglés et une fonction telle qu'elle a été importée, et il dit
- * lequel s'applique. Tout le reste — l'écriture des notes, leur affichage —
- * vit au-dessus.
+ * lequel s'applique. Tout le reste, l'écriture des notes, leur affichage, * vit au-dessus.
  *
  * ## Apparier sans deviner
  *
  * Les fichiers d'enrichissement disent « Head of Customer Care », « Responsable
  * service client » ou « SAV Manager » pour un même métier. On ne peut donc pas
  * comparer des chaînes brutes ; on ne peut pas non plus **deviner** qu'un
- * intitulé inconnu ressemble à un rôle connu — ce serait écrire à quelqu'un
+ * intitulé inconnu ressemble à un rôle connu, ce serait écrire à quelqu'un
  * sous un angle choisi par ressemblance orthographique, et c'est la faute que
  * le jalon 25 s'est interdite sur les domaines.
  *
  * D'où le partage : ce sont **les étiquettes réglées à la main** qui décident,
- * et l'appariement ne fait qu'absorber ce qui ne veut rien dire — la casse, les
+ * et l'appariement ne fait qu'absorber ce qui ne veut rien dire, la casse, les
  * accents, la ponctuation, les espaces. Ce qu'aucune étiquette ne reconnaît est
  * **signalé** (voir `unmatchedTitles`) pour qu'on étende la liste, jamais
  * rattaché au rôle le plus proche.
@@ -52,7 +51,7 @@ export function normalizeRoleLabel(value: string): string {
     .trim();
 }
 
-/** Le résultat de l'appariement — jamais une supposition. */
+/** Le résultat de l'appariement, jamais une supposition. */
 export type RoleMatch =
   | { readonly kind: "role"; readonly role: RoleAngleLike; readonly matched: string }
   /** Aucune étiquette ne reconnaît cet intitulé, ou la fiche n'en porte pas. */
@@ -84,11 +83,11 @@ function containsWords(haystack: readonly string[], needle: readonly string[]): 
  *
  * Trois passes, dans cet ordre de certitude :
  *
- * 1. **égalité** de l'intitulé normalisé avec une étiquette — le cas franc ;
+ * 1. **égalité** de l'intitulé normalisé avec une étiquette, le cas franc ;
  * 2. **inclusion** en mots entiers, l'étiquette la plus longue l'emportant :
  *    entre « responsable » et « responsable sav », c'est la seconde qui décrit
  *    le mieux la personne ;
- * 3. **ambiguïté** — deux rôles revendiquent l'intitulé avec des étiquettes de
+ * 3. **ambiguïté**, deux rôles revendiquent l'intitulé avec des étiquettes de
  *    même longueur : on **renonce**. Choisir reviendrait à tirer au sort
  *    l'angle sous lequel on écrit à quelqu'un ; l'intitulé remonte alors dans
  *    la liste des non appariés, où une étiquette plus précise le tranchera.
@@ -130,7 +129,7 @@ export function matchRole(title: string, roles: readonly RoleAngleLike[]): RoleM
 /**
  * La consigne d'angle envoyée à Alex.
  *
- * **Toujours présente, y compris à la forme négative** — c'est la règle du DM
+ * **Toujours présente, y compris à la forme négative**, c'est la règle du DM
  * du jalon 48 : une absence de ligne se lit comme une absence d'information,
  * alors qu'une ligne qui dit « aucun » se lit comme une interdiction. Sans
  * elle, un modèle à qui l'on ne dit rien du rôle en invente un à partir de
@@ -140,11 +139,11 @@ export function matchRole(title: string, roles: readonly RoleAngleLike[]): RoleM
 export function roleAngleRule(match: RoleMatch): string {
   if (match.kind === "role" && match.role.angle.trim() === "") {
     // Le rôle est reconnu, mais personne n'a encore écrit ce qui compte pour
-    // lui — c'est l'état des rôles semés à la migration. Le nommer sans note
+    // lui, c'est l'état des rôles semés à la migration. Le nommer sans note
     // ferait inventer la note : un modèle à qui l'on annonce « angle pour
     // Responsable SAV » puis rien remplit le vide lui-même.
     return [
-      `Angle pour ce rôle : AUCUN — la fonction correspond au rôle « ${match.role.name} »,`,
+      `Angle pour ce rôle : AUCUN, la fonction correspond au rôle « ${match.role.name} »,`,
       "mais aucune note d'angle n'a encore été écrite pour lui.",
       "Tiens-t'en au positionnement général et à ce que dit le dossier.",
       "N'invente pas l'angle d'un métier que tu crois deviner à son intitulé.",
@@ -153,7 +152,7 @@ export function roleAngleRule(match: RoleMatch): string {
 
   if (match.kind === "role") {
     return [
-      `Angle pour ce rôle (« ${match.role.name} ») — c'est l'instruction la plus`,
+      `Angle pour ce rôle (« ${match.role.name} »), c'est l'instruction la plus`,
       "spécifique dont tu disposes, elle l'emporte sur le ton générique :",
       "",
       match.role.angle.trim(),
@@ -168,7 +167,7 @@ export function roleAngleRule(match: RoleMatch): string {
         : "aucun rôle réglé ne reconnaît sa fonction";
 
   return [
-    `Angle pour ce rôle : AUCUN — ${cause}.`,
+    `Angle pour ce rôle : AUCUN, ${cause}.`,
     "Tiens-t'en au positionnement général et à ce que dit le dossier.",
     "N'invente pas l'angle d'un métier que tu crois deviner à son intitulé.",
   ].join("\n");
@@ -178,7 +177,7 @@ export function roleAngleRule(match: RoleMatch): string {
 export interface UnmatchedTitle {
   readonly title: string;
   readonly contacts: number;
-  /** Pourquoi il n'est pas apparié — « ambiguous » demande une étiquette plus précise. */
+  /** Pourquoi il n'est pas apparié, « ambiguous » demande une étiquette plus précise. */
   readonly reason: "no-match" | "ambiguous";
 }
 
@@ -188,7 +187,7 @@ export interface UnmatchedTitle {
  * combien de personnes chaque ligne représente.
  *
  * Les fiches **sans fonction** n'y figurent pas : il n'y a pas d'étiquette à
- * ajouter pour une information absente — c'est une donnée à saisir, pas un
+ * ajouter pour une information absente, c'est une donnée à saisir, pas un
  * réglage à étendre.
  */
 export function unmatchedTitles(

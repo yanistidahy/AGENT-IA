@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 58 | **Nouveau discours, et le tiret long banni** — conseiller de vente, accroche sur le fait, quatre paragraphes, tirets retirés à la source et au retour | **livré, à valider** |
 | 57 | **Retravailler un départ, et ne plus supposer d'équipe** — le panneau de rédaction rouvert depuis la file, discours conditionnel à ce qu'on sait | **livré, à valider** |
 | 56 | **« Enregistrer » compose** — la file se remplit au clic, sans second geste ni passage quotidien ; coût annoncé, avancement à l'écran, planificateur diagnostiqué | **livré, à valider** |
 | 55 | **Une campagne au quotidien** — archiver contre supprimer, sélection cochée qui survit au filtre, liste des inscrits, campagne nommée dans /emails | **livré, à valider** |
@@ -8188,3 +8189,118 @@ deuxième paragraphe se jugera sur les trois premiers brouillons réels.
 grosse équipe » dans la note n'autorisera pas la mention : il faut l'une des
 tournures reconnues. C'est le prix d'une règle étroite, et le choix est assumé
 dans ce sens-là.
+
+
+---
+
+## Jalon 58 — le nouveau discours, et le tiret long banni
+
+### Ce qui change dans le pitch
+
+| | Avant | Après |
+|---|---|---|
+| l'offre | « **Personal Shoppers** IA **premium** » | « un **conseiller de vente** » |
+| ce qu'il fait | guide vers l'achat et « écoule efficacement les stocks » | répond à toute heure, oriente vers le bon produit, accompagne jusqu'à l'achat |
+| l'accroche | « en observant le développement de… » | **le fait** : 69 % des visiteurs partent après une question restée sans réponse |
+| la forme | six paragraphes | **quatre** |
+| Instagram | un paragraphe dans la référence | **hors de la forme**, conditionnel comme au jalon 48 |
+
+**« Écouler les stocks » est du vocabulaire de fournisseur.** Le prospect ne
+pense pas « j'ai du stock qui dort », il pense « je perds des ventes ». Le mot
+disparaît du discours.
+
+**L'accroche est le fait, pas la marque.** Une petite marque ne se pense pas
+débordée : elle pense qu'elle répond à tout. Ce qui la touche est la vente
+qu'elle n'a jamais vue passer. Ouvrir sur « en observant le développement de
+Linaé » est une politesse, pas un argument, et elle repousse la seule phrase qui
+retient l'attention. La marque et son site reviennent au troisième paragraphe,
+là où l'on montre ce qu'on a préparé pour eux.
+
+**Le paragraphe Instagram sort de la référence, pas du produit.** La règle du
+jalon 48 est intacte : quand un DM est consigné, Alex le mentionne ; quand il
+n'y en a pas, l'interdiction est explicite. Ce qui change, c'est qu'il n'est
+plus dans la forme montrée en exemple, donc il n'est plus inséré par imitation.
+
+### Le tiret long : une garantie, pas une consigne
+
+Le tiret cadratin est devenu un marqueur reconnaissable de texte engendré, et
+nos destinataires lisent beaucoup de démarchage. Celui qui le repère cesse de
+lire le message et commence à juger l'expéditeur.
+
+Trois verrous, et le troisième est celui qui compte :
+
+1. **la consigne** dans le prompt, qui **nomme les caractères sans les
+   montrer** : un prompt qui interdit le tiret tout en en contenant apprend au
+   modèle à en écrire ;
+2. **la source** : les onze fichiers dont le texte atteint le modèle en sont
+   nettoyés, commentaires compris. Un tiret dans un commentaire ne part pas sur
+   le fil, mais il finit recopié dans la chaîne voisine à la prochaine retouche ;
+3. **le retour** : `stripDashes` s'applique à l'objet **et** au corps de chaque
+   brouillon, au même endroit que la signature depuis le jalon 33. Une consigne
+   de prompt est une intention ; ici on veut une garantie.
+
+Le **trait d'union ordinaire n'est pas concerné** : « e-commerce » et
+« dites-le-moi » s'écrivent ainsi, et les confondre abîmerait l'orthographe pour
+rien. La consigne le dit explicitement.
+
+**Le substitut a appris à désobéir.** `MOCK_DIRTY=1` lui fait rendre un
+brouillon avec des tirets longs dans l'objet et dans le corps : un substitut qui
+n'en produit jamais ne prouve rien du second garde-fou. C'est la discipline du
+jalon 43, où il avait déjà fallu lui apprendre à mentir comme la production.
+
+### Trois dégâts causés par ma propre correction, et comment ils ont été pris
+
+Le nettoyage a été fait par expression régulière sur les fichiers, et **il a
+cassé du code trois fois** :
+
+| Ce qui a été abîmé | Ce qui l'a rattrapé |
+|---|---|
+| `[...AGENT_NAMES, ...extra]` privé de sa virgule | `tsc` |
+| deux `...(condition ? {} : {…})` de Prisma, idem | `tsc` |
+| deux classes de caractères `[-–—]` dans les expressions de `repairGreeting` | la suite de tests |
+
+La règle `,\s*[.!?]` destinée à recoller « mot, . » mangeait la virgule devant
+un `...`. Les trois sont réparés, et les deux expressions régulières portent
+désormais `\u2013` et `\u2014` plutôt que les caractères eux-mêmes : elles
+décrivent la même chose, et le fichier reste exempt de tiret. **Aucun de ces
+dégâts n'était visible à la lecture du diff** ; c'est la vérification qui les a
+nommés, et c'est la raison pour laquelle elle passe avant l'annonce.
+
+### Jalon 58 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (aucune migration, `migrate diff` **vide**) et le
+substitut qui capte ce qui part réellement sur le fil, **cinq sections, zéro
+échec** :
+
+- **1 · le discours** : « conseiller de vente » présent ; « Personal Shopper »,
+  « premium » et « écoule … les stocks » **absents** ;
+- **2 · la forme** : le fait 69 % dans la consigne, « Quatre paragraphes, pas
+  six », l'ancienne ouverture n'est plus prescrite, le mail de référence est le
+  nouveau, et il ne porte plus de paragraphe Instagram ;
+- **3 · les tirets** : **0 tiret long dans la requête complète** partie sur le
+  fil, consigne d'interdiction présente ;
+- **4 · le DM** : la fiche avec DM reçoit l'instruction de le mentionner, celle
+  sans DM l'interdiction explicite. Jalon 48 intact ;
+- **5 · la garantie** : substitut réglé pour désobéir → **0 brouillon** portant
+  un tiret long en file, l'objet fautif « … , relance » ayant été réparé ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1099 tests**) verts.
+
+`tests/em-dash-source.test.ts` fixe les deux moitiés : rien de ce qu'Alex lit
+n'en contient (neuf constantes plus onze fichiers), et l'enforcement est câblé
+sur l'objet comme sur le corps.
+
+### Jalon 58 — ce qui n'est pas vérifié
+
+**Aucun appel Anthropic réel.** Le substitut prouve que le nouveau discours part
+et que l'ancien a disparu ; que le modèle écrive effectivement quatre
+paragraphes ouvrant sur le fait relève du modèle, et se jugera sur les trois
+premiers brouillons.
+
+**Le chiffre de 69 % n'est pas sourcé dans le dépôt.** Il vient du propriétaire
+du produit et est repris tel quel. S'il doit être défendu devant un prospect qui
+le conteste, la source est à ajouter.
+
+**Les prompts des sept autres agents gardent leurs tirets longs.** Le nettoyage
+porte sur ce qu'Alex lit, qui est le périmètre demandé : Sabrina et les autres
+ne rédigent pas de courriel de prospection, et leurs constats ne partent chez
+personne.

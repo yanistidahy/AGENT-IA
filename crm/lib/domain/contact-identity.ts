@@ -5,7 +5,7 @@
  *
  * La prospection Instagram trouve **la marque avant le fondateur** : on a le
  * compte, le site, l'adresse générique, et aucun nom. C'est un vrai prospect,
- * simplement anonyme pour l'instant — il doit vivre normalement (cycle de vie,
+ * simplement anonyme pour l'instant, il doit vivre normalement (cycle de vie,
  * DM, emails, séquences, relances) sans qu'on invente un nom pour lui faire
  * passer un formulaire.
  *
@@ -15,7 +15,7 @@
  * si et seulement si elle ne porte aucun nom de personne. Trois conséquences,
  * et c'est pour elles que ce module existe :
  *
- * 1. **le marqueur disparaît tout seul** quand on saisit enfin le prénom — il
+ * 1. **le marqueur disparaît tout seul** quand on saisit enfin le prénom, il
  *    n'y a rien à mettre à jour, donc rien qui puisse rester en retard ;
  * 2. **aucune migration** : `firstName` et `lastName` acceptent déjà la chaîne
  *    vide. Une colonne de plus, c'est une colonne à tenir cohérente avec les
@@ -28,7 +28,7 @@
  * `contactTitle()` est la **seule** façon de nommer une fiche à l'écran ou dans
  * un message. `contact-name-source.test.ts` interdit d'interpoler
  * `${firstName} ${lastName}` ailleurs, parce que c'est exactement ce qui
- * produit le « — » orphelin : chaque endroit qui recompose le nom lui-même est
+ * produit le «, » orphelin : chaque endroit qui recompose le nom lui-même est
  * un endroit qui oubliera le cas vide.
  */
 
@@ -61,7 +61,7 @@ export function isUnidentified(contact: ContactIdentityLike): boolean {
 }
 
 /**
- * Le nom sous lequel la fiche apparaît partout — listes, fiche, file, emails.
+ * Le nom sous lequel la fiche apparaît partout, listes, fiche, file, emails.
  *
  * L'ordre est celui de ce qui identifie le mieux : la personne, à défaut la
  * marque, à défaut ce par quoi on la joint. Le dernier repli est une phrase et
@@ -87,11 +87,11 @@ export function contactTitle(contact: ContactIdentityLike): string {
 /**
  * L'appel d'un message, décidé sur la donnée et non par le modèle.
  *
- * « Bonjour — » est la faute que ce module existe pour empêcher : elle se voit
+ * « Bonjour, » est la faute que ce module existe pour empêcher : elle se voit
  * du premier coup d'œil chez le destinataire, et elle dit « ceci est un
  * publipostage » plus sûrement qu'aucune maladresse de style.
  *
- * Sans prénom, l'appel est **nu** — « Bonjour, » — plutôt qu'adressé à la
+ * Sans prénom, l'appel est **nu**, « Bonjour, », plutôt qu'adressé à la
  * marque : « Bonjour Maison Vertu, » s'écrit à une entreprise, pas à la
  * personne qui lira. Nu, il fonctionne dans les deux cas.
  */
@@ -111,7 +111,7 @@ export function greeting(contact: ContactIdentityLike): string {
 export function greetingRule(contact: ContactIdentityLike): string {
   const first = contact.firstName.trim();
   if (first !== "") {
-    return `Ouvre par « ${greeting(contact)} » — le prénom du destinataire est connu.`;
+    return `Ouvre par « ${greeting(contact)} », le prénom du destinataire est connu.`;
   }
 
   const brand = contact.company?.name.trim() ?? "";
@@ -121,7 +121,7 @@ export function greetingRule(contact: ContactIdentityLike): string {
       : `On ne connaît pas son prénom ; la marque est « ${brand} ».`;
 
   return [
-    `Ouvre par « Bonjour, » exactement — sans nom, sans tiret, sans « Bonjour l'équipe ».`,
+    `Ouvre par « Bonjour, » exactement, sans nom, sans tiret, sans « Bonjour l'équipe ».`,
     `${known} N'invente aucun prénom, n'en déduis aucun de l'adresse électronique,`,
     `et n'écris jamais un appel qui laisse un blanc ou un tiret là où un nom manquerait.`,
   ].join(" ");
@@ -132,12 +132,12 @@ export function greetingRule(contact: ContactIdentityLike): string {
  *
  * Le prompt le demande déjà (`greetingRule`). Mais une consigne de prompt est
  * une **intention** : elle tient presque toujours, et « presque » n'est pas
- * assez ici — c'est la première ligne que le destinataire lit, et « Bonjour — »
+ * assez ici, c'est la première ligne que le destinataire lit, et « Bonjour, »
  * dit « publipostage » avant même le premier argument. Même raisonnement que
  * `enforceSignature()` au jalon 33 : la règle est demandée **et** imposée.
  *
  * La réparation est **étroite par construction** : elle ne touche que la
- * première ligne, et seulement si celle-ci est un appel qui pend — un tiret, un
+ * première ligne, et seulement si celle-ci est un appel qui pend, un tiret, un
  * blanc, un gabarit non substitué. Un appel correct, ou une première ligne qui
  * n'est pas un appel, ressort intacte : réécrire plus large mutilerait un texte
  * que quelqu'un vient peut-être de relire.
@@ -152,31 +152,31 @@ export function repairGreeting(body: string, contact: ContactIdentityLike): stri
 
   const rest = trimmed.replace(/^bonjour/i, "").trim();
 
-  // **Sans prénom connu, l'appel ne peut nommer personne** — et c'est la règle
+  // **Sans prénom connu, l'appel ne peut nommer personne**, et c'est la règle
   // la plus utile des deux, parce que le vrai danger n'est pas le tiret.
   //
   // Trouvé à la vérification : sur une fiche « Maison Vertu » sans personne, le
   // brouillon s'ouvrait sur « Bonjour Maison, ». Le prénom était **fabriqué à
-  // partir de la marque** — une faute qui ne se voit pas à la relecture (elle
+  // partir de la marque**, une faute qui ne se voit pas à la relecture (elle
   // ressemble à un prénom) et qui se lit chez le destinataire comme un
   // publipostage mal fusionné. Le prompt l'interdit déjà ; ici on le sait de
   // source sûre : la fiche ne porte aucun prénom, donc tout nom dans l'appel
   // est inventé, quelle que soit sa vraisemblance.
   if (contact.firstName.trim() === "") {
-    // Comparé à la ligne entière, pas au reste : « Bonjour , » porte une espace
+    // Comparé à la ligne entière, pas au reste : « Bonjour, » porte une espace
     // parasite qui se voit à la réception.
     return trimmed === greeting(contact) ? body : withFirstLine(lines, greeting(contact));
   }
 
   // Avec un prénom connu, on ne réécrit que ce qui **pend** : rien, une
   // ponctuation seule, un tiret, ou un gabarit resté en place. Tout le reste
-  // est un vrai nom, qu'on ne touche pas — réécrire plus large mutilerait un
+  // est un vrai nom, qu'on ne touche pas, réécrire plus large mutilerait un
   // texte que quelqu'un vient peut-être de relire.
   const dangling =
     rest === "" ||
     /^[,;:.!]*$/.test(rest) ||
-    /^[-–—]+[,;:.!]*$/.test(rest) ||
-    /^[,\s]*[-–—][\s,;:.!]*$/.test(rest) ||
+    /^[-\u2013\u2014]+[,;:.!]*$/.test(rest) ||
+    /^[,\s]*[-\u2013\u2014][\s,;:.!]*$/.test(rest) ||
     /\{\{|\[\[|<[a-z_]+>|\bprénom\b|\bfirstname\b/i.test(rest);
 
   return dangling ? withFirstLine(lines, greeting(contact)) : body;

@@ -22,20 +22,20 @@ import { REAL_ACTIVITY } from "./real-activity";
 /** Un collègue déjà en base, tel que la fiche et la rédaction le montrent. */
 export interface Colleague {
   readonly id: string;
-  /** Le nom d'affichage — passe par `contactTitle`, donc jamais vide. */
+  /** Le nom d'affichage, passe par `contactTitle`, donc jamais vide. */
   readonly name: string;
   /** Sa fonction telle qu'elle a été importée. Vide = non renseignée. */
   readonly title: string;
   readonly email: string;
   /** Dernier email que **nous** lui avons envoyé. `null` = jamais écrit. */
   readonly lastEmailAt: Date | null;
-  /** Objet de ce dernier message — de quoi ne pas répéter la même accroche. */
+  /** Objet de ce dernier message, de quoi ne pas répéter la même accroche. */
   readonly lastSubject: string;
   /** Première ligne de ce message, pour qu'Alex sache quoi ne pas réutiliser. */
   readonly lastOpening: string;
 }
 
-/** La première ligne non vide d'un corps de message — l'accroche. */
+/** La première ligne non vide d'un corps de message, l'accroche. */
 export function openingLine(body: string): string {
   for (const line of body.split("\n")) {
     const trimmed = line.trim();
@@ -48,7 +48,7 @@ export function openingLine(body: string): string {
 }
 
 /**
- * Les collègues d'un contact — mêmes société, fiche courante exclue.
+ * Les collègues d'un contact, mêmes société, fiche courante exclue.
  *
  * Une fiche sans société n'a pas de collègues : elle rend une liste vide, et
  * non toutes les fiches sans société, qui ne forment pas une maison.
@@ -94,7 +94,7 @@ export async function readColleagues(contactId: string): Promise<readonly Collea
   });
 }
 
-/** Un collègue écrit récemment — la matière de l'avertissement. */
+/** Un collègue écrit récemment, la matière de l'avertissement. */
 export interface ColleagueContact {
   readonly colleague: Colleague;
   readonly at: Date;
@@ -104,7 +104,7 @@ export interface ColleagueContact {
 export interface ColleagueWarning {
   /** Le plus récemment écrit : c'est celui dont le message sera comparé. */
   readonly recent: ColleagueContact | null;
-  /** Tous les collègues, écrits ou non — le tiroir les affiche tous. */
+  /** Tous les collègues, écrits ou non, le tiroir les affiche tous. */
   readonly colleagues: readonly Colleague[];
   /** La fenêtre appliquée, en jours. `0` = avertissement désactivé. */
   readonly windowDays: number;
@@ -114,12 +114,12 @@ export interface ColleagueWarning {
  * Un collègue a-t-il été écrit dans les N derniers jours ?
  *
  * **Un avertissement, jamais un blocage.** Écrire à deux personnes d'une même
- * maison est une intention parfaitement légitime — c'est même la forme de
+ * maison est une intention parfaitement légitime, c'est même la forme de
  * campagne que ce jalon sert. Ce qui fait écrire une bêtise, c'est de ne pas
  * le savoir. Le refuser à la place de l'utilisateur serait décider pour lui,
  * ce que le produit s'interdit depuis le jalon 8.
  *
- * `windowDays` à 0 coupe l'avertissement — sans cette convention on ne pourrait
+ * `windowDays` à 0 coupe l'avertissement, sans cette convention on ne pourrait
  * plus le désactiver une fois posé (même règle que le plafond mensuel de l'API
  * et les objectifs hebdomadaires).
  */
@@ -147,8 +147,8 @@ export async function readColleagueWarning(
 /**
  * La fenêtre d'avertissement réglée, en jours.
  *
- * Lue ici plutôt que passée depuis les écrans : les deux appelants — le panneau
- * de rédaction et le dossier d'Alex — doivent voir la **même** valeur, et deux
+ * Lue ici plutôt que passée depuis les écrans : les deux appelants, le panneau
+ * de rédaction et le dossier d'Alex, doivent voir la **même** valeur, et deux
  * lectures indépendantes finiraient par diverger le jour où l'une d'elles
  * oublierait de la rafraîchir.
  */

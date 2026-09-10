@@ -6,18 +6,18 @@ import { externalLabel } from "./links";
  * « J'ai préparé une démonstration de ce que cela donnerait sur votre site »
  * est une promesse ; « … sur cuure.com » est une preuve. La différence entre
  * les deux est ce qui distingue un message écrit pour quelqu'un d'un gabarit
- * envoyé à cinquante personnes — et c'est un fait qui doit venir de la base,
+ * envoyé à cinquante personnes, et c'est un fait qui doit venir de la base,
  * jamais du modèle.
  *
  * ## Trois sources, dans cet ordre, et un repli qui n'invente rien
  *
- * 1. le **site du contact** (`Contact.website`) — le plus précis ;
+ * 1. le **site du contact** (`Contact.website`), le plus précis ;
  * 2. à défaut, le **domaine de la société** (`Company.domain`) ;
  * 3. à défaut, **le nom de la marque**.
  *
  * Le troisième cas est le plus important des trois. Sans lui, un modèle à qui
  * l'on demande de citer un site alors qu'on ne lui en donne aucun **en
- * fabrique un** — `maisonvertu.fr` a toutes les chances d'exister et
+ * fabrique un**, `maisonvertu.fr` a toutes les chances d'exister et
  * d'appartenir à quelqu'un d'autre. Le prospect clique, tombe ailleurs, et le
  * premier contact est mort. Nommer la marque (« ce que cela donnerait sur votre
  * boutique Maison Vertu ») reste concret sans rien affirmer de faux.
@@ -57,7 +57,7 @@ function firstDomain(candidates: readonly string[]): string | null {
     const trimmed = candidate.trim();
     if (trimmed === "") continue;
     // `externalLabel` retire le schéma et le slash final ; le `www.` se retire
-    // ici plutôt que là-bas — cette fonction sert tout l'affichage du produit,
+    // ici plutôt que là-bas, cette fonction sert tout l'affichage du produit,
     // et « www.cuure.com » y est une valeur légitime. Dans une phrase écrite à
     // la main, il fait copier-coller.
     const label = externalLabel(trimmed).replace(/^www\./i, "").trim();
@@ -78,10 +78,10 @@ function firstDomain(candidates: readonly string[]): string | null {
  */
 export function demoTargetRule(target: DemoTarget): string {
   if (target.kind === "site") {
-    return `**Le site à citer est \`${target.value}\`.** Écris la phrase de démonstration en le nommant tel quel — « ce que cela donnerait sur ${target.value} ». N'écris aucune autre adresse, et ne l'enjolive pas.`;
+    return `**Le site à citer est \`${target.value}\`.** Écris la phrase de démonstration en le nommant tel quel, « ce que cela donnerait sur ${target.value} ». N'écris aucune autre adresse, et ne l'enjolive pas.`;
   }
   if (target.kind === "brand") {
-    return `**Aucun site n'est connu pour ce contact.** Ne cite donc **aucune adresse** — n'en déduis pas une du nom de la marque, elle appartiendrait probablement à quelqu'un d'autre. Nomme la boutique à la place : « ce que cela donnerait sur votre boutique ${target.value} ».`;
+    return `**Aucun site n'est connu pour ce contact.** Ne cite donc **aucune adresse**, n'en déduis pas une du nom de la marque, elle appartiendrait probablement à quelqu'un d'autre. Nomme la boutique à la place : « ce que cela donnerait sur votre boutique ${target.value} ».`;
   }
   return `**Aucun site ni nom de marque n'est connu.** N'invente ni adresse ni nom : écris simplement « sur votre boutique ».`;
 }

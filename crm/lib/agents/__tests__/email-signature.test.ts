@@ -125,7 +125,11 @@ describe("le prompt porte le pitch et les règles", () => {
     expect(prompt).toContain("Jamais de prix");
     expect(prompt).toContain("Jamais d'affirmation inventée");
     // Les trois règles de forme, tirées du mail de référence.
-    expect(prompt).toContain("Ouvre sur quelque chose de concret sur leur activité");
+    // L'accroche est désormais le fait, pas la marque : une petite marque ne se
+    // pense pas débordée, elle pense qu'elle répond à tout.
+    expect(prompt).toContain("Ouvre sur la vente perdue, pas sur la marque");
+    expect(prompt).toContain("69 %");
+    expect(prompt).toContain("Quatre paragraphes, pas six");
     expect(prompt).toContain("Nomme la douleur de leur côté");
     // Les deux règles ajoutées au jalon 35, tirées du nouveau mail de référence.
     expect(prompt).toContain("Deux appels à l'action, dans cet ordre, jamais un seul");
@@ -152,13 +156,16 @@ describe("le prompt porte le pitch et les règles", () => {
     expect(WRITING_SHAPE).not.toContain("Miye car");
   });
 
-  it("le positionnement décrit le conseiller proactif, pas le ticket de support", () => {
-    // La version faible du discours — « traite les tickets » — vendait un centre
-    // de coûts. Ce test fixe le pitch réel.
-    expect(COMPANY_CONTEXT).toContain("Personal Shoppers");
-    expect(COMPANY_CONTEXT).toContain("conseiller proactif");
-    expect(COMPANY_CONTEXT).toContain("guide les visiteurs vers l'achat");
+  it("le positionnement dit « conseiller de vente », sans anglicisme ni « premium »", () => {
+    // « Personal Shopper IA premium » était un nom de produit, pas une promesse.
+    // Ce que le prospect achète, c'est la vente récupérée.
+    expect(COMPANY_CONTEXT).toContain("conseiller de vente");
     expect(COMPANY_CONTEXT).toContain("Shopify");
+    expect(COMPANY_CONTEXT).not.toContain("Personal Shopper");
+    expect(COMPANY_CONTEXT).not.toContain("premium");
+    // Vocabulaire de fournisseur : le prospect ne pense pas « écouler des
+    // stocks », il pense « je perds des ventes ».
+    expect(COMPANY_CONTEXT).not.toContain("écoule");
     expect(COMPANY_CONTEXT).not.toContain("assistants virtuels qui traitent les tickets");
   });
 

@@ -14,6 +14,7 @@ import { ACTIVITY_LABELS, type ActivityType } from "@/lib/domain/types";
 import { OUTCOME_LABELS, isOutcome } from "@/lib/domain/status";
 import { formatDate } from "@/lib/format";
 import { enforceSignature, sanitizeSubject } from "@/lib/domain/email-format";
+import { stripDashes } from "@/lib/domain/em-dash";
 import { signatureBlock } from "./prompts/company";
 import { demoTarget, demoTargetRule } from "@/lib/domain/demo-target";
 import { sizeFact, teamMentionRule } from "@/lib/domain/team-mention";
@@ -47,10 +48,10 @@ import {
  * chercher, on lui donne des faits déjà établis et il n'a plus qu'à écrire.
  * Trois conséquences, et c'est pour elles que cette fonction existe :
  *
- * 1. **le message ne peut pas inventer un échange** — il ne dispose que de ce
+ * 1. **le message ne peut pas inventer un échange**, il ne dispose que de ce
  *    qui est réellement consigné ;
  * 2. **aucun appel d'outil**, donc une seule requête, prévisible et bon marché ;
- * 3. **l'entrée est bornée** — dix interactions, pas l'historique entier.
+ * 3. **l'entrée est bornée**, dix interactions, pas l'historique entier.
  *
  * Le modèle rend du JSON strict. Une réponse hors forme est refusée plutôt que
  * rafistolée : mieux vaut un message d'erreur qu'un objet vide envoyé à un
@@ -64,7 +65,7 @@ const ALEX_SLUG = "alex";
  *
  * Tirés du registre plutôt qu'écrits en dur : ajouter un agent demain le fait
  * entrer dans la garde sans que personne ait à y penser. Un agent renommé à
- * l'écran garde son nom de registre ici — c'est celui que le modèle voit dans
+ * l'écran garde son nom de registre ici, c'est celui que le modèle voit dans
  * son prompt, donc celui qu'il risque d'employer.
  */
 const AGENT_NAMES: readonly string[] = AGENTS.map((agent) => agent.name);
@@ -74,7 +75,7 @@ const AGENT_NAMES: readonly string[] = AGENTS.map((agent) => agent.name);
  *
  * Défaut trouvé à la vérification : un brouillon terminé par « Yanis » ne
  * portait pas de nom d'agent, donc la signature était **ajoutée** au lieu de
- * remplacer — et le message partait avec deux signatures l'une sous l'autre.
+ * remplacer, et le message partait avec deux signatures l'une sous l'autre.
  * Le nom d'expédition configuré est donc joint à la liste : c'est exactement la
  * règle « jamais ton prénom, jamais celui de l'utilisateur », et il se lit là où
  * il est déjà réglé plutôt que d'être deviné.
@@ -86,7 +87,7 @@ function forbiddenSigners(
   // **Tous les signataires**, pas seulement celui qui signe ce message : un
   // brouillon destiné à partir sous le nom de Mohamed ne doit pas se terminer
   // par celui de Yanis. Plus le nom d'expédition SMTP, et le prénom seul de
-  // chacun — on signe rarement de son nom entier.
+  // chacun, on signe rarement de son nom entier.
   //
   // C'est aussi le correctif du jalon 33 qu'il ne faut pas reperdre : un
   // brouillon terminé par « Yanis » ne porte aucun nom d'agent, la signature
@@ -117,13 +118,13 @@ export interface EmailDraft {
   readonly contactName: string;
   /** Les signataires disponibles, pour le sélecteur du panneau. */
   readonly signatories: readonly Signatory[];
-  /** Celui qui a été retenu — le propriétaire de la fiche s'il correspond. */
+  /** Celui qui a été retenu, le propriétaire de la fiche s'il correspond. */
   readonly signatoryId: string | null;
   /**
    * Un collègue de la même maison écrit récemment, ou `null`.
    *
    * **Un avertissement, pas un refus** : le panneau le nomme et laisse partir
-   * le message. La date est déjà formatée — la sérialiser en ISO pour la
+   * le message. La date est déjà formatée, la sérialiser en ISO pour la
    * reformater côté client ferait deux formats d'une même date, et c'est ainsi
    * qu'un écran finit par en afficher une fausse.
    */
@@ -188,7 +189,7 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
   );
 
   // Le DM Instagram : un **fait**, cherché séparément et daté. Le laisser se
-  // déduire de la liste des dix dernières interactions serait un pari — sur une
+  // déduire de la liste des dix dernières interactions serait un pari, sur une
   // fiche bavarde le DM en sort, et Alex se met alors à mentionner un message
   // qu'on n'a peut-être jamais envoyé. C'est le genre de petit mensonge qui tue
   // une première prise de contact, donc il ne se déduit pas : il se demande.
@@ -199,7 +200,7 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
   });
 
   // L'angle du rôle et le collègue déjà écrit : deux faits **cherchés**, comme
-  // le DM. Les laisser se déduire du dossier serait un pari — sur une fiche
+  // le DM. Les laisser se déduire du dossier serait un pari, sur une fiche
   // bavarde ils en sortiraient, sur une autre non, et Alex écrirait alors à une
   // responsable SAV comme à une fondatrice sans que rien ne le signale.
   const [angle, warning] = await Promise.all([
@@ -220,7 +221,7 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
     lines.push(`Société : ${contact.company.name}${details.length ? ` (${details.join(", ")})` : ""}`);
   }
   lines.push(`Statut affiché : ${resolved.label}`);
-  lines.push(`Cycle de vie : ${contact.lifecycle}${contact.lostReason === "" ? "" : ` — ${contact.lostReason}`}`);
+  lines.push(`Cycle de vie : ${contact.lifecycle}${contact.lostReason === "" ? "" : `, ${contact.lostReason}`}`);
   lines.push(
     contact.lastContact === null
       ? "Dernier contact : jamais"
@@ -230,16 +231,16 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
 
   // Le prénom est annoncé **sous ses deux formes**, comme le DM : une fiche
   // trouvée par la marque avant le fondateur n'en a pas, et un modèle à qui
-  // l'on ne dit rien comble le vide — par un tiret, ou par un prénom déduit de
+  // l'on ne dit rien comble le vide, par un tiret, ou par un prénom déduit de
   // l'adresse. Voir lib/domain/contact-identity.ts.
   lines.push(
     contact.firstName.trim() === ""
-      ? "Prénom du destinataire : INCONNU — la fiche n'en porte pas encore."
+      ? "Prénom du destinataire : INCONNU, la fiche n'en porte pas encore."
       : `Prénom du destinataire : ${contact.firstName.trim()}`,
   );
 
   // Les deux faits que la nouvelle forme d'email exige, annoncés sans ambiguïté
-  // et **toujours présents** — y compris à la forme négative. Une absence de
+  // et **toujours présents**, y compris à la forme négative. Une absence de
   // ligne se lit comme une absence d'information ; une ligne qui dit « non »
   // se lit comme une interdiction.
   lines.push(
@@ -271,7 +272,7 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
   if (warning.recent === null) {
     lines.push(
       warning.colleagues.length === 0
-        ? "Collègue déjà écrit : AUCUN — personne d'autre de cette maison n'est en base."
+        ? "Collègue déjà écrit : AUCUN, personne d'autre de cette maison n'est en base."
         : "Collègue déjà écrit : AUCUN récemment.",
     );
   } else {
@@ -298,10 +299,10 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
     lines.push("Historique, du plus récent au plus ancien :");
     for (const activity of contact.activities) {
       const type = ACTIVITY_LABELS[activity.type as ActivityType] ?? activity.type;
-      const outcome = isOutcome(activity.outcome) ? ` — ${OUTCOME_LABELS[activity.outcome]}` : "";
+      const outcome = isOutcome(activity.outcome) ? `, ${OUTCOME_LABELS[activity.outcome]}` : "";
       // L'échange d'où part la rédaction est **désigné**, pas seulement inclus :
       // c'est celui auquel le message doit se référer, et le noyer dans la liste
-      // produirait une relance générique — le défaut que ce jalon doit éviter.
+      // produirait une relance générique, le défaut que ce jalon doit éviter.
       const focus = activity.id === focusActivityId ? "  ← L'ÉCHANGE QUI VIENT D'AVOIR LIEU" : "";
       lines.push(`- ${formatDate(activity.date)} · ${type}${outcome}${focus}`);
       const notes = activity.notes.trim();
@@ -309,11 +310,11 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
     }
   }
 
-  // La note écrite à la main pour Alex — un fait délibéré sur cette personne.
+  // La note écrite à la main pour Alex, un fait délibéré sur cette personne.
   // Elle est annoncée comme telle et **séparée des Notes** : celles-ci portent
   // le déversoir de l'import (lignes `SITE :`, `N° :`, titres de page), et les
   // mêler ferait prendre un titre d'onglet pour une information sur la marque.
-  // La taille de la société, **sous ses deux formes** — renseignée ou non.
+  // La taille de la société, **sous ses deux formes**, renseignée ou non.
   // C'est un fait du dossier, jamais une permission : seule la note écrite à la
   // main autorise à parler d'équipe (voir `teamMentionRule`).
   lines.push("");
@@ -352,7 +353,7 @@ interface ContextResult {
   readonly alexNote: string;
   readonly target: ReturnType<typeof demoTarget>;
   readonly dmSent: boolean;
-  /** L'appel à écrire, décidé sur la donnée — jamais laissé au modèle. */
+  /** L'appel à écrire, décidé sur la donnée, jamais laissé au modèle. */
   readonly greeting: string;
   /**
    * L'angle du rôle, ou l'interdiction d'en inventer un. **Toujours présent** :
@@ -369,7 +370,7 @@ interface ContextResult {
  * **Elles ne répètent plus le prompt système, et c'est le sujet.** Jusqu'au
  * jalon 35, ce bloc redonnait l'ouverture sur leur activité, la douleur de leur
  * côté, le conseiller proactif, la démonstration préparée, les deux appels à
- * l'action, la signature et le libellé du lien — soit sept règles déjà écrites
+ * l'action, la signature et le libellé du lien, soit sept règles déjà écrites
  * dans `WRITING_SHAPE`, `COMPANY_CONTEXT`, `signatureRule()` et `demoRule()`,
  * quelques lignes plus haut dans la même requête. On payait deux fois pour
  * chaque brouillon le même texte, et le risque n'était pas seulement le coût :
@@ -404,7 +405,7 @@ Deux points propres à cette forme :
 }
 
 /**
- * **Mentionner le DM, ou se taire — et c'est la donnée qui tranche.**
+ * **Mentionner le DM, ou se taire, et c'est la donnée qui tranche.**
  *
  * La consigne est construite depuis le fait, pas laissée au jugement : « parle
  * du DM si tu en as envoyé un » invite un modèle à supposer qu'il y en a eu
@@ -418,7 +419,7 @@ Deux points propres à cette forme :
  */
 function dmRule(dmSent: boolean): string {
   if (dmSent) {
-    return `**Un DM Instagram a bien été envoyé à cette personne**, et le dossier en donne la date. Mentionne-le dans le corps du message, après l'accroche : dis que tu lui as écrit sur Instagram et invite-la à regarder ses messages privés. C'est une raison concrète et vérifiable de prêter attention à cet email — jamais « je me permets de vous relancer », qui ne parle que de ton agenda.`;
+    return `**Un DM Instagram a bien été envoyé à cette personne**, et le dossier en donne la date. Mentionne-le dans le corps du message, après l'accroche : dis que tu lui as écrit sur Instagram et invite-la à regarder ses messages privés. C'est une raison concrète et vérifiable de prêter attention à cet email, jamais « je me permets de vous relancer », qui ne parle que de ton agenda.`;
   }
   return `**Aucun DM Instagram n'a été envoyé à cette personne.** N'en mentionne donc aucun, sous aucune forme : ni « comme je vous l'écrivais sur Instagram », ni « vous avez dû voir mon message ». Ce serait une affirmation fausse, vérifiable en trois secondes par le destinataire. Écris l'email sans cette mention.`;
 }
@@ -426,7 +427,7 @@ function dmRule(dmSent: boolean): string {
 /**
  * **Ne pas resservir l'accroche du collègue.**
  *
- * Deux personnes d'une même maison se montrent leurs emails — c'est même ce qui
+ * Deux personnes d'une même maison se montrent leurs emails, c'est même ce qui
  * rend la campagne par compte efficace, et ce qui la rend ridicule quand les
  * deux messages sont le même. Le pitch, lui, ne doit pas changer : une
  * entreprise qui raconte deux histoires différentes à deux collègues n'est pas
@@ -436,7 +437,7 @@ function dmRule(dmSent: boolean): string {
  * La consigne porte la **phrase exacte** à ne pas reprendre, plutôt qu'un
  * « varie un peu » : un modèle à qui l'on montre ce qu'il ne doit pas écrire
  * s'en écarte, un modèle à qui l'on demande de la variété reformule la même
- * idée avec d'autres mots — ce qu'un lecteur humain reconnaît immédiatement.
+ * idée avec d'autres mots, ce qu'un lecteur humain reconnaît immédiatement.
  */
 function colleagueRule(colleague: ColleagueContact | null): string {
   if (colleague === null) {
@@ -449,7 +450,7 @@ function colleagueRule(colleague: ColleagueContact | null): string {
       ? ""
       : ` Sa phrase d'ouverture était : « ${colleague.colleague.lastOpening.slice(0, 300)} ». **N'écris ni cette phrase, ni une reformulation de cette phrase.** Trouve une autre entrée en matière, ancrée sur le rôle de ton destinataire.`;
 
-  return `**Un collègue de cette maison a reçu un email il y a ${colleague.days} jour(s)** : ${colleague.colleague.name}${role}. Ces deux personnes se parlent et compareront leurs messages. Le positionnement, l'offre et la proposition ne changent pas — c'est la même entreprise qui écrit. Ce sont l'accroche et l'angle qui doivent différer.${opening}`;
+  return `**Un collègue de cette maison a reçu un email il y a ${colleague.days} jour(s)** : ${colleague.colleague.name}${role}. Ces deux personnes se parlent et compareront leurs messages. Le positionnement, l'offre et la proposition ne changent pas, c'est la même entreprise qui écrit. Ce sont l'accroche et l'angle qui doivent différer.${opening}`;
 }
 
 export async function draftEmail(
@@ -465,7 +466,7 @@ export async function draftEmail(
    */
   stepBrief?: string,
   /**
-   * La boîte imposée par l'appelant — une campagne, typiquement : tous ses
+   * La boîte imposée par l'appelant, une campagne, typiquement : tous ses
    * messages partent de la même adresse, avec la même signature. Absente, la
    * boîte se choisit par le propriétaire de la fiche (règle du jalon 35).
    */
@@ -502,7 +503,7 @@ export async function draftEmail(
   // La boîte imposée d'abord ; sinon le propriétaire de la fiche : si « Yanis »
   // suit ce prospect, c'est sa boîte qui écrit. Proposer systématiquement la
   // boîte par défaut ferait partir la moitié des messages sous la mauvaise
-  // identité — et depuis le jalon 54, un signataire **est** une boîte.
+  // identité, et depuis le jalon 54, un signataire **est** une boîte.
   const signatory =
     (mailboxId !== undefined && mailboxId !== ""
       ? signatories.find((entry) => entry.id === mailboxId)
@@ -526,8 +527,8 @@ export async function draftEmail(
   );
 
   // L'avertissement est **posé après la rédaction**, pas passé à `complete()` :
-  // il ne change rien à l'appel au modèle — celui-ci a déjà reçu la consigne
-  // dans son instruction —, il ne concerne que ce que l'écran doit dire à la
+  // il ne change rien à l'appel au modèle, celui-ci a déjà reçu la consigne
+  // dans son instruction, il ne concerne que ce que l'écran doit dire à la
   // personne qui s'apprête à envoyer.
   if (!result.ok) return result;
   const { colleague } = context;
@@ -549,7 +550,7 @@ export async function draftEmail(
 }
 
 /**
- * L'appel au modèle, et les garanties de forme — **partagés** par la rédaction
+ * L'appel au modèle, et les garanties de forme, **partagés** par la rédaction
  * et la reprise.
  *
  * Les écrire deux fois, c'est se garantir qu'une reprise finira par oublier la
@@ -617,18 +618,23 @@ async function complete(
     return {
       ok: true,
       draft: {
-        subject: sanitizeSubject(checked.data.subject),
+        // Le tiret long est retiré de l'objet **et** du corps, au retour du
+        // modèle : c'est la même leçon que la signature, une consigne de prompt
+        // est une intention et l'on veut une garantie. Voir `stripDashes`.
+        subject: stripDashes(sanitizeSubject(checked.data.subject)),
         // La signature est **imposée ici**, pas seulement demandée dans le
         // prompt : une consigne tient presque toujours, et « presque » n'est
         // pas assez quand la conséquence est qu'un prospect lit le prénom d'un
         // agent dans un message censé venir d'un humain.
-        // Deux garde-fous, dans cet ordre : l'appel d'abord — il ouvre le
-        // message et « Bonjour — » se voit avant tout le reste — puis la
+        // Deux garde-fous, dans cet ordre : l'appel d'abord, il ouvre le
+        // message et « Bonjour, » se voit avant tout le reste, puis la
         // signature, qui le ferme.
-        body: enforceSignature(
-          repairGreeting(checked.data.body.trim(), identity),
-          signature,
-          forbidden,
+        body: stripDashes(
+          enforceSignature(
+            repairGreeting(checked.data.body.trim(), identity),
+            signature,
+            forbidden,
+          ),
         ),
         to,
         contactName: contactTitle(identity),

@@ -56,6 +56,16 @@ const DUMP = process.env.MOCK_DUMP ?? "";
  */
 const DELAY = Number.parseInt(process.env.MOCK_DELAY ?? "0", 10) || 0;
 
+/**
+ * Rend un brouillon **volontairement fautif** (`MOCK_DIRTY=1`).
+ *
+ * Le tiret long est interdit par la consigne et retiré au retour. Un substitut
+ * qui n'en produit jamais ne prouve donc rien du second garde-fou : il faut un
+ * modèle qui desobeit pour verifier que le produit repare. Meme discipline
+ * qu'au jalon 43, ou le substitut a du apprendre a mentir comme la production.
+ */
+const DIRTY = process.env.MOCK_DIRTY === "1";
+
 const wait = (ms: number): Promise<void> =>
   ms <= 0 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -199,13 +209,15 @@ function draftAnswer(brief: string): string {
     const focus = /- ([^\n]*← L'ÉCHANGE QUI VIENT D'AVOIR LIEU)/.exec(brief);
     const name = /Destinataire : ([^\n,]+)/.exec(brief);
     return JSON.stringify({
-      subject: "Le délai dont on parlait",
+      subject: DIRTY ? "Le délai dont on parlait \u2014 relance" : "Le délai dont on parlait",
       body: [
         `Bonjour ${name?.[1]?.split(" ")[0] ?? ""},`.trim(),
         focus === null
           ? "Je reviens vers vous."
           : `J'ai bien noté notre échange : ${focus[1]?.replace(" ← L'ÉCHANGE QUI VIENT D'AVOIR LIEU", "") ?? ""}.`,
-        "Seriez-vous disponible jeudi en fin de matinée ?",
+        DIRTY
+          ? "69 % des visiteurs \u2014 c'est beaucoup \u2013 partent sans poser leur question."
+          : "Seriez-vous disponible jeudi en fin de matinée ?",
         "Yanis",
       ].join("\n\n"),
     });

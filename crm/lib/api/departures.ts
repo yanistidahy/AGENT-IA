@@ -46,12 +46,12 @@ function dayKey(now: Date): string {
  * **Le seul mécanisme d'arrêt tant que la détection est manuelle.** On prend la
  * date de l'interaction, pas seulement son existence.
  *
- * Le point de départ est le dernier envoi **ou, à défaut, l'inscription** — et
+ * Le point de départ est le dernier envoi **ou, à défaut, l'inscription**, et
  * ce détail a été trouvé à la vérification, pas à la lecture. En prenant `null`
  * comme point de départ, toute réponse jamais consignée arrêtait la séquence
  * avant son premier message : un contact avec qui on a parlé il y a un an
  * devenait inéligible à vie, c'est-à-dire la moitié d'un CRM. Ce n'est pas ce
- * qu'« arrêter sur réponse » veut dire — c'est « ne pas relancer quelqu'un qui
+ * qu'« arrêter sur réponse » veut dire, c'est « ne pas relancer quelqu'un qui
  * vient de répondre ».
  */
 async function repliedAfter(contactId: string, since: Date | null): Promise<Date | null> {
@@ -59,8 +59,7 @@ async function repliedAfter(contactId: string, since: Date | null): Promise<Date
     where: {
       ...REAL_ACTIVITY,
       contactId,
-      outcome: { in: [...ANSWERED_OUTCOMES] },
-      ...(since === null ? {} : { date: { gt: since } }),
+      outcome: { in: [...ANSWERED_OUTCOMES] }, ...(since === null ? {} : { date: { gt: since } }),
     },
     orderBy: { date: "desc" },
     select: { date: true },
@@ -81,7 +80,7 @@ export interface ComposeReport {
  *
  * Appelée par le passage quotidien. Idempotente par construction : un départ
  * porte une clé unique `(inscription, étape)`, donc rejouer le passage ne peut
- * pas produire deux messages pour la même étape — c'est une contrainte de base,
+ * pas produire deux messages pour la même étape, c'est une contrainte de base,
  * pas une vérification applicative (leçon du jalon 8).
  */
 /**
@@ -89,7 +88,7 @@ export interface ComposeReport {
  *
  * Toutes séquences confondues : deux campagnes différentes qui écrivent le même
  * matin à deux personnes de la même maison posent exactement le même problème
- * qu'une seule. Le plus récent composé fait foi — c'est lui que le destinataire
+ * qu'une seule. Le plus récent composé fait foi, c'est lui que le destinataire
  * comparera.
  */
 async function pendingColleagueOpening(
@@ -134,7 +133,7 @@ async function pendingColleagueOpening(
  * **Une portée, pas une seconde fonction.** Le passage quotidien compose sans
  * portée ; l'enregistrement d'une campagne compose la sienne. Écrire deux
  * boucles ferait deux jeux de garde-fous, et le second oublierait un jour la
- * fiche close ou l'opposition au démarchage — c'est exactement le défaut que le
+ * fiche close ou l'opposition au démarchage, c'est exactement le défaut que le
  * jalon 55 a payé sur l'entonnoir, et la leçon est la même : une seule addition,
  * une seule décision.
  */
@@ -155,8 +154,7 @@ export async function composeDepartures(
   const enrollments = await prisma.sequenceEnrollment.findMany({
     where: {
       status: "active",
-      sequence: { active: true },
-      ...(scope.sequenceId === undefined ? {} : { sequenceId: scope.sequenceId }),
+      sequence: { active: true }, ...(scope.sequenceId === undefined ? {} : { sequenceId: scope.sequenceId }),
     },
     include: {
       sequence: {
@@ -212,7 +210,7 @@ export async function composeDepartures(
       continue;
     }
 
-    // Déjà composé ce matin — le passage a été rejoué.
+    // Déjà composé ce matin, le passage a été rejoué.
     const existing = await prisma.sequenceDeparture.findUnique({
       where: { enrollmentId_step: { enrollmentId: enrollment.id, step: verdict.step } },
     });
@@ -221,7 +219,7 @@ export async function composeDepartures(
     const step = enrollment.sequence.steps.find((entry) => entry.position === verdict.step);
 
     // **L'accroche du collègue composée ce matin même.** La règle du jalon 53
-    // lit les envois — mais dans cette boucle, deux collègues d'une même maison
+    // lit les envois, mais dans cette boucle, deux collègues d'une même maison
     // sont composés avant que quiconque soit envoyé : le second ne verrait
     // rien, et les deux brouillons partiraient avec la même entrée en matière.
     // On relit donc les départs déjà composés aujourd'hui pour la même maison,
@@ -230,7 +228,7 @@ export async function composeDepartures(
     const brief =
       colleagueOpening === null
         ? step?.brief
-        : `${step?.brief ?? ""}\n\nUn collègue de la même maison (${colleagueOpening.name}) a un message composé ce matin dont la phrase d'ouverture est : « ${colleagueOpening.opening} ». N'écris ni cette phrase, ni une reformulation de cette phrase — trouve une autre entrée en matière, ancrée sur le rôle de ton destinataire.`;
+        : `${step?.brief ?? ""}\n\nUn collègue de la même maison (${colleagueOpening.name}) a un message composé ce matin dont la phrase d'ouverture est : « ${colleagueOpening.opening} ». N'écris ni cette phrase, ni une reformulation de cette phrase, trouve une autre entrée en matière, ancrée sur le rôle de ton destinataire.`;
 
     const draft = await draftEmail(
       enrollment.contactId,
@@ -278,7 +276,7 @@ export async function composeDepartures(
 }
 
 /**
- * Combien de brouillons la composition écrirait — **sans rien appeler ni rien
+ * Combien de brouillons la composition écrirait, **sans rien appeler ni rien
  * écrire**.
  *
  * C'est ce qui permet d'annoncer le coût avant de le dépenser. La décision est
@@ -287,7 +285,7 @@ export async function composeDepartures(
  *
  * Elle ne **stoppe** aucune inscription, contrairement à la boucle : une
  * consultation qui écrit n'est plus une consultation (jalon 8). Les
- * inéligibles sont donc comptés, pas rangés — la boucle les rangera.
+ * inéligibles sont donc comptés, pas rangés, la boucle les rangera.
  */
 export async function countComposable(
   scope: ComposeScope,
@@ -298,8 +296,7 @@ export async function countComposable(
   const enrollments = await prisma.sequenceEnrollment.findMany({
     where: {
       status: "active",
-      sequence: { active: true },
-      ...(scope.sequenceId === undefined ? {} : { sequenceId: scope.sequenceId }),
+      sequence: { active: true }, ...(scope.sequenceId === undefined ? {} : { sequenceId: scope.sequenceId }),
     },
     include: {
       sequence: { include: { steps: { orderBy: { position: "asc" } } } },
@@ -507,7 +504,7 @@ export async function sendDeparture(
     contactId: enrollment.contactId,
     subject: departure.subject,
     body: departure.body,
-    // La boîte de la campagne, ou le choix par propriétaire à défaut — un
+    // La boîte de la campagne, ou le choix par propriétaire à défaut, un
     // départ composé avant le jalon 54 n'a pas de campagne, et il doit partir
     // quand même.
     signatoryId: enrollment.sequence.campaign?.mailboxId ?? "",
@@ -594,15 +591,15 @@ export async function removeFromSequence(id: string, now = new Date()): Promise<
 }
 
 /**
- * Un départ ouvert dans le panneau de rédaction — **sans appeler le modèle**.
+ * Un départ ouvert dans le panneau de rédaction, **sans appeler le modèle**.
  *
  * Le brouillon existe déjà : il a été composé et payé. Le rouvrir doit donc
- * rendre *ce* texte, pas en écrire un second — sans quoi ouvrir une ligne pour
+ * rendre *ce* texte, pas en écrire un second, sans quoi ouvrir une ligne pour
  * la relire coûterait un appel, et l'on perdrait le brouillon qu'on venait
  * regarder.
  *
- * L'enveloppe est celle du panneau — destinataire, signataires, boîte de la
- * campagne — pour qu'il n'existe **qu'une seule surface de rédaction**. Le fil
+ * L'enveloppe est celle du panneau, destinataire, signataires, boîte de la
+ * campagne, pour qu'il n'existe **qu'une seule surface de rédaction**. Le fil
  * avec Alex, la reprise depuis le texte affiché et le retour en arrière sont
  * ceux du jalon 34, inchangés.
  */
@@ -672,7 +669,7 @@ export interface DepartureDraft {
 }
 
 /**
- * Enregistre un brouillon retravaillé — **sans l'envoyer, sans le recomposer**.
+ * Enregistre un brouillon retravaillé, **sans l'envoyer, sans le recomposer**.
  *
  * La ligne garde son identité `(inscription, étape)`, donc la composition ne
  * repassera jamais dessus : la contrainte d'unicité qui empêche de composer
