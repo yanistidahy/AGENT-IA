@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 60 | **La puce qui s'ouvrait dans le vide** — panneau rogné par un conteneur `overflow-hidden`, puce remontée sur la première rangée, et des tests qui cliquent | **livré, à valider** |
 | 59 | **Filtrer par date d'ajout** — quatre préréglages et une plage libre dans l'URL, colonne « Ajouté le » triable, fiches ajoutées par semaine sur /performance | **livré, à valider** |
 | 58 | **Nouveau discours, et le tiret long banni** — conseiller de vente, accroche sur le fait, quatre paragraphes, tirets retirés à la source et au retour | **livré, à valider** |
 | 57 | **Retravailler un départ, et ne plus supposer d'équipe** — le panneau de rédaction rouvert depuis la file, discours conditionnel à ce qu'on sait | **livré, à valider** |
@@ -8433,3 +8434,120 @@ répondent à deux questions différentes.
 **Aucune exclusion de cycle de vie dans la série** : une fiche ajoutée puis
 perdue a bel et bien été ajoutée cette semaine-là. C'est une mesure de sourcing,
 pas une file de travail.
+
+
+---
+
+## Jalon 60 — une puce qui s'ouvrait dans le vide, et le trou qui l'a laissée passer
+
+### Reproduit d'abord, dans un vrai navigateur
+
+Signalé : « la puce Ajoutés ne fait rien ». Reproduit à l'identique avant tout
+correctif, contre le serveur standalone de production et un Chromium piloté, en
+suivant l'ordre demandé :
+
+| Question | Réponse mesurée |
+|---|---|
+| La puce est-elle à l'écran ? | **Non.** Boîte de 0×0 : un ancêtre à `display: none` |
+| Le menu s'ouvre-t-il au clic ? | Oui — `aria-expanded` passe à `true` |
+| Le menu est-il visible ? | **Non.** Boîte de 288×305 px, et `elementFromPoint` en son centre rend un `<td>` du tableau : le panneau est **rogné** |
+| Le préréglage atteint-il l'URL ? | Oui, quand on parvient à cliquer une entrée qu'on ne voit pas |
+| Erreurs de console, hydratation ? | **Aucune** |
+
+### La cause, avec sa ligne
+
+`components/contacts/contacts-chips.tsx:171` (jalon 59) rendait `<AddedChip>`
+**dans le groupe segmenté de la seconde rangée** — le `<div>` de la ligne 108,
+qui porte `${expanded ? "flex" : "hidden"} overflow-hidden`. Deux conséquences,
+et la seconde est celle qui rendait le contrôle mort :
+
+1. **`hidden`** : la puce n'apparaît qu'après avoir déplié « Filtres » ;
+2. **`overflow-hidden`** : le panneau d'une puce à menu est posé en `absolute`
+   sous son bouton, donc **entièrement hors du groupe**. Il s'ouvrait, et le
+   conteneur le découpait. Le bouton répondait, l'écran ne montrait rien.
+
+La puce Instagram du jalon 49 n'a jamais eu ce défaut parce qu'elle vit sur la
+première rangée, qui ne rogne rien. C'est là que « Ajoutés » va, et pour la même
+raison de fond : « qu'est-ce que j'ai ajouté cette semaine » est une lecture
+quotidienne, pas un filtre qu'on ouvre une fois sur dix.
+
+**La règle qui en sort** : une puce à menu ne peut pas vivre dans un conteneur
+qui rogne.
+
+### Le trou dans la vérification, et ce qu'il a coûté
+
+Deux fois de suite un contrôle a été livré qui **rend correctement et ne fait
+rien** : le rafraîchissement de la file des départs (jalon 56) et cette puce.
+Les deux ont été « vérifiés par lecture », faute de DOM dans la suite. Une
+lecture de code ne peut pas voir un `overflow-hidden` posé deux composants plus
+haut.
+
+`tests/e2e/` ouvre donc la page dans un navigateur et clique.
+
+**L'assertion qui manquait n'est pas « le menu est-il visible ».** Mesuré sur le
+défaut lui-même, avec la seconde rangée dépliée :
+
+```
+Playwright isVisible() : true
+elementFromPoint       : TD.border-b border-line-2 …   reachable: false
+```
+
+`isVisible()` ne regarde que l'élément — ni `display`, ni `visibility`, ni une
+boîte nulle, mais **pas un ancêtre qui le rogne**. Un test écrit avec lui aurait
+été **vert sur le défaut**. `reachable()` (`tests/e2e/browser.ts`) interroge donc
+le document au centre de l'élément : ce que le navigateur y trouve est ce qu'un
+doigt y toucherait. C'est la technique du bouton ✕ du jalon 28, promue en règle.
+
+### Ce que ça coûte, et ce que ça ne coûte pas
+
+| | Choix | Pourquoi |
+|---|---|---|
+| Paquet | `playwright-core`, **pas** `playwright` | `playwright` télécharge un navigateur à l'installation ; `playwright-core` non. `npm ci` de la chaîne de déploiement ne doit pas se mettre à tirer cent mégaoctets de Chromium pour construire une application Next. Coût réel : **14 Mo** de dépendance de développement, **zéro** téléchargement |
+| Navigateur | celui de l'environnement (`PLAYWRIGHT_BROWSERS_PATH`, ou `E2E_CHROMIUM`) | La révision est lue dans le dossier, jamais écrite en dur : `chromium-1194` cesserait d'exister à la mise à jour suivante |
+| Lancement | `npm run e2e`, **séparé de `npm test`** | Ils demandent un serveur debout, une base peuplée et un navigateur. Les mettre dans `npm test` en ferait un test qu'on cesse d'exécuter |
+| Sans navigateur | la suite **s'ignore en le disant** | Un rouge sur une machine sans Chromium apprend à ignorer le rouge |
+| Durée | **2,7 s** pour six tests | Le prix est le `npm run build` préalable, pas les tests |
+
+```bash
+npm run build && npm start &          # ou E2E_BASE_URL=…
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers E2E_PASSWORD=… npm run e2e
+```
+
+### Jalon 60 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide**), le serveur standalone de
+production et un Chromium piloté :
+
+- **le défaut reproduit** avant correction, et les quatre questions tranchées
+  ci-dessus ;
+- **la garde prouvée sur le défaut exact** : `<AddedChip>` remise dans la
+  seconde rangée → **4 tests sur 6 tombent**, le premier sur « la puce se voit
+  sans avoir à déplier quoi que ce soit » ;
+- **après correction** : puce de 186×33 px à `y=98` sur la première rangée, menu
+  **atteignable**, préréglage dans l'URL, plage libre soumise
+  (`?du=2026-03-01&au=2026-03-31`, sans `ajout`), puce Instagram toujours
+  fonctionnelle ;
+- **à 390×844** : puce de 186×**44** px, menu atteignable, **0 débordement
+  horizontal**, **0 erreur console** aux deux tailles ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1111 tests**) et
+  `npm run e2e` (**6 tests**) verts.
+
+### Jalon 60 — ce qui n'est pas fait
+
+**Le reste du produit n'est pas couvert au clic.** Six tests couvrent les deux
+puces à menu de `/contacts` — le défaut signalé et son voisin le plus proche.
+Les autres contrôles clients restent vérifiés comme avant. Les candidats
+suivants, par ordre de dégât potentiel : le rafraîchissement de « Départs du
+jour » (jalon 56, l'autre contrôle mort), la sélection à la case des campagnes
+(jalon 55, jamais cliquée), le panneau de rédaction et la file d'accueil.
+
+**Ces tests demandent une base peuplée.** Ils n'écrivent rien et ne dépendent
+d'aucun volume — les assertions portent sur l'URL et sur ce qui est atteignable,
+pas sur un nombre de lignes — mais une base vide masquerait le tableau qu'ils
+attendent au chargement.
+
+**Ils ne tournent pas tout seuls.** Aucun workflow ne les déclenche : ils se
+lancent à la main à la fin d'un jalon, comme les recettes. Les brancher sur
+GitHub Actions demanderait un PostgreSQL de test et un build à chaque poussée —
+c'est un jalon à soi seul, et il vaudra d'être fait quand la couverture au clic
+dépassera deux écrans.
