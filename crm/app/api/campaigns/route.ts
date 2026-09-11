@@ -110,18 +110,24 @@ export async function PUT(request: Request) {
 }
 
 /**
- * Supprime une campagne — **refusé dès qu'elle a envoyé**.
+ * Supprime une campagne.
  *
- * Le verdict est relu au moment d'écrire, dans le service : la confirmation
- * peut rester ouverte pendant qu'un départ part, et c'est exactement l'instant
- * où la campagne cesse d'être supprimable (leçon du jalon 47).
+ * Vide, une simple confirmation suffit. Ayant envoyé, `confirmName` doit
+ * désigner **exactement** son nom — vérifié ici comme à l'écran
+ * (`nameConfirms`, revérifié dans `deleteCampaign` : le serveur fait toujours
+ * foi, un client altéré ne peut pas sauter la saisie). Le verdict est relu au
+ * moment d'écrire, dans le service : la confirmation peut rester ouverte
+ * pendant qu'un départ part, et c'est exactement l'instant où une campagne
+ * vide cesse de l'être (leçon du jalon 47).
  */
 export async function DELETE(request: Request) {
-  const id = new URL(request.url).searchParams.get("id") ?? "";
+  const params = new URL(request.url).searchParams;
+  const id = params.get("id") ?? "";
   if (id === "") return badRequest("Campagne non désignée.");
+  const confirmName = params.get("confirmName") ?? undefined;
 
   try {
-    const result = await deleteCampaign(id);
+    const result = await deleteCampaign(id, confirmName);
     if (!result.ok) return badRequest(result.message);
     return jsonOk({ campaigns: await listCampaigns() });
   } catch (error) {

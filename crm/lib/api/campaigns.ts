@@ -13,6 +13,7 @@ import { readReplyFacts } from "./email-replies";
 import { contactTitle } from "../domain/contact-identity";
 import { buildFunnel, type FunnelStep } from "../domain/email-funnel";
 import { memberState, type CampaignMember } from "../domain/campaign-members";
+import { nameConfirms } from "../domain/campaign-deletion";
 
 /**
  * **Une campagne : une boîte, une sélection, une séquence.**
@@ -433,19 +434,19 @@ export interface DeleteVerdict {
 }
 
 /**
- * Peut-on supprimer cette campagne ?
+ * Peut-on supprimer cette campagne **sans rien taper** ?
  *
- * **Un envoi interdit la suppression.** Un message parti, une ouverture, une
- * réponse sont des faits mesurés ; effacer la campagne qui les a produits ferait
- * mentir les chiffres de /emails — la ligne d'envoi survivrait avec un
- * `sequenceId` qui ne désigne plus rien. C'est la règle du jalon 47 sur les
- * affaires, mot pour mot : ce qui porte une histoire s'archive, ça ne s'efface
- * pas.
+ * **Un envoi bloque le chemin simple.** Un message parti, une ouverture, une
+ * réponse sont des faits mesurés ; les effacer d'un clic distrait ferait
+ * mentir les chiffres de /emails sans qu'on l'ait décidé. Ce n'est plus une
+ * porte fermée pour autant (jalon 61) : `deleteCampaign(id, confirmName)`
+ * l'ouvre quand même, à la condition de taper le nom exact de la campagne —
+ * voir sa documentation pour ce que ce second geste emporte.
  *
  * Une campagne **vide** — créée par erreur, rien d'inscrit, rien d'envoyé — se
- * supprime derrière une confirmation qui la nomme. Des inscriptions sans aucun
- * envoi ne bloquent pas : personne n'a rien reçu, il n'y a aucun fait à
- * préserver, et les fiches, elles, ne bougent pas.
+ * supprime derrière une confirmation qui la nomme, sans rien taper. Des
+ * inscriptions sans aucun envoi ne bloquent pas : personne n'a rien reçu, il
+ * n'y a aucun fait à préserver, et les fiches, elles, ne bougent pas.
  */
 export async function deleteVerdict(id: string): Promise<DeleteVerdict> {
   const campaign = await prisma.campaign.findUnique({
@@ -481,28 +482,105 @@ export async function deleteVerdict(id: string): Promise<DeleteVerdict> {
 }
 
 /**
- * Supprime une campagne qui n'a rien envoyé.
+ * Supprime une campagne — vide sans condition, ayant envoyé si `confirmName`
+ * désigne exactement son nom.
  *
- * Le verdict est **relu au moment d'écrire**, jamais repris de l'affichage : la
+ * **Le verdict est relu au moment d'écrire**, jamais repris de l'affichage : la
  * confirmation peut rester ouverte pendant qu'un départ part, et c'est
- * exactement l'instant où la campagne cesse d'être supprimable (leçon du
- * jalon 47).
+ * exactement l'instant où une campagne vide cesse de l'être (leçon du
+ * jalon 47). Le nom, lui, est **revérifié côté serveur** — `nameConfirms` sert
+ * l'écran et cette fonction, jamais deux définitions de la même friction :
+ * un client altéré ne peut pas contourner la saisie en n'envoyant que la
+ * requête.
  *
- * La cascade emporte la séquence, ses étapes, ses inscriptions et ses départs —
- * **et rien d'autre**. Les contacts restent en base avec leur historique : les
- * interactions consignées et les lignes d'envoi ne sont pas des enfants de la
- * campagne.
+ * ## Le chemin simple : rien ne part que le conteneur
+ *
+ * Une campagne vide n'a produit aucun fait. La cascade emporte la séquence,
+ * ses étapes, ses inscriptions et ses départs — **et rien d'autre**.
+ *
+ * ## Le chemin forcé : les envois disparaissent avec elle
+ *
+ * **Décision assumée : les lignes `email_sends` sont supprimées, pas
+ * détachées.** Deux options existaient — les effacer, ou ne garder que
+ * `campaignId: ""` pour en faire des envois « orphelins » toujours comptés
+ * dans les totaux globaux. La seconde était plus douce à écrire mais plus
+ * trompeuse à lire : un envoi sans campagne resterait un chiffre dans
+ * `/emails` sans qu'on sache jamais dire d'où il vient ni pourquoi il est là —
+ * une trace muette, indéfiniment. Supprimer fait ce que la campagne promet en
+ * confirmation : ces messages, ces ouvertures, ces réponses **sortent des
+ * statistiques**, immédiatement et sans reliquat. C'est aussi le seul choix
+ * cohérent avec le refus initial du jalon 55 : un envoi qui bloquait la
+ * suppression parce qu'il est un fait mesuré ne peut pas, une fois qu'on force
+ * le passage, devenir un fait à moitié mesuré.
+ *
+ * Les cascades de la base font le reste, sans qu'il y ait rien à écrire ici :
+ * `email_open_hits` suit l'envoi en `CASCADE`, `email_replies.emailSendId`
+ * passe à `NULL` — une détection de réponse n'est pas un enfant de l'envoi,
+ * elle garde son `contactId` et sa date.
+ *
+ * **Ce qui ne bouge jamais : les contacts et leurs interactions.**
+ * `SequenceEnrollment.contactId` n'est jamais touché — supprimer la séquence
+ * efface l'inscription, pas la fiche qu'elle désignait. Et les interactions
+ * consignées (`Activity`, y compris celle qu'un envoi écrit sur la fiche au
+ * moment de partir) **ne sont jamais supprimées par ce chemin** : c'est
+ * l'historique de la personne, pas un sous-produit de la campagne, et rien ici
+ * ne sait — ni ne doit savoir — lequel de ses appels ou de ses emails vient
+ * d'une campagne plutôt que d'un geste isolé. Conséquence à connaître : le
+ * volume par canal de `/performance` compte ces interactions comme du travail
+ * réellement fait, et il continue de les compter après la suppression — c'est
+ * le prix de ne jamais toucher à ce que quelqu'un a écrit sur une fiche.
  */
 export async function deleteCampaign(
   id: string,
+  confirmName?: string,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   const verdict = await deleteVerdict(id);
-  if (!verdict.deletable) return { ok: false, message: verdict.reason };
+  if (verdict.deletable) return deleteEmptyCampaign(id);
 
+  // `deletable: false` avec `sends: 0` ne peut venir que d'une campagne
+  // introuvable — `deleteVerdict` renvoie ce couple précisément dans ce cas,
+  // et aucun autre. Une campagne trouvée et vide serait `deletable: true`.
+  if (verdict.sends === 0) return { ok: false, message: verdict.reason };
+
+  const campaign = await prisma.campaign.findUnique({
+    where: { id },
+    include: { sequence: { select: { id: true } } },
+  });
+  if (campaign === null) return { ok: false, message: "Campagne introuvable." };
+
+  if (!nameConfirms(confirmName ?? "", campaign.name)) {
+    return { ok: false, message: verdict.reason };
+  }
+
+  await prisma.$transaction(
+    async (tx) => {
+      if (campaign.sequence !== null) {
+        // `EmailSend.sequenceId` n'est pas une clé étrangère — c'est une
+        // valeur copiée (jalon 54), pour que l'historique reste lisible même
+        // après un renommage. Rien ne la fait donc disparaître toute seule :
+        // elle est effacée ici, explicitement, avant la séquence.
+        await tx.emailSend.deleteMany({ where: { sequenceId: campaign.sequence.id } });
+      }
+      // La séquence entraîne ses étapes, ses inscriptions et ses départs —
+      // sa clé étrangère vers la campagne est `SetNull`, la laisser en ferait
+      // une séquence orpheline sans écran pour la montrer.
+      await tx.emailSequence.deleteMany({ where: { campaignId: id } });
+      await tx.campaign.delete({ where: { id } });
+    },
+    // Le lot d'envois d'une campagne ancienne peut dépasser ce que le délai
+    // par défaut d'une transaction couvre confortablement — un `DELETE` en un
+    // seul énoncé SQL reste rapide, mais autant se donner de la marge sur un
+    // geste qu'on ne veut pas voir échouer à mi-chemin.
+    { timeout: 30_000 },
+  );
+
+  return { ok: true };
+}
+
+async function deleteEmptyCampaign(
+  id: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
   await prisma.$transaction(async (tx) => {
-    // La séquence d'abord : sa clé étrangère vers la campagne est `SetNull`,
-    // donc la laisser en ferait une séquence orpheline, sans écran pour la
-    // montrer ni campagne pour la lancer.
     await tx.emailSequence.deleteMany({ where: { campaignId: id } });
     await tx.campaign.delete({ where: { id } });
   });

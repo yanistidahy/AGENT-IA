@@ -63,6 +63,22 @@
   --color-pulse: #e8503f;
   --color-pulse-l: #fdeae7;
 
+  /**
+   * Rouge d'action destructrice — texte d'erreur, boutons « Supprimer
+   * définitivement ». Trouvé absent de ce fichier au jalon 61 : `bg-danger`,
+   * `text-danger` et `border-danger` étaient utilisés dans douze fichiers
+   * depuis le jalon 32 sans qu'aucun `--color-danger` n'existe — Tailwind ne
+   * lève pas sur une classe qu'il ne sait pas résoudre, il ne génère
+   * simplement rien, et un bouton « dangereux » sans couleur passe inaperçu
+   * précisément parce qu'il reste lisible. Même famille que `pulse` (la même
+   * teinte, assombrie) plutôt qu'un second rouge sans rapport avec le
+   * premier — mais assombrie **pour de vrai**, pas cosmétiquement : `pulse`
+   * ne donne que 3.7:1 en blanc plein, sous le seuil AA, et c'est
+   * exactement le cas d'usage (« Supprimer » en blanc sur fond plein).
+   * blanc sur --color-danger : 5.4:1
+   */
+  --color-danger: #c2382a;
+
   /* Ambre — alerte moyenne, affaire tiède */
   --color-gold: #d99323;
   --color-gold-l: #fbf0dc;

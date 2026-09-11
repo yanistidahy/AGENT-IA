@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 61 | **Supprimer une campagne qui a envoyé, si on le tape** — friction du nom exact, envois effacés (pas détachés), contacts et interactions intacts, et un rouge d'action destructrice qui n'existait nulle part | **livré, à valider** |
 | 60 | **La puce qui s'ouvrait dans le vide** — panneau rogné par un conteneur `overflow-hidden`, puce remontée sur la première rangée, et des tests qui cliquent | **livré, à valider** |
 | 59 | **Filtrer par date d'ajout** — quatre préréglages et une plage libre dans l'URL, colonne « Ajouté le » triable, fiches ajoutées par semaine sur /performance | **livré, à valider** |
 | 58 | **Nouveau discours, et le tiret long banni** — conseiller de vente, accroche sur le fait, quatre paragraphes, tirets retirés à la source et au retour | **livré, à valider** |
@@ -8551,3 +8552,169 @@ lancent à la main à la fin d'un jalon, comme les recettes. Les brancher sur
 GitHub Actions demanderait un PostgreSQL de test et un build à chaque poussée —
 c'est un jalon à soi seul, et il vaudra d'être fait quand la couverture au clic
 dépassera deux écrans.
+
+
+---
+
+## Jalon 61 — supprimer une campagne qui a envoyé, si on le tape
+
+### La règle du jalon 55 n'était pas fausse, elle était absolue
+
+« Un envoi interdit la suppression » protégeait d'un clic distrait sur des
+chiffres qu'on ne recalcule jamais soi-même. Mais l'absolu n'était plus la
+bonne réponse à une demande explicite : reprendre une campagne en main quitte
+à en perdre l'histoire. La porte reste fermée par défaut — elle s'ouvre
+maintenant sur un second geste, pas sur un premier.
+
+### `email_sends` : supprimé, pas détaché
+
+Deux options existaient pour ce que devient une ligne d'envoi : l'effacer, ou
+la garder avec `campaignId: ""`, comptée dans les totaux globaux comme un
+envoi « sans campagne ». La seconde était la plus simple à écrire et la plus
+trompeuse à lire — un chiffre qui reste dans `/emails` sans qu'on sache jamais
+dire d'où il vient est une trace muette, pas une donnée.
+
+**Retenu : la suppression, jusqu'au bout.** C'est aussi la seule cohérente
+avec le refus initial : un envoi qui bloquait la suppression parce qu'il est
+un fait mesuré ne peut pas, une fois le passage forcé, devenir un fait à
+moitié mesuré. `EmailSend.sequenceId`/`campaignId` ne sont **pas** des clés
+étrangères (valeurs copiées, jalon 54) — rien ne les efface toutes seules, la
+suppression les cible explicitement, avant la séquence. Les cascades de la
+base font le reste : `email_open_hits` suit en `CASCADE`, `email_replies`
+perd seulement son `emailSendId` (`SET NULL`) — une détection de réponse
+n'est pas un enfant de l'envoi, elle garde son contact et sa date.
+
+### Ce qui ne bouge jamais : les contacts, et leurs interactions
+
+`SequenceEnrollment.contactId` n'est jamais touché — supprimer la séquence
+efface l'inscription, pas la fiche qu'elle désignait. Et **les interactions
+consignées (`Activity`) ne sont supprimées par aucun chemin de ce jalon** :
+c'est l'historique de la personne, pas un sous-produit de la campagne.
+
+**Conséquence à connaître, et non résolue en silence : `/performance` ne
+change pas.** Son volume par canal compte les `Activity` de type `email` —
+qui existent indépendamment de toute campagne, y compris celle d'un envoi de
+campagne (chaque envoi consigne une interaction depuis le jalon 32) — et
+`/performance` n'a **jamais** su distinguer une interaction venue d'une
+campagne d'un email écrit à la main : il n'existe aucun champ pour le faire.
+Supprimer ces lignes pour faire baisser ce chiffre reviendrait à effacer ce
+qu'une personne a réellement écrit sur une fiche — exactement ce que ce
+jalon promet de ne jamais faire. `/emails` (funnel, journal, par signataire)
+et l'entonnoir de la campagne, eux, sont **entièrement** dérivés d'`EmailSend`
+et disparaissent immédiatement, comme demandé.
+
+### La friction : taper le nom, revérifié des deux côtés
+
+`lib/domain/campaign-deletion.ts` (pur, testé) porte les deux fonctions
+utilisées par l'écran **et** par le serveur — une seule définition de
+« est-ce que ça confirme ». `nameConfirms()` exige une correspondance exacte,
+espaces de bord mis à part : ni casse ni accents assouplis, parce que la
+friction demandée perdrait son sens si elle s'assouplissait. Le serveur la
+revérifie dans `deleteCampaign(id, confirmName)` avant d'écrire quoi que ce
+soit — un client altéré ne peut pas sauter la saisie en n'envoyant que la
+requête.
+
+`historyLossWarning()` compose la phrase exacte demandée, avec les comptes de
+l'entonnoir déjà affiché sur la carte (`messages`/`opened`/`replied`) — aucun
+second calcul qui pourrait diverger de ce que l'écran montrait la seconde
+d'avant.
+
+À l'écran (`campaign-delete.tsx`) : « Supprimer » simple **n'apparaît pas**
+sur une campagne qui a envoyé — un bouton qui échouerait neuf fois sur dix se
+lit comme cassé (jalon 26). À la place, le compte qui bloque et un second
+geste moins visible, « Supprimer quand même », dont la confirmation nomme les
+comptes exacts et n'active « Supprimer définitivement, avec son historique »
+que lorsque le nom tapé correspond au caractère près.
+
+### Un rouge qui n'existait nulle part
+
+En construisant le bouton de confirmation, mesuré plutôt que supposé : `bg-
+danger` produisait `background-color: rgba(0, 0, 0, 0)` — **transparent**.
+`--color-danger` n'était défini dans **aucune** feuille de style du projet,
+alors que `bg-danger`/`text-danger`/`border-danger` étaient utilisés dans
+**douze fichiers** depuis le jalon 32 (bannières d'erreur, boutons de
+suppression du jalon 47 et du jalon 55, bandeau de composition du jalon 56).
+Tailwind ne lève pas sur une classe qu'il ne sait pas résoudre — il ne génère
+simplement rien, et un bouton « dangereux » sans couleur passe inaperçu
+précisément parce qu'il reste lisible et cliquable. C'est la même famille de
+défaut que la puce du jalon 60, cette fois cosmétique plutôt que
+fonctionnelle.
+
+Ajouté à `app/globals.css` : `--color-danger: #c2382a`, même teinte que
+`--color-pulse` (l'alerte rouge déjà établie) mais **assombrie pour de vrai**,
+pas cosmétiquement — `pulse` ne tient que 3.7:1 en blanc plein, sous le seuil
+AA, et c'est exactement l'usage (texte blanc sur fond plein) ; `danger` tient
+5.4:1. Un seul jeton corrige les douze emplacements d'un coup — c'est la
+règle du projet, « on change la couleur à la source, jamais classe par
+classe », qui n'avait simplement jamais eu l'occasion de s'appliquer ici.
+
+### La garde : un test qui clique, pas qui lit
+
+`tests/e2e/campaign-delete.e2e.ts` — septième test de la famille ouverte au
+jalon 60, cette fois sur une campagne qui a réellement envoyé (semée par
+Prisma directement, hors du service, pour ne dépendre d'aucun état laissé par
+un jalon précédent). Il vérifie, au clic réel : le bouton simple absent, le
+panneau forcé atteignable (`reachable()`, pas `isVisible()`), le bouton
+désactivé avant saisie, **toujours désactivé** avec une casse différente, activé
+avec le nom exact, et — le point qui a trouvé le défaut de couleur —
+`backgroundColor` du bouton actif n'est **pas** transparent. Puis le clic
+réel, la disparition de la carte, l'absence d'erreur console, et la vérité en
+base : campagne partie, contact intact.
+
+**Éprouvé en retirant `--color-danger`** : un seul test tombe, exactement
+celui qui compare la couleur, avec le message qui nomme la valeur fautive.
+Les six autres passent — disabled/enabled fonctionnent très bien sans
+couleur, ce qui est exactement pourquoi ce défaut ne se serait jamais vu à la
+lecture du code ni à un test qui n'aurait vérifié que `disabled`.
+
+### Jalon 61 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide** — aucune migration, tout
+le mécanisme tient sur les contraintes déjà posées aux jalons 54, 18 et 19),
+le service, la route HTTP réelle et un navigateur piloté :
+
+- **1 · confirmation exacte** : sans nom → refusé ; casse différente → refusé,
+  la campagne toujours en base après les deux refus ; texte de confirmation
+  produit mot pour mot : « 3 messages envoyés, 3 ouvertures, 1 réponse seront
+  retirés de vos statistiques. Les contacts et leur historique de conversation
+  restent intacts — seule l'attribution à cette campagne disparaît. » ;
+- **2 · les contacts, intacts** : 3 fiches avant, 3 après, cycle de vie et
+  adresse inchangés, **5 interactions avant, 5 après** — aucune perdue ;
+- **3 · /emails et /performance reflètent le retrait** : `/emails` total
+  passe à 0 immédiatement ; `/performance` (canal email) **ne bouge pas** —
+  4 interactions, la même chose qu'avant, pour la raison documentée plus haut ;
+- **4 · campagne vide** : `deletable: true`, supprimée sans taper de nom,
+  comme avant ;
+- **5 · archiver** : campagne et envoi toujours en base après, `archivedAt`
+  posé — inchangé ;
+- **HTTP réel** (serveur standalone) : sans `confirmName` → 400 ; nom faux →
+  400 ; nom exact **avec guillemets français dans le nom lui-même**,
+  correctement encodé → 200, campagne absente de la base ensuite ;
+- **navigateur, au clic** : bouton simple absent, panneau forcé atteignable,
+  bouton désactivé → toujours désactivé casse différente → activé nom exact
+  **en rouge réel** (`rgb(194, 56, 42)`, pas transparent) → clic → carte
+  disparue, 0 erreur console, campagne et envois absents de la base, contact
+  toujours là ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1121 tests**) et
+  `npm run e2e` (**13 tests**, les deux fichiers) verts.
+
+### Jalon 61 — ce qui n'est pas fait
+
+**`/performance` ne distingue toujours pas une interaction de campagne d'une
+interaction écrite à la main** — ni avant ce jalon, ni après. Le corriger
+demanderait de porter l'origine de l'envoi jusque sur l'`Activity` elle-même
+(un champ `campaignId` sur `Activity`, ou une jointure structurée), ce qui
+dépasse ce qu'un jalon de suppression doit décider seul : c'est un changement
+de modèle, pas un effet de bord.
+
+**Les détections de réponse orphelines (`email_replies.emailSendId = null`)
+ne sont visibles nulle part à l'écran.** Elles survivent en base avec leur
+contact et leur date, mais aucun panneau ne les liste séparément — ce n'était
+pas plus visible avant ce jalon (elles n'existaient simplement pas encore
+dans ce cas), et ce n'est pas non plus ce qui a été demandé.
+
+**Les onze autres emplacements `bg-danger`/`text-danger`/`border-danger`
+n'ont pas été revus un par un.** Le jeton corrige leur couleur à la source ;
+personne n'a vérifié que chacun des douze est par ailleurs bien composé
+(taille, contraste du texte porté par-dessus). C'est un jeton qui répare, pas
+un audit visuel complet.
