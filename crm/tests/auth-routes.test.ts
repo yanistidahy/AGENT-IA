@@ -81,8 +81,19 @@ beforeEach(() => {
  * de messagerie d'un prospect, qui ne présente aucun cookie. Il ne lit aucune
  * donnée métier et rend la même image quel que soit le jeton, donc il ne peut
  * ni divulguer ni énumérer quoi que ce soit.
+ *
+ * `/api/logo/[version]` — le logo de la signature des courriels (jalon 62).
+ * Même raison exactement : c'est le client de messagerie du destinataire qui le
+ * charge, sans session, et une route privée rendrait une image cassée dans
+ * chaque message. Elle sert un seul fichier, le même pour tout le monde, celui
+ * qu'on a soi-même mis dans ses messages — et elle **ne compte rien**, pour ne
+ * pas devenir un suivi d'ouverture par une porte dérobée. Une version inconnue
+ * rend 404 plutôt que l'image courante, donc elle n'énumère rien non plus.
+ *
+ * Le **téléversement**, lui, reste privé : c'est `/api/mail/logo`, un geste
+ * d'administration, et il n'a rien à faire dans cette liste.
  */
-const PUBLIC_API_EXCEPTIONS: readonly string[] = ["/api/t/[token]"];
+const PUBLIC_API_EXCEPTIONS: readonly string[] = ["/api/t/[token]", "/api/logo/[version]"];
 
 function isPublicApi(route: string): boolean {
   if (PUBLIC_PATHS.includes(route)) return true;

@@ -22,6 +22,15 @@ export interface Signatory {
   readonly id: string;
   readonly name: string;
   readonly title: string;
+  /** Le téléphone de la signature, saisi sur la boîte. Vide = pas de ligne. */
+  readonly phone: string;
+  /**
+   * L'adresse de la signature. **C'est `from`**, pas une seconde saisie : la
+   * signature doit montrer l'adresse d'où le message part, sous peine de se
+   * lire comme une usurpation. Le champ existe pour que `Signatory` porte une
+   * `Signature` complète (jalon 62) sans que l'appelant ait à la recomposer.
+   */
+  readonly email: string;
   readonly isDefault: boolean;
   /** Le libellé de la boîte, pour que le sélecteur dise d'où part le message. */
   readonly label: string;
@@ -34,6 +43,8 @@ function toSignatory(mailbox: Mailbox, index: number): Signatory {
     id: mailbox.id,
     name: mailbox.signName,
     title: mailbox.signTitle,
+    phone: mailbox.signPhone,
+    email: mailbox.smtpFrom,
     isDefault: index === 0,
     label: mailbox.label,
     from: mailbox.smtpFrom,
@@ -61,9 +72,20 @@ export function pickSignatory(
   );
 }
 
-/** Tous les blocs de signature connus — ce que `replaceSignature` cherche. */
+/**
+ * Tous les blocs de signature connus — ce que `replaceSignature` cherche.
+ *
+ * **Les blocs à deux lignes en font partie**, en plus des quatre lignes du
+ * jalon 62 : un brouillon composé avant ce jalon dort encore dans la file des
+ * départs, et changer son signataire doit remplacer sa signature plutôt que
+ * d'en ajouter une seconde en dessous. La forme héritée disparaîtra d'elle-même
+ * quand ces brouillons seront partis ; jusque-là, la connaître ne coûte rien.
+ */
 export function signatureBlocks(signatories: readonly Signatory[]): string[] {
-  return signatories.map((signatory) => signatureBlock(signatory));
+  return signatories.flatMap((signatory) => [
+    signatureBlock(signatory),
+    signatureBlock({ ...signatory, phone: "", email: "" }),
+  ]);
 }
 
 /**

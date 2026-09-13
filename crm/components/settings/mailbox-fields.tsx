@@ -25,6 +25,7 @@ export interface MailboxDraft {
   readonly imapCopyEnabled: boolean;
   readonly signName: string;
   readonly signTitle: string;
+  readonly signPhone: string;
   readonly passwordEnv: string;
   readonly passwordSet: boolean;
 }
@@ -130,6 +131,13 @@ export function MailboxFields({
       <div className="grid gap-2.5 sm:grid-cols-2">
         <Field label="Signature — nom" value={box.signName} placeholder="Mohamed Targani" onChange={(signName) => onChange({ signName })} />
         <Field label="Signature — titre" value={box.signTitle} placeholder="Co-Fondateur, Aura Flow AI" onChange={(signTitle) => onChange({ signTitle })} />
+        {/*
+          La quatrième ligne de la signature est l'adresse — elle n'a pas de
+          champ ici : c'est « Adresse d'expédition » ci-dessus. Une seconde
+          saisie finirait par la contredire, et une signature qui affiche une
+          autre adresse que l'expéditeur se lit comme une usurpation.
+        */}
+        <Field label="Signature — téléphone" value={box.signPhone} placeholder="07 85 28 35 36" onChange={(signPhone) => onChange({ signPhone })} />
       </div>
 
       <div className="flex flex-wrap gap-4 text-[13px]">

@@ -15,6 +15,7 @@ import { TagsEditor } from "./tags-editor";
 import { MaintenancePanel } from "./maintenance-panel";
 import { ApiDiagnostic } from "./api-diagnostic";
 import { MailPanel, type MailStatus, type Signatory } from "./mail-panel";
+import { LogoPanel, type LogoState } from "./logo-panel";
 import { MailboxesPanel } from "./mailboxes-panel";
 import type { MailboxDraft } from "./mailbox-fields";
 import { ImapPanel, type ImapStatus, type TrackingStatus, type SendLimits } from "./imap-panel";
@@ -34,6 +35,7 @@ interface SettingsViewProps {
   readonly settings: PilotageSettings;
   readonly tokenBudget: number;
   readonly mail: MailStatus;
+  readonly logo: LogoState;
   /** Les boîtes, avec la variable d'environnement de chacune. */
   readonly mailboxes: readonly MailboxDraft[];
   readonly passwordEnv: string;
@@ -86,6 +88,7 @@ export function SettingsView({
   settings,
   tokenBudget,
   mail,
+  logo,
   mailboxes,
   passwordEnv,
   signatories,
@@ -150,6 +153,7 @@ export function SettingsView({
         <div className="space-y-4">
           <MailboxesPanel initial={mailboxes} />
           <MailPanel initial={mail} />
+          <LogoPanel initial={logo} />
           <ImapPanel initial={imap} initialTracking={tracking} initialLimits={limits} />
           <InboxPanel initial={inbox} />
           {opens}

@@ -186,10 +186,23 @@ Vous pouvez aussi réserver un créneau → Réserver un appel
 ---
 `.trim();
 
-/** Nom et titre du signataire, tels qu'ils sont réglés dans `/reglages`. */
+/**
+ * Le signataire, tel qu'il est réglé dans `/reglages` → Messagerie.
+ *
+ * Quatre champs depuis le jalon 62, mais **deux origines distinctes** : le nom,
+ * le titre et le téléphone sont saisis sur la boîte ; l'adresse est
+ * `smtpFrom`, celle d'où le message part réellement. C'est délibéré : une
+ * adresse de signature saisie à part finirait par contredire l'en-tête `From`,
+ * et une signature qui affiche une autre adresse que l'expéditeur est ce qu'un
+ * filtre lit comme une usurpation.
+ */
 export interface Signature {
   readonly name: string;
   readonly title: string;
+  /** Facultatif : une ligne de moins, pas une ligne vide. */
+  readonly phone: string;
+  /** Facultatif de la même façon. C'est `smtpFrom`, jamais une seconde saisie. */
+  readonly email: string;
 }
 
 /** Le lien de démonstration, tel qu'il est réglé. `url` vide = pas de lien. */
@@ -201,6 +214,8 @@ export interface DemoLink {
 export const DEFAULT_SIGNATURE: Signature = {
   name: "Yanis Tidahy",
   title: "Fondateur, Aura Flow AI",
+  phone: "",
+  email: "",
 };
 
 export const DEFAULT_DEMO: DemoLink = {
@@ -209,14 +224,25 @@ export const DEFAULT_DEMO: DemoLink = {
 };
 
 /**
- * Le bloc de signature, sur deux lignes.
+ * Le bloc de signature, jusqu'à quatre lignes.
  *
  * Une seule fonction le compose : le prompt l'annonce, la garde l'impose, le
  * test le vérifie. Trois lecteurs, une source, ils ne peuvent pas diverger.
+ *
+ * **Un champ vide retire sa ligne**, il n'en laisse pas une blanche : une boîte
+ * sans téléphone signe sur trois lignes, et le message n'a pas l'air d'avoir
+ * perdu quelque chose en route.
+ *
+ * C'est le bloc **texte**, celui qui vit dans le corps du brouillon et part en
+ * `text/plain`. Le logo ne s'y trouve pas et ne s'y trouvera jamais : il est
+ * posé sur la partie HTML au moment de l'envoi, comme le pixel de suivi
+ * (jalon 37). Un client texte ne saurait de toute façon pas le rendre.
  */
 export function signatureBlock(signature: Signature): string {
-  const title = signature.title.trim();
-  return title === "" ? signature.name.trim() : `${signature.name.trim()}\n${title}`;
+  return [signature.name, signature.title, signature.phone, signature.email]
+    .map((line) => line.trim())
+    .filter((line) => line !== "")
+    .join("\n");
 }
 
 /**
@@ -231,12 +257,16 @@ export function signatureRule(signature: Signature): string {
   return `
 ## La signature
 
-Tout email se termine **exactement** par ces deux lignes, dans cet ordre, seules
-sur les dernières lignes du corps :
+Tout email se termine **exactement** par ce bloc, ligne pour ligne, dans cet
+ordre, seul sur les dernières lignes du corps :
 
 ${signatureBlock(signature)}
 
-Elles sont précédées d'une formule brève, « À bientôt, » convient. Jamais ton
+N'en ajoute aucune ligne et n'en retire aucune : ni site, ni mention légale, ni
+« envoyé depuis ». Le logo n'est pas de ton ressort non plus, l'application le
+pose elle-même sur la version HTML.
+
+Le bloc est précédé d'une formule brève, « À bientôt, » convient. Jamais ton
 prénom, jamais celui d'un collègue du conseil : le message part de la boîte de
 cette personne, et signer d'un nom d'agent apprendrait au destinataire qu'il ne
 parle pas à un humain.

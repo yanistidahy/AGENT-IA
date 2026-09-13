@@ -1129,14 +1129,57 @@ model Mailbox {
   imapCopyEnabled Boolean @default(true)
 
   /// La signature de cette adresse.
+  ///
+  /// Le téléphone s'ajoute au jalon 62 : la signature passe de deux lignes à
+  /// quatre. L'**adresse**, elle, n'a pas de colonne propre et n'en aura pas —
+  /// c'est `smtpFrom` qui la porte. Une seconde adresse de signature pourrait
+  /// diverger de l'expéditeur réel, et une signature qui affiche autre chose
+  /// que l'en-tête `From` est exactement ce qu'un filtre — et un lecteur —
+  /// traite comme une usurpation.
   signName  String @default("")
   signTitle String @default("")
+  signPhone String @default("")
 
   createdAt DateTime @default(now())
 
   campaigns Campaign[]
 
   @@map("mailboxes")
+}
+
+/**
+ * Le logo de la signature HTML — **un seul, partagé par toutes les boîtes**.
+ *
+ * C'est la marque de l'entreprise, pas celle d'une personne : deux collègues
+ * qui signeraient de deux logos différents se liraient comme deux sociétés. Ce
+ * qui varie légitimement d'un signataire à l'autre — nom, titre, téléphone,
+ * adresse — est déjà porté par `Mailbox`.
+ *
+ * En base et non sur disque, pour la raison du jalon 15 : le disque du
+ * conteneur est effacé à chaque déploiement, PostgreSQL est le seul stockage
+ * durable du projet. Table séparée des réglages parce que les octets n'ont
+ * aucune raison de voyager à chaque lecture de configuration d'envoi.
+ */
+model MailLogo {
+  /// Singleton, comme `Settings` : il n'y a qu'un logo.
+  id String @id @default("singleton")
+
+  /// Type MIME du fichier d'origine, conservé pour la traçabilité.
+  sourceMime String
+  /// Les octets réellement servis : PNG réencodé, largeur normalisée.
+  png        Bytes
+  /// Largeur en pixels après normalisation, pour l'attribut `width` du `<img>`.
+  width      Int
+  /// Poids servi, en octets. Dupliqué pour que l'écran l'affiche sans lire
+  /// les octets eux-mêmes — c'est tout l'intérêt d'une table séparée.
+  bytes      Int
+
+  /// Empreinte du fichier d'origine. Sert d'ETag **et de segment d'URL** : une
+  /// adresse qui change à chaque remplacement rend le cache d'un an sûr.
+  version   String
+  updatedAt DateTime @updatedAt
+
+  @@map("mail_logo")
 }
 
 /// Une campagne : une boîte d'envoi, une sélection de contacts, une séquence.

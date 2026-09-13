@@ -117,6 +117,45 @@ export function withTrackingPixel(html: string, url: string): string {
   return html.replace("</body>", `${pixel}</body>`);
 }
 
+/**
+ * Pose le logo de signature à la fin de la partie HTML.
+ *
+ * **Hors de `toHtml()`, pour la même raison que le pixel de suivi.** La règle
+ * du jalon 32 porte sur la mise en forme du corps : ce que le modèle écrit et
+ * ce qu'on relit à l'écran restent du texte, sans une seule image. Le logo est
+ * une décision d'envoi, prise à l'envoi, et le test de mise en forme continue
+ * de refuser toute image dans `toHtml()`.
+ *
+ * Il vient **après le dernier paragraphe**, donc juste sous la signature texte
+ * — c'est sa place : il complète les quatre lignes, il ne les remplace pas. La
+ * version `text/plain` n'en porte évidemment aucune trace.
+ *
+ * Aucun lien autour, aucun paramètre dans l'adresse : c'est une identité, pas
+ * un appel à l'action, et un logo cliquable pisté est précisément ce qui
+ * distingue un message commercial d'un message écrit par quelqu'un.
+ */
+export function withSignatureLogo(html: string, logo?: SignatureLogo): string {
+  if (logo === undefined) return html;
+  const src = logo.url.trim();
+  if (src === "") return html;
+
+  // `width` et `height` en attributs plutôt qu'en style : un client qui ignore
+  // le CSS — et il y en a — doit quand même réserver la bonne place, sinon la
+  // signature saute au chargement de l'image.
+  const size = logo.width > 0 ? ` width="${logo.width}"` : "";
+  const img =
+    `<img src="${escapeHtml(src)}" alt="Aura Flow AI"${size}` +
+    ` style="margin-top:12px;border:0" />`;
+
+  return html.replace("</body>", `<p>${img}</p></body>`);
+}
+
+/** Le logo servi : son adresse chez nous, et sa largeur normalisée. */
+export interface SignatureLogo {
+  readonly url: string;
+  readonly width: number;
+}
+
 /** Le lien de démonstration, tel qu'il est réglé. `url` vide = pas de lien. */
 export interface DemoLink {
   readonly label: string;
