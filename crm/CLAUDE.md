@@ -101,9 +101,13 @@ seuil, alors qu'il porte les libellés secondaires du tableau des contacts.
 
 Le logo vit dans `components/brand/logo.tsx` (`Mark`, `Wordmark`) et dans
 `app/icon.svg` pour la favicon. **Le tracé est une reconstruction, pas un
-calque** : le fichier source n'a jamais été lisible côté agent. Remplacer le
-corps de `Mark` et le contenu de `app/icon.svg` suffit à installer le vrai —
-aucun autre fichier ne connaît la forme.
+calque** : le fichier source n'a jamais été lisible côté agent.
+
+**Depuis le jalon 63, ce tracé n'est plus que le repli** : dès qu'un logo est
+téléversé dans `/reglages`, il sert le rail, la favicon, `/login` et la
+signature des courriels — une seule source, quatre surfaces. Le tracé reprend sa
+place quand aucun logo n'est posé, et ce n'est pas un état d'erreur : une
+installation neuve doit ressembler à quelque chose.
 
 Le seed est en revanche étendu aux volumes du brief (12 sociétés, 18 contacts,
 24 affaires), en conservant les 8 sociétés du prototype comme noyau.
@@ -359,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 63 | **Un logo, quatre endroits** — le logo téléversé sert la signature, le rail, la favicon et /login ; second rendu net pour l'interface, et la lisibilité sur fond sombre mesurée plutôt que supposée | **livré, à valider** |
 | 62 | **Une signature HTML avec logo** — quatre lignes, logo partagé servi depuis notre domaine, avertissement de poids plutôt qu'un envoi muet | **livré, à valider** |
 | 61 | **Supprimer une campagne qui a envoyé, si on le tape** — friction du nom exact, envois effacés (pas détachés), contacts et interactions intacts, et un rouge d'action destructrice qui n'existait nulle part | **livré, à valider** |
 | 60 | **La puce qui s'ouvrait dans le vide** — panneau rogné par un conteneur `overflow-hidden`, puce remontée sur la première rangée, et des tests qui cliquent | **livré, à valider** |
@@ -8858,3 +8863,156 @@ et de la réputation du domaine, pas du code.
 du téléversement ; on peut passer outre. Le seuil acceptable dépend d'un
 jugement de marque qui n'appartient pas au code — mais il ne part plus en
 silence, ce qui était la demande.
+
+---
+
+## Jalon 63 — un logo, quatre endroits
+
+### Deux rendus, un seul téléversement
+
+Le logo posé dans `/reglages` sert désormais **la signature des courriels, le
+rail, la favicon et `/login`**. Une seule source, et c'était la demande ; ce qui
+méritait une décision, c'est que les deux usages n'ont pas les mêmes
+contraintes, et qu'elles sont **incompatibles** :
+
+| | Signature | Interface |
+|---|---|---|
+| Largeur | 120 px | **256 px** |
+| Encodage | PNG palettisé | PNG pleine couleur |
+| Plafond de poids | 20 Ko — **délivrabilité** | aucun |
+| Servi par | `/api/logo/<version>` | `/api/logo/<version>/app` |
+
+Étirer le rendu de courriel à la taille du rail donne une image molle : 120 px
+tiennent à 34 px d'affichage, mais montrent leurs marches sur un écran à deux
+fois la densité. À l'inverse, un rendu assez net pour le rail serait trop lourd
+pour la signature, et le plafond de 20 Ko sonnerait sur un logo parfaitement
+légitime — **ce plafond existe pour les filtres anti-spam, pas pour notre propre
+écran**, et le laisser déborder dans l'interface serait appliquer une règle là
+où elle ne veut rien dire.
+
+Les deux rendus sortent du **même fichier d'origine**, jamais l'un de l'autre :
+réencoder un réencodage empilerait deux pertes. Mesuré : un PNG source de
+12,8 Ko donne 3,6 Ko en signature et 8,7 Ko en interface, **octets distincts**.
+
+### La lisibilité sur le rail est mesurée, jamais supposée
+
+C'était la question posée, et elle a une vraie réponse plutôt qu'un pari. Un
+logo dessiné pour du papier blanc — encre foncée, fond transparent — **disparaît
+sur le bleu nuit du rail**, et cela ne se découvre qu'en regardant l'écran.
+
+`sampleInk()` lit donc les pixels **une fois, au téléversement** : couleur
+moyenne des pixels visibles et part de vide autour. `readsOnDark()` (pur) en
+tire un contraste WCAG contre `--color-rail` et tranche à **3:1** — le seuil AA
+des éléments graphiques non textuels (1.4.11), parce qu'un logo est une forme à
+reconnaître, pas du texte à lire.
+
+**Les pixels entièrement transparents sont exclus de la moyenne**, et ce détail
+décide du verdict : leurs composantes RVB valent zéro sous un alpha nul, donc
+les compter ferait tendre vers le noir la couleur de tout logo cerné de vide —
+et un logo **blanc** sur fond transparent serait déclaré illisible sur fond
+sombre, soit exactement l'inverse de la vérité.
+
+Mesuré sur trois logos construits pour le cas :
+
+| Logo | Contraste sur le rail | Verdict |
+|---|---|---|
+| encre claire, fond transparent | **13,9:1** | se détache, le rail passe au travers |
+| encre foncée, fond transparent | **1,1:1** | illisible → **plaque claire** |
+| fond blanc opaque | 13,6:1 | porte son propre fond, aucune plaque |
+
+**Le verdict n'est pas un refus.** Un logo trop sombre reste un logo légitime :
+il est posé sur une plaque claire dans le rail et la favicon, et l'écran de
+réglages **dit ce qui a été mesuré** — le contraste, la raison, et le fait
+qu'une version claire du logo réglerait la question. Refuser aurait été décider
+à la place de l'utilisateur ; poser tel quel et se taire aurait laissé l'écran
+mentir. Un fond opaque ne reçoit jamais de plaque : encadrer de blanc un logo
+qui porte déjà son fond dessinerait un cadre autour d'un cadre.
+
+### `Mark` reste la seule à connaître la forme
+
+C'était déjà la règle (jalon 23) et elle n'a pas bougé : `Mark` rend l'`<img>`
+quand un logo existe, le tracé dessiné sinon. Le rail, la favicon, `/login` et
+la console du conseil lisent tous `readBrandLogo()`, **et jamais la table**.
+Sans cela, remplacer le logo redeviendrait un geste à répéter écran par écran —
+précisément ce que ce jalon supprime.
+
+La favicon passe par `generateMetadata()` plutôt qu'un objet figé : elle est de
+la **donnée** maintenant, pas une constante de build. L'adresse porte la
+version, ce qui est la seule façon de déloger une favicon des caches de
+navigateur — réputés pour garder l'ancienne bien après le remplacement.
+
+### Un second téléversement aurait été plus simple à écrire, et c'était non
+
+La consigne était explicite : ne pas demander deux fois le même fichier. Or le
+logo déjà en base a été téléversé avant ce jalon, et **son original n'est jamais
+conservé** (jalon 62) : seuls ses octets réencodés à 120 px existent. Supprimer
+la ligne en migration aurait été une ligne de SQL — et aurait forcé exactement
+le second téléversement qu'on s'interdit.
+
+Les colonnes sont donc **nullables**, et `readChromeLogo()` calcule ce qui
+manque à la première lecture : elle dérive un rendu du PNG de courriel, le range
+pour ne pas le refaire, et lève `chromeFromEmail`. **L'écran annonce alors une
+image adoucie** et invite à retéléverser l'original. Le logo apparaît dans le
+rail sans aucun geste, et sa mollesse est nommée plutôt que servie en silence.
+
+Mesuré, et c'est la démonstration du jalon : le rendu dérivé pèse **16,4 Ko**
+contre 3,3 Ko pour un rendu natif de même taille — agrandir un PNG palettisé de
+120 px produit un fichier à la fois plus lourd et plus flou. C'est précisément
+pourquoi le second rendu existe.
+
+### Une seule composition pour le panneau
+
+`readLogoPanelState()` est extraite : la route de téléversement et la page de
+réglages composaient le même objet chacune de son côté. Le jour où l'une gagne
+un champ que l'autre ignore, l'écran affiche une chose après un téléversement et
+une autre après un rechargement, sans que rien n'échoue — le motif payé au
+jalon 55 sur l'entonnoir des campagnes.
+
+### Jalon 63 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `29_logo_chrome` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production et un navigateur
+piloté :
+
+- **1 · deux rendus, une source** : 12,8 Ko / 512 px → signature 120 px / 3,6 Ko
+  **et** interface 256 px / 8,7 Ko, **octets distincts** ;
+- **2 · le verdict de fond sombre** : les trois mesures du tableau ci-dessus,
+  plaque posée **uniquement** sur le logo foncé à fond transparent ;
+- **3 · les quatre surfaces, au navigateur** : rail
+  `<img src="/api/logo/<v>/app">` affiché à 34 px depuis une **source de
+  256 px** ; favicon `/api/logo/<v>/app` ; `/login` **sans session** rend le
+  logo, et la route répond 200 `image/png` ; `/conseil` idem ;
+- **4 · le repli** : sans logo en base, **aucun `<img>`** dans le rail et le
+  tracé dessiné à sa place, favicon sur `app/icon.svg`, `/login` sur le tracé ;
+- **5 · les deux rendus ne se croisent pas** : la signature d'un message pointe
+  vers `/api/logo/<v>` (120 px, 3,6 Ko) et **`/app` n'apparaît nulle part dans
+  le corps** ;
+- **6 · le rattrapage de migration** : colonnes remises à NULL → `chromeWidth`
+  vaut 0 et le verdict est « non mesuré » ; une lecture le dérive (256 px,
+  16,4 Ko), lève `chromeFromEmail` et mesure l'encre ;
+- **version inconnue → 404**, jamais l'image courante ;
+- **0 erreur console** sur tout le parcours ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1145 tests**) et
+  `npm run e2e` (**23 tests**, quatre fichiers) verts.
+
+### Jalon 63 — ce qui n'est pas fait
+
+**Le logo n'est toujours pas sauvegardé** (jalon 62), et ce jalon en double
+l'enjeu : `mail_logo` porte maintenant deux rendus, et une restauration les
+emporte tous les deux — donc le rail, la favicon et `/login` retombent sur le
+tracé dessiné en même temps que la signature perd son image. Le geste de
+réparation reste le même (retéléverser), mais il se voit désormais sur quatre
+écrans au lieu d'un.
+
+**Le rendu réel de la favicon n'a pas été jugé à l'œil.** Ce qui est vérifié,
+c'est que le navigateur demande la bonne adresse et qu'elle répond une image. Un
+logo lisible à 256 px peut être illisible à 16 px — c'est une question de
+dessin, pas de code, et aucune mesure ne la tranche.
+
+**La plaque claire est un repli, pas une solution.** Elle rend un logo sombre
+visible sur le rail ; elle ne le rend pas beau. L'écran le dit et propose la
+vraie réponse — une version claire du logo — sans pouvoir la fabriquer.
+
+**Le seuil de 3:1 est un jugement**, comme les seuils d'ouverture du jalon 43.
+Il vient de WCAG 1.4.11, il est juste pour un élément graphique, et il n'a pas
+été calé sur un échantillon de logos réels : il n'en existe qu'un.

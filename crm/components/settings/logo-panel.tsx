@@ -22,6 +22,11 @@ export interface LogoState {
     readonly version: string;
     readonly width: number;
     readonly bytes: number;
+    /** Le rendu d'interface : sa largeur, et s'il est dérivé du PNG de courriel. */
+    readonly chromeWidth: number;
+    readonly chromeFromEmail: boolean;
+    /** Le verdict de lisibilité sur le rail. `null` = rien n'a été mesuré. */
+    readonly onDark: { readonly readable: boolean; readonly message: string } | null;
   } | null;
   /** L'adresse publique servie. Vide = aucune adresse publique connue. */
   readonly url: string;
@@ -69,11 +74,13 @@ export function LogoPanel({ initial }: { readonly initial: LogoState }) {
 
   return (
     <section className="rounded-card border border-line bg-surface p-4 shadow-card">
-      <h3 className="mb-1 font-display text-[14px] font-semibold">Logo de la signature</h3>
+      <h3 className="mb-1 font-display text-[14px] font-semibold">Logo</h3>
       <p className="mb-3 text-[12.5px] text-muted">
-        Un seul logo, partagé par toutes les boîtes : c'est la marque, pas la personne. Il
-        n'apparaît que dans la version HTML du message, sous les quatre lignes de signature.
-        La version texte n'en porte aucune trace — un client texte ne saurait pas la rendre.
+        Un seul logo, partagé par toutes les boîtes : c'est la marque, pas la personne.
+        Il sert à <strong>quatre endroits</strong> — la signature HTML des messages, le rail
+        du CRM, la favicon et la page de connexion. Un seul téléversement les met tous à
+        jour. La version texte des messages n'en porte aucune trace : un client texte ne
+        saurait pas la rendre.
       </p>
 
       {state.logo === null ? (
@@ -100,7 +107,8 @@ export function LogoPanel({ initial }: { readonly initial: LogoState }) {
           />
           <div className="text-[12px] text-muted">
             <div>
-              {state.logo.width} px · {(state.logo.bytes / 1024).toFixed(1)} Ko
+              Signature {state.logo.width} px · {(state.logo.bytes / 1024).toFixed(1)} Ko
+              {state.logo.chromeWidth > 0 && <> · interface {state.logo.chromeWidth} px</>}
             </div>
             <div className="font-mono text-[11px]">
               {state.url === "" ? (
@@ -113,6 +121,33 @@ export function LogoPanel({ initial }: { readonly initial: LogoState }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/*
+        Le verdict de lisibilité sur le rail. **Mesuré au téléversement**, pas
+        supposé : un logo dessiné pour du papier blanc disparaît sur le bleu nuit
+        du rail, et cela ne se découvre qu'en regardant l'écran. On le dit ici,
+        avec le contraste, plutôt que de laisser le rail mentir.
+      */}
+      {state.logo?.onDark != null && (
+        <p
+          className={`mb-3 rounded-control border px-3 py-2 text-[12.5px] ${
+            state.logo.onDark.readable
+              ? "border-line-2 text-muted"
+              : "border-gold bg-gold-l"
+          }`}
+        >
+          <strong>Sur le rail sombre :</strong> {state.logo.onDark.message}
+        </p>
+      )}
+
+      {state.logo?.chromeFromEmail === true && (
+        <p className="mb-3 rounded-control border border-gold bg-gold-l px-3 py-2 text-[12.5px]">
+          Ce logo a été téléversé avant que le rail ne l'utilise : son rendu d'interface est
+          dérivé du fichier de courriel de 120 px, donc <strong>adouci</strong> à la taille du
+          rail. Retéléversez le fichier d'origine pour un rendu net — la signature, elle, ne
+          changera pas.
+        </p>
       )}
 
       {state.warnings.length > 0 && (

@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { Rail, type RailTotals } from "@/components/nav/rail";
+import { readBrandLogo } from "@/lib/api/brand-logo";
 import { RAIL_COOKIE } from "@/components/nav/rail-state";
 import { listAgentProfiles } from "@/lib/api/agents";
 import { SearchPalette } from "@/components/search/palette";
@@ -51,6 +52,11 @@ export default async function CrmLayout({
     cookies(),
   ]);
 
+  // Le logo de marque : une seule lecture, servie au rail. Sa version est dans
+  // l'URL, donc un remplacement change l'adresse et le cache d'un an ne peut
+  // pas servir l'ancien (jalon 62).
+  const brand = await readBrandLogo().catch(() => null);
+
   // L'état replié est lu ici, côté serveur : le premier octet envoyé est déjà
   // dans le bon état, sans clignotement à l'hydratation (voir rail.tsx).
   const railCollapsed = cookieJar.get(RAIL_COOKIE)?.value === "collapsed";
@@ -61,6 +67,7 @@ export default async function CrmLayout({
         totals={totals}
         agents={agents.filter((agent) => agent.enabled && !agent.locked)}
         initialCollapsed={railCollapsed}
+        logo={brand}
       />
       <main className="flex-1 overflow-y-auto bg-paper">{children}</main>
       <SearchPalette />

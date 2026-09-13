@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Mark } from "@/components/brand/logo";
 import { Icon } from "@/components/ui/icon";
+import { readBrandLogo } from "@/lib/api/brand-logo";
 
 export const dynamic = "force-dynamic";
 
@@ -11,14 +12,16 @@ export const dynamic = "force-dynamic";
  * de bord à la salle de réunion. Le lien de retour reste visible pour que la
  * bascule ne soit jamais un cul-de-sac.
  */
-export default function ConseilLayout({
+export default async function ConseilLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const brand = await readBrandLogo().catch(() => null);
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#0B0E1A] text-[#CBD2E8]">
       <header className="flex flex-none items-center gap-3 border-b border-[#1E2430] px-5 py-3">
         <span className="text-white">
-          <Mark size={26} />
+          <Mark size={26} logo={brand} />
         </span>
         <div>
           <div className="font-display text-[14px] font-bold tracking-tight text-white">

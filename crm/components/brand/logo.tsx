@@ -16,12 +16,70 @@
  * Le fond est transparent : le rail bleu profond passe au travers, ce qui est
  * précisément ce que le carré blanc de l'image d'origine empêchait.
  */
+/**
+ * Le logo téléversé, tel que l'interface doit le poser.
+ *
+ * `null` = aucun logo en base, et le tracé ci-dessous reprend sa place. C'est
+ * la règle du repli du jalon 15 : une marque absente ne laisse jamais un trou,
+ * elle laisse le dessin.
+ */
+export interface BrandLogo {
+  /** Adresse du rendu d'interface, servi par `/api/logo/<version>/app`. */
+  readonly src: string;
+  /**
+   * Poser le logo sur une plaque claire.
+   *
+   * Vrai quand la **mesure** faite au téléversement dit que l'encre du logo ne
+   * se détache pas du bleu du rail (`readsOnDark`, jalon 63). Ce n'est pas une
+   * préférence de style : sans plaque, le logo serait simplement invisible.
+   */
+  readonly plate: boolean;
+}
+
 export function Mark({
   size = 32,
   title,
+  logo = null,
 }: {
   readonly size?: number;
   /** Fourni, le SVG devient une image nommée ; omis, il est décoratif. */
+  readonly title?: string;
+  readonly logo?: BrandLogo | null;
+}) {
+  if (logo !== null) {
+    return (
+      /* eslint-disable-next-line @next/next/no-img-element -- ce sont nos
+         propres octets, déjà dimensionnés et mis en cache pour un an par la
+         route ; l'optimiseur de Next les réencoderait sans rien gagner. */
+      <img
+        src={logo.src}
+        width={size}
+        height={size}
+        alt={title ?? ""}
+        aria-hidden={title === undefined ? true : undefined}
+        className={`shrink-0 object-contain ${
+          logo.plate ? "rounded-[6px] bg-white p-[3px]" : ""
+        }`}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
+  return <DrawnMark size={size} title={title} />;
+}
+
+/**
+ * Le repli : la marque dessinée, quand aucun logo n'a été téléversé.
+ *
+ * **Ce tracé est une reconstruction, pas un calque** — voir l'en-tête du
+ * fichier. Il reste le comportement par défaut du produit, et pas seulement un
+ * état d'attente : une installation neuve doit ressembler à quelque chose.
+ */
+function DrawnMark({
+  size,
+  title,
+}: {
+  readonly size: number;
   readonly title?: string;
 }) {
   // L'identifiant du dégradé doit être unique par instance : deux `<svg>` avec
@@ -77,15 +135,21 @@ export function Mark({
 export function Wordmark({
   tone = "dark",
   size = 32,
+  logo = null,
 }: {
   readonly tone?: "dark" | "light";
   readonly size?: number;
+  readonly logo?: BrandLogo | null;
 }) {
   const onDark = tone === "dark";
+  // Sur fond clair, la plaque blanche n'a plus d'objet : elle était là pour
+  // détacher le logo du bleu du rail. La poser ici dessinerait un rectangle
+  // blanc sur du blanc.
+  const placed = logo === null ? null : { ...logo, plate: logo.plate && onDark };
 
   return (
     <span className={`flex items-center gap-2.5 ${onDark ? "text-white" : "text-ink"}`}>
-      <Mark size={size} title="AuraFLOW" />
+      <Mark size={size} title="AuraFLOW" logo={placed} />
       <span className="font-display text-[15px] leading-tight font-bold tracking-tight">
         AuraFLOW
         <span

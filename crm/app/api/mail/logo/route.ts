@@ -1,13 +1,6 @@
 import { badRequest, jsonOk, serverError } from "@/lib/api/errors";
-import {
-  deleteMailLogo,
-  MAX_LOGO_UPLOAD,
-  readLogoSummary,
-  storeMailLogo,
-} from "@/lib/api/mail-logo";
-import { logoWeight } from "@/lib/domain/signature-logo";
-import { publicBaseUrl } from "@/lib/api/email-sends";
-import { logoUrl } from "@/lib/domain/signature-logo";
+import { deleteMailLogo, MAX_LOGO_UPLOAD, storeMailLogo } from "@/lib/api/mail-logo";
+import { readLogoPanelState } from "@/lib/api/logo-panel";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,29 +17,7 @@ export const runtime = "nodejs";
  * moment où on le choisit, pas se découvrir dans les statistiques de
  * délivrabilité trois semaines plus tard.
  */
-async function state() {
-  const summary = await readLogoSummary();
-  if (summary === null) {
-    return { logo: null, url: "", warnings: [] as readonly string[] };
-  }
-
-  // Le corps n'est pas connu ici : le verdict ne porte donc que sur le poids
-  // absolu. La part « le message est trop court » se calcule à la rédaction,
-  // où le texte existe.
-  const verdict = logoWeight({ logoBytes: summary.bytes, bodyChars: 0 });
-  return {
-    logo: {
-      version: summary.version,
-      width: summary.width,
-      bytes: summary.bytes,
-      updatedAt: summary.updatedAt,
-    },
-    // Vide quand aucune adresse publique n'est connue : l'écran doit pouvoir
-    // dire que le logo ne partira pas, plutôt que d'afficher un lien mort.
-    url: logoUrl(publicBaseUrl(), summary.version),
-    warnings: verdict.reasons,
-  };
-}
+const state = readLogoPanelState;
 
 export async function GET() {
   try {

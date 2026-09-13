@@ -90,10 +90,22 @@ beforeEach(() => {
  * pas devenir un suivi d'ouverture par une porte dérobée. Une version inconnue
  * rend 404 plutôt que l'image courante, donc elle n'énumère rien non plus.
  *
+ * `/api/logo/[version]/app` — le même logo, dans son rendu d'interface (jalon
+ * 63). Publique pour **deux** raisons qui lui sont propres : `/login` s'affiche
+ * par définition sans session, et un logo privé y laisserait un trou sur l'écran
+ * qui doit dire où l'on arrive ; et la favicon est demandée par le navigateur
+ * hors de tout rendu de page. Elle ne divulgue rien de plus que sa voisine —
+ * c'est la même image, déjà partie dans chaque courriel — ne compte rien, et
+ * rend 404 sur une version inconnue.
+ *
  * Le **téléversement**, lui, reste privé : c'est `/api/mail/logo`, un geste
  * d'administration, et il n'a rien à faire dans cette liste.
  */
-const PUBLIC_API_EXCEPTIONS: readonly string[] = ["/api/t/[token]", "/api/logo/[version]"];
+const PUBLIC_API_EXCEPTIONS: readonly string[] = [
+  "/api/t/[token]",
+  "/api/logo/[version]",
+  "/api/logo/[version]/app",
+];
 
 function isPublicApi(route: string): boolean {
   if (PUBLIC_PATHS.includes(route)) return true;

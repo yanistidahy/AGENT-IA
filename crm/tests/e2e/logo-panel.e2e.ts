@@ -17,7 +17,7 @@ import { BASE_URL, chromiumPath, openBrowser, reachable, signIn, type Session } 
 const PASSWORD = process.env.E2E_PASSWORD ?? process.env.WORKSPACE_PASSWORD;
 const skip = chromiumPath() === null || PASSWORD === undefined;
 
-describe.skipIf(skip)("le panneau du logo de signature", () => {
+describe.skipIf(skip)("le panneau du logo", () => {
   let browser: Browser;
   let session: Session;
   let version = "";
@@ -38,13 +38,13 @@ describe.skipIf(skip)("le panneau du logo de signature", () => {
 
   const panel = () =>
     session.page
-      .getByRole("heading", { name: "Logo de la signature" })
+      .getByRole("heading", { name: "Logo", exact: true })
       .locator("xpath=ancestor::section[1]");
 
   it("le panneau est à l'écran, sans avoir rien à déplier", async () => {
     await panel().scrollIntoViewIfNeeded();
     expect(await panel().count()).toBe(1);
-    expect(await reachable(panel().getByRole("heading", { name: "Logo de la signature" }))).toBe(
+    expect(await reachable(panel().getByRole("heading", { name: "Logo", exact: true }))).toBe(
       true,
     );
   });

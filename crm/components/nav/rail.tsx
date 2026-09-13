@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Wordmark, Mark } from "@/components/brand/logo";
+import { Wordmark, Mark, type BrandLogo } from "@/components/brand/logo";
 import { Icon } from "@/components/ui/icon";
 import type { AgentProfile } from "@/lib/api/agents";
 import { AgentDock } from "@/components/agents/agent-dock";
@@ -45,12 +45,15 @@ export function Rail({
   totals,
   agents,
   initialCollapsed,
+  logo = null,
 }: {
   totals: RailTotals;
   /** Le conseil, tel qu'il est réglé en base. Déjà filtré sur les agents actifs. */
   agents: readonly AgentProfile[];
   /** L'état replié lu dans le cookie, côté serveur — pas de clignotement. */
   initialCollapsed: boolean;
+  /** Le logo téléversé. `null` : le tracé dessiné garde sa place. */
+  logo?: BrandLogo | null;
 }) {
   const pathname = usePathname();
   const [docked, setDocked] = useState<AgentProfile | null>(null);
@@ -106,10 +109,10 @@ export function Rail({
         }`}
       >
         <div className={collapsed ? "hidden" : "max-lg:hidden px-2.5 pt-1.5 pb-2"}>
-          <Wordmark size={34} />
+          <Wordmark size={34} logo={logo} />
         </div>
         <div className={collapsed ? "pb-1 max-lg:hidden" : "pb-1 lg:hidden"}>
-          <Mark size={26} />
+          <Mark size={26} logo={logo} />
         </div>
 
         {/* Deux boutons, un par taille d'écran : le même bouton porterait un
@@ -190,7 +193,7 @@ export function Rail({
           />
           <div className="bg-rail text-rail-text absolute inset-y-0 left-0 flex w-[min(300px,85vw)] flex-col gap-0.5 overflow-y-auto px-3 py-[18px] shadow-float">
             <div className="flex items-center justify-between px-2.5 pt-1.5 pb-2">
-              <Wordmark size={30} />
+              <Wordmark size={30} logo={logo} />
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}
