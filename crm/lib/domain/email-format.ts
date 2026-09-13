@@ -118,6 +118,28 @@ export function withTrackingPixel(html: string, url: string): string {
 }
 
 /**
+ * Le dernier paragraphe du corps HTML, avec ce qu'il y a autour.
+ *
+ * C'est la signature : la règle du jalon 33 l'impose en fin de message, et
+ * `signsWithName()` l'y cherche. Le repérer ici évite de retransmettre le texte
+ * de la signature à une fonction qui a déjà le HTML sous la main — deux
+ * sources pour une même chose, et elles finiraient par diverger.
+ */
+function lastParagraph(
+  html: string,
+): { readonly before: string; readonly inner: string; readonly after: string } | null {
+  const open = html.lastIndexOf("<p>");
+  if (open === -1) return null;
+  const close = html.indexOf("</p>", open);
+  if (close === -1) return null;
+  return {
+    before: html.slice(0, open),
+    inner: html.slice(open + 3, close),
+    after: html.slice(close + 4),
+  };
+}
+
+/**
  * Pose le logo de signature à la fin de la partie HTML.
  *
  * **Hors de `toHtml()`, pour la même raison que le pixel de suivi.** La règle
@@ -126,9 +148,22 @@ export function withTrackingPixel(html: string, url: string): string {
  * une décision d'envoi, prise à l'envoi, et le test de mise en forme continue
  * de refuser toute image dans `toHtml()`.
  *
- * Il vient **après le dernier paragraphe**, donc juste sous la signature texte
- * — c'est sa place : il complète les quatre lignes, il ne les remplace pas. La
- * version `text/plain` n'en porte évidemment aucune trace.
+ * Il prend **le dernier paragraphe** — la signature texte — et le place à
+ * droite du logo, dans un tableau à deux colonnes. La version `text/plain`
+ * n'en porte évidemment aucune trace : elle n'a pas de mise en page, et ses
+ * quatre lignes ne bougent pas.
+ *
+ * **Un `<table>`, et non flex ou grid.** C'est une contrainte du support, pas
+ * un goût : Outlook rend le HTML par le moteur de Word, qui ignore
+ * `display:flex` et `display:grid` — la mise en page retomberait en pile, donc
+ * exactement ce qu'on cherche à éviter, et seulement chez une partie des
+ * destinataires. Un tableau à deux cellules est le seul assemblage que tous
+ * les clients rendent de la même façon.
+ *
+ * Il ne doit **jamais se lire comme un tableau** : ni bordure, ni fond, ni
+ * quadrillage, et `role="presentation"` pour qu'un lecteur d'écran l'annonce
+ * comme une mise en page et non comme des données. `border-collapse:collapse`
+ * ferme le dernier interstice qu'un client pourrait dessiner de lui-même.
  *
  * Aucun lien autour, aucun paramètre dans l'adresse : c'est une identité, pas
  * un appel à l'action, et un logo cliquable pisté est précisément ce qui
@@ -139,15 +174,39 @@ export function withSignatureLogo(html: string, logo?: SignatureLogo): string {
   const src = logo.url.trim();
   if (src === "") return html;
 
-  // `width` et `height` en attributs plutôt qu'en style : un client qui ignore
-  // le CSS — et il y en a — doit quand même réserver la bonne place, sinon la
-  // signature saute au chargement de l'image.
+  // `width` en attribut plutôt qu'en style : un client qui ignore le CSS — et
+  // il y en a — doit quand même réserver la bonne place, sinon la signature
+  // saute au chargement de l'image. `display:block` supprime le blanc que les
+  // navigateurs réservent sous une image en ligne, et qui décalerait le
+  // centrage vertical d'un ou deux pixels.
   const size = logo.width > 0 ? ` width="${logo.width}"` : "";
   const img =
     `<img src="${escapeHtml(src)}" alt="Aura Flow AI"${size}` +
-    ` style="margin-top:12px;border:0" />`;
+    ` style="display:block;border:0" />`;
 
-  return html.replace("</body>", `<p>${img}</p></body>`);
+  // La cellule du logo porte sa largeur rendue, en attribut **et** en style :
+  // sans elle, un client répartirait l'espace lui-même et la colonne de texte
+  // se collerait au logo ou s'en éloignerait selon la longueur des lignes.
+  const cellWidth = logo.width > 0 ? ` width="${logo.width}"` : "";
+  const widthStyle = logo.width > 0 ? `width:${logo.width}px;` : "";
+
+  const signature = lastParagraph(html);
+  if (signature === null) {
+    // Corps sans paragraphe : il n'y a rien à poser à droite. On garde le logo
+    // seul plutôt que de rendre un tableau à une colonne, qui serait une mise
+    // en page sans mise en page.
+    return html.replace("</body>", `<p>${img}</p></body>`);
+  }
+
+  const table =
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0"` +
+    ` style="border-collapse:collapse;border:0;margin-top:12px">` +
+    `<tr>` +
+    `<td${cellWidth} valign="middle" style="${widthStyle}padding:0;border:0">${img}</td>` +
+    `<td valign="middle" style="padding:0 0 0 12px;border:0">${signature.inner}</td>` +
+    `</tr></table>`;
+
+  return `${signature.before}${table}${signature.after}`;
 }
 
 /** Le logo servi : son adresse chez nous, et sa largeur normalisée. */

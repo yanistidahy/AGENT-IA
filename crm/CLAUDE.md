@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 65 | **Le logo à gauche, la signature à droite** — un tableau à deux colonnes, le seul assemblage qu'Outlook rende comme les autres ; la version texte ne bouge pas | **livré, à valider** |
 | 64 | **Le signataire d'une campagne, nommé** — le menu dit qu'il choisit la signature, montre l'adresse et les lignes qui partiront, et avertit quand la boîte n'en porte aucune | **livré, à valider** |
 | 63 | **Un logo, quatre endroits** — le logo téléversé sert la signature, le rail, la favicon et /login ; second rendu net pour l'interface, et la lisibilité sur fond sombre mesurée plutôt que supposée | **livré, à valider** |
 | 62 | **Une signature HTML avec logo** — quatre lignes, logo partagé servi depuis notre domaine, avertissement de poids plutôt qu'un envoi muet | **livré, à valider** |
@@ -9112,3 +9113,101 @@ départs ne la refuse pas pour autant.
 **Les campagnes existantes ne sont pas auditées.** Aucun écran ne liste « les
 campagnes dont la boîte ne signe pas » : l'avertissement se lit campagne par
 campagne, sur sa carte.
+
+---
+
+## Jalon 65 — le logo à gauche, la signature à droite
+
+### Un tableau, et c'est une contrainte du support
+
+La signature HTML empilait le logo **sous** les quatre lignes : un `<p>` de plus
+à la fin du corps. Elle les met désormais côte à côte, logo à gauche, texte à
+droite, centrés l'un par rapport à l'autre.
+
+**En `<table>`, pas en flex ni en grid**, et ce n'est pas un goût : Outlook rend
+le HTML par le moteur de Word, qui ignore `display:flex` et `display:grid`. La
+mise en page retomberait en pile — donc exactement ce qu'on cherche à éviter, et
+**seulement chez une partie des destinataires**, ce qui est le pire des cas :
+invisible à la relecture, cassé à l'arrivée. Deux cellules sont le seul
+assemblage que tous les clients rendent de la même façon.
+
+```html
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"
+       style="border-collapse:collapse;border:0;margin-top:12px"><tr>
+  <td width="120" valign="middle" style="width:120px;padding:0;border:0"><img …></td>
+  <td valign="middle" style="padding:0 0 0 12px;border:0">Yanis Tidahy<br>…</td>
+</tr></table>
+```
+
+Trois détails qui tiennent la mise en page plutôt que de la décorer :
+
+- **la largeur de la cellule du logo, en attribut *et* en style.** Sans elle, un
+  client répartit l'espace lui-même et la colonne de texte se colle au logo ou
+  s'en éloigne selon la longueur des lignes ;
+- **`display:block` sur l'image**, qui supprime le blanc que les navigateurs
+  réservent sous une image en ligne — un ou deux pixels de décalage du centrage ;
+- **`width` en attribut**, comme depuis le jalon 62 : un client qui ignore le CSS
+  doit quand même réserver la place, sinon la signature saute au chargement.
+
+**Il ne doit jamais se lire comme un tableau** : ni bordure, ni fond, ni
+quadrillage, `border-collapse:collapse` pour fermer le dernier interstice qu'un
+client dessinerait de lui-même, et `role="presentation"` pour qu'un lecteur
+d'écran l'annonce comme une mise en page et non comme des données.
+
+### Le texte de la signature n'est pas retransmis, il est déplacé
+
+`withSignatureLogo()` prend **le dernier paragraphe du corps HTML** et le pose
+dans la cellule de droite. C'est la signature : la règle du jalon 33 l'impose en
+fin de message, et `signsWithName()` l'y cherche déjà. Lui repasser le texte de
+la signature en paramètre aurait fait deux sources pour une même chose, et elles
+auraient fini par diverger — le motif payé au jalon 55 sur l'entonnoir des
+campagnes. Conséquence vérifiée : la signature est rendue **une seule fois**,
+elle n'est pas recopiée à côté de l'originale.
+
+**La version `text/plain` ne bouge pas d'un caractère** : elle n'a pas de mise en
+page, et ses quatre lignes sont ce qu'elles étaient. C'est vérifié explicitement,
+parce que c'est exactement le genre de chose qu'une refonte du HTML emporte sans
+qu'on s'en aperçoive.
+
+### Jalon 65 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide** — aucune migration), un
+puits SMTP réel, et la source du message telle qu'elle passe sur le fil :
+
+- **deux colonnes** : `<table role="presentation" … border-collapse:collapse>`,
+  exactement **2 cellules**, le `<img>` dans la **première**, les quatre lignes
+  dans la **seconde** — et aucun `display:flex` ni `display:grid` nulle part ;
+- **centrage** : `valign="middle"` sur les deux cellules ; mesuré au rendu, les
+  centres verticaux du logo et du bloc de texte sont à **0,0 px** l'un de
+  l'autre ;
+- **côte à côte, mesuré** : logo `x=8 … 120×120`, texte `x=128` — le texte
+  commence après le logo, avec les 12 px de retrait de la cellule ;
+- **invisible en tant que tableau** : `border="0"`, aucune déclaration de fond,
+  aucune bordure non nulle dans tout le corps ;
+- **la partie texte est intacte** : les quatre lignes dans l'ordre, **aucun
+  `<table>`, aucun `<td>`, aucune image, aucune adresse de logo** ;
+- **bascule Yanis → Mohamed** : ossature de tableau **identique au caractère
+  près**, même cellule de logo, seul le contenu de la cellule de droite change ;
+- **capture** du rendu des deux signatures, à partir du corps HTML tel qu'il part
+  (seule substitution : l'adresse publique du logo devient celle du serveur
+  local, qui sert les mêmes octets) ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1155 tests**) et
+  `npm run e2e` (**29 tests**) verts.
+
+### Jalon 65 — ce qui n'est pas fait
+
+**Le rendu n'a pas été vu dans un vrai client de messagerie.** La capture est
+celle de Chromium sur le corps HTML exact du message ; qu'Outlook, Gmail ou Apple
+Mail le rendent à l'identique relève du client. Le tableau à deux cellules est
+précisément le motif choisi pour que ce risque soit le plus faible possible, mais
+ce n'est pas une mesure.
+
+**Aucun repli en colonne sur écran étroit.** Une signature de 120 px plus une
+colonne de texte tient dans la largeur d'un téléphone ; si un jour le logo
+grandit, le tableau ne se réorganisera pas tout seul — et c'est le prix du
+tableau, qui est aussi ce qui le rend prévisible.
+
+**Le corps sans paragraphe garde l'ancien rendu** (le logo seul dans un `<p>`).
+Le cas n'arrive pas en usage — un message a toujours au moins sa signature — mais
+il ne fabrique pas un tableau à une colonne, qui serait une mise en page sans
+mise en page.
