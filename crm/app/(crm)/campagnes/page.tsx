@@ -49,7 +49,12 @@ export default async function CampagnesPage() {
       mailboxes={mailboxes.map((box) => ({
         id: box.id,
         label: box.label,
-        signName: box.signName,
+        // La signature entière, pas seulement le nom : l'écran doit pouvoir
+        // montrer les lignes qui partiront, et dire quand il n'y en a aucune.
+        name: box.signName,
+        title: box.signTitle,
+        email: box.smtpFrom,
+        from: box.smtpFrom,
       }))}
     />
   );
