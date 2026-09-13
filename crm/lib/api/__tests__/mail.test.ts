@@ -22,6 +22,7 @@ const CONFIG = {
   fromName: "Yanis",
   signName: "Yanis Tidahy",
   signTitle: "Fondateur, Aura Flow AI",
+  signPhone: "",
   demoLabel: "Diagnostic offert",
   demoUrl: "https://exemple.test/",
 };

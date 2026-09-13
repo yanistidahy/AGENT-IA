@@ -28,6 +28,9 @@ import { OpenAuditPanel } from "@/components/settings/open-audit-panel";
 import { readOpenAudit } from "@/lib/api/open-audit";
 import { DEFAULT_MODELS } from "@/lib/domain/model-pricing";
 import { DeployCard } from "@/components/settings/deploy-card";
+import { readLogoSummary } from "@/lib/api/mail-logo";
+import { logoUrl, logoWeight } from "@/lib/domain/signature-logo";
+import { publicBaseUrl } from "@/lib/api/email-sends";
 import { readDeployInfo } from "@/lib/deploy-info";
 
 export const dynamic = "force-dynamic";
@@ -76,6 +79,17 @@ export default async function ReglagesPage() {
   // Lu après `imap` : « configuré » veut dire que le relevé pourrait tourner,
   // ce qui dépend de l'hôte, de l'identifiant et du secret.
   const inbox = await inboxHealth(imap.ready);
+  // Le résumé du logo, jamais ses octets : la table est séparée précisément
+  // pour que l'image ne voyage pas à chaque rendu de l'écran (jalon 62).
+  const logoSummary = await readLogoSummary();
+  const logo = {
+    logo: logoSummary,
+    url: logoSummary === null ? "" : logoUrl(publicBaseUrl(), logoSummary.version),
+    warnings:
+      logoSummary === null
+        ? []
+        : logoWeight({ logoBytes: logoSummary.bytes, bodyChars: 0 }).reasons,
+  };
   const roleAngles = await readRoleCoverage();
   const tracking = await readTrackingConfig();
   const limits = await readLimits();
@@ -121,6 +135,7 @@ export default async function ReglagesPage() {
       agents={agents}
       roleAngles={roleAngles}
       mail={mail}
+      logo={logo}
       passwordEnv={PASSWORD_ENV}
       mailboxes={await listMailboxViews()}
       signatories={signatories}

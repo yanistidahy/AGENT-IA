@@ -45,6 +45,7 @@ const NEW_BOX: Omit<MailboxDraft, "id"> = {
   imapCopyEnabled: true,
   signName: "",
   signTitle: "",
+  signPhone: "",
   passwordEnv: "(attribuée à l'enregistrement, d'après le libellé)",
   passwordSet: false,
 };

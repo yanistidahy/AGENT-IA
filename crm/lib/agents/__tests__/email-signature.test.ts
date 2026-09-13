@@ -65,7 +65,12 @@ describe("un brouillon ne signe jamais du nom d'un agent", () => {
   });
 
   it("accepte un signataire différent — l'associé signe le sien", () => {
-    const other = signatureBlock({ name: "Camille Roux", title: "Associée, Aura Flow AI" });
+    const other = signatureBlock({
+      name: "Camille Roux",
+      title: "Associée, Aura Flow AI",
+      phone: "",
+      email: "",
+    });
     const draft = `Bonjour,\n\nUne question.\n\nÀ bientôt,\n\n${other}`;
     expect(enforceSignature(draft, other, AGENT_NAMES)).toBe(draft);
   });
@@ -188,13 +193,40 @@ describe("le prompt porte le pitch et les règles", () => {
 
 describe("les consignes calculées depuis les réglages", () => {
   it("la signature annonce le nom réglé, pas une valeur figée", () => {
-    const rule = signatureRule({ name: "Camille Roux", title: "Associée, Aura Flow AI" });
-    expect(rule).toContain("Camille Roux\nAssociée, Aura Flow AI");
+    const rule = signatureRule({
+      name: "Camille Roux",
+      title: "Associée, Aura Flow AI",
+      phone: "01 02 03 04 05",
+      email: "camille@auraflowai.fr",
+    });
+    expect(rule).toContain(
+      "Camille Roux\nAssociée, Aura Flow AI\n01 02 03 04 05\ncamille@auraflowai.fr",
+    );
     expect(rule).not.toContain("Yanis");
   });
 
-  it("un titre vide ne laisse pas de ligne orpheline", () => {
-    expect(signatureBlock({ name: "Yanis Tidahy", title: "" })).toBe("Yanis Tidahy");
+  it("un champ vide retire sa ligne, il n'en laisse pas une blanche", () => {
+    // Une boîte sans titre ni téléphone signe sur deux lignes, et le message
+    // n'a pas l'air d'avoir perdu quelque chose en route.
+    expect(
+      signatureBlock({ name: "Yanis Tidahy", title: "", phone: "", email: "yanis@aura.fr" }),
+    ).toBe("Yanis Tidahy\nyanis@aura.fr");
+    expect(signatureBlock({ name: "Yanis Tidahy", title: "", phone: "", email: "" })).toBe(
+      "Yanis Tidahy",
+    );
+  });
+
+  it("les quatre lignes sortent dans l'ordre du bloc demandé", () => {
+    expect(
+      signatureBlock({
+        name: "Yanis Tidahy",
+        title: "Fondateur, Aura Flow AI",
+        phone: "07 85 28 35 36",
+        email: "yanis.tidahy@auraflowai.fr",
+      }),
+    ).toBe(
+      "Yanis Tidahy\nFondateur, Aura Flow AI\n07 85 28 35 36\nyanis.tidahy@auraflowai.fr",
+    );
   });
 
   it("le lien est annoncé avec son libellé, sans URL à écrire", () => {

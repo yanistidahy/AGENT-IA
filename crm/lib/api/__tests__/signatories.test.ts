@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pickSignatory, signatoryNames, signatureBlocks } from "../signatories";
+import { signatureBlock } from "@/lib/agents/prompts/company";
 import { replaceSignature, lastLine, signsWithName } from "@/lib/domain/email-format";
 
 /**
@@ -9,14 +10,25 @@ import { replaceSignature, lastLine, signsWithName } from "@/lib/domain/email-fo
  * la conséquence n'était pas cosmétique : la moitié des messages seraient partis
  * sous la mauvaise identité, et l'erreur ne se serait vue qu'à la réception.
  */
-const YANIS = { id: "s1", name: "Yanis Tidahy", title: "Fondateur, Aura Flow AI", isDefault: true , label: "", from: "" };
+const YANIS = {
+  id: "s1",
+  name: "Yanis Tidahy",
+  title: "Fondateur, Aura Flow AI",
+  phone: "07 85 28 35 36",
+  email: "yanis.tidahy@auraflowai.fr",
+  isDefault: true,
+  label: "",
+  from: "yanis.tidahy@auraflowai.fr",
+};
 const MOHAMED = {
   id: "s2",
   name: "Mohamed Targani",
   title: "Co-Fondateur, Aura Flow AI",
+  phone: "07 11 22 33 44",
+  email: "mohamed.targani@auraflowai.fr",
   isDefault: false,
   label: "",
-  from: "",
+  from: "mohamed.targani@auraflowai.fr",
 };
 const TOUS = [YANIS, MOHAMED];
 
@@ -38,7 +50,16 @@ describe("qui signe ce message", () => {
     // « Marc » ne doit pas correspondre à « Marceau » : la comparaison porte sur
     // des mots entiers, pas sur un préfixe. Faute de correspondance, on retombe
     // sur le défaut — ici Yanis — plutôt que d'attribuer le message à Marceau.
-    const marceau = { id: "s3", name: "Marceau Blin", title: "", isDefault: false , label: "", from: "" };
+    const marceau = {
+      id: "s3",
+      name: "Marceau Blin",
+      title: "",
+      phone: "",
+      email: "",
+      isDefault: false,
+      label: "",
+      from: "",
+    };
     expect(pickSignatory([YANIS, marceau], "Marc")?.id).toBe("s1");
   });
 
@@ -75,12 +96,12 @@ describe("changer de signataire", () => {
     "",
     "À bientôt,",
     "",
-    "Yanis Tidahy\nFondateur, Aura Flow AI",
+    signatureBlock(YANIS),
   ].join("\n");
 
   it("ne réécrit que les deux dernières lignes", () => {
-    const basculé = replaceSignature(message, blocs, blocs[1] ?? "");
-    expect(lastLine(basculé)).toBe("Co-Fondateur, Aura Flow AI");
+    const basculé = replaceSignature(message, blocs, signatureBlock(MOHAMED));
+    expect(lastLine(basculé)).toBe("mohamed.targani@auraflowai.fr");
     expect(basculé).toContain("Mohamed Targani");
     // **Tout le reste est intact** : c'est le point. Régénérer le message
     // jetterait ce qui a été relu, retouché et discuté avec Alex.
@@ -91,18 +112,18 @@ describe("changer de signataire", () => {
   });
 
   it("revient en arrière sans dériver", () => {
-    const aller = replaceSignature(message, blocs, blocs[1] ?? "");
-    const retour = replaceSignature(aller, blocs, blocs[0] ?? "");
+    const aller = replaceSignature(message, blocs, signatureBlock(MOHAMED));
+    const retour = replaceSignature(aller, blocs, signatureBlock(YANIS));
     expect(retour).toBe(message);
   });
 
   it("ne touche à rien si la signature est déjà la bonne", () => {
-    expect(replaceSignature(message, blocs, blocs[0] ?? "")).toBe(message);
+    expect(replaceSignature(message, blocs, signatureBlock(YANIS))).toBe(message);
   });
 
   it("ajoute la signature quand le message n'en porte aucune", () => {
     const sans = "Bonjour,\n\nUne question ?";
-    const signé = replaceSignature(sans, blocs, blocs[1] ?? "");
+    const signé = replaceSignature(sans, blocs, signatureBlock(MOHAMED));
     expect(signé).toContain("Une question ?\n\nMohamed Targani");
   });
 
@@ -110,7 +131,7 @@ describe("changer de signataire", () => {
     // La recherche porte sur les signatures **connues**, pas sur « les deux
     // dernières lignes » : couper à l'aveugle mutilerait le texte.
     const avecPs = `${message}\n\nPS : je serai absent la semaine prochaine.`;
-    const basculé = replaceSignature(avecPs, blocs, blocs[1] ?? "");
+    const basculé = replaceSignature(avecPs, blocs, signatureBlock(MOHAMED));
     expect(basculé).toContain("PS : je serai absent la semaine prochaine.");
     expect(basculé).toContain("Mohamed Targani");
   });

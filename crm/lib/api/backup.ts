@@ -351,6 +351,7 @@ const mailboxRow = z.object({
   imapCopyEnabled: z.boolean(),
   signName: optionalText,
   signTitle: optionalText,
+  signPhone: optionalText,
   createdAt: day,
 });
 

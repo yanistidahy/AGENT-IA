@@ -46,6 +46,8 @@ export interface Mailbox {
   readonly imapCopyEnabled: boolean;
   readonly signName: string;
   readonly signTitle: string;
+  /** Le téléphone de la signature (jalon 62). Vide = une ligne de moins. */
+  readonly signPhone: string;
 }
 
 /** Le slug de la boîte migrée du jalon 32 — la seule au repli `SMTP_PASSWORD`. */
@@ -92,6 +94,7 @@ const mailboxSelect = {
   imapCopyEnabled: true,
   signName: true,
   signTitle: true,
+  signPhone: true,
 } as const;
 
 function toMailbox(row: {
@@ -205,6 +208,7 @@ export const mailboxesSchema = z.object({
         imapCopyEnabled: z.boolean(),
         signName: z.string().trim().max(120),
         signTitle: z.string().trim().max(160),
+        signPhone: z.string().trim().max(40),
       }),
     )
     .min(1, "Il faut au moins une boîte")

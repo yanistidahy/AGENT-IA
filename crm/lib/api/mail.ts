@@ -18,10 +18,15 @@ import {
   sanitizeSubject,
   toHtml,
   toPlainText,
+  withSignatureLogo,
   withTrackingPixel,
   type DemoLink,
+  type SignatureLogo,
 } from "../domain/email-format";
-import { DEFAULT_DEMO, DEFAULT_SIGNATURE } from "../agents/prompts/company";
+import { logoUrl } from "../domain/signature-logo";
+import { readLogoSummary } from "./mail-logo";
+import { publicBaseUrl } from "./email-sends";
+import { DEFAULT_DEMO, DEFAULT_SIGNATURE, type Signature } from "../agents/prompts/company";
 
 /**
  * Envoi de courriels, par SMTP.
@@ -57,6 +62,12 @@ export interface MailConfig {
   /** Signature des brouillons : réglable pour que l'associé signe son nom. */
   readonly signName: string;
   readonly signTitle: string;
+  /**
+   * Le téléphone de la signature. Vide = une ligne de moins, pas une ligne
+   * blanche. L'adresse, elle, n'a pas de champ : c'est `from`, celle d'où le
+   * message part réellement (voir `Signature` dans prompts/company.ts).
+   */
+  readonly signPhone: string;
   /** Lien de démonstration. `demoUrl` vide supprime la phrase entière. */
   readonly demoLabel: string;
   readonly demoUrl: string;
@@ -115,6 +126,7 @@ export function configOf(
     fromName: mailbox.smtpFromName,
     signName: mailbox.signName === "" ? DEFAULT_SIGNATURE.name : mailbox.signName,
     signTitle: mailbox.signTitle === "" ? DEFAULT_SIGNATURE.title : mailbox.signTitle,
+    signPhone: mailbox.signPhone,
     demoLabel: demo.label,
     demoUrl: demo.url,
   };
@@ -147,6 +159,7 @@ export async function readMailConfig(mailboxId?: string): Promise<MailConfig> {
       fromName: "",
       signName: DEFAULT_SIGNATURE.name,
       signTitle: DEFAULT_SIGNATURE.title,
+      signPhone: "",
       demoLabel: demo.label,
       demoUrl: demo.url,
     };
@@ -155,9 +168,45 @@ export async function readMailConfig(mailboxId?: string): Promise<MailConfig> {
   return configOf(mailbox, demo);
 }
 
+/**
+ * Le logo à poser sur la partie HTML, ou `undefined`.
+ *
+ * Deux façons de n'en poser aucun, et les deux sont volontaires : aucun logo
+ * téléversé, ou **aucune adresse publique connue**. Dans ce second cas, une
+ * URL devinée produirait une image cassée dans chaque message — c'est la règle
+ * du pixel de suivi du jalon 37, appliquée telle quelle.
+ */
+export async function signatureLogo(): Promise<SignatureLogo | undefined> {
+  const summary = await readLogoSummary();
+  if (summary === null) return undefined;
+
+  const url = logoUrl(publicBaseUrl(), summary.version);
+  if (url === "") return undefined;
+
+  return { url, width: summary.width };
+}
+
 /** Le lien de démonstration tel que le formateur l'attend. */
 export function demoLinkOf(config: MailConfig): DemoLink {
   return { label: config.demoLabel, url: config.demoUrl };
+}
+
+/**
+ * La signature d'une boîte, ses quatre champs réunis.
+ *
+ * **L'adresse vient de `from`**, jamais d'une saisie séparée : c'est celle de
+ * l'en-tête `From` du message, et une signature qui en afficherait une autre se
+ * lirait comme une usurpation. Une seule fonction la compose, pour que le
+ * prompt d'Alex, la garde de signature et le rendu HTML ne puissent pas
+ * décrire trois signataires différents.
+ */
+export function signatureOf(config: MailConfig): Signature {
+  return {
+    name: config.signName,
+    title: config.signTitle,
+    phone: config.signPhone,
+    email: config.from,
+  };
 }
 
 /** Ce qui empêche d'envoyer, nommé champ par champ. */
@@ -368,7 +417,10 @@ export async function sendMail(input: SendInput): Promise<SendResult> {
   const id = messageId(config.from, new Date(), Math.random().toString(36).slice(2, 10));
   const sentAt = new Date();
   const demo = demoLinkOf(config);
-  const html = toHtml(input.body, demo);
+  // **Le logo d'abord, le pixel ensuite.** Le pixel doit rester la toute
+  // dernière chose du corps (jalon 43 : un client qui tronque coupe par la
+  // fin), et le logo appartient à la signature, donc au message.
+  const html = withSignatureLogo(toHtml(input.body, demo), await signatureLogo());
 
   const message = {
     from: formatSender(config.fromName, config.from),

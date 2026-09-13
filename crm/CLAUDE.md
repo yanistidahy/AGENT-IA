@@ -359,6 +359,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 62 | **Une signature HTML avec logo** — quatre lignes, logo partagé servi depuis notre domaine, avertissement de poids plutôt qu'un envoi muet | **livré, à valider** |
 | 61 | **Supprimer une campagne qui a envoyé, si on le tape** — friction du nom exact, envois effacés (pas détachés), contacts et interactions intacts, et un rouge d'action destructrice qui n'existait nulle part | **livré, à valider** |
 | 60 | **La puce qui s'ouvrait dans le vide** — panneau rogné par un conteneur `overflow-hidden`, puce remontée sur la première rangée, et des tests qui cliquent | **livré, à valider** |
 | 59 | **Filtrer par date d'ajout** — quatre préréglages et une plage libre dans l'URL, colonne « Ajouté le » triable, fiches ajoutées par semaine sur /performance | **livré, à valider** |
@@ -8718,3 +8719,142 @@ n'ont pas été revus un par un.** Le jeton corrige leur couleur à la source ;
 personne n'a vérifié que chacun des douze est par ailleurs bien composé
 (taille, contraste du texte porté par-dessus). C'est un jeton qui répare, pas
 un audit visuel complet.
+
+
+---
+
+## Jalon 62 — une signature HTML, avec logo
+
+### Quatre lignes, et une adresse qui ne peut pas mentir
+
+La signature passe de deux lignes à quatre : nom, titre, téléphone, adresse.
+Trois viennent de la boîte (`signName`, `signTitle`, **`signPhone`** ajouté ici) ;
+la quatrième est **`smtpFrom`**, et elle n'a délibérément pas de champ à elle.
+Une adresse de signature saisie à part finirait par contredire l'en-tête `From`
+du message, et une signature qui affiche autre chose que l'expéditeur réel est
+exactement ce qu'un filtre — et un lecteur attentif — traite comme une
+usurpation. Un champ vide **retire sa ligne**, il n'en laisse pas une blanche :
+une boîte sans téléphone signe sur trois lignes.
+
+`signatureBlock()` reste la source unique : le prompt l'annonce, la garde
+l'impose, le test le vérifie.
+
+### Un seul logo, partagé — et pourquoi
+
+**Partagé par toutes les boîtes, pas un par signataire.** C'est la marque de
+l'entreprise, pas celle d'une personne : deux collègues signant de deux logos
+différents se liraient comme deux sociétés, et le jour où la marque change il
+faudrait penser à le remplacer autant de fois qu'il y a de boîtes. Ce qui varie
+légitimement d'un signataire à l'autre — nom, titre, téléphone, adresse — est
+déjà porté par la boîte.
+
+En base (`mail_logo`, table séparée) et non sur disque, pour la raison du
+jalon 15 : le disque du conteneur est effacé à chaque déploiement. Table à part
+des réglages parce que les octets n'ont aucune raison de voyager à chaque
+lecture de configuration d'envoi — `readLogoSummary()` rend la version, la
+largeur et le poids, jamais l'image.
+
+### Délivrabilité : ce qui est tenu, et par quoi
+
+| Exigence | Comment |
+|---|---|
+| Servi depuis notre domaine | `/api/logo/[version]`, composé depuis `publicBaseUrl()` (jalon 37). **Aucune adresse publique connue = aucun logo** : une URL devinée produirait une image cassée dans chaque message |
+| Petit | Réencodé par `sharp` à **120 px** de large, PNG palettisé. Mesuré : 11,1 Ko et 512 px à l'entrée, **1,7 Ko et 120 px** en sortie |
+| Aucun suivi, aucun lien | `<img>` nu, sans ancre autour et sans paramètre dans l'adresse. La route **ne compte rien** — mesurer les chargements d'un logo reviendrait à pister les ouvertures par une seconde porte, sans l'avoir dit |
+| Ratio texte / image | `logoWeight()`, pur et testé, avertit **à l'écran** au lieu de laisser partir |
+
+**La route est publique**, comme le pixel du jalon 37 : c'est le client de
+messagerie du destinataire qui la charge, sans cookie. Elle sert un seul
+fichier, le même pour tout le monde, celui qu'on a soi-même mis dans ses
+messages ; une version inconnue rend 404 plutôt que l'image courante, donc elle
+n'énumère rien. Le **téléversement**, lui, reste privé. La garde
+`auth-routes.test.ts` a exigé que cette ouverture soit déclarée une par une
+avec sa raison — elle a fait exactement son travail.
+
+### Le seuil d'avertissement, et la règle qu'on a refusée
+
+La tentation était de comparer les octets du logo à ceux du texte : « l'image
+ne doit pas peser plus que le message ». **Mesuré, cette règle sonnerait sur
+tous les messages légitimes** — un PNG de 120 px pèse 2 à 6 Ko, un corps
+d'email 1 à 1,5 Ko. Une alerte qui sonne toujours est une alerte qu'on apprend
+à ignorer, et ce projet en a déjà fait la démonstration au jalon 36.
+
+Deux règles honnêtes la remplacent : un **plafond absolu** (20 Ko — un logo de
+signature n'a pas d'affaire à peser davantage) et un **plancher de texte**
+(400 caractères — un message de trois lignes avec un logo est ce que les
+filtres appellent image-heavy). Les deux raisons se cumulent plutôt que de
+s'effacer l'une l'autre.
+
+### Assemblé à l'envoi, jamais dans le brouillon
+
+`withSignatureLogo()` vit **hors de `toHtml()`**, comme le pixel du jalon 37 :
+la règle du jalon 32 — « aucune image dans le corps » — tient toujours, et le
+test de mise en forme continue de la vérifier. Le logo est une décision
+d'envoi, posée après le dernier paragraphe donc juste sous la signature texte.
+Ordre imposé : **le logo d'abord, le pixel ensuite**, celui-ci devant rester la
+toute dernière chose du corps (jalon 43).
+
+Un brouillon composé avant ce jalon dort encore dans la file des départs avec
+une signature à deux lignes : `signatureBlocks()` connaît donc **les deux
+formes**, pour que changer son signataire remplace sa signature au lieu d'en
+ajouter une seconde en dessous.
+
+### Jalon 62 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `28_signature_logo` appliquée puis
+`migrate diff` **vide**), un puits SMTP réel, le serveur standalone et un
+navigateur piloté :
+
+- **1 · téléversement** : 11,1 Ko / 512 px → **1,7 Ko / 120 px**, aucun
+  avertissement de poids ; **SVG refusé** en le nommant, faux PNG refusé au
+  décodage et non au type déclaré ;
+- **2 · signatures** : Yanis et Mohamed rendent chacun **quatre lignes**, les
+  siennes, téléphone et adresse compris ;
+- **3 · sur le fil** (source MIME brute du message reçu) : la partie **texte**
+  porte les quatre lignes et **aucune image** ; la partie **HTML** porte les
+  mêmes quatre lignes plus
+  `<img src="https://crm.auraflowai.fr/api/logo/…" alt="Aura Flow AI" width="120">` ;
+  **aucune image d'un hôte tiers**, aucun lien autour du logo, aucun paramètre
+  dans l'adresse ;
+- **4 · bascule** : le message signé Mohamed porte son nom, son titre, son
+  téléphone et son adresse, **plus rien de Yanis**, et **le même logo** ;
+- **5 · ratio** : 481 caractères de texte pour 1,7 Ko de logo, sous le seuil ;
+- **6 · sans `CRM_PUBLIC_URL`** : aucun logo posé, plutôt qu'une image cassée ;
+- **route publique, par HTTP réel** : 200 `image/png` de 1 774 octets **sans
+  session**, `Cache-Control: public, max-age=31536000, immutable`, 304 sur
+  ETag, **404** sur une version inconnue, et `/api/mail/logo` (téléversement)
+  **401** sans session ;
+- **au navigateur** : panneau présent, aperçu 120×120 rendu, champs
+  « Signature — téléphone » distincts par boîte (`07 85 28 35 36` /
+  `06 12 34 56 78`), **0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1135 tests**) et
+  `npm run e2e` (**18 tests**, trois fichiers) verts.
+
+**Un défaut trouvé en regardant l'écran, pas le code** : l'aperçu du panneau
+passait d'abord par l'adresse publique, et disparaissait donc sur toute
+installation où `CRM_PUBLIC_URL` n'est pas posée — au moment précis où l'on
+veut vérifier à quoi ressemble l'image qu'on vient de choisir. Il passe
+désormais par un **chemin relatif** : le navigateur qui affiche cet écran parle
+déjà au CRM. L'adresse absolue reste affichée à côté, comme information de
+délivrabilité, avec son avertissement quand elle manque.
+
+### Jalon 62 — ce qui n'est pas fait
+
+**Le logo n'est pas sauvegardé.** `mail_logo` ne fait pas partie des dix
+modèles de `BACKED_UP` (jalon 42) : mettre des octets binaires dans chaque
+instantané JSON quotidien ferait grossir la sauvegarde pour un fichier qui se
+retéléverse en dix secondes. La conséquence est assumée et connue — après une
+restauration, le logo est à reposer. Le **téléphone**, lui, est bien sauvegardé :
+la garde du jalon 42 l'a exigé, et elle avait raison, c'est une saisie qu'on ne
+retrouverait pas.
+
+**Le rendu réel dans un client de messagerie n'a pas été vu.** Ce qui est
+vérifié, c'est la source MIME : deux parties, les quatre lignes des deux côtés,
+une seule balise `<img>` vers notre domaine. Que Gmail ou Outlook affichent ce
+logo plutôt que de le bloquer derrière « afficher les images » relève du client
+et de la réputation du domaine, pas du code.
+
+**L'avertissement de poids ne bloque jamais.** Il est rendu à l'écran au moment
+du téléversement ; on peut passer outre. Le seuil acceptable dépend d'un
+jugement de marque qui n'appartient pas au code — mais il ne part plus en
+silence, ce qui était la demande.

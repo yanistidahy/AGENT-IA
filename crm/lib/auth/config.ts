@@ -69,6 +69,16 @@ const PUBLIC_PREFIXES: readonly string[] = [
    * aucune donnée métier. Voir `app/api/t/[token]/route.ts`.
    */
   "/api/t/",
+  /**
+   * Le logo de la signature des courriels.
+   *
+   * **Publique pour la même raison que le pixel** : c'est le client de
+   * messagerie du destinataire qui la charge, sans session. Elle sert un seul
+   * fichier, le même pour tout le monde, celui qu'on a soi-même mis dans ses
+   * messages — et elle ne compte rien, pour ne pas devenir un suivi
+   * d'ouverture par une porte dérobée. Voir `app/api/logo/[version]/route.ts`.
+   */
+  "/api/logo/",
 ];
 
 export function isPublicPath(pathname: string): boolean {

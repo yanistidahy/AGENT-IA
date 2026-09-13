@@ -1,6 +1,6 @@
 import "server-only";
-import { demoRule, signatureRule } from "./prompts/company";
-import { readMailConfig } from "@/lib/api/mail";
+import { demoRule, signatureRule, type Signature } from "./prompts/company";
+import { readMailConfig, signatureOf } from "@/lib/api/mail";
 import { DRAFT_CLOSE, DRAFT_OPEN } from "@/lib/domain/draft-protocol";
 
 /**
@@ -17,13 +17,11 @@ import { DRAFT_CLOSE, DRAFT_OPEN } from "@/lib/domain/draft-protocol";
  */
 export async function alexDynamicRules(
   /** Le signataire de ce message. Absent, on retombe sur le défaut réglé. */
-  signatory?: { readonly name: string; readonly title: string } | null,
+  signatory?: Signature | null,
 ): Promise<string> {
   const config = await readMailConfig();
   const signature =
-    signatory === undefined || signatory === null
-      ? { name: config.signName, title: config.signTitle }
-      : signatory;
+    signatory === undefined || signatory === null ? signatureOf(config) : signatory;
 
   return [
     signatureRule(signature),

@@ -26,7 +26,7 @@ import {
 } from "@/lib/api/account";
 import { alexDynamicRules } from "./alex-rules";
 import { AGENTS } from "./registry";
-import { readMailConfig, type MailConfig } from "@/lib/api/mail";
+import { readMailConfig, signatureOf, type MailConfig } from "@/lib/api/mail";
 import {
   listSignatories,
   pickSignatory,
@@ -569,7 +569,7 @@ async function complete(
   const forbidden = forbiddenSigners(config, signatories);
   const signature =
     signatory === null
-      ? signatureBlock({ name: config.signName, title: config.signTitle })
+      ? signatureBlock(signatureOf(config))
       : signatureBlock(signatory);
 
   // **Le plafond est vérifié avant l'appel, pas pendant.** Le garde-fou
