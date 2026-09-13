@@ -46,6 +46,47 @@ describe("les deux versions du message", () => {
     expect(html).toContain(`width="${LOGO_WIDTH}"`);
   });
 
+  it("le logo est à gauche et la signature à droite, dans un tableau", () => {
+    const html = withSignatureLogo(toHtml(BODY), LOGO);
+
+    // Un `<table>` et non flex ou grid : Outlook rend par le moteur de Word,
+    // qui ignore les deux — la signature retomberait en pile chez une partie
+    // des destinataires seulement, ce qui est le pire des cas.
+    expect(html).not.toContain("display:flex");
+    expect(html).not.toContain("display:grid");
+    expect(html).toContain("<table");
+
+    // Deux cellules, dans cet ordre : l'image d'abord, le texte ensuite.
+    const cells = [...html.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => m[1] ?? "");
+    expect(cells).toHaveLength(2);
+    expect(cells[0]).toContain("<img");
+    expect(cells[1]).not.toContain("<img");
+    expect(cells[1]).toContain("Yanis Tidahy");
+    expect(cells[1]).toContain("yanis.tidahy@auraflowai.fr");
+
+    // Centrées l'une par rapport à l'autre, et la colonne du logo à sa
+    // largeur rendue — sinon le texte se colle au logo ou s'en éloigne selon
+    // la longueur des lignes.
+    const tds = [...html.matchAll(/<td[^>]*>/g)].map((m) => m[0]);
+    for (const td of tds) expect(td).toContain('valign="middle"');
+    expect(tds[0]).toContain(`width="${LOGO_WIDTH}"`);
+    expect(tds[1]).toContain("padding:0 0 0 12px");
+
+    // La signature n'est plus rendue deux fois : le paragraphe d'origine a
+    // été **déplacé** dans la cellule, pas recopié à côté.
+    expect(html.split("Yanis Tidahy")).toHaveLength(2);
+  });
+
+  it("le tableau ne se lit jamais comme un tableau", () => {
+    const html = withSignatureLogo(toHtml(BODY), LOGO);
+    const table = html.slice(html.indexOf("<table"), html.indexOf(">", html.indexOf("<table")) + 1);
+    expect(table).toContain('role="presentation"');
+    expect(table).toContain('border="0"');
+    expect(table).toContain("border-collapse:collapse");
+    expect(html).not.toMatch(/background(-color)?:/);
+    expect(html).not.toMatch(/border:\s*(?!0)/);
+  });
+
   it("le logo n'est ni un lien ni une balise pistée", () => {
     const html = withSignatureLogo(toHtml(BODY), LOGO);
     // Aucune ancre autour de l'image : c'est une identité, pas un appel à
