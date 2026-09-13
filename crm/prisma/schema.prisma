@@ -1174,6 +1174,39 @@ model MailLogo {
   /// les octets eux-mêmes — c'est tout l'intérêt d'une table séparée.
   bytes      Int
 
+  /// Le second rendu, pour le rail, la favicon et /login (jalon 63).
+  ///
+  /// Issu du **même téléversement** : on ne demande jamais deux fois le même
+  /// fichier. Plus large et non palettisé, parce que le plafond de 20 Ko est une
+  /// règle de délivrabilité et n'a rien à faire dans l'interface — et qu'à
+  /// l'inverse un rendu assez net pour le rail serait trop lourd pour la
+  /// signature. Les deux contraintes sont réelles et incompatibles.
+  ///
+  /// **Nullable** : un logo téléversé avant ce jalon n'en a pas, et son original
+  /// n'a jamais été conservé. NULL veut dire « pas encore calculé » ; la
+  /// première lecture le dérive du PNG de courriel et lève `chromeFromEmail`.
+  chrome      Bytes?
+  chromeWidth Int?
+  chromeBytes Int?
+
+  /// Vrai quand le rendu ci-dessus vient du PNG de courriel de 120 px faute
+  /// d'original. C'est ce qui autorise l'écran à annoncer une image adoucie au
+  /// lieu de la servir en silence.
+  chromeFromEmail Boolean @default(false)
+
+  /// Ce qu'on a **mesuré** sur l'image, pour savoir si elle se lit sur le rail.
+  ///
+  /// Moyennes sRGB des pixels visibles et part de pixels transparents. Stockées
+  /// plutôt que recalculées : le verdict s'affiche à chaque ouverture des
+  /// réglages, et redécoder l'image pour cela coûterait plus que la question ne
+  /// vaut. Elles ne changent que lorsque le logo change.
+  inkR         Int?
+  inkG         Int?
+  inkB         Int?
+  /// Part de pixels entièrement transparents, en millièmes (0 à 1000) — un
+  /// entier, pour que la valeur se compare sans flottant.
+  transparency Int?
+
   /// Empreinte du fichier d'origine. Sert d'ETag **et de segment d'URL** : une
   /// adresse qui change à chaque remplacement rend le cache d'un an sûr.
   version   String
