@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 64 | **Le signataire d'une campagne, nommé** — le menu dit qu'il choisit la signature, montre l'adresse et les lignes qui partiront, et avertit quand la boîte n'en porte aucune | **livré, à valider** |
 | 63 | **Un logo, quatre endroits** — le logo téléversé sert la signature, le rail, la favicon et /login ; second rendu net pour l'interface, et la lisibilité sur fond sombre mesurée plutôt que supposée | **livré, à valider** |
 | 62 | **Une signature HTML avec logo** — quatre lignes, logo partagé servi depuis notre domaine, avertissement de poids plutôt qu'un envoi muet | **livré, à valider** |
 | 61 | **Supprimer une campagne qui a envoyé, si on le tape** — friction du nom exact, envois effacés (pas détachés), contacts et interactions intacts, et un rouge d'action destructrice qui n'existait nulle part | **livré, à valider** |
@@ -9016,3 +9017,98 @@ vraie réponse — une version claire du logo — sans pouvoir la fabriquer.
 **Le seuil de 3:1 est un jugement**, comme les seuils d'ouverture du jalon 43.
 Il vient de WCAG 1.4.11, il est juste pour un élément graphique, et il n'a pas
 été calé sur un échantillon de logos réels : il n'en existe qu'un.
+
+---
+
+## Jalon 64 — le signataire d'une campagne se voit et se choisit
+
+### Reproduit avant de conclure, et les trois réponses
+
+Écrans ouverts dans un vrai navigateur, base réelle, `/campagnes` :
+
+| Question | Réponse mesurée |
+|---|---|
+| Le formulaire de création a-t-il un champ signataire ? | **Non — un champ boîte seulement.** Deux contrôles en tout : un texte et un `<select>` intitulé « BOÎTE D'ENVOI ». Le nom du signataire était bien *dans* l'option (`{box.label} · {box.signName}`, `campaigns-view.tsx:98-111`) mais rien ne le nommait comme tel, et l'adresse n'y figurait pas. Même chose à l'édition, `campaign-card.tsx:121-133`, sous « Envoyée depuis » |
+| Une boîte sans signataire donne-t-elle une campagne sans signature, en silence ? | **Oui.** Boîte `mb_nosign` insérée en base → l'option rendait **`« Sans signataire · »`**, un séparateur qui pend dans le vide ; campagne créée dessus par l'interface, rien n'avertit, rien ne bloque, et `signatureBlock()` rend pour elle un **bloc vide** — les messages seraient partis non signés |
+| Quel signataire un brouillon utilise-t-il réellement ? | **Celui de la boîte de la campagne** — ni codé en dur, ni aucun. `lib/api/departures.ts:237` passe `enrollment.sequence.campaign?.mailboxId` à `draftEmail`, et depuis le jalon 54 `Signatory.id` **est** un identifiant de boîte. Sur une reprise sans `mailboxId`, `:636-641` retombe sur `pickSignatory(signatories, contact.owner)` |
+
+**Le modèle était donc juste, et c'est l'écran qui mentait par omission.** Choisir
+la boîte choisissait bien la signature ; simplement, aucun des deux écrans ne le
+disait, et le cas « pas de signature » se lisait comme une étiquette tronquée
+plutôt que comme un manque.
+
+### Une seule définition de « comment un signataire se lit »
+
+`lib/domain/signatory-choice.ts`, pur : `signatoryOptionLabel`, `signatureLines`,
+`signatoryGap`, `chosenSignatory`, et le type `MailboxOption`. **Les trois
+surfaces l'appellent** — création, édition, panneau de rédaction — et aucune ne
+recompose l'étiquette. C'est la règle du projet, et elle vaut ici pour une raison
+précise : le panneau de rédaction affichait déjà l'adresse d'expédition, les
+campagnes non. Deux écrans décrivaient la même chose de deux façons, et **c'est
+toujours le second qu'on oublie de corriger**.
+
+L'étiquette est `Boîte · Nom (adresse)`, chaque morceau disparaissant avec **son
+séparateur** quand il est vide — `« Sans signataire · »` était le symptôme exact
+d'un gabarit qui suppose ses morceaux remplis. Un nom manquant n'est pas escamoté
+pour autant : il est **nommé** (« signataire non renseigné »). Une entrée réduite
+au seul libellé de la boîte se lirait comme une boîte sans problème, alors que
+c'est une campagne qui partira sans signature.
+
+### Montrer les lignes, avertir sans bloquer
+
+`SignatoryPreview` rend, sous chaque menu, **les lignes que le destinataire
+verra**. Lire « Mohamed » dans une liste ne dit pas quelles quatre lignes
+partiront, et c'est pourtant la seule partie du message qui engage un nom.
+
+Quand la boîte ne porte aucun nom, c'est un **avertissement ambre qui nomme le
+geste** — « Réglages → Messagerie → nom et titre de la signature » — et non un
+refus : c'est la posture du produit depuis le jalon 8, et une boîte peut être
+configurée dans la minute qui suit. Mais le silence n'était pas une option : une
+campagne qui part sans signature ne se découvre que chez le destinataire.
+
+Le même composant sert les deux écrans. Deux rendus de la même promesse
+finiraient par ne plus dire la même chose — le motif payé au jalon 55 sur
+l'entonnoir des campagnes.
+
+### Jalon 64 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide** — aucune migration : la
+signature vit sur `mailboxes` depuis le jalon 54), le serveur standalone de
+production et un navigateur piloté :
+
+- **création** : intitulé « BOÎTE D'ENVOI ET SIGNATAIRE » ; options rendues
+  `Yanis · Yanis Tidahy (yanis.tidahy@auraflowai.fr)` et
+  `Mohamed · Mohamed Targani (mohamed.targani@auraflowai.fr)` ; la boîte muette
+  rend `Sans signataire · signataire non renseigné`, **plus aucun séparateur
+  nu** ;
+- **l'aperçu suit le menu** : boîte signée → les lignes de la signature ; boîte
+  muette → « La boîte « Sans signataire » ne porte aucun nom de signataire […]
+  Réglages → Messagerie » ;
+- **édition** : même intitulé (« Envoyée depuis et signée par »), mêmes
+  étiquettes, même aperçu ; bascule vers une boîte signée → l'avertissement cède
+  la place aux quatre lignes, **et le choix est écrit en base**, pas seulement
+  affiché ;
+- **0 erreur console** sur tout le parcours ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1153 tests**) et
+  `npm run e2e` (**29 tests**, cinq fichiers) verts.
+
+`tests/e2e/campaign-signatory.e2e.ts` **éprouvé en réintroduisant le défaut
+exact** sur l'écran d'édition — intitulé d'origine et `{box.label} · {box.name}` :
+le test tombe en nommant l'intitulé manquant.
+
+### Jalon 64 — ce qui n'est pas fait
+
+**On ne choisit toujours pas un signataire indépendamment de la boîte**, et
+c'est le modèle du jalon 54, pas un manque de cet écran : une signature est une
+propriété de la boîte d'envoi, et faire partir un message signé Mohamed depuis
+l'adresse de Yanis afficherait dans la signature autre chose que l'en-tête
+`From` — ce qu'un filtre traite comme une usurpation (jalon 62). Pour que Yanis
+et Mohamed signent la même campagne, il faut deux boîtes, et elles existent.
+
+**L'avertissement ne bloque pas la création.** Une campagne peut naître sur une
+boîte sans signature ; elle le dit à chaque affichage, et la composition des
+départs ne la refuse pas pour autant.
+
+**Les campagnes existantes ne sont pas auditées.** Aucun écran ne liste « les
+campagnes dont la boîte ne signe pas » : l'avertissement se lit campagne par
+campagne, sur sa carte.

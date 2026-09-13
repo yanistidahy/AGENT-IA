@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import { Drawer } from "@/components/ui/drawer";
 import { paragraphCount, replaceSignature } from "@/lib/domain/email-format";
+import { signatoryOptionLabel } from "@/lib/domain/signatory-choice";
 import { isEdited, popVersion, pushVersion, type DraftVersion } from "./draft-revisions";
 import { ComposeThread } from "./compose-thread";
 
@@ -357,9 +358,13 @@ export function ComposePanel({
           >
             {signatories.map((entry) => (
               <option key={entry.id} value={entry.id}>
-                {(entry.label ?? "") !== "" ? `${entry.label} · ` : ""}
-                {entry.name}
-                {(entry.from ?? "") !== "" ? ` (${entry.from})` : ""}
+                {signatoryOptionLabel({
+                  name: entry.name,
+                  title: entry.title,
+                  email: entry.from ?? "",
+                  label: entry.label ?? "",
+                  from: entry.from ?? "",
+                })}
               </option>
             ))}
           </select>

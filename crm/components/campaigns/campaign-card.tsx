@@ -10,6 +10,12 @@ import { CampaignMembers } from "./campaign-members";
 import { ComposeAction } from "./compose-action";
 import { CampaignDelete } from "./campaign-delete";
 import type { CampaignMember } from "@/lib/domain/campaign-members";
+import {
+  chosenSignatory,
+  signatoryOptionLabel,
+  type MailboxOption,
+} from "@/lib/domain/signatory-choice";
+import { SignatoryPreview } from "./signatory-preview";
 
 /**
  * Une campagne : son entonnoir, sa boîte, sa sélection, ses étapes.
@@ -19,12 +25,6 @@ import type { CampaignMember } from "@/lib/domain/campaign-members";
  * campagne : personnes écrites, ouvertes (estimation, jalon 37), répondues,
  * rendez-vous.
  */
-
-interface MailboxOption {
-  readonly id: string;
-  readonly label: string;
-  readonly signName: string;
-}
 
 function isCampaigns(value: unknown): value is { campaigns: CampaignView[] } {
   return typeof value === "object" && value !== null && "campaigns" in value;
@@ -116,8 +116,13 @@ export function CampaignCard({
           }}
           className={`${CONTROL} min-w-[220px] flex-1 font-display text-[15px] font-semibold`}
         />
+        {/*
+          Même intitulé et même étiquette qu'à la création : ce menu choisit la
+          boîte **et** le signataire, et l'écran d'édition ne doit pas décrire
+          autrement ce que l'écran de création vient de décider.
+        */}
         <label className="flex items-center gap-2 text-[12.5px] text-muted">
-          Envoyée depuis
+          Envoyée depuis et signée par
           <select
             value={campaign.mailboxId}
             disabled={busy}
@@ -126,12 +131,14 @@ export function CampaignCard({
           >
             {mailboxes.map((box) => (
               <option key={box.id} value={box.id}>
-                {box.label} · {box.signName}
+                {signatoryOptionLabel(box)}
               </option>
             ))}
           </select>
         </label>
       </div>
+
+      <SignatoryPreview signatory={chosenSignatory(mailboxes, campaign.mailboxId)} />
 
       <div className="mb-3 flex flex-wrap gap-2">
         <Stat label="Inscrits" value={funnel.enrolled} />

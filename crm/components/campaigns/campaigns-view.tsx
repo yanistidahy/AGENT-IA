@@ -5,7 +5,13 @@ import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import type { CampaignMember, CampaignView } from "@/lib/api/campaigns";
 import type { SequenceView } from "@/components/settings/email-sequences-panel";
+import {
+  chosenSignatory,
+  signatoryOptionLabel,
+  type MailboxOption,
+} from "@/lib/domain/signatory-choice";
 import { CampaignCard } from "./campaign-card";
+import { SignatoryPreview } from "./signatory-preview";
 
 /**
  * `/campagnes` — configuration et lancement au même endroit.
@@ -22,11 +28,7 @@ import { CampaignCard } from "./campaign-card";
  * `departures.ts`, que cet écran ne fait qu'utiliser.
  */
 
-interface MailboxOption {
-  readonly id: string;
-  readonly label: string;
-  readonly signName: string;
-}
+export type { MailboxOption };
 
 function isCampaigns(value: unknown): value is { campaigns: CampaignView[] } {
   return typeof value === "object" && value !== null && "campaigns" in value;
@@ -96,8 +98,13 @@ export function CampaignsView({
             />
           </label>
           <label className="block">
+            {/*
+              L'intitulé nomme **les deux choses** que ce menu décide. Il ne
+              disait que la boîte, alors qu'il choisit aussi qui signe — et
+              c'est le signataire qu'on cherche quand on crée une campagne.
+            */}
             <span className="mb-1 block font-mono text-[10px] tracking-[0.1em] text-muted uppercase">
-              Boîte d'envoi
+              Boîte d'envoi et signataire
             </span>
             <select
               value={mailboxId}
@@ -106,7 +113,7 @@ export function CampaignsView({
             >
               {mailboxes.map((box) => (
                 <option key={box.id} value={box.id}>
-                  {box.label} · {box.signName}
+                  {signatoryOptionLabel(box)}
                 </option>
               ))}
             </select>
@@ -120,6 +127,7 @@ export function CampaignsView({
             Créer
           </button>
         </div>
+        <SignatoryPreview signatory={chosenSignatory(mailboxes, mailboxId)} />
         {error !== null && <p className="mt-2 text-[12px] text-danger">{error}</p>}
       </section>
 
