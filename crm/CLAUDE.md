@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 69 | **Audit du suivi d'ouverture** — la chaîne vérifiée de bout en bout sur une campagne ; l'écran des emails dit enfin *pourquoi* il ne mesure rien quand c'est le cas | **livré, à valider** |
 | 68 | **La virgule mangée par le nettoyage des tirets** — l'objet nomme la marque, la file dit ce qu'Alex avait sous la main, et un départ se retouche à la main sans passer par Alex | **livré, à valider** |
 | 67 | **Trois lignes, et le vrai doublon** — l'adresse quitte la signature ; `enforceSignature` ne remplaçait que la dernière ligne du paragraphe, ce qui écrivait le bloc deux fois à la composition | **livré, à valider** |
 | 66 | **La signature en double, dans le panneau** — le panneau composait un bloc à deux lignes quand le serveur en composait quatre : `replaceSignature` n'en trouvait aucun et en ajoutait un second | **livré, à valider** |
@@ -9538,3 +9539,148 @@ composé garde son objet générique, et c'est précisément ce que le bouton
 
 **La retouche n'a pas de retour en arrière.** Enregistrer écrase le texte
 précédent ; le panneau d'Alex garde le sien (jalon 34), pas la carte.
+
+---
+
+## Jalon 69 — audit du suivi d'ouverture, de bout en bout
+
+Rien de cassé par les jalons 54 à 68 : la chaîne complète a été rejouée sur le
+fil, contre une base réelle, avec un envoi **de campagne** (et non une rédaction
+manuelle). Un seul défaut trouvé, et il est d'affichage.
+
+### 1 · Le pixel survit à l'assemblage HTML des jalons 62 et 65
+
+Envoi réel d'un départ de campagne par `POST /api/departures`, source MIME
+inspectée :
+
+```
+<img src="http://…/api/t/a9afab2a02b450974a428c8602d8138c" width="1" height="1"
+     alt="" style="display:none;border:0" />
+```
+
+- logo de signature présent, **tableau à deux colonnes** du jalon 65 intact ;
+- **le pixel vient après le logo** et reste la **toute dernière chose** avant
+  `</body>` — la règle du jalon 43 tient malgré la réécriture du dernier
+  paragraphe en tableau ;
+- la partie `text/plain` n'en porte aucune trace ;
+- le jeton du pixel est **celui de la ligne d'envoi**, et la ligne porte bien
+  `tracked = true` et l'identifiant de la campagne.
+
+### 2 · Un chargement se classe, se compte et se propage
+
+Sur le vrai chemin HTTP, depuis un contexte étranger (sans cookie) :
+
+| Geste | Verdict | `openCount` |
+|---|---|---|
+| chargement immédiat | `delivery` | 0 |
+| chargement dix minutes plus tard | `counted` (delaySeconds 600) | 1 |
+| rechargement dans la foulée | `burst` | 1 |
+
+`firstOpenAt` et `lastOpenAt` sont posés par le chargement **compté**, jamais
+par celui de la livraison. `/emails` montre alors « Ont ouvert (estimation) 1 »
+et la ligne du journal passe de `0` à `1`.
+
+### 3 · L'écran ne disait pas *pourquoi* il ne mesurait rien
+
+**Le seul défaut trouvé.** « Ont ouvert (estimation) 0 » se lit « personne n'a
+ouvert » ; il peut vouloir dire « aucun message n'a jamais porté de pixel ». Ce
+sont deux situations opposées, et l'avertissement n'existait que dans
+`/reglages` — c'est-à-dire pas là où l'on constate l'absence.
+
+`trackingGap()` (`lib/domain/open-tracking.ts`, pur) nomme les trois causes, et
+l'ordre compte : **sans adresse publique aucun pixel ne peut être composé**,
+quel que soit le réglage.
+
+| Cause | Ce que l'écran dit |
+|---|---|
+| `no-public-url` | « le CRM ne connaît pas son adresse publique (`CRM_PUBLIC_URL` ou `RAILWAY_PUBLIC_DOMAIN`) » |
+| `disabled` | « le suivi est coupé dans Réglages → Messagerie » |
+| `none-tracked` | « aucun message de cette fenêtre ne porte de pixel » |
+
+Une fenêtre vide n'allume rien : il n'y a rien à suivre. Des messages suivis
+sans ouverture non plus — c'est un résultat, pas une panne.
+
+### 4 · Les deux interrupteurs, vérifiés sur le fil
+
+- case du message décochée → **aucun pixel, aucun jeton émis**, `tracked=false` ;
+- **interrupteur global coupé, case cochée → aucun pixel** : le global reste le
+  maître, comme au jalon 37 ;
+- global rétabli → le pixel revient.
+
+**Les envois de campagne respectent les deux** : `sendDeparture` passe par
+`sendEmailToContact`, qui lit `input.track ?? tracking.enabled`. Il n'existe pas
+de réglage de suivi par campagne, et c'est assumé.
+
+### 5 · L'écran se recalcule, il n'est pas mis en cache
+
+`export const dynamic = "force-dynamic"` sur `/emails`, et rien n'y passe par le
+cache de `fetch` : les compteurs viennent de Prisma à chaque requête. Vérifié en
+chargeant la page, en chargeant le pixel, puis en rechargeant : la ligne du
+journal passe de `0` à `1`, en-tête `private, no-cache, no-store`.
+
+### Jalon 69 — les seuils, et ce qu'ils font vraiment
+
+`DELIVERY_WINDOW_SECONDS = 30`, `BURST_WINDOW_SECONDS = 60`. Ce qu'on peut en
+dire honnêtement, sans données de production sous la main :
+
+- **le seuil de livraison ne peut pas attraper Apple Mail Privacy Protection.**
+  MPP récupère les images à la réception, mais rien ne garantit que ce soit dans
+  les trente secondes : une boîte relevée dix minutes plus tard produit un
+  chargement **compté**, indiscernable d'une vraie lecture. On ne stocke ni IP ni
+  agent utilisateur (jalon 37, et c'est une promesse de vie privée, pas un
+  oubli), donc **aucune règle ne peut les séparer**. Le chiffre reste un
+  majorant ;
+- **la rafale protège surtout le compteur par envoi**, pas le taux : l'entonnoir
+  compte des **personnes** via `firstOpenAt`, donc un rechargement ne peut pas
+  gonfler le taux d'ouverture. C'est ce qui rend le taux plus solide que le
+  nombre de chargements ;
+- **un vrai lecteur très rapide est écarté**. Ouvrir dans les trente secondes
+  arrive — une relance attendue — et ce chargement est classé `delivery`. Le
+  biais va donc dans les deux sens, mais il est **asymétrique** : MPP est
+  fréquent, le lecteur en trente secondes est rare.
+
+**Où vous lisez votre propre distribution** : Réglages → Messagerie → « Ce que
+valent les ouvertures ». Le panneau donne les trois compteurs, la part de bruit,
+et surtout **la répartition des délais** (moins de 30 s / 30 s à 5 min / 5 min à
+1 h / 1 h à 1 j / plus d'un jour). C'est elle qui dira si les seuils sont bien
+placés : un pic massif entre 30 s et 5 min désignerait de la récupération
+automatique comptée comme lecture, et justifierait de relever le seuil. Sans ce
+pic, les seuils actuels n'ont pas de raison de bouger.
+
+### Jalon 69 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide** — aucune migration), le
+serveur standalone de production, un puits SMTP réel et le substitut Anthropic :
+les cinq sections ci-dessus, plus
+
+- **le cas « aucune adresse publique »**, serveur redémarré sans
+  `CRM_PUBLIC_URL` ni `RAILWAY_PUBLIC_DOMAIN` : le bandeau le nomme sur
+  `/emails` ;
+- **le panneau d'audit du jalon 43** rend toujours ses compteurs, sa part de
+  bruit et sa répartition des délais ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1185 tests**) et
+  `npm run e2e` (**29 tests**) verts.
+
+### Jalon 69 — ce qui reste invérifiable, et qu'il faut lire avec prudence
+
+**Apple Mail Privacy Protection.** Les images sont récupérées par un relais
+Apple à la réception, que le message soit lu ou non, avec un délai variable. Ces
+chargements sont comptés comme des ouvertures dès qu'ils dépassent trente
+secondes. C'est la principale cause de surestimation, et elle est structurelle.
+
+**Le proxy d'images de Gmail.** Il récupère l'image une fois et la met en cache :
+la première ouverture est vue, **les suivantes ne le sont pas**. Le nombre de
+chargements d'un destinataire Gmail est donc un plancher, pas un compte.
+
+**Les images bloquées.** Beaucoup de clients ne les chargent pas par défaut : une
+lecture réelle peut ne produire **aucun** chargement. Le taux sous-estime ce
+cas-là autant qu'il surestime le précédent, et **rien ne dit lequel domine** dans
+un portefeuille donné.
+
+**Ce que le CRM ne fera pas pour lever le doute** : stocker l'adresse IP ou
+l'agent utilisateur, qui permettraient de reconnaître un relais. C'est la
+décision du jalon 37, et elle n'est pas rouverte ici.
+
+**Le chiffre reste donc une estimation, jamais une mesure** — c'est pourquoi
+l'écran l'écrit à côté du nombre, et pourquoi les réponses et les rendez-vous
+passent devant lui dans l'entonnoir.

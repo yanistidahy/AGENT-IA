@@ -91,3 +91,52 @@ export function noiseShare(counted: number, noise: number): OpenNoiseShare {
   const total = counted + noise;
   return { counted, noise, noiseRate: total === 0 ? null : noise / total };
 }
+
+/**
+ * **Pourquoi le suivi ne mesure rien**, quand il ne mesure rien.
+ *
+ * Le défaut que ce verdict ferme : « Ont ouvert (estimation) 0 » se lit comme
+ * « personne n'a ouvert », alors qu'il peut vouloir dire « aucun message n'a
+ * jamais porté de pixel ». Ce sont deux situations opposées, et l'écran des
+ * emails, celui où l'on constate l'absence d'ouvertures, ne les distinguait
+ * pas : l'avertissement n'existait que dans Réglages, où l'on ne va pas quand
+ * on regarde ses chiffres.
+ *
+ * Trois causes, trois gestes, et l'ordre compte : sans adresse publique aucun
+ * pixel ne peut être composé, quel que soit le réglage.
+ */
+export type TrackingGap = "no-public-url" | "disabled" | "none-tracked" | null;
+
+export interface TrackingStateInput {
+  /** `CRM_PUBLIC_URL` ou `RAILWAY_PUBLIC_DOMAIN`, vide si aucune. */
+  readonly baseUrl: string;
+  /** L'interrupteur global de Réglages. */
+  readonly enabled: boolean;
+  /** Messages partis sur la fenêtre. */
+  readonly messages: number;
+  /** Ceux d'entre eux qui portaient réellement un pixel. */
+  readonly tracked: number;
+}
+
+export function trackingGap(input: TrackingStateInput): TrackingGap {
+  if (input.baseUrl.trim() === "") return "no-public-url";
+  if (!input.enabled) return "disabled";
+  // Configuré et allumé, mais aucun des messages de la fenêtre n'a de pixel :
+  // ils sont antérieurs au réglage, ou chacun a été décoché à la rédaction.
+  if (input.messages > 0 && input.tracked === 0) return "none-tracked";
+  return null;
+}
+
+/** Ce que l'écran en dit, en une phrase qui nomme le geste. */
+export function describeTrackingGap(gap: TrackingGap): string {
+  if (gap === "no-public-url") {
+    return "Aucun message ne porte de pixel : le CRM ne connaît pas son adresse publique (CRM_PUBLIC_URL ou RAILWAY_PUBLIC_DOMAIN). Le chiffre ci-dessus ne peut pas monter, quoi que fassent les destinataires.";
+  }
+  if (gap === "disabled") {
+    return "Le suivi d'ouverture est coupé dans Réglages → Messagerie : aucun message ne porte de pixel, et le chiffre ci-dessus ne peut pas monter.";
+  }
+  if (gap === "none-tracked") {
+    return "Aucun message de cette fenêtre ne porte de pixel : ils sont antérieurs au réglage, ou le suivi a été décoché à la rédaction. Le chiffre ci-dessus ne peut pas monter pour eux.";
+  }
+  return "";
+}

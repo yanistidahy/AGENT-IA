@@ -3,6 +3,8 @@ import { prisma } from "../db";
 import { readReplyFacts, replyDates } from "./email-replies";
 import { buildFunnel, type FunnelInput, type FunnelStep } from "../domain/email-funnel";
 import { historyDepth, type HistoryDepth } from "../domain/email-history";
+import { readTrackingConfig } from "./email-sends";
+import { trackingGap, type TrackingGap } from "../domain/open-tracking";
 import {
   byDay,
   bySequence,
@@ -56,6 +58,13 @@ export interface EmailStats {
    * honnête d'afficher le taux tant qu'ils pèsent dessus.**
    */
   readonly openTrust: { readonly unaudited: number; readonly tracked: number };
+  /**
+   * Pourquoi le suivi ne mesure rien, quand c'est le cas. `null` = il mesure.
+   *
+   * Sans cette valeur, « Ont ouvert 0 » se lit « personne n'a ouvert », alors
+   * qu'il peut vouloir dire « aucun message n'a jamais porté de pixel ».
+   */
+  readonly trackingGap: TrackingGap;
 }
 
 export const EMAIL_WINDOW_DAYS = 90;
@@ -192,6 +201,10 @@ export async function readEmailStats(now = new Date()): Promise<EmailStats> {
 
   const { input, unaudited, sends, firstSend } = await readFunnelFacts({ since });
   const facts = await readReplyFacts(firstSend);
+  // L'état du suivi est lu **ici** plutôt que déduit des envois : un CRM sans
+  // adresse publique et un CRM dont tout le monde a décoché la case rendent la
+  // même page, et ce ne sont pas les mêmes gestes.
+  const tracking = await readTrackingConfig();
 
   const dates = sends.map((send) => send.sentAt);
   const depth = historyDepth(dates, now);
@@ -214,5 +227,11 @@ export async function readEmailStats(now = new Date()): Promise<EmailStats> {
     // sur 1 » alors que trois messages sont suivis serait faux dans le sens qui
     // dramatise.
     openTrust: { unaudited, tracked: sends.filter((send) => send.tracked).length },
+    trackingGap: trackingGap({
+      baseUrl: tracking.baseUrl,
+      enabled: tracking.enabled,
+      messages: sends.length,
+      tracked: sends.filter((send) => send.tracked).length,
+    }),
   };
 }

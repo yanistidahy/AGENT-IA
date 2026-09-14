@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  BURST_WINDOW_SECONDS,
-  DELIVERY_WINDOW_SECONDS,
-  classifyOpenHit,
-  countsAsOpen,
-  noiseShare,
-} from "../open-tracking";
+import { BURST_WINDOW_SECONDS, DELIVERY_WINDOW_SECONDS, classifyOpenHit, countsAsOpen, noiseShare, trackingGap, describeTrackingGap } from "../open-tracking";
 
 const SENT = new Date("2026-08-20T09:00:00Z");
 const at = (seconds: number) => new Date(SENT.getTime() + seconds * 1000);
@@ -82,5 +76,33 @@ describe("la part de bruit", () => {
 
   it("n'existe pas sans chargement", () => {
     expect(noiseShare(0, 0).noiseRate).toBeNull();
+  });
+});
+
+describe("pourquoi le suivi ne mesure rien", () => {
+  const base = { baseUrl: "https://crm.auraflowai.fr", enabled: true, messages: 10, tracked: 10 };
+
+  it("se tait quand il mesure", () => {
+    expect(trackingGap(base)).toBeNull();
+    // Des messages suivis sans ouverture : c'est un résultat, pas une panne.
+    expect(trackingGap({ ...base, tracked: 3 })).toBeNull();
+  });
+
+  it("l'adresse publique manquante passe avant le réglage", () => {
+    // Sans adresse, aucun pixel ne peut être composé : dire « le suivi est
+    // coupé » enverrait régler la mauvaise chose.
+    expect(trackingGap({ ...base, baseUrl: "", enabled: false })).toBe("no-public-url");
+    expect(describeTrackingGap("no-public-url")).toContain("CRM_PUBLIC_URL");
+  });
+
+  it("l'interrupteur global se nomme, et nomme où il se règle", () => {
+    expect(trackingGap({ ...base, enabled: false })).toBe("disabled");
+    expect(describeTrackingGap("disabled")).toContain("Réglages");
+  });
+
+  it("aucun message suivi dans la fenêtre se distingue des deux autres", () => {
+    expect(trackingGap({ ...base, tracked: 0 })).toBe("none-tracked");
+    // Une fenêtre vide n'est pas un défaut de suivi : il n'y a rien à suivre.
+    expect(trackingGap({ ...base, messages: 0, tracked: 0 })).toBeNull();
   });
 });
