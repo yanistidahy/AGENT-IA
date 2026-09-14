@@ -1,6 +1,6 @@
 import "server-only";
 
-import { signatureBlock } from "../agents/prompts/company";
+import { knownSignatureBlocks } from "../domain/signatory-choice";
 import { listMailboxes, ownerMatches, type Mailbox } from "./mailboxes";
 
 /**
@@ -82,10 +82,10 @@ export function pickSignatory(
  * quand ces brouillons seront partis ; jusque-là, la connaître ne coûte rien.
  */
 export function signatureBlocks(signatories: readonly Signatory[]): string[] {
-  return signatories.flatMap((signatory) => [
-    signatureBlock(signatory),
-    signatureBlock({ ...signatory, phone: "", email: "" }),
-  ]);
+  // La liste vit dans le domaine : le panneau de rédaction en a besoin lui
+  // aussi, et deux listes de formes connues finiraient par ne plus contenir les
+  // mêmes. C'est ce qui a produit le doublon du jalon 66.
+  return knownSignatureBlocks(signatories);
 }
 
 /**

@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 66 | **La signature en double, dans le panneau** — le panneau composait un bloc à deux lignes quand le serveur en composait quatre : `replaceSignature` n'en trouvait aucun et en ajoutait un second | **livré, à valider** |
 | 65 | **Le logo à gauche, la signature à droite** — un tableau à deux colonnes, le seul assemblage qu'Outlook rende comme les autres ; la version texte ne bouge pas | **livré, à valider** |
 | 64 | **Le signataire d'une campagne, nommé** — le menu dit qu'il choisit la signature, montre l'adresse et les lignes qui partiront, et avertit quand la boîte n'en porte aucune | **livré, à valider** |
 | 63 | **Un logo, quatre endroits** — le logo téléversé sert la signature, le rail, la favicon et /login ; second rendu net pour l'interface, et la lisibilité sur fond sombre mesurée plutôt que supposée | **livré, à valider** |
@@ -9211,3 +9212,116 @@ tableau, qui est aussi ce qui le rend prévisible.
 Le cas n'arrive pas en usage — un message a toujours au moins sa signature — mais
 il ne fabrique pas un tableau à une colonne, qui serait une mise en page sans
 mise en page.
+
+---
+
+## Jalon 66 — la signature en double, et la ligne qui la produisait
+
+### Reproduit dans le panneau, avant tout correctif
+
+Contact réel, panneau de rédaction ouvert, brouillon chargé, puis le geste
+signalé : choisir sa boîte dans le sélecteur.
+
+```
+--- brouillon à l'ouverture ---        Yanis Tidahy / Fondateur / 07 85 28 35 36 / adresse
+                                       >>> « Yanis Tidahy » : 1 fois
+--- après bascule, puis retour ---     Yanis Tidahy / Fondateur / 07 85 28 35 36 / adresse
+                                       (ligne vide)
+                                       Yanis Tidahy / Fondateur
+                                       >>> « Yanis Tidahy » : 2 fois
+```
+
+Deux blocs, dont le second **tronqué** : c'est ce que le rapport décrivait.
+
+### La cause, avec sa ligne
+
+**`components/emails/compose-panel.tsx:70-74` — `blockOf()`.** Le panneau
+assemblait son propre bloc de signature, **nom et titre, deux lignes**, dans une
+fonction locale héritée d'avant le jalon 62 — pendant que le serveur en compose
+**quatre** (nom, titre, téléphone, adresse) via `signatureBlock()`.
+
+`replaceSignature()` (`lib/domain/email-format.ts:433`) compare des paragraphes
+**entiers** : c'est délibéré, un message qui se termine par un post-scriptum n'a
+pas de signature à cet endroit et couper à l'aveugle le mutilerait. Aucun des
+blocs à deux lignes que le panneau lui donnait ne correspondait donc au bloc à
+quatre lignes du brouillon, et la fonction faisait ce qu'elle promet dans ce
+cas : elle **ajoute** (ligne 440). Ce qu'elle ajoutait était le bloc tronqué.
+
+**Rien n'échouait.** Deux chaînes, deux assemblages corrects chacun de son côté,
+aucun type violé, aucun test rouge — et le défaut n'apparaît qu'au *second*
+geste, pas à l'ouverture du panneau. C'est exactement la famille de défauts que
+les gardes statiques de ce projet attrapent depuis le jalon 36.
+
+La déclaration de type du panneau portait la même moitié de vérité : son
+interface `Signatory` ne déclarait ni `phone` ni `email`, **alors que la route
+les renvoie depuis le jalon 54**. Le panneau ignorait des champs qu'il recevait.
+
+### Une seule définition, dans le domaine
+
+`lib/domain/signatory-choice.ts` porte désormais `signatureLines()`,
+`signatureText()` et `knownSignatureBlocks()`. `signatureBlock()` du dossier
+d'Alex délègue en une ligne, `signatureBlocks()` de `lib/api/signatories.ts`
+aussi, et le panneau appelle la même fonction que le serveur. Il n'y a plus
+qu'un assemblage.
+
+**`knownSignatureBlocks()` connaît les formes héritées** — deux lignes, trois
+lignes avec ou sans téléphone — parce qu'un brouillon composé avant le jalon 62
+dort peut-être encore dans la file des départs. Une forme absente de cette liste
+n'est pas remplacée : elle est doublée. C'est précisément le mécanisme du défaut,
+et l'oublier le ferait revenir par la porte de derrière.
+
+**Effet de bord corrigé au passage** : `signatureLines()` omettait le téléphone
+depuis le jalon 64, si bien que l'aperçu des écrans de campagne annonçait trois
+lignes là où le message en porte quatre. Une seule définition règle les deux.
+
+### La garde
+
+`tests/signature-block-source.test.ts` échoue si un écran réassemble un bloc de
+signature, si le panneau cesse de passer par la fonction du domaine, ou si la
+liste des formes connues se dédouble. **Éprouvée en réintroduisant le défaut
+exact** : deux tests tombent, dont celui qui nomme
+`components/emails/compose-panel.tsx`.
+
+Une première version de la garde était **sensible à l'ordre des champs** — elle
+cherchait « nom puis titre », et la réintroduction du défaut écrivait « titre
+puis nom ». Elle passait donc au vert sur le défaut qu'elle devait attraper. Une
+garde qu'on contourne sans le vouloir ne garde rien : les deux ordres sont
+désormais testés.
+
+### Jalon 66 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide** — aucune migration), le
+serveur standalone de production, un puits SMTP réel et le substitut Anthropic :
+
+- **dans le panneau** : brouillon à l'ouverture, **1** bloc ; après bascule vers
+  une autre boîte, **1** bloc, celui de la nouvelle ; après retour, **1** bloc,
+  identique à l'original au caractère près ; **0 erreur console** ;
+- **trois bascules d'affilée** — c'est en les enchaînant que le doublon
+  s'accumulait : « Mohamed Targani » **1 fois**, « Yanis Tidahy » **0 fois** ;
+- **sur le fil**, message envoyé depuis le panneau : la partie `text/plain`
+  porte **une seule** signature, ses quatre lignes en ordre ; la partie HTML en
+  porte **une seule**, dans la cellule de droite du tableau du jalon 65
+  (`Mohamed Targani<br>Co-Fondateur, Aura Flow AI<br>06 12 34 56 78<br>adresse`),
+  **quatre lignes** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1161 tests**) et
+  `npm run e2e` (**29 tests**) verts.
+
+**Une boîte fantôme trouvée en vérifiant**, sans rapport avec le doublon mais
+capable de bloquer un envoi : le test e2e du jalon 61 créait une boîte
+`e2e-campaign-delete` et **ne la supprimait pas**. Restée en base, elle
+apparaissait dans le sélecteur du panneau et, n'étant pas configurée, faisait
+refuser l'envoi avec un message nommant une boîte que personne n'avait choisie.
+Le test nettoie désormais sa boîte, et la ligne a été retirée de la base locale.
+
+### Jalon 66 — ce qui n'est pas fait
+
+**Les brouillons déjà en file ne sont pas réparés.** Un départ composé avant ce
+correctif et dont on aurait changé le signataire porte deux signatures dans son
+texte enregistré ; le correctif empêche d'en produire de nouvelles, il ne relit
+pas la file. Rouvrir le départ et rebasculer le signataire suffit à le nettoyer,
+puisque les deux formes sont désormais reconnues.
+
+**La garde porte sur l'assemblage, pas sur toute écriture concevable.** Un écran
+qui écrirait les quatre lignes à la main, sans passer par les champs d'un
+signataire, ne serait pas attrapé. Ce que le test ferme, c'est le chemin par
+lequel le défaut est réellement arrivé.

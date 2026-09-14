@@ -85,6 +85,10 @@ describe.skipIf(skip)("supprimer une campagne qui a envoyé, au clic", () => {
     await prisma.emailSequence.deleteMany({ where: { campaignId } });
     await prisma.campaign.deleteMany({ where: { id: campaignId } });
     await prisma.contact.deleteMany({ where: { id: contactId } });
+    // La boîte aussi : laissée derrière, elle apparaît dans le sélecteur du
+    // panneau de rédaction et, n'étant pas configurée, fait refuser l'envoi
+    // avec un message qui parle d'une boîte que personne n'a choisie.
+    await prisma.mailbox.deleteMany({ where: { id: mailboxId } });
   });
 
   const card = () =>
