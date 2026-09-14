@@ -16,6 +16,9 @@
  * vend. Un agent qui ne connaît que la première moitié écrit des emails qui
  * parlent d'économies au lieu de parler de chiffre d'affaires.
  */
+
+import { signatureText } from "@/lib/domain/signatory-choice";
+
 export const COMPANY_CONTEXT = `
 ## Ce que nous vendons
 
@@ -239,10 +242,10 @@ export const DEFAULT_DEMO: DemoLink = {
  * (jalon 37). Un client texte ne saurait de toute façon pas le rendre.
  */
 export function signatureBlock(signature: Signature): string {
-  return [signature.name, signature.title, signature.phone, signature.email]
-    .map((line) => line.trim())
-    .filter((line) => line !== "")
-    .join("\n");
+  // La composition vit dans le domaine : le panneau de rédaction en a besoin
+  // aussi, et deux assemblages du même bloc finissent par diverger : c'est
+  // exactement ce que le jalon 66 a corrigé.
+  return signatureText(signature);
 }
 
 /**

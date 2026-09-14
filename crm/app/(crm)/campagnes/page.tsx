@@ -53,6 +53,7 @@ export default async function CampagnesPage() {
         // montrer les lignes qui partiront, et dire quand il n'y en a aucune.
         name: box.signName,
         title: box.signTitle,
+        phone: box.signPhone,
         email: box.smtpFrom,
         from: box.smtpFrom,
       }))}

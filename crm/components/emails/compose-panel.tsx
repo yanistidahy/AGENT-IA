@@ -4,7 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import { Drawer } from "@/components/ui/drawer";
 import { paragraphCount, replaceSignature } from "@/lib/domain/email-format";
-import { signatoryOptionLabel } from "@/lib/domain/signatory-choice";
+import {
+  knownSignatureBlocks,
+  signatoryOptionLabel,
+  signatureText,
+} from "@/lib/domain/signatory-choice";
 import { isEdited, popVersion, pushVersion, type DraftVersion } from "./draft-revisions";
 import { ComposeThread } from "./compose-thread";
 
@@ -28,6 +32,14 @@ interface Signatory {
   id: string;
   name: string;
   title: string;
+  /**
+   * **Les quatre lignes, en entier.** Le panneau ne déclarait que le nom et le
+   * titre, alors que la route les renvoie depuis toujours : il composait donc
+   * un bloc à deux lignes quand le serveur en composait quatre, et changer de
+   * boîte ajoutait une signature au lieu de remplacer celle qui était là.
+   */
+  phone: string;
+  email: string;
   isDefault: boolean;
 }
 
@@ -67,10 +79,17 @@ function isSent(value: unknown): value is { sent: Sent } {
   return typeof value === "object" && value !== null && "sent" in value;
 }
 
-/** Le bloc de signature d'une personne : nom, puis titre. */
+/**
+ * Le bloc de signature d'une personne — **la même fonction que le serveur**.
+ *
+ * Ce bloc était composé ici, à deux lignes, alors que le serveur en compose
+ * quatre depuis le jalon 62. `replaceSignature` compare des blocs entiers : il
+ * ne trouvait donc jamais la signature du brouillon et en **ajoutait** une
+ * seconde, tronquée. Une seule définition, dans le domaine, et le défaut ne
+ * peut plus revenir par ce chemin.
+ */
 function blockOf(signatory: Signatory): string {
-  const title = signatory.title.trim();
-  return title === "" ? signatory.name.trim() : `${signatory.name.trim()}\n${title}`;
+  return signatureText(signatory);
 }
 
 const FIELD =
@@ -257,7 +276,9 @@ export function ComposePanel({
   const switchSignatory = (id: string) => {
     const next = signatories.find((entry) => entry.id === id);
     if (next === undefined) return;
-    const known = signatories.map((entry) => blockOf(entry));
+    // Les formes héritées comprises : un brouillon composé avant le jalon 62
+    // porte une signature à deux lignes, et il doit se remplacer aussi.
+    const known = knownSignatureBlocks(signatories);
     setBody((current) => replaceSignature(current, known, blockOf(next)));
     setSignatoryId(id);
   };
@@ -359,9 +380,7 @@ export function ComposePanel({
             {signatories.map((entry) => (
               <option key={entry.id} value={entry.id}>
                 {signatoryOptionLabel({
-                  name: entry.name,
-                  title: entry.title,
-                  email: entry.from ?? "",
+                  ...entry,
                   label: entry.label ?? "",
                   from: entry.from ?? "",
                 })}

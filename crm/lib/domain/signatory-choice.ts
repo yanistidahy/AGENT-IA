@@ -19,11 +19,17 @@
  * l'étiquette. C'est la règle du projet — une règle vit à un seul endroit.
  */
 
-/** Ce dont on a besoin pour décrire un signataire, et rien de plus. */
-export interface SignatoryLike {
+/** Ce qui compose une signature : les quatre lignes, et rien d'autre. */
+export interface SignatureLike {
   readonly name: string;
   readonly title: string;
+  /** Le téléphone de la signature. Vide = une ligne de moins. */
+  readonly phone: string;
   readonly email: string;
+}
+
+/** Ce dont on a besoin pour **décrire** un signataire dans un menu. */
+export interface SignatoryLike extends SignatureLike {
   /** Le libellé de la boîte : « Yanis », « Mohamed ». */
   readonly label: string;
   /** L'adresse d'expédition réelle. */
@@ -76,17 +82,46 @@ export function signatoryOptionLabel(signatory: SignatoryLike): string {
 }
 
 /**
- * Les lignes que ce signataire posera au bas du message.
+ * Les lignes que ce signataire posera au bas du message — **la définition**.
  *
- * C'est `signatureBlock()` du dossier d'Alex, réduit à ce que l'écran a besoin
- * de montrer. On l'affiche **sous le sélecteur** : lire « Mohamed » dans un menu
- * ne dit pas quelles quatre lignes partiront, et c'est pourtant la seule chose
- * que le destinataire verra.
+ * `signatureBlock()` du dossier d'Alex les assemble, le panneau de rédaction
+ * les cherche pour remplacer une signature, et les écrans de campagne les
+ * montrent. Une seule fonction, parce que le jalon 66 a payé le contraire : le
+ * panneau composait un bloc à deux lignes quand le serveur en composait quatre,
+ * si bien que changer de boîte **ajoutait** une signature au lieu de remplacer
+ * celle qui était là.
+ *
+ * **Un champ vide retire sa ligne**, il n'en laisse pas une blanche.
  */
-export function signatureLines(signatory: SignatoryLike): readonly string[] {
-  return [signatory.name, signatory.title, signatory.email]
+export function signatureLines(signatory: SignatureLike): readonly string[] {
+  return [signatory.name, signatory.title, signatory.phone, signatory.email]
     .map((line) => line.trim())
     .filter((line) => line !== "");
+}
+
+/** Les mêmes lignes, assemblées — la forme qui vit dans le corps du message. */
+export function signatureText(signatory: SignatureLike): string {
+  return signatureLines(signatory).join("\n");
+}
+
+/**
+ * Toutes les formes sous lesquelles une signature a pu être écrite.
+ *
+ * `replaceSignature` compare des blocs **entiers** : une forme absente de cette
+ * liste n'est pas remplacée, elle est doublée. D'où les formes héritées —
+ * avant le jalon 62 la signature tenait en deux lignes, et un brouillon composé
+ * alors dort peut-être encore dans la file des départs. Les connaître ne coûte
+ * rien ; les oublier coûte une signature en double dans un message qui part.
+ */
+export function knownSignatureBlocks(
+  signatories: readonly SignatureLike[],
+): string[] {
+  return signatories.flatMap((signatory) => [
+    signatureText(signatory),
+    signatureText({ ...signatory, email: "" }),
+    signatureText({ ...signatory, phone: "" }),
+    signatureText({ ...signatory, phone: "", email: "" }),
+  ]);
 }
 
 export interface SignatoryGap {
