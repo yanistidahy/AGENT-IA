@@ -5,6 +5,7 @@ import { parseSentQuery, readSentEmails, readSilentContacts } from "@/lib/api/em
 import { listOwners } from "@/lib/api/reference";
 import { EmptyChart } from "@/components/charts/empty-chart";
 import { FunnelRow } from "@/components/emails/funnel-row";
+import { describeTrackingGap } from "@/lib/domain/open-tracking";
 import { SentTable } from "@/components/emails/sent-table";
 import { NoReplyBlock } from "@/components/emails/no-reply-block";
 import { EmailCharts } from "@/components/emails/email-charts";
@@ -66,6 +67,18 @@ export default async function EmailsPage({
 
       <section className="mb-4">
         <FunnelRow steps={stats.funnel} />
+        {/*
+          **Pourquoi le chiffre ne peut pas monter**, quand c'est le cas.
+          « Ont ouvert 0 » se lit « personne n'a ouvert » ; il peut vouloir dire
+          « aucun message n'a jamais porté de pixel ». L'avertissement existait
+          dans Réglages, c'est-à-dire pas là où l'on constate l'absence.
+        */}
+        {stats.trackingGap !== null && (
+          <p className="mt-2 rounded-control border border-[#F0DFB8] bg-gold-l px-3.5 py-2 text-[12px] leading-relaxed text-[#9A6410]">
+            <strong>Le suivi d'ouverture ne mesure rien.</strong>{" "}
+            {describeTrackingGap(stats.trackingGap)}
+          </p>
+        )}
         {stats.openTrust.unaudited > 0 && (
           // **Le taux d'ouverture est plus faux que « surestimé » sur ces
           // envois-là** : leurs chargements n'ont jamais été enregistrés un par
