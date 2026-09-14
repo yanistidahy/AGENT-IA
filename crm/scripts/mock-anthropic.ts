@@ -77,6 +77,15 @@ const DIRTY = process.env.MOCK_DIRTY === "1";
  */
 const SIGNED = process.env.MOCK_SIGNED === "1";
 
+/**
+ * Rend l'objet **générique** observé en production (`MOCK_GENERIC=1`).
+ *
+ * « Une démonstration préparée pour votre boutique » est ce que le modèle
+ * écrivait faute de consigne sur l'objet. Le substitut doit savoir le produire,
+ * sinon la recette ne prouve pas la garantie qui le remplace.
+ */
+const GENERIC = process.env.MOCK_GENERIC === "1";
+
 const wait = (ms: number): Promise<void> =>
   ms <= 0 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -220,7 +229,11 @@ function draftAnswer(brief: string): string {
     const focus = /- ([^\n]*← L'ÉCHANGE QUI VIENT D'AVOIR LIEU)/.exec(brief);
     const name = /Destinataire : ([^\n,]+)/.exec(brief);
     return JSON.stringify({
-      subject: DIRTY ? "Le délai dont on parlait \u2014 relance" : "Le délai dont on parlait",
+      subject: GENERIC
+        ? "Une démonstration préparée pour votre boutique"
+        : DIRTY
+          ? "Le délai dont on parlait \u2014 relance"
+          : "Le délai dont on parlait",
       body: [
         `Bonjour ${name?.[1]?.split(" ")[0] ?? ""},`.trim(),
         focus === null

@@ -34,12 +34,38 @@ export function hasDash(text: string): boolean {
  * En tête de ligne, le tiret est une puce : il devient un tiret ordinaire.
  * Ailleurs, il ponctue : il devient une virgule, et l'on recolle les espaces
  * pour ne pas laisser « , , » ou « mot , mot » derrière soi.
+ *
+ * ## Le nettoyage ne touche que les lignes qui portaient un tiret
+ *
+ * C'est la correction du jalon 68, et elle vaut d'être expliquée. La règle
+ * « une virgule en fin de ligne ne ponctue plus rien » est juste **pour une
+ * virgule que cette fonction vient de poser** : « ... texte, » à la place de
+ * « ... texte — » ne veut plus rien dire. Elle était appliquée à **toutes** les
+ * lignes de tous les brouillons, y compris celles qu'aucun tiret n'a jamais
+ * approchées.
+ *
+ * La première d'entre elles est l'appel : « Bonjour Roxana, » perdait sa
+ * virgule dans chaque brouillon, systématiquement, depuis le jalon 58. Le
+ * défaut ne se voyait ni au typecheck, ni dans les tests du module, qui ne
+ * portaient que sur des textes contenant des tirets.
+ *
+ * Le nettoyage est donc borné aux lignes réellement modifiées. Un texte sans
+ * aucun tiret ressort **identique à l'octet près**.
  */
 export function stripDashes(text: string): string {
+  if (!hasDash(text)) return text;
+
+  return text
+    .split("\n")
+    .map((line) => (hasDash(line) ? cleanLine(line) : line))
+    .join("\n");
+}
+
+function cleanLine(line: string): string {
   return (
-    text
+    line
       // Puce en tête de ligne : un tiret ordinaire fait le même travail.
-      .replace(/^[ \t]*[—–][ \t]+/gm, "- ")
+      .replace(/^[ \t]*[—–][ \t]+/, "- ")
       // Ponctuation : le tiret long et ses espaces deviennent une virgule.
       .replace(/\s*[—–]\s*/g, ", ")
       // Deux ponctuations qui se suivent, produites par le remplacement.
@@ -47,6 +73,6 @@ export function stripDashes(text: string): string {
       .replace(/\s+,/g, ",")
       .replace(/,\s*([.!?])/g, "$1")
       // Une virgule en fin de ligne ne ponctue plus rien.
-      .replace(/,\s*$/gm, "")
+      .replace(/,\s*$/, "")
   );
 }

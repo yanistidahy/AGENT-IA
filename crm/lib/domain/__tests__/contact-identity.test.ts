@@ -188,3 +188,44 @@ describe("sans prénom connu, l'appel ne nomme personne", () => {
     }
   });
 });
+
+describe("l'appel se termine toujours par une virgule", () => {
+  const roxana = {
+    firstName: "Roxana",
+    lastName: "Petit",
+    email: "roxana@dermoplant.fr",
+    company: { name: "Dermoplant" },
+  };
+
+  it("répare « Bonjour Roxana », le défaut signalé", () => {
+    // La réparation ne regardait que le *nom* : « Roxana » n'est pas un gabarit
+    // resté en place, donc rien ne se déclenchait et tous les brouillons
+    // sortaient sans virgule.
+    expect(repairGreeting("Bonjour Roxana\n\nUn texte.", roxana)).toBe(
+      "Bonjour Roxana,\n\nUn texte.",
+    );
+  });
+
+  it("normalise une autre ponctuation finale", () => {
+    for (const written of ["Bonjour Roxana.", "Bonjour Roxana !", "Bonjour Roxana ;"]) {
+      expect(repairGreeting(`${written}\n\nTexte.`, roxana).split("\n")[0]).toBe("Bonjour Roxana,");
+    }
+  });
+
+  it("ne touche pas au nom, seulement à la ponctuation", () => {
+    // Un appel à deux personnes reste ce que le modèle a écrit.
+    expect(repairGreeting("Bonjour Roxana et Marc\n\nTexte.", roxana).split("\n")[0]).toBe(
+      "Bonjour Roxana et Marc,",
+    );
+  });
+
+  it("laisse intact un appel déjà correct", () => {
+    const body = "Bonjour Roxana,\n\nTexte.";
+    expect(repairGreeting(body, roxana)).toBe(body);
+  });
+
+  it("sans prénom, l'appel reste nu et ponctué", () => {
+    const sans = { firstName: "", lastName: "", email: "x@y.fr", company: { name: "Dermoplant" } };
+    expect(repairGreeting("Bonjour Dermoplant\n\nTexte.", sans).split("\n")[0]).toBe("Bonjour,");
+  });
+});

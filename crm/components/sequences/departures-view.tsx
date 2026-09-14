@@ -34,6 +34,8 @@ export interface Departure {
   to: string;
   lastActivityDays: number | null;
   lastActivityAt: string | null;
+  /** Ce qu'Alex avait pour nommer la boutique. Voir `describeDemoSource`. */
+  demoSource: string;
 }
 
 function isPayload(value: unknown): value is { departures: Departure[]; message?: string } {
@@ -70,6 +72,9 @@ function StaleHint({ days, at }: { readonly days: number | null; readonly at: st
 const BUTTON =
   "rounded-control px-3 py-1 text-[12px] font-semibold transition-colors disabled:opacity-50";
 
+const FIELD =
+  "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[13px] focus:border-brand focus:outline-none";
+
 export function DeparturesView({ initial }: { readonly initial: readonly Departure[] }) {
   const [departures, setDepartures] = useState<readonly Departure[]>(initial);
   const [busy, setBusy] = useState<string | null>(null);
@@ -78,6 +83,15 @@ export function DeparturesView({ initial }: { readonly initial: readonly Departu
   const [open, setOpen] = useState<string | null>(null);
   /** Le départ ouvert dans le panneau de rédaction, le cas échéant. */
   const [reworking, setReworking] = useState<Departure | null>(null);
+  /**
+   * Le départ en cours de retouche **à la main**, et son texte.
+   *
+   * Corriger une virgule ne doit pas coûter un appel au modèle : c'est plus
+   * lent, c'est facturé, et surtout la réponse peut réécrire autre chose que ce
+   * qu'on voulait changer. Le fil avec Alex reste là, pour quand on veut son
+   * aide ; il cesse d'être le seul chemin.
+   */
+  const [editing, setEditing] = useState<{ id: string; subject: string; body: string } | null>(null);
   const router = useRouter();
 
   const decide = async (id: string, action: "send" | "postpone" | "remove") => {
@@ -93,6 +107,32 @@ export function DeparturesView({ initial }: { readonly initial: readonly Departu
     if (result.ok) {
       setDepartures(result.data.departures);
       setNotice(result.data.message ?? null);
+    } else setError(result.message);
+  };
+
+  /** Enregistre la retouche manuelle. **Aucun appel au modèle sur ce chemin.** */
+  const save = async () => {
+    if (editing === null) return;
+    setBusy(editing.id);
+    setError(null);
+    setNotice(null);
+    const result = await requestJson(
+      "/api/departures",
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          id: editing.id,
+          subject: editing.subject.trim(),
+          body: editing.body.trim(),
+        }),
+      },
+      isPayload,
+    );
+    setBusy(null);
+    if (result.ok) {
+      setDepartures(result.data.departures);
+      setEditing(null);
+      setNotice("Brouillon enregistré.");
     } else setError(result.message);
   };
 
@@ -144,6 +184,62 @@ export function DeparturesView({ initial }: { readonly initial: readonly Departu
                 <p className="mt-2 rounded-control border border-[#F5D5CF] bg-pulse-l px-3 py-2 text-[12.5px] text-[#B2311F]">
                   Brouillon non composé : {departure.detail}
                 </p>
+              ) : editing?.id === departure.id ? (
+                /*
+                  La retouche à la main : deux champs et un bouton, sans un seul
+                  appel au modèle. « Annuler » remet le texte du serveur, qui
+                  est resté intact tant qu'on n'a pas enregistré.
+                */
+                <div className="mt-2 space-y-2">
+                  <label className="block">
+                    <span className="mb-1 block font-mono text-[10px] tracking-[0.1em] text-muted uppercase">
+                      Objet
+                    </span>
+                    <input
+                      value={editing.subject}
+                      onChange={(event) =>
+                        setEditing({ ...editing, subject: event.target.value })
+                      }
+                      className={FIELD}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block font-mono text-[10px] tracking-[0.1em] text-muted uppercase">
+                      Message
+                    </span>
+                    <textarea
+                      value={editing.body}
+                      rows={14}
+                      onChange={(event) => setEditing({ ...editing, body: event.target.value })}
+                      className={`${FIELD} leading-relaxed`}
+                    />
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={`${BUTTON} bg-brand text-white hover:bg-brand-d`}
+                      disabled={
+                        busy !== null ||
+                        editing.subject.trim() === "" ||
+                        editing.body.trim() === ""
+                      }
+                      onClick={() => void save()}
+                    >
+                      {busy === departure.id ? "…" : "Enregistrer"}
+                    </button>
+                    <button
+                      type="button"
+                      className={`${BUTTON} border border-line hover:bg-surface-2`}
+                      disabled={busy !== null}
+                      onClick={() => setEditing(null)}
+                    >
+                      Annuler
+                    </button>
+                    <span className="self-center text-[11.5px] text-muted">
+                      Enregistré tel quel, sans passer par Alex.
+                    </span>
+                  </div>
+                </div>
               ) : (
                 <>
                   <p className="mt-2 text-[13px] font-medium">{departure.subject}</p>
@@ -156,13 +252,24 @@ export function DeparturesView({ initial }: { readonly initial: readonly Departu
                   >
                     {departure.body}
                   </p>
-                  <button
-                    type="button"
-                    className="mt-1 text-[11.5px] font-semibold text-brand underline"
-                    onClick={() => setOpen(open === departure.id ? null : departure.id)}
-                  >
-                    {open === departure.id ? "Replier" : "Lire en entier"}
-                  </button>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <button
+                      type="button"
+                      className="text-[11.5px] font-semibold text-brand underline"
+                      onClick={() => setOpen(open === departure.id ? null : departure.id)}
+                    >
+                      {open === departure.id ? "Replier" : "Lire en entier"}
+                    </button>
+                    {/*
+                      Ce qu'Alex avait pour nommer la boutique. Une phrase
+                      générique cesse d'être ambiguë : ou bien la fiche ne porte
+                      rien, ou bien le modèle n'a pas utilisé ce qu'on lui a
+                      donné, et ce ne sont pas les mêmes gestes.
+                    */}
+                    <span className="text-[11.5px] text-muted">
+                      Données de démonstration : {departure.demoSource}
+                    </span>
+                  </div>
                 </>
               )}
 
@@ -182,6 +289,25 @@ export function DeparturesView({ initial }: { readonly initial: readonly Departu
                   composant. Deux surfaces de rédaction auraient fini par ne
                   plus se ressembler.
                 */}
+                {/*
+                  **Corriger soi-même passe avant demander de l'aide**, et c'est
+                  l'ordre des boutons qui le dit : une virgule manquante ne vaut
+                  pas un appel au modèle.
+                */}
+                <button
+                  type="button"
+                  className={`${BUTTON} border border-line hover:bg-surface-2`}
+                  disabled={busy !== null || departure.status === "failed"}
+                  onClick={() =>
+                    setEditing({
+                      id: departure.id,
+                      subject: departure.subject,
+                      body: departure.body,
+                    })
+                  }
+                >
+                  Modifier
+                </button>
                 <button
                   type="button"
                   className={`${BUTTON} border border-brand text-brand-d hover:bg-brand-l`}

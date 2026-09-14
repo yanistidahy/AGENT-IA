@@ -84,10 +84,23 @@ describe("une seule surface de rédaction", () => {
     const view = sourceOf("components/sequences/departures-view.tsx");
     expect(view).toContain("ComposePanel");
     expect(view).toContain("departureId");
-    // Un second éditeur dans la file serait un second endroit où la reprise,
-    // la signature et le retour en arrière finiraient par diverger.
+    // Un second éditeur **assisté par le modèle** dans la file serait un second
+    // endroit où la reprise, la signature et le retour en arrière finiraient
+    // par diverger. C'est cela qui est interdit, et c'est ce que ces deux
+    // lignes vérifient : aucun fil avec Alex, et aucun appel à la route qui
+    // écrit avec lui.
     expect(view).not.toContain("useAgentChat");
-    expect(view).not.toContain("<textarea");
+    expect(view).not.toContain("/api/emails");
+
+    /*
+      La retouche **à la main**, elle, est légitime depuis le jalon 68 : un
+      champ, un bouton, et la route de la file. Corriger une virgule ne doit
+      coûter ni un appel au modèle ni l'ouverture d'un panneau. La garde
+      d'origine interdisait tout `<textarea>`, ce qui visait juste mais trop
+      large — elle décrit maintenant la règle plutôt que l'une de ses formes.
+    */
+    expect(view).toContain("<textarea");
+    expect(view).toContain('method: "PATCH"');
   });
 
   it("rouvrir un départ n'appelle aucun modèle", () => {
