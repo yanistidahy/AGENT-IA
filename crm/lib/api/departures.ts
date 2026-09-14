@@ -16,7 +16,8 @@ import {
   nextStep,
   stopsEnrollment,
 } from "../domain/sequence-rules";
-import { contactTitle } from "../domain/contact-identity";
+import { contactTitle, repairGreeting } from "../domain/contact-identity";
+import { demoTarget, describeDemoSource } from "../domain/demo-target";
 import { listSignatories, pickSignatory } from "./signatories";
 import { sanitizeSubject } from "../domain/email-format";
 
@@ -369,6 +370,17 @@ export interface DepartureView {
    */
   readonly lastActivityDays: number | null;
   readonly lastActivityAt: Date | null;
+  /**
+   * Ce qu'Alex avait sous la main pour nommer la boutique, en clair.
+   *
+   * **Sans cette ligne, « sur votre boutique » est indiscernable de deux
+   * choses** : une fiche qui ne porte réellement ni site ni société, et un
+   * modèle qui n'a pas utilisé ce qu'on lui a donné. Ce sont deux défauts
+   * opposés, l'un se corrige dans la fiche et l'autre dans le prompt, et il a
+   * fallu une question pour les départager. La file le dit désormais d'elle
+   * meme, brouillon par brouillon.
+   */
+  readonly demoSource: string;
 }
 
 /** La file du jour, telle qu'elle s'affiche. */
@@ -380,7 +392,16 @@ export async function listDepartures(now = new Date()): Promise<DepartureView[]>
       enrollment: {
         include: {
           sequence: { select: { name: true } },
-          contact: { select: { id: true, firstName: true, lastName: true, email: true } },
+          contact: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              website: true,
+              company: { select: { name: true, domain: true } },
+            },
+          },
         },
       },
     },
@@ -399,7 +420,15 @@ export async function listDepartures(now = new Date()): Promise<DepartureView[]>
       step: row.step,
       status: row.status,
       subject: row.subject,
-      body: row.body,
+      /*
+        **La virgule de l'appel est réparée à la lecture**, pas seulement à la
+        composition : les brouillons déjà en file ont été écrits avant le
+        correctif, et ce sont eux qu'on relit ce matin. Ce que la file montre
+        est donc ce qui partira : `sendDeparture` applique la même réparation.
+        Le texte stocké, lui, n'est réécrit que si on l'enregistre : une
+        consultation n'écrit pas (jalon 8).
+      */
+      body: repairGreeting(row.body, row.enrollment.contact),
       detail: row.detail,
       sequenceName: row.enrollment.sequence.name,
       contactId: row.enrollment.contact.id,
@@ -407,6 +436,13 @@ export async function listDepartures(now = new Date()): Promise<DepartureView[]>
       to: row.enrollment.contact.email,
       lastActivityDays: last === null ? null : daysSince(last.date, now),
       lastActivityAt: last?.date ?? null,
+      demoSource: describeDemoSource(
+        demoTarget({
+          website: row.enrollment.contact.website,
+          companyDomain: row.enrollment.contact.company?.domain ?? "",
+          companyName: row.enrollment.contact.company?.name ?? "",
+        }),
+      ),
     });
   }
   return views;
@@ -443,7 +479,18 @@ export async function sendDeparture(
               campaign: { select: { mailboxId: true } },
             },
           },
-          contact: { select: { id: true, lifecycle: true, lostReason: true, email: true } },
+          contact: {
+            select: {
+              id: true,
+              lifecycle: true,
+              lostReason: true,
+              email: true,
+              // Le prénom : la réparation de l'appel en a besoin au moment de
+              // l'envoi, pas seulement à l'affichage.
+              firstName: true,
+              lastName: true,
+            },
+          },
         },
       },
     },
@@ -503,7 +550,8 @@ export async function sendDeparture(
   const sent = await sendEmailToContact({
     contactId: enrollment.contactId,
     subject: departure.subject,
-    body: departure.body,
+    // Même réparation qu'à l'affichage : ce qui part est ce qui a été relu.
+    body: repairGreeting(departure.body, enrollment.contact),
     // La boîte de la campagne, ou le choix par propriétaire à défaut, un
     // départ composé avant le jalon 54 n'a pas de campagne, et il doit partir
     // quand même.
@@ -644,7 +692,7 @@ export async function departureDraft(
     ok: true,
     draft: {
       subject: departure.subject,
-      body: departure.body,
+      body: repairGreeting(departure.body, contact),
       to: contact.email,
       contactId: contact.id,
       contactName: contactTitle(contact),

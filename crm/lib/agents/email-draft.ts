@@ -16,7 +16,12 @@ import { formatDate } from "@/lib/format";
 import { enforceSignature, sanitizeSubject } from "@/lib/domain/email-format";
 import { stripDashes } from "@/lib/domain/em-dash";
 import { signatureBlock } from "./prompts/company";
-import { demoTarget, demoTargetRule } from "@/lib/domain/demo-target";
+import {
+  demoTarget,
+  demoTargetRule,
+  enforceSubjectBrand,
+  subjectRule,
+} from "@/lib/domain/demo-target";
 import { sizeFact, teamMentionRule } from "@/lib/domain/team-mention";
 import { angleFor } from "@/lib/api/role-angles";
 import {
@@ -340,6 +345,7 @@ async function contextFor(contactId: string, focusActivityId?: string): Promise<
     greeting: greetingRule(contact),
     angleRule: angle.rule,
     colleague: warning.recent,
+    brand: contact.company?.name ?? "",
   };
 }
 
@@ -362,6 +368,8 @@ interface ContextResult {
   readonly angleRule: string;
   /** Le collègue écrit récemment, s'il y en a un dans la fenêtre réglée. */
   readonly colleague: ColleagueContact | null;
+  /** La marque, pour que l'objet puisse la nommer. Vide = aucune société liée. */
+  readonly brand: string;
 }
 
 /**
@@ -385,6 +393,8 @@ function draftInstruction(context: ContextResult): string {
 règles de forme, de signature et de lien données plus haut.
 
 ${demoTargetRule(context.target)}
+
+${subjectRule(context.brand)}
 
 ${dmRule(context.dmSent)}
 
@@ -536,6 +546,10 @@ export async function draftEmail(
     ok: true,
     draft: {
       ...result.draft,
+      // La marque est imposée dans l'objet ici, où elle est connue : `complete`
+      // sert aussi la reprise, qui n'a pas de dossier. Le remplacement est
+      // etroit, voir `enforceSubjectBrand`.
+      subject: enforceSubjectBrand(result.draft.subject, context.brand),
       colleagueWarning:
         colleague === null
           ? null

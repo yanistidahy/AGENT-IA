@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 68 | **La virgule mangée par le nettoyage des tirets** — l'objet nomme la marque, la file dit ce qu'Alex avait sous la main, et un départ se retouche à la main sans passer par Alex | **livré, à valider** |
 | 67 | **Trois lignes, et le vrai doublon** — l'adresse quitte la signature ; `enforceSignature` ne remplaçait que la dernière ligne du paragraphe, ce qui écrivait le bloc deux fois à la composition | **livré, à valider** |
 | 66 | **La signature en double, dans le panneau** — le panneau composait un bloc à deux lignes quand le serveur en composait quatre : `replaceSignature` n'en trouvait aucun et en ajoutait un second | **livré, à valider** |
 | 65 | **Le logo à gauche, la signature à droite** — un tableau à deux colonnes, le seul assemblage qu'Outlook rende comme les autres ; la version texte ne bouge pas | **livré, à valider** |
@@ -9421,3 +9422,119 @@ ne parcourt la file pour le faire à la place de l'utilisateur.
 montrait deux signatures après rebascule : le serveur tournait sur un build
 antérieur au dernier correctif. C'est la leçon des jalons 33, 34, 37, 50 et 51 —
 **vérifier quel binaire répond avant de conclure**.
+
+---
+
+## Jalon 68 — la virgule, la marque, et la retouche à la main
+
+### 1. L'appel perdait sa virgule, et ce n'était pas `repairGreeting`
+
+Reproduit d'abord, fonction par fonction, sur la chaîne réelle :
+
+```
+1 repairGreeting    : "Bonjour Roxana,"
+2 enforceSignature  : "Bonjour Roxana,"
+3 stripDashes       : "Bonjour Roxana"      <- la virgule disparaît ici
+```
+
+**`lib/domain/em-dash.ts` — `.replace(/,\s*$/gm, "")`.** La règle « une virgule
+en fin de ligne ne ponctue plus rien » est juste **pour une virgule que cette
+fonction vient de poser** : « … texte, » à la place de « … texte — » ne veut
+plus rien dire. Mais elle s'appliquait à **toutes les lignes de tous les
+brouillons**, y compris celles qu'aucun tiret n'a jamais approchées, et la
+première d'entre elles est l'appel. Systémique depuis le jalon 58, sur chaque
+brouillon.
+
+Le défaut ne pouvait pas se voir : les tests du module ne portaient que sur des
+textes contenant des tirets, et un texte sans tiret n'était jamais comparé à
+lui-même. Le nettoyage est désormais **borné aux lignes réellement modifiées**,
+et un texte sans aucun tiret ressort identique à l'octet près.
+
+`repairGreeting` est durci au passage, pour les brouillons déjà en file :
+« Bonjour Roxana » et « Bonjour Roxana. » deviennent « Bonjour Roxana, ». La
+réparation ne touche que la **ponctuation finale** — « Bonjour Roxana et Marc »
+garde son nom. Elle est appliquée à la lecture de la file et à l'envoi, donc ce
+qu'on relit le matin est ce qui partira ; le texte stocké n'est réécrit que si
+on l'enregistre, une consultation n'écrit pas (jalon 8).
+
+### 2. L'objet ne nommait pas la marque : le prompt n'en disait rien
+
+Cause mesurée : `draftInstruction()` décrivait le corps ligne à ligne et **ne
+disait rien de l'objet**, qui n'apparaissait qu'en clé du JSON attendu. Le
+modèle retombait donc sur la formule générique de la consigne la plus proche.
+Ce n'était pas une donnée manquante — la marque est dans le dossier depuis le
+jalon 53 — mais un **trou dans la consigne**.
+
+`subjectRule(brand)` est ajoutée, construite depuis la donnée comme les autres :
+elle nomme la marque quand la fiche en porte une, et **interdit d'en inventer**
+quand elle n'en porte pas. `enforceSubjectBrand()` garantit ce que la consigne
+demande, avec la posture de la signature (jalon 33) et du tiret long (jalon 58).
+Le remplacement est **étroit** : seules les formules génériques (« votre
+boutique », « votre site », « votre marque ») sont remplacées, et seulement
+quand la marque est connue. Un objet de relance n'est pas réécrit.
+
+### 3. « sur votre boutique » : la fiche, ou le modèle ?
+
+Les deux lectures étaient possibles, et elles appellent des gestes opposés —
+l'une se corrige dans la fiche, l'autre dans le prompt. La file le dit désormais
+elle-même, brouillon par brouillon :
+
+| Ce que la carte affiche | Ce que ça veut dire |
+|---|---|
+| `site dermoplant.fr` | un site est connu, Alex devait le citer |
+| `aucun site, marque « Dermoplant »` | repli du jalon 48 : nommer la marque, jamais inventer d'adresse |
+| `ni site ni société liée` | la fiche ne porte rien, c'est elle qu'il faut compléter |
+
+**Le cas signalé n'a pas pu être tranché depuis ici** : cet environnement n'a
+accès qu'à la base locale. La phrase exacte relevée — « sur votre boutique »,
+sans marque — est **mot pour mot** la consigne du cas `ni site ni société liée`,
+ce qui désigne une fiche sans société liée plutôt qu'un modèle désobéissant.
+La ligne de la file le confirmera au premier brouillon.
+
+### 4. Retoucher un départ à la main
+
+Deux champs et un bouton sur la carte : objet, message, « Enregistrer ». **Aucun
+appel au modèle** — la route `PATCH /api/departures` existe depuis le jalon 57
+et n'écrit que le texte. Corriger une virgule ne doit coûter ni un appel
+facturé, ni le risque qu'une reprise réécrive autre chose que ce qu'on voulait.
+
+« Modifier » est placé **avant** « Retravailler avec Alex » : l'ordre des boutons
+dit lequel est le geste ordinaire. Le fil avec Alex reste entier pour quand on
+veut son aide.
+
+La garde du jalon 57 interdisait tout `<textarea>` dans la file — elle visait
+juste (pas de second éditeur *assisté par le modèle*) mais trop large. Elle
+décrit maintenant la règle plutôt qu'une de ses formes : aucun `useAgentChat`,
+aucun appel à `/api/emails`, et la retouche passe par `PATCH`.
+
+### Jalon 68 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide**), le serveur standalone de
+production, le substitut Anthropic étendu (`MOCK_GENERIC=1`, qui rend l'objet
+générique observé en production) et un navigateur piloté :
+
+- **composition** : « Bonjour Roxana, » et « Bonjour Alice, », **virgule
+  comprise** ; objet « Une démonstration préparée pour Dermoplant » quand la
+  marque est connue, générique quand la fiche ne porte **aucune** société —
+  jamais une marque inventée ;
+- **file** : deux brouillons semés **tels qu'ils sortaient avant le correctif**
+  (appel sans virgule, objet générique) s'affichent avec leur virgule, et
+  chaque carte annonce ses données de démonstration ;
+- **retouche à la main** : champs ouverts, objet et corps modifiés, enregistrés
+  — **un seul appel réseau, `PATCH /api/departures`**, aucun appel au modèle,
+  **0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1181 tests**) et
+  `npm run e2e` (**29 tests**) verts.
+
+### Jalon 68 — ce qui n'est pas fait
+
+**Les brouillons en file ne sont pas réécrits en base.** Leur appel s'affiche et
+part avec sa virgule, mais le texte stocké garde sa forme d'origine tant qu'on
+ne l'enregistre pas. L'objet, lui, n'est pas rattrapé : un brouillon déjà
+composé garde son objet générique, et c'est précisément ce que le bouton
+« Modifier » permet de corriger en dix secondes.
+
+**Le cas Roxana n'est pas tranché depuis cet environnement** — voir plus haut.
+
+**La retouche n'a pas de retour en arrière.** Enregistrer écrase le texte
+précédent ; le panneau d'Alex garde le sien (jalon 34), pas la carte.

@@ -179,7 +179,20 @@ export function repairGreeting(body: string, contact: ContactIdentityLike): stri
     /^[,\s]*[-\u2013\u2014][\s,;:.!]*$/.test(rest) ||
     /\{\{|\[\[|<[a-z_]+>|\bprénom\b|\bfirstname\b/i.test(rest);
 
-  return dangling ? withFirstLine(lines, greeting(contact)) : body;
+  if (dangling) return withFirstLine(lines, greeting(contact));
+
+  /*
+    **La virgule, systématiquement.** « Bonjour Roxana » sans virgule se lisait
+    sur tous les brouillons : la réparation ne regardait que le *nom*, jamais la
+    ponctuation qui le suit, et « Roxana » n'est pas un gabarit resté en place,
+    donc rien ne se déclenchait. C'était systémique, pas accidentel.
+
+    On ne touche qu'à la ponctuation finale : le nom écrit par le modèle reste
+    exactement ce qu'il a écrit, « Bonjour Roxana et Marc » compris. C'est la
+    même règle étroite que ci-dessus, appliquée à l'autre bout de la ligne.
+  */
+  const fixed = `Bonjour ${rest.replace(/[\s,;:.!]+$/, "")},`;
+  return fixed === trimmed ? body : withFirstLine(lines, fixed);
 }
 
 function withFirstLine(lines: readonly string[], first: string): string {

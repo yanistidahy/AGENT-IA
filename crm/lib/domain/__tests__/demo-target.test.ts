@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { demoTarget, demoTargetRule } from "../demo-target";
+import { demoTarget, demoTargetRule, subjectRule, enforceSubjectBrand, describeDemoSource } from "../demo-target";
 
 const base = { website: "", companyDomain: "", companyName: "" };
 
@@ -77,5 +77,57 @@ describe("la consigne donnée à Alex", () => {
 
   it("reste utilisable même sans marque", () => {
     expect(demoTargetRule(demoTarget(base))).toContain("votre boutique");
+  });
+});
+
+describe("l'objet nomme la marque", () => {
+  it("la consigne existe, et elle nomme la marque", () => {
+    // Elle manquait : le prompt décrivait le corps ligne à ligne et ne disait
+    // rien de l'objet, qui n'était demandé qu'en clé du JSON attendu.
+    const rule = subjectRule("Dermoplant");
+    expect(rule).toContain("Une démonstration préparée pour Dermoplant");
+    expect(rule).toContain("Jamais « votre boutique »");
+  });
+
+  it("sans marque connue, elle interdit d'en inventer une", () => {
+    expect(subjectRule("")).toContain("N'en invente pas");
+    expect(subjectRule("  ")).not.toContain("Une démonstration préparée pour");
+  });
+
+  it("la formule générique est remplacée par la marque", () => {
+    expect(
+      enforceSubjectBrand("Une démonstration préparée pour votre boutique", "Dermoplant"),
+    ).toBe("Une démonstration préparée pour Dermoplant");
+    expect(enforceSubjectBrand("Un aperçu pour votre site", "Dermoplant")).toBe(
+      "Un aperçu pour Dermoplant",
+    );
+  });
+
+  it("un objet qui nomme déjà la marque n'est pas réécrit", () => {
+    const already = "Dermoplant : une démonstration préparée";
+    expect(enforceSubjectBrand(already, "Dermoplant")).toBe(already);
+    expect(enforceSubjectBrand(already, "dermoplant")).toBe(already);
+  });
+
+  it("sans marque, rien n'est réécrit — on n'invente pas", () => {
+    const generic = "Une démonstration préparée pour votre boutique";
+    expect(enforceSubjectBrand(generic, "")).toBe(generic);
+  });
+
+  it("un objet qui parle d'autre chose est laissé tel quel", () => {
+    const relance = "Notre échange de jeudi";
+    expect(enforceSubjectBrand(relance, "Dermoplant")).toBe(relance);
+  });
+});
+
+describe("ce que la file annonce comme source", () => {
+  it("distingue les trois états, qui appellent trois gestes différents", () => {
+    expect(describeDemoSource({ kind: "site", value: "dermoplant.fr" })).toBe(
+      "site dermoplant.fr",
+    );
+    expect(describeDemoSource({ kind: "brand", value: "Dermoplant" })).toBe(
+      "aucun site, marque « Dermoplant »",
+    );
+    expect(describeDemoSource({ kind: "none", value: "" })).toBe("ni site ni société liée");
   });
 });

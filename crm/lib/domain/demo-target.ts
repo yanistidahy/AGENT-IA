@@ -85,3 +85,63 @@ export function demoTargetRule(target: DemoTarget): string {
   }
   return `**Aucun site ni nom de marque n'est connu.** N'invente ni adresse ni nom : écris simplement « sur votre boutique ».`;
 }
+
+/**
+ * Ce que la file affiche pour dire **ce qu'Alex avait sous la main**.
+ *
+ * Trois états, trois gestes différents : un site connu se cite, une marque
+ * seule se nomme, et « ni l'un ni l'autre » n'est pas un défaut du modèle mais
+ * une fiche à compléter. Les confondre coûte un aller-retour entier.
+ */
+export function describeDemoSource(target: DemoTarget): string {
+  if (target.kind === "site") return `site ${target.value}`;
+  if (target.kind === "brand") return `aucun site, marque « ${target.value} »`;
+  return "ni site ni société liée";
+}
+
+/** Ce que l'objet doit nommer quand un objet générique ne le nomme pas. */
+export const GENERIC_SUBJECT_TARGETS = ["votre boutique", "votre site", "votre marque"];
+
+/**
+ * **L'objet nomme la marque**, et c'est une consigne qui manquait.
+ *
+ * Le prompt décrivait le corps ligne à ligne et ne disait **rien** de l'objet :
+ * il n'était demandé qu'à la toute fin, comme une clé du JSON attendu. Le
+ * modèle retombait donc sur la formule générique de la consigne la plus proche,
+ * « votre boutique », ce que le mail de référence ne fait jamais.
+ *
+ * Un objet qui nomme la marque se distingue dans une boîte de réception : il
+ * dit que le message a été écrit pour ce destinataire, avant même d'être
+ * ouvert. C'est le même argument que la phrase de démonstration, un cran plus
+ * tôt.
+ */
+export function subjectRule(brand: string): string {
+  const name = brand.trim();
+  if (name === "") {
+    return `**L'objet ne peut nommer aucune marque** : la fiche n'en porte pas. N'en invente pas, reste factuel et court.`;
+  }
+  return `**L'objet nomme la marque**, comme le mail de référence : « Une démonstration préparée pour ${name} ». Jamais « votre boutique » ni « votre site » dans l'objet, une formule générique se lit comme un envoi en masse avant même d'être ouverte.`;
+}
+
+/**
+ * La garantie qui va avec la consigne.
+ *
+ * Même posture que la signature (jalon 33) et que le tiret long (jalon 58) :
+ * une consigne de prompt est une intention, et « presque toujours » ne suffit
+ * pas pour la seule ligne que le destinataire lit avant de décider d'ouvrir.
+ *
+ * Le remplacement est **étroit** : il ne touche que les formules génériques
+ * énumérées ci-dessus, et seulement quand la marque est connue. Un objet qui
+ * nomme déjà la marque, ou qui parle d'autre chose (une relance, un rappel de
+ * rendez-vous), n'est pas réécrit.
+ */
+export function enforceSubjectBrand(subject: string, brand: string): string {
+  const name = brand.trim();
+  if (name === "" || subject.toLowerCase().includes(name.toLowerCase())) return subject;
+
+  let out = subject;
+  for (const generic of GENERIC_SUBJECT_TARGETS) {
+    out = out.replace(new RegExp(generic, "gi"), name);
+  }
+  return out;
+}
