@@ -91,12 +91,20 @@ export function signatoryOptionLabel(signatory: SignatoryLike): string {
  * si bien que changer de boîte **ajoutait** une signature au lieu de remplacer
  * celle qui était là.
  *
+ * **Trois lignes depuis le jalon 67** : nom, titre, téléphone. L'adresse en est
+ * retirée — elle est déjà l'expéditeur du message, et la répéter sous le texte
+ * n'apprend rien à personne. Le changement se fait **ici et nulle part
+ * ailleurs** : la version texte, la cellule du tableau HTML, l'aperçu des
+ * campagnes et le panneau de rédaction lisent tous cette fonction.
+ *
  * **Un champ vide retire sa ligne**, il n'en laisse pas une blanche.
  */
 export function signatureLines(signatory: SignatureLike): readonly string[] {
-  return [signatory.name, signatory.title, signatory.phone, signatory.email]
-    .map((line) => line.trim())
-    .filter((line) => line !== "");
+  return compact([signatory.name, signatory.title, signatory.phone]);
+}
+
+function compact(lines: readonly string[]): string[] {
+  return lines.map((line) => line.trim()).filter((line) => line !== "");
 }
 
 /** Les mêmes lignes, assemblées — la forme qui vit dans le corps du message. */
@@ -116,12 +124,18 @@ export function signatureText(signatory: SignatureLike): string {
 export function knownSignatureBlocks(
   signatories: readonly SignatureLike[],
 ): string[] {
-  return signatories.flatMap((signatory) => [
-    signatureText(signatory),
-    signatureText({ ...signatory, email: "" }),
-    signatureText({ ...signatory, phone: "" }),
-    signatureText({ ...signatory, phone: "", email: "" }),
-  ]);
+  return signatories.flatMap(({ name, title, phone, email }) =>
+    [
+      // La forme courante (jalon 67).
+      [name, title, phone],
+      // Les formes héritées, dans l'ordre où elles ont existé : quatre lignes
+      // avec l'adresse (jalons 62 à 66), la même sans téléphone, et les deux
+      // lignes d'avant le jalon 62.
+      [name, title, phone, email],
+      [name, title, email],
+      [name, title],
+    ].map((lines) => compact(lines).join("\n")),
+  );
 }
 
 export interface SignatoryGap {

@@ -29,14 +29,16 @@ const BODY = [
 const LOGO = { url: "https://crm.auraflowai.fr/api/logo/abc123", width: LOGO_WIDTH };
 
 describe("les deux versions du message", () => {
-  it("le texte porte les quatre lignes et aucune image", () => {
+  it("le texte porte les trois lignes et aucune image", () => {
     const text = toPlainText(BODY);
-    expect(text).toContain("Yanis Tidahy\nFondateur, Aura Flow AI\n07 85 28 35 36\nyanis.tidahy@auraflowai.fr");
+    // Trois lignes depuis le jalon 67 : l'adresse est déjà l'expéditeur.
+    expect(text).toContain("Yanis Tidahy\nFondateur, Aura Flow AI\n07 85 28 35 36");
+    expect(text).not.toContain("yanis.tidahy@auraflowai.fr");
     expect(text).not.toContain("<img");
     expect(text).not.toContain("/api/logo/");
   });
 
-  it("le HTML porte les mêmes quatre lignes, plus le logo", () => {
+  it("le HTML porte les mêmes trois lignes, plus le logo", () => {
     const html = withSignatureLogo(toHtml(BODY), LOGO);
     for (const line of ["Yanis Tidahy", "Fondateur, Aura Flow AI", "07 85 28 35 36"]) {
       expect(html).toContain(line);
@@ -62,7 +64,7 @@ describe("les deux versions du message", () => {
     expect(cells[0]).toContain("<img");
     expect(cells[1]).not.toContain("<img");
     expect(cells[1]).toContain("Yanis Tidahy");
-    expect(cells[1]).toContain("yanis.tidahy@auraflowai.fr");
+    expect(cells[1]).toContain("07 85 28 35 36");
 
     // Centrées l'une par rapport à l'autre, et la colonne du logo à sa
     // largeur rendue — sinon le texte se colle au logo ou s'en éloigne selon

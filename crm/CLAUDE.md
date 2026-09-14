@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 67 | **Trois lignes, et le vrai doublon** — l'adresse quitte la signature ; `enforceSignature` ne remplaçait que la dernière ligne du paragraphe, ce qui écrivait le bloc deux fois à la composition | **livré, à valider** |
 | 66 | **La signature en double, dans le panneau** — le panneau composait un bloc à deux lignes quand le serveur en composait quatre : `replaceSignature` n'en trouvait aucun et en ajoutait un second | **livré, à valider** |
 | 65 | **Le logo à gauche, la signature à droite** — un tableau à deux colonnes, le seul assemblage qu'Outlook rende comme les autres ; la version texte ne bouge pas | **livré, à valider** |
 | 64 | **Le signataire d'une campagne, nommé** — le menu dit qu'il choisit la signature, montre l'adresse et les lignes qui partiront, et avertit quand la boîte n'en porte aucune | **livré, à valider** |
@@ -9325,3 +9326,98 @@ puisque les deux formes sont désormais reconnues.
 qui écrirait les quatre lignes à la main, sans passer par les champs d'un
 signataire, ne serait pas attrapé. Ce que le test ferme, c'est le chemin par
 lequel le défaut est réellement arrivé.
+
+---
+
+## Jalon 67 — trois lignes, et le doublon qui restait
+
+### 1. La signature perd son adresse
+
+`signatureLines()` rend **nom, titre, téléphone**. L'adresse en sort : elle est
+déjà l'expéditeur du message, et la répéter sous le texte n'apprend rien à
+personne. Le changement se fait à **un seul endroit** — la version texte, la
+cellule droite du tableau HTML (jalon 65), l'aperçu des campagnes et le panneau
+de rédaction lisent tous cette fonction, et c'est ce que le jalon 66 avait
+acheté.
+
+`knownSignatureBlocks()` garde en revanche **la forme à quatre lignes** parmi les
+formes connues, avec celles d'avant le jalon 62 : les brouillons composés entre
+les jalons 62 et 66 la portent, et une forme absente de cette liste n'est pas
+remplacée — elle est doublée.
+
+### 2. Le doublon ne venait pas du panneau
+
+Le correctif du jalon 66 est bien en production (`2fc5c61`, fusionné dans `main`
+par la PR #38), et il était juste — il fermait le chemin du **changement de
+signataire**. Mais le texte signalé se produit **à la composition**, avant tout
+clic, et par un autre chemin.
+
+**`lib/domain/email-format.ts:391` — `enforceSignature()`** ne remplaçait que la
+**dernière ligne** du dernier paragraphe. Tant que le modèle écrivait « Bien à
+vous, » puis un seul nom, c'était juste. Mais le modèle écrit souvent la formule
+de politesse **et le bloc entier** dans le même paragraphe : seule la dernière
+ligne était alors remplacée par la signature complète.
+
+Rejoué sur le texte exact du rapport :
+
+```
+entrée (ce que le modèle rend)      sortie (avant correctif)
+À bientôt                           À bientôt
+Yanis Tidahy                        Yanis Tidahy
+Fondateur, Aura Flow AI             Fondateur, Aura Flow AI
+0785283536                          0785283536
+yanis.tidahy@auraflowai.fr          Yanis Tidahy
+                                    Fondateur, Aura Flow AI
+                                    0785283536
+                                    yanis.tidahy@auraflowai.fr
+```
+
+**Identique au caractère près à ce qui a été signalé.** La cause est nommée par
+reproduction, pas par lecture.
+
+Le remplacement coupe désormais à la **première ligne qui porte un nom** : la
+formule de politesse reste, tout le bloc part, quelle que soit sa longueur et sa
+forme. Et la signature repart dans **son propre paragraphe** — c'est le dernier
+paragraphe que la cellule droite du tableau HTML rend, et y laisser « À bientôt »
+ferait porter la formule de politesse au logo.
+
+### 3. Le même défaut, à l'autre bout
+
+Vérification faite, le changement de signataire ratait le même cas :
+`replaceSignature` comparait des paragraphes **entiers**, donc une signature
+collée à la formule de politesse n'était pas trouvée — et une seconde était
+ajoutée. Elle accepte maintenant une correspondance **en fin de paragraphe**,
+toujours ancrée sur un bloc connu (un post-scriptum n'est donc toujours pas
+coupé), et elle retire **toutes les signatures qui se suivent** : c'est ce qui
+permet à un brouillon déjà doublé de se réparer en rebasculant son signataire.
+
+### Jalon 67 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide**), le serveur standalone, un
+puits SMTP réel et le substitut Anthropic **étendu** (`MOCK_SIGNED=1`, qui
+reproduit la forme fautive observée en production — même discipline qu'au
+jalon 43) :
+
+- **brouillon frais** : une seule signature, **trois lignes**, aucune adresse ;
+- **trois bascules de signataire d'affilée** : « Mohamed Targani » 1 fois,
+  « Yanis Tidahy » 0 fois, **0 erreur console** ;
+- **départ composé avant le correctif**, semé avec le texte doublé exact :
+  rouvert depuis la file, le texte enregistré porte bien 2 signatures ;
+  rebasculer le signataire le ramène à **1**, adresse comprise. La réparation
+  annoncée au jalon 66 est donc réelle, et elle nettoie tout le bloc ;
+- **sur le fil** : partie `text/plain` **une seule** signature, trois lignes,
+  sans adresse ; cellule droite du tableau HTML
+  `Mohamed Targani<br>Co-Fondateur, Aura Flow AI<br>06 12 34 56 78` ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1166 tests**) et
+  `npm run e2e` (**29 tests**) verts.
+
+### Jalon 67 — ce qui n'est pas fait
+
+**La file des départs n'est pas repassée en masse.** Un brouillon déjà doublé se
+répare en rebasculant son signataire, ce qui est vérifié ci-dessus ; aucun script
+ne parcourt la file pour le faire à la place de l'utilisateur.
+
+**Le piège de méthode a resservi.** La première vérification du départ ancien
+montrait deux signatures après rebascule : le serveur tournait sur un build
+antérieur au dernier correctif. C'est la leçon des jalons 33, 34, 37, 50 et 51 —
+**vérifier quel binaire répond avant de conclure**.

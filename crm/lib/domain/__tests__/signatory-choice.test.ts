@@ -53,7 +53,6 @@ describe("les lignes de signature", () => {
     expect(signatureLines({ ...yanis, title: "" })).toEqual([
       "Yanis Tidahy",
       "07 85 28 35 36",
-      "yanis.tidahy@auraflowai.fr",
     ]);
   });
 });
@@ -69,10 +68,25 @@ describe("le bloc de signature, celui qui vit dans le corps du message", () => {
     from: "mohamed.targani@auraflowai.fr",
   };
 
-  it("porte les quatre lignes, téléphone compris", () => {
+  it("porte trois lignes : nom, titre, téléphone", () => {
+    // L'adresse en a été retirée au jalon 67 : elle est déjà l'expéditeur du
+    // message, et la répéter sous le texte n'apprend rien à personne.
     expect(signatureText(yanis)).toBe(
-      "Yanis Tidahy\nFondateur, Aura Flow AI\n07 85 28 35 36\nyanis.tidahy@auraflowai.fr",
+      "Yanis Tidahy\nFondateur, Aura Flow AI\n07 85 28 35 36",
     );
+    expect(signatureText(yanis)).not.toContain("@");
+  });
+
+  it("la forme à quatre lignes reste reconnue, et remplacée", () => {
+    // Les brouillons composés entre les jalons 62 et 66 la portent : une forme
+    // absente des formes connues n'est pas remplacée, elle est doublée.
+    const legacy = "Yanis Tidahy\nFondateur, Aura Flow AI\n07 85 28 35 36\nyanis.tidahy@auraflowai.fr";
+    expect(knownSignatureBlocks([yanis])).toContain(legacy);
+
+    const body = `Bonjour,\n\nÀ bientôt,\n\n${legacy}`;
+    const after = replaceSignature(body, knownSignatureBlocks([yanis]), signatureText(yanis));
+    expect(after.split("Yanis Tidahy")).toHaveLength(2);
+    expect(after).not.toContain("yanis.tidahy@auraflowai.fr");
   });
 
   it("changer de boîte remplace la signature, il n'en ajoute pas une seconde", () => {
@@ -84,6 +98,58 @@ describe("le bloc de signature, celui qui vit dans le corps du message", () => {
     expect(after.split("Mohamed Targani")).toHaveLength(2);
     expect(after).not.toContain("Yanis Tidahy");
     expect(after.endsWith(signatureText(mohamed))).toBe(true);
+  });
+
+  it("une signature collée à la formule de politesse est remplacée, pas doublée", () => {
+    /*
+      Le modèle écrit souvent « À bientôt » puis le bloc **sans ligne vide
+      entre les deux** : les deux sont alors un seul paragraphe. Une
+      comparaison de paragraphes entiers n'y trouvait rien et ajoutait une
+      seconde signature en dessous — le doublon du jalon 67, vu au changement
+      de signataire.
+    */
+    const body = `Bonjour,\n\nÀ bientôt\n${signatureText(yanis)}`;
+    const after = replaceSignature(body, knownSignatureBlocks([yanis, mohamed]), signatureText(mohamed));
+
+    expect(after.split("Mohamed Targani")).toHaveLength(2);
+    expect(after).not.toContain("Yanis Tidahy");
+    expect(after).toContain("À bientôt\nMohamed Targani");
+    // Rejoué, il ne bouge plus : l'opération est idempotente.
+    expect(replaceSignature(after, knownSignatureBlocks([yanis, mohamed]), signatureText(mohamed))).toBe(after);
+  });
+
+  it("un brouillon déjà doublé se répare en rebasculant le signataire", () => {
+    /*
+      Le texte exact signalé en production, tel qu'il dort dans la file des
+      départs : le bloc écrit deux fois de suite, l'un sans adresse, l'autre
+      avec. Rebasculer le signataire doit tout nettoyer, pas seulement la
+      dernière occurrence.
+    */
+    const doubled = [
+      "Bonjour,",
+      "",
+      "À bientôt",
+      "Yanis Tidahy",
+      "Fondateur, Aura Flow AI",
+      "07 85 28 35 36",
+      "Yanis Tidahy",
+      "Fondateur, Aura Flow AI",
+      "07 85 28 35 36",
+      "yanis.tidahy@auraflowai.fr",
+    ].join("\n");
+
+    const after = replaceSignature(doubled, knownSignatureBlocks([yanis, mohamed]), signatureText(mohamed));
+    expect(after.split("Mohamed Targani")).toHaveLength(2);
+    expect(after).not.toContain("Yanis Tidahy");
+    expect(after).not.toContain("yanis.tidahy@auraflowai.fr");
+    expect(after).toContain("À bientôt\nMohamed Targani");
+  });
+
+  it("un post-scriptum n'est toujours pas pris pour une signature", () => {
+    const body = `Bonjour,\n\nÀ bientôt\n${signatureText(yanis)}\n\nPS : je serai absent la semaine prochaine.`;
+    const after = replaceSignature(body, knownSignatureBlocks([yanis, mohamed]), signatureText(mohamed));
+    expect(after).toContain("PS : je serai absent la semaine prochaine.");
+    expect(after.split("Mohamed Targani")).toHaveLength(2);
   });
 
   it("les formes héritées sont remplacées elles aussi", () => {

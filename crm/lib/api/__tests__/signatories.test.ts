@@ -99,9 +99,11 @@ describe("changer de signataire", () => {
     signatureBlock(YANIS),
   ].join("\n");
 
-  it("ne réécrit que les deux dernières lignes", () => {
+  it("ne réécrit que le bloc de signature", () => {
     const basculé = replaceSignature(message, blocs, signatureBlock(MOHAMED));
-    expect(lastLine(basculé)).toBe("mohamed.targani@auraflowai.fr");
+    // Le téléphone clôt la signature depuis le jalon 67 : l'adresse en a été
+    // retirée, elle est déjà l'expéditeur du message.
+    expect(lastLine(basculé)).toBe(MOHAMED.phone);
     expect(basculé).toContain("Mohamed Targani");
     // **Tout le reste est intact** : c'est le point. Régénérer le message
     // jetterait ce qui a été relu, retouché et discuté avec Alex.
