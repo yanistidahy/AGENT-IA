@@ -36,6 +36,7 @@ describe.skipIf(skip)("le signataire d'une campagne, à l'écran", () => {
         label: "E2E Signée",
         signName: "Camille Rouvier",
         signTitle: "Fondatrice, Aura Flow AI",
+        signPhone: "06 01 02 03 04",
         smtpFrom: "camille@e2e.test",
       },
     });
@@ -104,8 +105,11 @@ describe.skipIf(skip)("le signataire d'une campagne, à l'écran", () => {
     const preview = session.page.getByText("Signature des messages").first();
     expect(await reachable(preview)).toBe(true);
     const block = await preview.locator("..").innerText();
+    // Trois lignes depuis le jalon 67 : nom, titre, téléphone. L'adresse n'y
+    // figure plus, elle est déjà l'expéditeur du message.
     expect(block).toContain("Camille Rouvier");
-    expect(block).toContain("camille@e2e.test");
+    expect(block).toContain("06 01 02 03 04");
+    expect(block).not.toContain("camille@e2e.test");
 
     await select.selectOption(mutedId);
     await session.page.waitForTimeout(300);

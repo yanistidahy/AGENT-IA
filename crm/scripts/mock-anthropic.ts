@@ -66,6 +66,17 @@ const DELAY = Number.parseInt(process.env.MOCK_DELAY ?? "0", 10) || 0;
  */
 const DIRTY = process.env.MOCK_DIRTY === "1";
 
+/**
+ * Rend un brouillon qui **signe lui-même**, formule de politesse et bloc entier
+ * dans le même paragraphe (`MOCK_SIGNED=1`).
+ *
+ * C'est la forme observée en production au jalon 67, et celle qui produisait la
+ * signature en double : le substitut doit savoir la reproduire, sinon la
+ * recette ne prouve rien du correctif. Meme discipline qu'au jalon 43, ou il a
+ * fallu lui apprendre a mentir comme la production.
+ */
+const SIGNED = process.env.MOCK_SIGNED === "1";
+
 const wait = (ms: number): Promise<void> =>
   ms <= 0 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -218,7 +229,15 @@ function draftAnswer(brief: string): string {
         DIRTY
           ? "69 % des visiteurs \u2014 c'est beaucoup \u2013 partent sans poser leur question."
           : "Seriez-vous disponible jeudi en fin de matinée ?",
-        "Yanis",
+        SIGNED
+          ? [
+              "A bientot",
+              "Yanis Tidahy",
+              "Fondateur, Aura Flow AI",
+              "0785283536",
+              "yanis.tidahy@auraflowai.fr",
+            ].join("\n")
+          : "Yanis",
       ].join("\n\n"),
     });
   }

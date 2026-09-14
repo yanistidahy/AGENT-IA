@@ -329,6 +329,31 @@ export function lastLine(body: string): string {
  * Sans ce garde-fou de longueur, une mention légitime dans le texte serait
  * prise pour une signature et remplacée.
  */
+/**
+ * Cette ligne est-elle un paraphe au nom de quelqu'un ?
+ *
+ * Extraite de `signsWithName` parce que `enforceSignature` a besoin de la
+ * **position** de la première ligne signée, pas seulement de savoir qu'il y en a
+ * une : c'est à partir de là que commence le bloc à remplacer.
+ */
+function lineSignsWith(raw: string, forbidden: readonly string[]): boolean {
+  const line = raw.trim();
+  // Une ligne longue est une phrase, pas un paraphe : « je transmets à Alex
+  // dès demain matin » ne doit pas être pris pour une signature.
+  if (line === "" || line.length > 40) return false;
+
+  const normalized = line.toLowerCase().replace(/[.,;!·—-]+$/g, "").trim();
+  return forbidden.some((name) => {
+    const needle = name.toLowerCase().trim();
+    if (needle === "") return false;
+    return (
+      normalized === needle ||
+      normalized.startsWith(`${needle} `) ||
+      normalized.endsWith(` ${needle}`)
+    );
+  });
+}
+
 export function signsWithName(body: string, forbidden: readonly string[]): boolean {
   // **Le dernier paragraphe entier, pas seulement la dernière ligne.** Depuis
   // que les signatures font deux lignes — « Yanis Tidahy » puis « Fondateur,
@@ -338,23 +363,7 @@ export function signsWithName(body: string, forbidden: readonly string[]): boole
   const blocks = splitParagraphs(body);
   const last = blocks[blocks.length - 1] ?? "";
 
-  return last.split("\n").some((raw) => {
-    const line = raw.trim();
-    // Une ligne longue est une phrase, pas un paraphe : « je transmets à Alex
-    // dès demain matin » ne doit pas être pris pour une signature.
-    if (line === "" || line.length > 40) return false;
-
-    const normalized = line.toLowerCase().replace(/[.,;!·—-]+$/g, "").trim();
-    return forbidden.some((name) => {
-      const needle = name.toLowerCase().trim();
-      if (needle === "") return false;
-      return (
-        normalized === needle ||
-        normalized.startsWith(`${needle} `) ||
-        normalized.endsWith(` ${needle}`)
-      );
-    });
-  });
+  return last.split("\n").some((raw) => lineSignsWith(raw, forbidden));
 }
 
 /**
@@ -366,8 +375,23 @@ export function signsWithName(body: string, forbidden: readonly string[]): boole
  * censé venir d'un humain. Trois cas :
  *
  * 1. la signature est déjà là → on ne touche à rien ;
- * 2. la dernière ligne est un nom d'agent → elle est **remplacée** ;
+ * 2. le dernier paragraphe porte un paraphe → **tout ce qui suit la formule de
+ *    politesse est remplacé** par la signature ;
  * 3. il n'y a pas de signature → elle est **ajoutée** en dernier paragraphe.
+ *
+ * ## Le défaut du jalon 67, et pourquoi le cas 2 a changé
+ *
+ * Cette fonction ne remplaçait que la **dernière ligne** du paragraphe. Tant
+ * que le modèle écrivait « Bien à vous, » puis un seul nom, c'était juste. Mais
+ * depuis que la signature fait plusieurs lignes, le modèle écrit souvent la
+ * formule **et le bloc entier** dans le même paragraphe : seule la dernière
+ * ligne était alors remplacée, et le message partait avec la signature deux
+ * fois de suite. C'est exactement le doublon signalé en production, à la ligne
+ * près.
+ *
+ * On coupe donc **à la première ligne qui porte un nom**, ce qui garde la
+ * formule de politesse et jette tout le bloc, quelle que soit sa longueur et
+ * quelle que soit la forme qu'il avait.
  */
 export function enforceSignature(
   body: string,
@@ -386,13 +410,19 @@ export function enforceSignature(
   const lines = last.split("\n");
   const tail = (lines[lines.length - 1] ?? "").trim();
 
-  if (signsWithName(last, forbidden)) {
-    if (lines.length > 1) {
-      lines[lines.length - 1] = signature;
-      blocks[blocks.length - 1] = lines.join("\n");
-      return blocks.join("\n\n");
-    }
-    blocks[blocks.length - 1] = signature;
+  const signed = lines.findIndex((line) => lineSignsWith(line, forbidden));
+  if (signed !== -1) {
+    // Ce qui précède le paraphe est la formule de politesse : elle reste. Tout
+    // ce qui suit est une signature, quelle que soit sa longueur : elle part.
+    const greeting = lines.slice(0, signed).filter((line) => line.trim() !== "");
+
+    // La signature part dans **son propre paragraphe**, même quand le modèle
+    // l'avait collée à la formule. C'est la forme que tout le reste attend :
+    // la cellule droite du tableau HTML (jalon 65) est le dernier paragraphe,
+    // et y laisser « À bientôt » ferait porter la formule de politesse au
+    // logo. Le texte, lui, gagne une ligne vide et se lit pareil.
+    blocks[blocks.length - 1] = greeting.length === 0 ? signature : greeting.join("\n");
+    if (greeting.length > 0) blocks.push(signature);
     return blocks.join("\n\n");
   }
 
@@ -413,6 +443,14 @@ export function enforceSignature(
  * post-scriptum n'a pas de signature à cet endroit, et couper à l'aveugle
  * mutilerait le texte. Si aucune signature connue n'est trouvée, la nouvelle est
  * simplement ajoutée — même règle que `enforceSignature()`.
+ *
+ * **La signature peut vivre au bas d'un paragraphe, pas seulement seule dans le
+ * sien.** Le modèle écrit souvent « À bientôt » puis le bloc sans ligne vide
+ * entre les deux : une comparaison de paragraphes entiers n'y trouve rien et
+ * ajoute une seconde signature en dessous. C'est le doublon du jalon 67, vu
+ * cette fois au changement de signataire. On accepte donc aussi une
+ * correspondance **en fin de paragraphe** — elle reste ancrée sur un bloc
+ * connu, donc un post-scriptum n'est toujours pas coupé.
  */
 export function replaceSignature(
   body: string,
@@ -426,13 +464,48 @@ export function replaceSignature(
 
   // Du dernier paragraphe vers le premier : une signature est en fin de message,
   // et remonter évite de confondre avec une mention plus haut dans le texte.
+  /** Le bloc se termine-t-il par cette signature, précédée d'une fin de ligne ? */
+  const trailing = (block: string, candidate: string): boolean =>
+    block.length > candidate.length &&
+    block.endsWith(candidate) &&
+    block[block.length - candidate.length - 1] === "\n";
+
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const block = (blocks[index] ?? "").trim();
-    if (block === target) return blocks.join("\n\n");
+    if (block === target || trailing(block, target)) return blocks.join("\n\n");
 
-    const match = known.find((candidate) => candidate.trim() !== "" && block === candidate.trim());
+    const match = known
+      .map((candidate) => candidate.trim())
+      .find(
+        (candidate) =>
+          candidate !== "" && (block === candidate || trailing(block, candidate)),
+      );
+
     if (match !== undefined) {
-      blocks[index] = target;
+      if (block === match) {
+        blocks[index] = target;
+        return blocks.join("\n\n");
+      }
+
+      /*
+        **On retire *toutes* les signatures qui se suivent, pas seulement la
+        dernière.** Un brouillon composé avant le correctif du jalon 67 porte le
+        bloc deux fois de suite : n'en enlever qu'un laisserait l'autre, et
+        rebasculer le signataire ne nettoierait la fiche qu'à moitié. La boucle
+        est bornée par le texte lui-même — elle s'arrête dès qu'une fin de
+        paragraphe n'est plus une signature connue.
+      */
+      let head = block.slice(0, block.length - match.length);
+      for (;;) {
+        const trimmed = head.replace(/\n+$/, "");
+        const again = known
+          .map((candidate) => candidate.trim())
+          .find((candidate) => candidate !== "" && trailing(trimmed, candidate));
+        if (again === undefined) break;
+        head = trimmed.slice(0, trimmed.length - again.length);
+      }
+
+      blocks[index] = `${head.replace(/\n+$/, "")}\n${target}`;
       return blocks.join("\n\n");
     }
   }

@@ -85,6 +85,42 @@ describe("un brouillon ne signe jamais du nom d'un agent", () => {
     expect(fixed).toContain(DEFAULT_SIGNATURE.name);
   });
 
+  it("le bloc entier est remplacé, pas seulement sa dernière ligne", () => {
+    /*
+      **Le doublon signalé en production, à la ligne près.** Le modèle met la
+      formule de politesse ET le bloc entier dans le même paragraphe. Tant que
+      la fonction ne remplaçait que la dernière ligne, seule l'adresse partait
+      et la signature se retrouvait écrite deux fois de suite. Le remplacement
+      coupe désormais à la **première ligne signée**.
+    */
+    const draft = [
+      "Bonjour Stéphanie,",
+      "",
+      "69 % des visiteurs quittent un site sans poser leur question.",
+      "",
+      "À bientôt",
+      "Yanis Tidahy",
+      "Fondateur, Aura Flow AI",
+      "0785283536",
+      "yanis.tidahy@auraflowai.fr",
+    ].join("\n");
+
+    const fixed = enforceSignature(draft, SIGNATURE, [
+      ...AGENT_NAMES,
+      DEFAULT_SIGNATURE.name,
+    ]);
+
+    expect(fixed.split(DEFAULT_SIGNATURE.name)).toHaveLength(2);
+    expect(fixed).toContain("À bientôt");
+    expect(fixed.endsWith(SIGNATURE)).toBe(true);
+    // Et la signature occupe son propre paragraphe : c'est lui que la cellule
+    // droite du tableau HTML rend, et la formule de politesse n'y a rien à
+    // faire.
+    expect(fixed.split("\n\n").pop()).toBe(SIGNATURE);
+    // Et rien de la forme précédente ne traîne derrière.
+    expect(fixed).not.toContain("yanis.tidahy@auraflowai.fr");
+  });
+
   it("ajoute la signature quand il n'y en a aucune", () => {
     const fixed = enforceSignature("Bonjour,\n\nJeudi vous irait ?", SIGNATURE, AGENT_NAMES);
     expect(lastLine(fixed)).toBe(DEFAULT_SIGNATURE.title);
@@ -199,9 +235,9 @@ describe("les consignes calculées depuis les réglages", () => {
       phone: "01 02 03 04 05",
       email: "camille@auraflowai.fr",
     });
-    expect(rule).toContain(
-      "Camille Roux\nAssociée, Aura Flow AI\n01 02 03 04 05\ncamille@auraflowai.fr",
-    );
+    // Trois lignes depuis le jalon 67 : l'adresse est déjà l'expéditeur.
+    expect(rule).toContain("Camille Roux\nAssociée, Aura Flow AI\n01 02 03 04 05");
+    expect(rule).not.toContain("camille@auraflowai.fr");
     expect(rule).not.toContain("Yanis");
   });
 
@@ -209,14 +245,14 @@ describe("les consignes calculées depuis les réglages", () => {
     // Une boîte sans titre ni téléphone signe sur deux lignes, et le message
     // n'a pas l'air d'avoir perdu quelque chose en route.
     expect(
-      signatureBlock({ name: "Yanis Tidahy", title: "", phone: "", email: "yanis@aura.fr" }),
-    ).toBe("Yanis Tidahy\nyanis@aura.fr");
+      signatureBlock({ name: "Yanis Tidahy", title: "", phone: "06 07 08 09 10", email: "yanis@aura.fr" }),
+    ).toBe("Yanis Tidahy\n06 07 08 09 10");
     expect(signatureBlock({ name: "Yanis Tidahy", title: "", phone: "", email: "" })).toBe(
       "Yanis Tidahy",
     );
   });
 
-  it("les quatre lignes sortent dans l'ordre du bloc demandé", () => {
+  it("les trois lignes sortent dans l'ordre du bloc demandé", () => {
     expect(
       signatureBlock({
         name: "Yanis Tidahy",
@@ -224,9 +260,7 @@ describe("les consignes calculées depuis les réglages", () => {
         phone: "07 85 28 35 36",
         email: "yanis.tidahy@auraflowai.fr",
       }),
-    ).toBe(
-      "Yanis Tidahy\nFondateur, Aura Flow AI\n07 85 28 35 36\nyanis.tidahy@auraflowai.fr",
-    );
+    ).toBe("Yanis Tidahy\nFondateur, Aura Flow AI\n07 85 28 35 36");
   });
 
   it("le lien est annoncé avec son libellé, sans URL à écrire", () => {
