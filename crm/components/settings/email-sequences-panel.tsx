@@ -158,24 +158,33 @@ export function EmailSequencesPanel({
           key={sequence.id === "" ? "new" : sequence.id}
           className="rounded-card border border-line bg-surface-2 p-3.5"
         >
-          <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-            <input
-              className={FIELD}
-              value={sequence.name}
-              onChange={(event) => patch(sequence.id, { name: event.target.value })}
-            />
-            <label className="flex items-center gap-1.5 text-[12.5px]">
+          {/*
+            **Embarqué, le panneau ne porte que les étapes.** Le nom de la
+            séquence est celui de la campagne, et son activation est le bouton
+            « Lancer » de l'en-tête : deux contrôles pour une même chose, à deux
+            endroits du même écran, finissent par se contredire — et l'on ne
+            sait plus lequel a décidé.
+          */}
+          {!embedded && (
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
               <input
-                type="checkbox"
-                checked={sequence.active}
-                onChange={(event) => patch(sequence.id, { active: event.target.checked })}
+                className={FIELD}
+                value={sequence.name}
+                onChange={(event) => patch(sequence.id, { name: event.target.value })}
               />
-              Active
-            </label>
-            <span className="self-center text-[12px] text-muted">
-              {sequence.running} en cours · {sequence.enrolled} inscrits
-            </span>
-          </div>
+              <label className="flex items-center gap-1.5 text-[12.5px]">
+                <input
+                  type="checkbox"
+                  checked={sequence.active}
+                  onChange={(event) => patch(sequence.id, { active: event.target.checked })}
+                />
+                Active
+              </label>
+              <span className="self-center text-[12px] text-muted">
+                {sequence.running} en cours · {sequence.enrolled} inscrits
+              </span>
+            </div>
+          )}
 
           <ol className="mt-3 space-y-2">
             {sequence.steps.map((step, index) => (

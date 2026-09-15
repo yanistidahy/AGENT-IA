@@ -1,6 +1,11 @@
 import { badRequest, invalidPayload, jsonOk, serverError } from "@/lib/api/errors";
 import { readJson } from "@/lib/api/request";
-import { archiveCampaign, listCampaigns, removeMember } from "@/lib/api/campaigns";
+import {
+  archiveCampaign,
+  listCampaigns,
+  removeMember,
+  setCampaignRunning,
+} from "@/lib/api/campaigns";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +30,17 @@ const actionSchema = z.discriminatedUnion("action", [
     archived: z.boolean(),
   }),
   z.object({ action: z.literal("remove-member"), enrollmentId: z.string().min(1) }),
+  /*
+    **Lancer et mettre en pause, distincts d'archiver.** Archiver clôt une
+    campagne (inscriptions arrêtées, départs écartés) ; la pause ne fait que
+    couper l'envoi, et relancer reprend où l'on en était. Les mêler sous un
+    seul verbe aurait fait d'une pause de deux heures une clôture.
+  */
+  z.object({
+    action: z.literal("running"),
+    campaignId: z.string().min(1),
+    running: z.boolean(),
+  }),
 ]);
 
 export async function POST(request: Request) {
@@ -38,7 +54,9 @@ export async function POST(request: Request) {
     const result =
       parsed.data.action === "archive"
         ? await archiveCampaign(parsed.data.campaignId, parsed.data.archived)
-        : await removeMember(parsed.data.enrollmentId);
+        : parsed.data.action === "running"
+          ? await setCampaignRunning(parsed.data.campaignId, parsed.data.running)
+          : await removeMember(parsed.data.enrollmentId);
     if (!result.ok) return badRequest(result.message);
     return jsonOk({ campaigns: await listCampaigns() });
   } catch (error) {

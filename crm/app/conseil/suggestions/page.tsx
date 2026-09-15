@@ -3,6 +3,8 @@ import { RecommendationCard } from "@/components/recommendations/recommendation-
 import { listRecommendations } from "@/lib/api/recommendations";
 import { SEVERITIES, SEVERITY_LABELS, isSeverity } from "@/lib/domain/recommendations";
 import { SHIFTS } from "@/lib/agents/shifts/run";
+import { listAgentProfiles } from "@/lib/api/agents";
+import { shiftChips } from "@/lib/domain/shift-chips";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +29,11 @@ export default async function SuggestionsPage({
   const agent = flat("agent");
   const severity = flat("severity");
   const scope = flat("scope") === "decided" ? "decided" : "open";
+
+  // Les puces d'agent suivent `enabled`, comme le rail et `/conseil` : un agent
+  // désactivé au jalon 32 n'a pas à garder un filtre ici.
+  const profiles = await listAgentProfiles().catch(() => []);
+  const chips = shiftChips(SHIFTS, profiles, agent);
 
   const items = await listRecommendations({
     agentId: agent,
@@ -69,8 +76,8 @@ export default async function SuggestionsPage({
         {chip("Historique", base({ scope: "decided" }), scope === "decided")}
         <span className="w-4" />
         {chip("Tous les agents", base({ agent: undefined }), agent === undefined)}
-        {SHIFTS.map((shift) =>
-          chip(shift.agentId, base({ agent: shift.agentId }), agent === shift.agentId),
+        {chips.map((entry) =>
+          chip(entry.label, base({ agent: entry.agentId }), agent === entry.agentId),
         )}
         <span className="w-4" />
         {chip("Toutes gravités", base({ severity: undefined }), severity === undefined)}

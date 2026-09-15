@@ -428,9 +428,24 @@ export interface DepartureView {
 }
 
 /** La file du jour, telle qu'elle s'affiche. */
-export async function listDepartures(now = new Date()): Promise<DepartureView[]> {
+export async function listDepartures(
+  now = new Date(),
+  /**
+   * Bornée à une campagne, quand on arrive depuis sa page.
+   *
+   * C'est un filtre de lecture, pas un second écran : la file garde ses trois
+   * décisions et sa retouche à la main, et une copie de la file dans la page
+   * d'une campagne ferait deux endroits où valider un même brouillon.
+   */
+  scope: { readonly campaignId?: string } = {},
+): Promise<DepartureView[]> {
   const rows = await prisma.sequenceDeparture.findMany({
-    where: { status: { in: ["pending", "failed"] } },
+    where: {
+      status: { in: ["pending", "failed"] },
+      ...(scope.campaignId === undefined
+        ? {}
+        : { enrollment: { sequence: { campaignId: scope.campaignId } } }),
+    },
     orderBy: [{ createdAt: "asc" }],
     include: {
       enrollment: {

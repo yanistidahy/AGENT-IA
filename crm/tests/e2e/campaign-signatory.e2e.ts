@@ -66,11 +66,7 @@ describe.skipIf(skip)("le signataire d'une campagne, à l'écran", () => {
     await prisma.mailbox.deleteMany({ where: { id: { in: [namedId, mutedId] } } });
   });
 
-  const card = () =>
-    session.page
-      .locator("section")
-      .filter({ has: session.page.locator(`input[value="${campaignName}"]`) })
-      .first();
+  const card = () => session.page.locator("section").first();
 
   it("la création nomme le signataire, pas seulement la boîte", async () => {
     const label = session.page.getByText("Boîte d'envoi et signataire", { exact: true });
@@ -118,6 +114,12 @@ describe.skipIf(skip)("le signataire d'une campagne, à l'écran", () => {
   });
 
   it("l'écran d'édition dit la même chose, et suit le changement de boîte", async () => {
+    // Depuis le jalon 71, l'édition d'une campagne vit dans sa page — la
+    // grille de `/campagnes` ne porte que des vignettes.
+    await session.page.goto(`${BASE_URL}/campagnes/${campaignId}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await session.page.waitForTimeout(1000);
     await card().scrollIntoViewIfNeeded();
     expect(
       await card().getByText("Envoyée depuis et signée par").count(),

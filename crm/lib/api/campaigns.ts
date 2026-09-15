@@ -70,6 +70,20 @@ export interface CampaignView {
    */
   readonly deletable: boolean;
   readonly funnel: CampaignFunnel;
+  /**
+   * De quoi rendre l'état et l'avancement **sur la vignette**, sans charger ni
+   * les étapes ni les inscrits.
+   *
+   * C'est ce qui permet à la grille de `/campagnes` d'être une grille : la
+   * page ne lit plus la liste des membres de chaque campagne pour afficher un
+   * écran où elle n'apparaît pas. Trois nombres suffisent, et ils viennent de
+   * la même lecture que l'entonnoir.
+   */
+  readonly steps: number;
+  /** Au moins une étape porte une consigne : la campagne sait quoi écrire. */
+  readonly hasBrief: boolean;
+  /** Somme des étapes déjà envoyées, tous inscrits confondus. */
+  readonly delivered: number;
 }
 
 /**
@@ -122,14 +136,30 @@ export async function listCampaigns(): Promise<CampaignView[]> {
     orderBy: { createdAt: "asc" },
     include: {
       mailbox: { select: { label: true, signName: true } },
-      sequence: { select: { id: true } },
+      sequence: { select: { id: true, steps: { select: { brief: true } } } },
     },
   });
 
   const views: CampaignView[] = [];
   for (const row of rows) {
     const funnel = row.sequence === null ? EMPTY_FUNNEL : await readCampaignFunnel(row.sequence.id);
+    const steps = row.sequence?.steps ?? [];
+    // Les étapes déjà servies, en une agrégation plutôt qu'en lisant les
+    // inscrits un par un : la vignette veut un nombre, pas une liste.
+    const delivered =
+      row.sequence === null
+        ? 0
+        : (
+            await prisma.sequenceEnrollment.aggregate({
+              where: { sequenceId: row.sequence.id },
+              _sum: { lastStep: true },
+            })
+          )._sum.lastStep ?? 0;
+
     views.push({
+      steps: steps.length,
+      hasBrief: steps.some((step) => step.brief.trim() !== ""),
+      delivered,
       id: row.id,
       name: row.name,
       mailboxId: row.mailboxId,
@@ -421,6 +451,44 @@ export async function archiveCampaign(
     });
   });
 
+  return { ok: true };
+}
+
+/**
+ * Lancer une campagne, ou la mettre en pause.
+ *
+ * **La pause n'est pas l'archivage**, et c'est toute la raison d'être de ce
+ * geste : archiver *clôt* une campagne — les inscriptions s'arrêtent avec leur
+ * motif, les départs en attente sont écartés, et le désarchivage ne relance
+ * rien. Mettre en pause ne fait qu'une chose : la séquence cesse d'être active,
+ * donc plus rien ne se compose ni ne part, et tout le monde reste exactement où
+ * il en est. Relancer reprend là où on s'était arrêté.
+ *
+ * Les départs déjà composés **restent en file** : ils ont été écrits et payés,
+ * et la file du matin se valide à la main de toute façon. Les écarter ferait
+ * perdre du travail pour une pause qu'on lèvera peut-être dans l'heure.
+ */
+export async function setCampaignRunning(
+  id: string,
+  running: boolean,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const campaign = await prisma.campaign.findUnique({
+    where: { id },
+    include: { sequence: { select: { id: true } } },
+  });
+  if (campaign === null) return { ok: false, message: "Campagne introuvable." };
+  if (campaign.sequence === null) return { ok: false, message: "Cette campagne n'a pas de séquence." };
+  if (running && campaign.archivedAt !== null) {
+    // Relancer une campagne archivée sans la désarchiver laisserait une
+    // campagne qui envoie hors de la liste active : elle enverrait sans être
+    // sous les yeux de personne.
+    return { ok: false, message: "Campagne archivée : désarchivez-la d'abord." };
+  }
+
+  await prisma.emailSequence.update({
+    where: { id: campaign.sequence.id },
+    data: { active: running },
+  });
   return { ok: true };
 }
 
