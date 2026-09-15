@@ -8,6 +8,17 @@
  * paquet du navigateur, et le build le refuse (à raison).
  */
 
+/**
+ * Le statut d'une inscription **retirée à la main**.
+ *
+ * Distinct de `stopped`, qui dit que le produit a arrêté l'envoi — réponse
+ * reçue, fiche close. Retirer, c'est un geste de l'utilisateur : la personne
+ * quitte la campagne, la liste ne la montre plus, et elle redevient
+ * réinscriptible. Le mot vit dans le domaine parce que trois couches le
+ * comparent : la liste des inscrits, l'inscription, et le retrait.
+ */
+export const REMOVED = "removed";
+
 /** L'état d'un inscrit, tel que la liste le filtre. */
 export type MemberState = "pending" | "waiting" | "replied" | "stopped";
 

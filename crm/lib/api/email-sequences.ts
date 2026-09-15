@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { REMOVED } from "../domain/campaign-members";
 import { prisma } from "../db";
 import { autoUnlock, MAX_STEPS, type AutoUnlock } from "../domain/sequence-rules";
 
@@ -207,8 +208,40 @@ export async function enroll(input: z.infer<typeof enrollSchema>): Promise<Enrol
     const existing = await prisma.sequenceEnrollment.findUnique({
       where: { sequenceId_contactId: { sequenceId: input.sequenceId, contactId: contact.id } },
     });
-    if (existing !== null) {
+
+    if (existing !== null && existing.status !== REMOVED) {
       already += 1;
+      continue;
+    }
+
+    /*
+      **Réinscrire quelqu'un qu'on avait retiré réactive son inscription**, il
+      n'en crée pas une seconde : la contrainte d'unicité `(séquence, contact)`
+      l'interdirait de toute façon, et c'est elle qui garantit l'absence de
+      doublon. Ce qui redémarre, c'est l'étape : `lastStep` est remis à zéro
+      pour que la personne reparte du premier message. Ses envois passés ne
+      bougent pas — ils sont dans /emails et sur sa fiche, et retirer quelqu'un
+      d'une campagne ne réécrit pas le passé.
+
+      **Les départs jamais partis sont effacés**, en revanche, et c'est ce qui
+      rend la réinscription réelle. Le retrait avait écarté le départ en attente
+      (`skipped`) plutôt que de le supprimer, pour que la file dise pourquoi il
+      n'est pas parti ; mais la composition refuse d'écrire là où un départ
+      existe déjà, quel qu'il soit. Le laisser ferait une personne réinscrite à
+      qui plus rien ne peut être écrit — un retour sans retour. Les départs
+      **envoyés** restent : ce sont des faits, et /emails les compte.
+    */
+    if (existing !== null) {
+      await prisma.$transaction([
+        prisma.sequenceEnrollment.update({
+          where: { id: existing.id },
+          data: { status: "active", stopReason: "", lastStep: 0, lastSentAt: null },
+        }),
+        prisma.sequenceDeparture.deleteMany({
+          where: { enrollmentId: existing.id, status: { not: "sent" } },
+        }),
+      ]);
+      enrolled += 1;
       continue;
     }
 
