@@ -1,16 +1,14 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
-import type { CampaignMember, CampaignView } from "@/lib/api/campaigns";
-import type { SequenceView } from "@/components/settings/email-sequences-panel";
+import type { CampaignView } from "@/lib/api/campaigns";
 import {
   chosenSignatory,
   signatoryOptionLabel,
   type MailboxOption,
 } from "@/lib/domain/signatory-choice";
-import { CampaignCard } from "./campaign-card";
+import { CampaignTile } from "./campaign-tile";
 import { SignatoryPreview } from "./signatory-preview";
 
 /**
@@ -39,17 +37,11 @@ const CONTROL =
 
 export function CampaignsView({
   initial,
-  members,
-  sequences,
   mailboxes,
 }: {
   readonly initial: readonly CampaignView[];
-  /** Les inscrits par campagne, rendus par le serveur — voir la page. */
-  readonly members: Readonly<Record<string, readonly CampaignMember[]>>;
-  readonly sequences: readonly SequenceView[];
   readonly mailboxes: readonly MailboxOption[];
 }) {
-  const router = useRouter();
   const [campaigns, setCampaigns] = useState<CampaignView[]>([...initial]);
   const [name, setName] = useState("");
   const [mailboxId, setMailboxId] = useState(mailboxes[0]?.id ?? "");
@@ -137,17 +129,21 @@ export function CampaignsView({
           depuis /contacts avec les filtres habituels.
         </p>
       ) : (
-        <div className="space-y-4">
+        /*
+          **Une grille, pas une pile.** Les cartes faisaient toute la hauteur de
+          l'écran chacune : on faisait défiler beaucoup pour voir peu, et la
+          seule question qu'on se pose en arrivant — laquelle ? — demandait de
+          lire les étapes, les inscrits et l'entonnoir de la première avant
+          d'apercevoir la seconde. Une vignette répond à cette question ; le
+          reste vit dans la page de la campagne.
+
+          Sous `lg` la grille retombe à une colonne (jalon 46) : à 390 px, deux
+          vignettes côte à côte ne laisseraient de place ni aux trois nombres ni
+          au nom.
+        */
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {campaigns.map((campaign) => (
-            <CampaignCard
-              key={campaign.id}
-              campaign={campaign}
-              sequence={sequences.find((entry) => entry.id === campaign.sequenceId) ?? null}
-              members={members[campaign.id] ?? []}
-              mailboxes={mailboxes}
-              onChanged={setCampaigns}
-              onRefresh={() => router.refresh()}
-            />
+            <CampaignTile key={campaign.id} campaign={campaign} />
           ))}
         </div>
       )}

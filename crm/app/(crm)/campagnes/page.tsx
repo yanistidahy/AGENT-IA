@@ -1,62 +1,24 @@
 import { CampaignsView } from "@/components/campaigns/campaigns-view";
-import { listCampaigns, listCampaignMembers } from "@/lib/api/campaigns";
-import { listSequences } from "@/lib/api/email-sequences";
+import { listCampaigns } from "@/lib/api/campaigns";
 import { listMailboxes } from "@/lib/api/mailboxes";
+import { mailboxOptions } from "@/lib/api/mailbox-options";
 
 export const dynamic = "force-dynamic";
 
 /**
- * `/campagnes` — tout ce qui touche aux campagnes, au même endroit.
+ * `/campagnes` — **la liste, et rien d'autre**.
  *
- * La page est un composant serveur qui lit et passe : les décisions vivent
- * dans `lib/api/campaigns.ts`, l'édition des étapes dans l'éditeur du jalon 38
- * monté par carte, et la sélection des contacts sur /contacts — d'où l'on
- * revient inscrire.
+ * Une grille de vignettes : de quoi choisir une campagne, pas de quoi la
+ * travailler. Tout ce qui se travaille — étapes, inscrits, entonnoir, départs —
+ * vit dans `/campagnes/[id]`.
+ *
+ * La page ne lit plus les inscrits de chaque campagne. C'était une requête par
+ * campagne pour une liste qui n'apparaît nulle part ici ; les trois nombres de
+ * la vignette viennent de la même lecture que l'entonnoir, et la liste des
+ * membres est chargée par la page qui la montre.
  */
 export default async function CampagnesPage() {
-  const [campaigns, sequences, mailboxes] = await Promise.all([
-    listCampaigns(),
-    listSequences(),
-    listMailboxes(),
-  ]);
+  const [campaigns, mailboxes] = await Promise.all([listCampaigns(), listMailboxes()]);
 
-  /*
-    Les inscrits sont lus **ici**, côté serveur, une requête par campagne : la
-    liste n'existe qu'au dépli, mais la charger au clic demanderait une route de
-    plus et un état de chargement pour une lecture qui tient dans le même
-    aller-retour. `onRefresh` (un `router.refresh()`) rejoue cette page : après
-    un retrait, c'est le serveur qui redit qui reste, pas le navigateur qui
-    devine.
-  */
-  const members = Object.fromEntries(
-    await Promise.all(
-      campaigns.map(
-        async (campaign) =>
-          [campaign.id, await listCampaignMembers(campaign.sequenceId)] as const,
-      ),
-    ),
-  );
-
-  return (
-    <CampaignsView
-      initial={campaigns}
-      members={members}
-      sequences={sequences.map((sequence) => ({
-        ...sequence,
-        steps: [...sequence.steps],
-        unlock: { ...sequence.unlock },
-      }))}
-      mailboxes={mailboxes.map((box) => ({
-        id: box.id,
-        label: box.label,
-        // La signature entière, pas seulement le nom : l'écran doit pouvoir
-        // montrer les lignes qui partiront, et dire quand il n'y en a aucune.
-        name: box.signName,
-        title: box.signTitle,
-        phone: box.signPhone,
-        email: box.smtpFrom,
-        from: box.smtpFrom,
-      }))}
-    />
-  );
+  return <CampaignsView initial={campaigns} mailboxes={mailboxOptions(mailboxes)} />;
 }

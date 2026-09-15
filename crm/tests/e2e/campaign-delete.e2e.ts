@@ -72,7 +72,11 @@ describe.skipIf(skip)("supprimer une campagne qui a envoyé, au clic", () => {
 
     browser = await openBrowser();
     session = await signIn(browser, PASSWORD ?? "");
-    await session.page.goto(`${BASE_URL}/campagnes`, { waitUntil: "domcontentloaded" });
+    // Depuis le jalon 71, `/campagnes` est une grille de vignettes et tout ce
+    // qui se travaille vit dans la page de la campagne — dont la suppression.
+    await session.page.goto(`${BASE_URL}/campagnes/${campaignId}`, {
+      waitUntil: "domcontentloaded",
+    });
     await session.page.waitForTimeout(1000);
   }, 60_000);
 
@@ -91,8 +95,7 @@ describe.skipIf(skip)("supprimer une campagne qui a envoyé, au clic", () => {
     await prisma.mailbox.deleteMany({ where: { id: mailboxId } });
   });
 
-  const card = () =>
-    session.page.locator("section").filter({ has: session.page.locator(`input[value="${campaignName}"]`) }).first();
+  const card = () => session.page.locator("section").first();
 
   // `reachable()` exige que l'élément soit **dans le viewport courant**, et
   // c'est voulu — c'est ce qui attrape un panneau rogné. Mais la page peut

@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 71 | **Les campagnes en deux niveaux** — une grille de vignettes pour choisir, une page par campagne pour travailler ; et la dernière puce d'un agent désactivé retirée | **livré, à valider** |
 | 70 | **Enregistrer n'écrit plus, « Écrire les mails » écrit** — la sauvegarde redevient une configuration rejouable, le retrait d'un inscrit le retire vraiment sans toucher au passé | **livré, à valider** |
 | 69 | **Audit du suivi d'ouverture** — la chaîne vérifiée de bout en bout sur une campagne ; l'écran des emails dit enfin *pourquoi* il ne mesure rien quand c'est le cas | **livré, à valider** |
 | 68 | **La virgule mangée par le nettoyage des tirets** — l'objet nomme la marque, la file dit ce qu'Alex avait sous la main, et un départ se retouche à la main sans passer par Alex | **livré, à valider** |
@@ -9807,3 +9808,134 @@ annoncé dans la confirmation ; savoir *lesquels* demande de parcourir la file.
 brouillons en attente, ou aucun — on ne choisit pas d'épargner celui qu'on vient
 de corriger. Le refuge est le même qu'ailleurs : ne pas cliquer, ou renvoyer le
 départ depuis sa carte.
+
+---
+
+## Jalon 71 — une grille, puis une page ; et l'audit des agents
+
+### 1 · Où les six autres agents restaient visibles
+
+Audit fait **avant tout correctif**, page par page, sur le rendu réel — le
+tableau est la réponse à la question posée :
+
+| Surface | Agents désactivés visibles | Verdict |
+|---|---|---|
+| rail (toutes les pages) | aucun | filtre `enabled && !locked` depuis le jalon 32 |
+| `/conseil` (bande, roster, pied) | aucun | filtre `enabled` |
+| `/`, `/contacts`, `/campagnes`, `/emails`, `/taches` | aucun | ils n'en parlent pas |
+| **`/conseil/suggestions`** | **`sarah`** | **le seul défaut** |
+| `/reglages` → Conseil | les sept | **voulu** : c'est l'écran où l'on réactive |
+| `GET /api/agents` | les sept | **voulu** : c'est ce qui alimente `/reglages` |
+
+**La cause, avec sa ligne.** Les puces d'agent de `/conseil/suggestions`
+venaient de `SHIFTS` (`lib/agents/shifts/run.ts`), une liste **écrite dans le
+code** qui ne peut par construction rien savoir de l'activation. C'est
+exactement le défaut que le jalon 32 avait corrigé dans le lanceur de vacations,
+au même endroit et pour la même raison : **le filtre appartient au code qui lit
+la base, jamais à la liste écrite en dur**. Sarah, désactivée et dont aucune
+vacation ne tourne plus, y gardait donc sa puce — et elle la portait sous son
+slug, pas sous son nom réglé.
+
+`lib/domain/shift-chips.ts` (pur, testé) filtre sur `enabled` et rend le **nom**.
+Une exception, et c'est la règle du filtre orphelin du jalon 31 : un agent
+**actuellement sélectionné** garde sa puce même désactivé, sinon un lien mis en
+favori sur `?agent=sarah` ouvrirait une liste filtrée qu'aucun contrôle ne nomme.
+
+**Rien n'a été supprimé.** Les sept gardent leurs conversations, leurs constats
+et leur historique de vacations, et se réactivent d'un interrupteur dans
+`/reglages`.
+
+### 2 · Les campagnes, en deux niveaux
+
+| | La grille (`/campagnes`) | La page (`/campagnes/[id]`) |
+|---|---|---|
+| Pour | **choisir** une campagne | **travailler** une campagne |
+| Porte | nom, boîte et signataire en une ligne, état, trois nombres, avancement | en-tête et actions, entonnoir, sélection, inscrits, étapes, départs |
+| Ne porte pas | ni étapes, ni inscrits, ni entonnoir | — |
+
+**L'état est dérivé, jamais stocké** (`lib/domain/campaign-status.ts`) — même
+règle que le statut de relance du jalon 6 : une colonne à tenir à jour finirait
+par afficher « brouillon » au-dessus de trois cents messages partis.
+« Brouillon » veut dire **ne peut pas envoyer**, et la vignette dit alors
+pourquoi : « Aucune étape ne porte de consigne », « Personne n'est encore
+inscrit ». Une campagne qui a fini d'envoyer reste « en cours » jusqu'à ce qu'on
+l'archive : la faire retomber en brouillon ferait lire un travail terminé comme
+un travail jamais commencé.
+
+**L'avancement compte des messages dus**, pas des jours : `inscrits × étapes` au
+dénominateur, et **il ne recule pas quand quelqu'un répond**. Retirer les étapes
+qu'une inscription arrêtée n'enverra plus ferait grimper la barre à chaque
+réponse, c'est-à-dire exactement quand la campagne réussit — c'est le
+dénominateur de l'anneau du jalon 20, appliqué ici.
+
+**« Lancer » n'est pas « Désarchiver ».** La pause coupe l'écriture et l'envoi et
+laisse tout le monde où il en est ; l'archivage clôt la campagne (inscriptions
+arrêtées avec leur motif, départs en attente écartés). Les départs déjà composés
+restent en file pendant une pause : ils ont été écrits et payés, et la file se
+valide à la main de toute façon.
+
+**Deux contrôles pour une même chose, supprimés** : le panneau d'étapes embarqué
+portait encore son propre champ de nom et sa case « Active », que l'en-tête
+porte désormais. Deux contrôles d'un même réglage sur un même écran finissent
+par se contredire, et l'on ne sait plus lequel a décidé.
+
+**La liste ne lit plus les inscrits de chaque campagne** — c'était une requête
+par campagne pour une liste qui n'apparaît nulle part sur cet écran. Les trois
+nombres viennent de la même lecture que l'entonnoir, et `mailbox-options.ts`
+donne aux deux pages **exactement** les mêmes options de boîte.
+
+`/departs?campagne=<id>` borne la file du matin à une campagne, **avec son
+bandeau et de quoi l'annuler** (règle du jalon 31) : une copie de la file dans la
+page d'une campagne aurait fait deux endroits où valider un même brouillon.
+
+### Jalon 71 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide** — aucune migration), le
+serveur standalone de production et un navigateur piloté, sur six campagnes
+couvrant les trois états :
+
+- **la grille** : 3 vignettes par rangée à 1440×900, **les 6 visibles sans
+  défiler**, page haute de 900 px là où une seule carte occupait l'écran ;
+  chaque vignette porte nom, boîte · signataire, état, inscrits / envoyés /
+  réponses et sa barre ; **aucune étape, aucun inscrit, aucun entonnoir** ;
+- **les trois états rendus** — en cours, brouillon, archivée — et la cause du
+  brouillon nommée sur la vignette ;
+- **le détail** : clic → `/campagnes/<id>` avec l'en-tête, « Écrire les mails »,
+  « Mettre en pause », « Archiver », l'entonnoir, la sélection, les inscrits avec
+  leur étape et leur état, les étapes éditables et le lien vers ses départs ;
+- **les étapes se modifient et s'enregistrent** (relu en base par position) ;
+  **« Mettre en pause » → `active: false`, « Lancer » → `active: true`** ;
+- **`/departs?campagne=`** nomme la campagne et propose de revenir à toute la
+  file ;
+- **à 390 px** : une vignette par rangée, **0 débordement horizontal** sur les
+  deux écrans, « Écrire les mails » à 44 px et atteignable ;
+- **agents** : `/conseil/suggestions` ne porte plus que Sabrina, sous son nom ;
+  `?agent=sarah` garde sa puce pour pouvoir l'annuler ; `/reglages` montre
+  toujours les sept ; **0 agent supprimé** ;
+- **0 erreur console, 0 réponse ≥ 400** sur tout le parcours ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1205 tests**) et
+  `npm run e2e` (**34 tests**, six fichiers) verts.
+
+`tests/e2e/campaign-grid.e2e.ts` **mesure** ce qui a été reproché : combien de
+vignettes tiennent dans un écran, combien par rangée, et qu'une vignette ne
+porte aucun champ du détail. Cela ne se lit pas dans le code — c'est la leçon du
+jalon 60.
+
+### Jalon 71 — ce qui n'est pas fait
+
+**Le nom de la campagne et celui de sa séquence peuvent diverger.** L'en-tête
+renomme la campagne ; la séquence garde le sien, qui sert les pastilles de
+`/emails`. La divergence existait déjà avant ce jalon — le panneau embarqué
+permettait de renommer la séquence séparément — mais le champ qui le faisait a
+disparu, donc elle ne se corrige plus depuis cet écran.
+
+**La grille ne se filtre ni ne se trie.** Les campagnes sortent par date de
+création, archivées comprises. À six c'est lisible ; à trente il faudra au moins
+une puce « actives / archivées ».
+
+**Aucun écran ne liste « les campagnes dont la boîte ne signe pas »** — la
+vignette le dit campagne par campagne, comme la carte le faisait au jalon 64.
+
+**Les six agents restent visibles dans `/reglages` et dans `/api/agents`**, et
+c'est voulu : c'est l'écran et la route qui servent à les réactiver. Rien ne les
+supprime, et rien ne le fera sans demande explicite.
