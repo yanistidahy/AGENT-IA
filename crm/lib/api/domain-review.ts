@@ -1,4 +1,5 @@
 import "server-only";
+import { companyNameKey } from "./name-keys";
 import { prisma } from "../db";
 import { searchText } from "../domain/text";
 import {
@@ -178,6 +179,7 @@ export async function acceptDomain(
       // Le miroir de recherche porte le domaine : sans ce recalcul, la société
       // resterait introuvable par son adresse.
       searchText: searchText([company.name, value, company.industry, company.loc]),
+      nameKey: companyNameKey(company.name),
     },
   });
 
@@ -304,6 +306,7 @@ export async function acceptManyDomains(
       data: {
         domain: proposal.value,
         searchText: searchText([company.name, proposal.value, company.industry, company.loc]),
+        nameKey: companyNameKey(company.name),
       },
     });
 

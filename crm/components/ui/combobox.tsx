@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { byName, sortKey } from "@/lib/domain/sort-key";
 
 /**
  * Champ de saisie avec suggestions et création à la volée.
@@ -82,11 +83,22 @@ export function Combobox({
   }, []);
 
   const trimmed = query.trim();
+  /*
+    **Trié ici, une fois, pour tous les appelants.** Un combobox est une liste
+    où l'on cherche un nom : l'ordre alphabétique y est toujours le bon, et le
+    laisser à chaque appelant garantissait qu'un seul d'entre eux l'oublierait.
+    Le tri se fait sur la clé pliée — « Élixir » se range entre « Eden » et
+    « Effet », et non après « Z ».
+  */
+  const sorted = useMemo(
+    () => byName(options, (option) => sortKey([option.label])),
+    [options],
+  );
   const matches = useMemo(() => {
-    if (trimmed === "") return options.slice(0, 8);
+    if (trimmed === "") return sorted.slice(0, 8);
     const needle = normalize(trimmed);
-    return options.filter((option) => normalize(option.label).includes(needle)).slice(0, 8);
-  }, [options, trimmed]);
+    return sorted.filter((option) => normalize(option.label).includes(needle)).slice(0, 8);
+  }, [sorted, trimmed]);
 
   const exact = matches.some((option) => normalize(option.label) === normalize(trimmed));
   const canCreate = trimmed !== "" && !exact;

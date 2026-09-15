@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 72 | **Les listes de référence s'ouvrent alphabétiques** — clé de tri pliée (accents et casse), valeurs vides en fin de liste, et les écrans d'urgence restent chronologiques | **livré, à valider** |
 | 71 | **Les campagnes en deux niveaux** — une grille de vignettes pour choisir, une page par campagne pour travailler ; et la dernière puce d'un agent désactivé retirée | **livré, à valider** |
 | 70 | **Enregistrer n'écrit plus, « Écrire les mails » écrit** — la sauvegarde redevient une configuration rejouable, le retrait d'un inscrit le retire vraiment sans toucher au passé | **livré, à valider** |
 | 69 | **Audit du suivi d'ouverture** — la chaîne vérifiée de bout en bout sur une campagne ; l'écran des emails dit enfin *pourquoi* il ne mesure rien quand c'est le cas | **livré, à valider** |
@@ -9939,3 +9940,139 @@ vignette le dit campagne par campagne, comme la carte le faisait au jalon 64.
 **Les six agents restent visibles dans `/reglages` et dans `/api/agents`**, et
 c'est voulu : c'est l'écran et la route qui servent à les réactiver. Rien ne les
 supprime, et rien ne le fera sans demande explicite.
+
+---
+
+## Jalon 72 — chercher une marque, c'est lire une liste alphabétique
+
+### La question posée, et la réponse mesurée
+
+**`searchText` ne pouvait pas servir.** Il concatène *tous* les champs
+cherchables — pour une société nom + domaine + secteur + ville, pour un contact
+prénom + nom + adresse. Trier dessus classerait « Alpha » d'après
+« alpha lyon » : il est fait pour `contains`, pas pour `ORDER BY`.
+
+**La collation du serveur ne pouvait pas servir non plus**, et c'est mesuré
+plutôt que supposé. Cette base tourne en **`C.UTF-8`**, donc en ordre d'octets :
+
+```
+ORDER BY name  →  Alpha | ELIXIR | Eden | Effet | Zèbre | elixir | Édition | Élixir
+```
+
+C'est exactement le défaut signalé. Une collation ICU (`fr-FR-x-icu`) rend le
+bon ordre — vérifié, elle est disponible ici — mais elle dépend de la
+construction du serveur et du `datcollate` de la base : **un tri juste en
+développement et faux en production est ce que le jalon 10 a refusé** en
+écartant `unaccent`. Et Prisma ne sait pas exprimer `COLLATE` dans un
+`orderBy` : il faudrait passer chaque liste en SQL brut et y perdre la
+composition des filtres de colonne.
+
+**Retenu : une colonne miroir dédiée**, `nameKey`, écrite par l'application —
+le motif de `searchText`, avec une clé qui ne porte *que* le nom. La règle vit
+dans `lib/domain/sort-key.ts`, en TypeScript, testable sans base.
+
+### Nulle, et non vide
+
+`sortKey()` rend **`null`** quand il n'y a pas de nom, jamais `""`. La chaîne
+vide est le plus petit préfixe de tout : stockée, elle classerait les fiches
+sans nom **en tête**, en poussant les vraies entrées vers le bas — l'inverse de
+ce qui est demandé. `null` laisse `ORDER BY … NULLS LAST` faire le travail en
+SQL, sans tri en mémoire et sans valeur sentinelle, qui serait une décision
+d'affichage rangée dans une colonne. `compareKeys()` applique la même règle aux
+listes agrégées, qui se trient après lecture.
+
+**Les ligatures aussi.** `fold()` retire les accents *combinants* ; « ł », « ø »
+et « œ » sont des lettres à part entière que NFD laisse intactes, et dont le
+point de code passe après « z » — « Œuvre de Peau » se serait classée après
+toutes les autres. Une petite table les ramène à leur base, **dans
+`sort-key.ts` et non dans `fold()`** : modifier `fold()` changerait la valeur
+stockée de `searchText` sur chaque fiche sans que rien ne la recalcule.
+
+### Ce qui change de défaut, et ce qui n'en change pas
+
+| Écran | Avant | Après |
+|---|---|---|
+| `/societes` | `name` (donc ordre d'octets) | **`nameKey`, plié** |
+| `/contacts` | par nom de personne | **par maison, puis par personne** |
+| `/clients` | par chiffre d'affaires | **par maison, puis par personne** |
+| `/campagnes` | par date de création | **par nom** |
+| `/departs` | échéance | **inchangé** |
+| file d'accueil | urgence | **inchangé** |
+| journal `/emails` | antichronologique | **inchangé** |
+
+**Aucun contrôle de tri n'est retiré**, et le choix continue de vivre dans
+l'URL : `?sort=createdAt` s'ouvre toujours, et `/clients` garde son classement
+par chiffre d'affaires à un clic. `lastName` rejoint le vocabulaire de tri des
+contacts, pour qu'une vue mise en favori sur l'ancien défaut continue de
+l'ouvrir.
+
+**Tous les menus de noms sont alphabétiques**, et le combobox trie **en son
+sein** plutôt que chez ses appelants : laisser l'ordre à chaque appelant
+garantissait qu'un seul l'oublierait. Les facettes (secteur, étiquette), les
+sélecteurs de `/emails` (signataire, séquence, campagne) et les contacts d'une
+société suivent la même clé. Les `localeCompare` qui traînaient sont remplacés :
+ils suivaient la locale du **conteneur**, pas celle de l'utilisateur, et
+faisaient varier l'ordre d'un environnement à l'autre.
+
+### Deux gardes, et ce qu'elles ont attrapé
+
+`tests/name-key-source.test.ts` échoue si un chemin d'écriture écrit un nom sans
+sa clé. **Le jalon 12 a payé cette leçon une fois** : `searchText` était composé
+à la main sur chaque chemin, deux l'oubliaient, et les fiches entrées par là
+restaient introuvables. Ici le défaut serait plus discret encore — la fiche
+s'affiche, simplement reléguée après toutes les autres. Éprouvée en retirant la
+clé de l'import de contacts : le test tombe en nommant le fichier et en comptant
+« 2 miroir(s), 1 clé(s) ».
+
+**La garde du jalon 42 a fait son travail toute seule** : `nameKey` absente de
+la sauvegarde, et deux tests sont tombés — une restauration aurait rendu toutes
+les fiches sans clé, donc toutes en fin de liste alphabétique. C'est le genre de
+perte qui ne ressemble pas à une perte.
+
+### Jalon 72 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `31_name_key` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production et un navigateur
+piloté, sur des marques réellement accentuées :
+
+- **l'ordre rendu** : `Åby Nordic · argalys essentiels · Éclat Naturel · Eden
+  Botanique · Édition Limitée · Effet Papillon · ELIXIR Cosmétiques · Linae ·
+  Numorning · Ôdyssée Beauté · Œuvre de Peau · Über Clean · Zénith Labs` —
+  « Édition » entre « Eden » et « Effet », « ELIXIR » majuscule avec les E, et
+  rien après « Z » ;
+- **l'écran dit la même chose que SQL**, comparé ligne à ligne ;
+- **`/contacts`** : par maison, puis par personne à l'intérieur (« Ardent
+  Bruno » avant « Ardent Élodie »), la **fiche de marque sans personne en fin de
+  sa maison**, et les fiches **sans société en fin de liste** ;
+- **`/campagnes`** : `Alpha test · eden relance · Élan printemps · Zèbre
+  septembre` ;
+- **le journal `/emails` reste antichronologique** — le message du jour en
+  tête — et son tri par nom, lui, est plié (`?tri=objet` → Alpha, Édition,
+  Zèbre) ;
+- **le combobox de société** s'ouvre alphabétique, et la recherche reste
+  insensible aux accents (« eclat » trouve « Éclat Naturel ») ;
+- **le rattrapage de migration** : clés vidées puis recalculées en SQL pur →
+  ordre identique à celui qu'écrit l'application ;
+- **0 erreur console** ; `npm run build`, `npx tsc --noEmit`,
+  `npx vitest run` (**1220 tests**) et `npm run e2e` (**37 tests**) verts.
+
+### Jalon 72 — ce qui n'est pas fait
+
+**Le rattrapage SQL n'est pas l'exacte règle TypeScript.** `translate()` ne sait
+pas rendre deux lettres pour une : les ligatures sont traitées par des
+`replace()` explicites (œ, æ, ß, þ), et la liste d'accents couvre l'alphabet
+latin courant. Un caractère exotique hors de ces deux listes garderait sa forme
+jusqu'à la prochaine écriture de la fiche, où `sort-key.ts` — la référence —
+réécrit la valeur exacte. Les deux ont été comparés sur le jeu de vérification :
+ordre identique.
+
+**Le tri de `/contacts` par maison ne regroupe pas visuellement.** Les fiches
+d'une même société se suivent, mais rien ne dessine le groupe : c'est une liste
+triée, pas une liste groupée.
+
+**`/clients` change de défaut**, de « plus gros clients d'abord » à
+alphabétique. C'est ce qui a été demandé — une liste de référence —, mais la
+lecture « qui pèse le plus » demande maintenant un clic sur la colonne.
+
+**Aucun index sur `campaigns.nameKey`** : la table se compte en dizaines, là où
+contacts et sociétés se comptent en centaines et portent chacune le leur.

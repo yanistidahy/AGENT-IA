@@ -1,4 +1,6 @@
 import type { Prisma } from "@prisma/client";
+import { compareKeys, sortKey } from "../domain/sort-key";
+import { contactNameKey } from "./name-keys";
 import { prisma } from "../db";
 import { ownerOrDefault, syncReminderTask } from "./automation";
 import { resolveCompanyLink } from "./company-resolve";
@@ -345,7 +347,7 @@ function orderBy(query: ListContactsQuery): Prisma.ContactOrderByWithRelationInp
     case "firstName":
       return [{ firstName: dir }];
     case "company":
-      return [{ company: { name: dir } }, { lastName: "asc" }];
+      return byCompanyThenName(dir);
     case "title":
       // Les fiches sans fonction en fin de liste : une absence n'est pas un
       // intitulé qui commencerait par un espace.
@@ -370,9 +372,29 @@ function orderBy(query: ListContactsQuery): Prisma.ContactOrderByWithRelationInp
       // Les fiches sans étiquette en fin de liste : une absence n'est pas une
       // valeur qui se classe avant « À rappeler ».
       return [{ tag: dir }, { lastName: "asc" }];
+    case "lastName":
+      // Le tri par personne reste disponible, explicitement — c'était l'ancien
+      // défaut, et une vue mise en favori dessus doit continuer de l'ouvrir.
+      return [{ nameKey: { sort: dir, nulls: "last" } }];
     default:
-      return [{ lastName: dir }, { firstName: "asc" }];
+      /*
+        **Par maison, puis par personne à l'intérieur.** C'est ainsi qu'on
+        cherche ici : on pense à une marque, pas à un patronyme. Les fiches sans
+        société vont en fin de liste, et à l'intérieur d'une maison les fiches
+        sans personne nommée (jalon 50) vont en fin de maison — une absence n'est
+        ni avant « A » ni après « Z », elle n'est rien.
+      */
+      return byCompanyThenName(dir);
   }
+}
+
+function byCompanyThenName(
+  dir: "asc" | "desc",
+): Prisma.ContactOrderByWithRelationInput[] {
+  return [
+    { company: { nameKey: { sort: dir, nulls: "last" } } },
+    { nameKey: { sort: "asc", nulls: "last" } },
+  ];
 }
 
 /**
@@ -707,7 +729,9 @@ export async function listTags(): Promise<ReadonlyArray<{ value: string; count: 
 
   return rows
     .map((row) => ({ value: row.tag, count: row._count._all }))
-    .sort((a, b) => a.value.localeCompare(b.value, "fr"));
+    // `localeCompare` suivait la locale du processus — celle du conteneur, pas
+    // celle de l'utilisateur. La clé pliée classe pareil partout.
+    .sort((a, b) => compareKeys(sortKey([a.value]), sortKey([b.value])));
 }
 
 /** Sociétés qui portent au moins un contact — les seules utiles au filtre. */
@@ -717,7 +741,7 @@ export async function listCompaniesWithContacts(): Promise<
   const rows = await prisma.company.findMany({
     where: { contacts: { some: {} } },
     select: { id: true, name: true, _count: { select: { contacts: true } } },
-    orderBy: { name: "asc" },
+    orderBy: [{ nameKey: { sort: "asc", nulls: "last" } }, { name: "asc" }],
   });
 
   return rows.map((row) => ({ id: row.id, name: row.name, count: row._count.contacts }));
@@ -808,6 +832,7 @@ export async function createContact(input: CreateContactInput): Promise<ContactR
       lostReason: input.lostReason ?? "",
       notes: input.notes ?? "",
       searchText: contactSearchText(input),
+      nameKey: contactNameKey(input),
       companyId: companyId ?? null,
       lastContact: input.lastContact ?? null,
       nextReminder: input.nextReminder ?? null,
@@ -891,7 +916,7 @@ export async function updateContact(
 
     await tx.contact.update({
       where: { id },
-      data: { searchText: contactSearchText(updated) },
+      data: { searchText: contactSearchText(updated), nameKey: contactNameKey(updated) },
     });
 
     // La tâche « Relancer X » suit la date saisie : posée elle apparaît, déplacée

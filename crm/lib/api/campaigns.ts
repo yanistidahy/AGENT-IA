@@ -1,4 +1,5 @@
 import "server-only";
+import { campaignNameKey } from "./name-keys";
 import { z } from "zod";
 
 import { prisma } from "../db";
@@ -133,7 +134,9 @@ const EMPTY_FUNNEL: CampaignFunnel = {
 
 export async function listCampaigns(): Promise<CampaignView[]> {
   const rows = await prisma.campaign.findMany({
-    orderBy: { createdAt: "asc" },
+    // Alphabétique : `/campagnes` est une liste où l'on **cherche** une
+    // campagne par son nom. Les sans-nom en fin de liste — voir sort-key.ts.
+    orderBy: [{ nameKey: { sort: "asc", nulls: "last" } }, { createdAt: "asc" }],
     include: {
       mailbox: { select: { label: true, signName: true } },
       sequence: { select: { id: true, steps: { select: { brief: true } } } },
@@ -199,7 +202,11 @@ export async function createCampaign(
 
   const id = await prisma.$transaction(async (tx) => {
     const campaign = await tx.campaign.create({
-      data: { name: input.name, mailboxId: input.mailboxId },
+      data: {
+        name: input.name,
+        mailboxId: input.mailboxId,
+        nameKey: campaignNameKey(input.name),
+      },
       select: { id: true },
     });
     await tx.emailSequence.create({
@@ -256,7 +263,9 @@ export async function updateCampaign(
   await prisma.campaign.update({
     where: { id: input.id },
     data: {
-      ...(input.name === undefined ? {} : { name: input.name }),
+      ...(input.name === undefined
+        ? {}
+        : { name: input.name, nameKey: campaignNameKey(input.name) }),
       ...(input.mailboxId === undefined ? {} : { mailboxId: input.mailboxId }),
     },
   });
