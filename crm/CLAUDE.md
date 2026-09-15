@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 70 | **Enregistrer n'écrit plus, « Écrire les mails » écrit** — la sauvegarde redevient une configuration rejouable, le retrait d'un inscrit le retire vraiment sans toucher au passé | **livré, à valider** |
 | 69 | **Audit du suivi d'ouverture** — la chaîne vérifiée de bout en bout sur une campagne ; l'écran des emails dit enfin *pourquoi* il ne mesure rien quand c'est le cas | **livré, à valider** |
 | 68 | **La virgule mangée par le nettoyage des tirets** — l'objet nomme la marque, la file dit ce qu'Alex avait sous la main, et un départ se retouche à la main sans passer par Alex | **livré, à valider** |
 | 67 | **Trois lignes, et le vrai doublon** — l'adresse quitte la signature ; `enforceSignature` ne remplaçait que la dernière ligne du paragraphe, ce qui écrivait le bloc deux fois à la composition | **livré, à valider** |
@@ -9684,3 +9685,125 @@ décision du jalon 37, et elle n'est pas rouverte ici.
 **Le chiffre reste donc une estimation, jamais une mesure** — c'est pourquoi
 l'écran l'écrit à côté du nombre, et pourquoi les réponses et les rendez-vous
 passent devant lui dans l'entonnoir.
+
+---
+
+## Jalon 70 — enregistrer configure, « Écrire les mails » dépense
+
+### 1 · Retirer quelqu'un le retire vraiment
+
+`removed` rejoint le vocabulaire des inscriptions (`lib/domain/campaign-members.ts`),
+**distinct de `stopped`** : le produit *arrête* une inscription (réponse reçue,
+fiche close) et doit le dire avec son motif ; une personne *retirée* l'a été par
+quelqu'un, et n'a plus à figurer dans la campagne. Les confondre coûtait deux
+choses : la ligne restait affichée « Arrêtée » juste après le retrait, et la
+fiche restait comptée comme inscrite — donc **impossible à réinscrire**.
+
+Ce que le retrait fait, et ce qu'il ne fait pas :
+
+| | |
+|---|---|
+| disparaît de la liste des inscrits | `listCampaignMembers` filtre `status != removed` |
+| le départ en attente quitte la file | `updateMany` → `skipped`, « Retiré de la campagne » |
+| l'inscription est **arrêtée, pas supprimée** | la supprimer sortirait la personne du dénominateur de l'entonnoir, et le taux de réponse s'améliorerait à chaque retrait |
+| la fiche, ses interactions, ses envois | **intacts** — retirer quelqu'un d'une campagne ne réécrit pas le passé |
+| réinscrire | réactive la même ligne (`lastStep: 0`), la contrainte d'unicité interdisant le doublon |
+
+**Un défaut trouvé à la recette, pas à la lecture** : la réinscription
+réactivait bien l'inscription, mais laissait derrière elle le départ `skipped`
+du retrait — et la composition refuse d'écrire là où un départ existe déjà,
+quel qu'il soit. La personne revenait dans la campagne sans que rien ne puisse
+plus lui être écrit : un retour sans retour. Les départs **jamais partis** sont
+donc effacés à la réinscription ; les envoyés restent, ce sont des faits.
+
+### 2 · Enregistrer deux fois : la cause, avec sa ligne
+
+Reproduit dans un navigateur avant tout correctif, et mesuré :
+**une consigne avant la première sauvegarde, deux après**, la seconde
+sauvegarde écrivant dans une séquence orpheline (`campaignId` NULL) pendant que
+l'étape de la campagne gardait l'ancien texte.
+
+**`components/settings/email-sequences-panel.tsx` — `setSequences(result.data.sequences)`.**
+Le panneau est monté *dans* la carte de campagne depuis le jalon 54 (`embedded`),
+avec **une** séquence ; la réponse du serveur en porte **toutes**. Après une
+sauvegarde, le panneau embarqué adoptait donc la liste entière du CRM. Il ne
+remplace plus désormais que **sa** séquence, par identifiant.
+
+### 3 · Deux gestes, et un seul dépense
+
+Le jalon 56 avait branché la composition sur « Enregistrer » pour supprimer la
+boucle de vingt-quatre heures. C'était juste au premier enregistrement et faux à
+tous les suivants : corriger une consigne relançait des appels facturés et
+écrasait des brouillons qu'on était peut-être en train de relire. Même chose sur
+l'inscription.
+
+| Geste | Ce qu'il fait |
+|---|---|
+| **Enregistrer** | configuration pure : aucun appel au modèle, aucun brouillon, aucun effet de bord, rejouable autant de fois qu'on veut |
+| **Inscrire** | choisit qui, pas ce qu'on écrit |
+| **« Écrire les mails »** | le seul geste qui dépense, et il annonce son prix avant |
+
+Ce qui est supprimé n'est pas l'immédiateté du jalon 56 — le bouton est sur la
+même carte, à un clic — mais le fait qu'elle partait d'un geste qui ne la
+demandait pas. `composeAfterSave` est supprimée.
+
+**La confirmation dit trois nombres plutôt qu'un**, parce qu'ils n'engagent pas
+la même chose : `fresh` (des contacts qui n'ont rien reçu), `rewritten` (des
+brouillons en attente **délibérément** reconstruits avec les consignes du jour —
+c'est ce qui fait qu'un nouvel angle profite à ce qui n'est pas encore parti) et
+`edited` — **le seul qui coûte quelque chose à l'utilisateur**, et il est nommé :
+« 1 brouillon que vous avez retouché à la main sera remplacé ». Un « certains
+brouillons seront remplacés » ne se décide pas : on ne sait pas s'il s'agit d'un
+texte ou de douze. `SequenceDeparture.editedAt` (migration `30_departure_edited`)
+porte cette retouche, posée par `saveDeparture`.
+
+**Les contacts déjà servis ne sont jamais réécrits** : on ne réécrit pas un
+message qui est parti. Et **l'envoi seul démarre la séquence** — composer
+n'avance aucun `lastStep`, ce qui était déjà vrai et reste vérifié.
+
+### Jalon 70 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `30_departure_edited` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production, un puits SMTP
+réel, le substitut Anthropic, **par les routes HTTP réelles et au navigateur** :
+
+- **enregistrer deux fois** : HTTP 200 les deux fois, **0 départ créé**, la
+  seconde consigne réellement en base, **1 seule séquence** (plus d'orpheline) ;
+  au clic : un seul appel, `POST /api/sequences-email`, et rien d'autre ;
+- **le plan ne facture rien** : 3 brouillons annoncés, 0 appel, 0 départ ;
+- **écrire** : 3 départs en file, **0 envoi** ;
+- **retouche à la main** : `editedAt` posé, le plan suivant annonce
+  « neufs 0 · réécrits 3 · retouchés 1 », et la réécriture remplace bien l'objet
+  écrit à la main ;
+- **envoyer** : `lastStep` passe de 0 à 1 pour le seul inscrit servi, et le plan
+  suivant ne le réécrit plus (« réécrits 2 ») ;
+- **retirer** : statut `removed`, 0 départ en attente restant, fiche, envois et
+  interactions **intacts**, la carte de campagne ne le montre plus, `/emails`
+  garde son envoi passé ; réinscription → **1 seule** inscription, `active`,
+  `lastStep=0`, et le contact redevient composable ;
+- **au navigateur** : « Écrire les mails » atteignable, la confirmation nomme la
+  portée, le coût, « les contacts déjà servis ne sont pas réécrits » et le
+  nombre de retouches ; **les deux boutons sont désactivés pendant l'écriture**
+  (mesuré à +150 ms et +1,6 s), **0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1193 tests**) et
+  `npm run e2e` (**29 tests**) verts.
+
+`tests/campaign-removal-source.test.ts` fixe le vocabulaire du retrait, le fait
+que rien de la fiche n'est touché, la réactivation sans doublon, et que la
+réécriture ne vise qu'un brouillon en attente. Les deux gardes de
+`compose-source.test.ts` qui exigeaient la composition à l'enregistrement sont
+**réécrites dans l'autre sens**, avec la raison du renversement.
+
+### Jalon 70 — ce qui n'est pas fait
+
+**Le retrait n'a pas d'annulation.** Réinscrire ramène la personne et la remet à
+l'étape 1 ; cela ne rejoue pas l'historique de sa précédente inscription, qui
+n'existait de toute façon que comme envois — et ceux-là n'ont pas bougé.
+
+**Aucun écran ne liste les brouillons retouchés à la main.** Le nombre est
+annoncé dans la confirmation ; savoir *lesquels* demande de parcourir la file.
+
+**La réécriture est tout ou rien.** « Écrire les mails » reconstruit tous les
+brouillons en attente, ou aucun — on ne choisit pas d'épargner celui qu'on vient
+de corriger. Le refuge est le même qu'ailleurs : ne pas cliquer, ou renvoyer le
+départ depuis sa carte.

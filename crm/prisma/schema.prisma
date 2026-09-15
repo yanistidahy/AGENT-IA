@@ -971,6 +971,11 @@ model SequenceDeparture {
   decidedAt DateTime?
   detail    String    @default("")
 
+  /// Retouché à la main depuis la file (jalon 68). Sert à **prévenir** avant de
+  /// réécrire : « Écrire les mails » recompose les brouillons en attente, et il
+  /// faut dire combien de textes relus seront remplacés.
+  editedAt DateTime?
+
   @@unique([enrollmentId, step])
   @@index([day, status])
   @@map("sequence_departures")

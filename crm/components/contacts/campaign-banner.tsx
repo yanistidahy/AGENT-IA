@@ -23,33 +23,8 @@ import {
  * rendrait tout l'écran inutilisable — voir `lib/client/campaign-selection.ts`.
  */
 
-interface ComposeReport {
-  readonly composed: number;
-  readonly background: boolean;
-  readonly drafts: number;
-  readonly blocked: string | null;
-}
-
-interface Plan {
-  readonly estimate: { readonly drafts: number; readonly micros: number; readonly model: string; readonly source: string; readonly background: boolean };
-  readonly blocked: string | null;
-}
-
-function isOutcome(
-  value: unknown,
-): value is { outcome: EnrollSelectionOutcome; composition: ComposeReport } {
+function isOutcome(value: unknown): value is { outcome: EnrollSelectionOutcome } {
   return typeof value === "object" && value !== null && "outcome" in value;
-}
-
-function isPlan(value: unknown): value is { plan: Plan } {
-  return typeof value === "object" && value !== null && "plan" in value;
-}
-
-/** « ≈ 0,48 $ » — le même rendu que côté serveur, sur la même règle. */
-function cost(micros: number): string {
-  if (micros <= 0) return "0,00 $";
-  const dollars = micros / 1_000_000;
-  return dollars < 0.01 ? "moins de 0,01 $" : `${dollars.toFixed(2).replace(".", ",")} $`;
 }
 
 /** La sélection à mémoriser : l'URL courante, moins ce qui n'en fait pas partie. */
@@ -78,30 +53,17 @@ export function CampaignBanner({
 }) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<EnrollSelectionOutcome | null>(null);
-  const [composed, setComposed] = useState<ComposeReport | null>(null);
-  const [plan, setPlan] = useState<Plan | null>(null);
+  /** Vrai quand la confirmation est ouverte. Inscrire ne compose plus rien. */
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /**
-   * Le prix **avant** le clic, jamais après.
-   *
-   * Inscrire déclenche la composition, donc autant d'appels au modèle que de
-   * fiches : une confirmation qui ne dirait que « 47 inscriptions » cacherait la
-   * seule chose qui coûte de l'argent.
-   */
-  const ask = async () => {
-    setBusy(true);
-    setError(null);
-    const result = await requestJson(
-      `/api/campaigns/compose?campaignId=${encodeURIComponent(campaign.id)}&aInscrire=${selected.size}`,
-      {},
-      isPlan,
-    );
-    setBusy(false);
-    if (result.ok) setPlan(result.data.plan);
-    else setError(result.message);
-  };
-
+  /*
+    **Inscrire n'écrit plus de brouillon**, depuis le jalon 70 : c'était le
+    geste qui coûtait de l'argent sans le dire dans son intitulé. Constituer une
+    sélection et écrire les mails sont deux décisions, et les lier obligeait à
+    payer pour la première. La seconde vit sur la carte de la campagne, sous
+    « Écrire les mails », avec son estimation de coût.
+  */
   const enroll = async () => {
     setBusy(true);
     setError(null);
@@ -122,10 +84,9 @@ export function CampaignBanner({
       isOutcome,
     );
     setBusy(false);
-    setPlan(null);
+    setConfirming(false);
     if (result.ok) {
       setOutcome(result.data.outcome);
-      setComposed(result.data.composition);
       clearSelection(campaign.id);
       onCleared();
     } else {
@@ -146,7 +107,7 @@ export function CampaignBanner({
 
         <button
           type="button"
-          onClick={() => void ask()}
+          onClick={() => setConfirming(true)}
           disabled={busy || selected.size === 0}
           className="ml-auto min-h-[44px] rounded-control bg-brand px-3 text-[12.5px] font-medium text-white hover:bg-brand-d disabled:opacity-50 lg:min-h-0 lg:py-1"
         >
@@ -174,44 +135,15 @@ export function CampaignBanner({
         encore — tout est conservé jusqu'à l'inscription.
       </p>
 
-      {/*
-        **La confirmation porte le prix.** Composer cinquante brouillons, c'est
-        cinquante appels au modèle : le nombre et le coût s'affichent ici, avant
-        le clic qui les dépense — jamais sur la facture du mois.
-      */}
-      {plan !== null && (
+      {confirming && (
         <div className="mt-1.5 rounded-control border border-brand bg-surface px-3 py-2">
           <p>
             <strong className="font-semibold">
               {selected.size} inscription{selected.size > 1 ? "s" : ""}
-            </strong>
-            {plan.blocked === null ? (
-              <>
-                , puis {plan.estimate.drafts} brouillon{plan.estimate.drafts > 1 ? "s" : ""} composé
-                {plan.estimate.drafts > 1 ? "s" : ""} tout de suite —{" "}
-                <strong className="font-semibold">
-                  {plan.estimate.drafts} appel{plan.estimate.drafts > 1 ? "s" : ""} au modèle,
-                  environ {cost(plan.estimate.micros)}
-                </strong>{" "}
-                ({plan.estimate.model},{" "}
-                {plan.estimate.source === "measured"
-                  ? "d'après vos brouillons déjà facturés"
-                  : "estimation par défaut, faute d'historique"}
-                ). Rien n'est envoyé : la file se relit et se valide à la main.
-              </>
-            ) : (
-              <>
-                . <span className="text-muted">{plan.blocked}</span> Les inscriptions seront faites,
-                mais aucun brouillon ne sera composé.
-              </>
-            )}
+            </strong>{" "}
+            dans « {campaign.name} ». Aucun message n'est écrit ni envoyé :
+            l'écriture se déclenche depuis la campagne, sous « Écrire les mails ».
           </p>
-          {plan.estimate.background && (
-            <p className="mt-1 text-[12px] text-muted">
-              Au-delà de dix brouillons, la composition se fait en arrière-plan : la file se remplit
-              à mesure, sans bloquer l'écran.
-            </p>
-          )}
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
@@ -223,23 +155,13 @@ export function CampaignBanner({
             </button>
             <button
               type="button"
-              onClick={() => setPlan(null)}
+              onClick={() => setConfirming(false)}
               className="min-h-[44px] rounded-control border border-line px-3 lg:min-h-0 lg:py-1"
             >
               Annuler
             </button>
           </div>
         </div>
-      )}
-
-      {composed !== null && (
-        <p className="mt-1.5">
-          {composed.background
-            ? `${composed.drafts} départs en préparation — la file se remplit, rechargez « Départs du jour » dans un instant.`
-            : composed.composed > 0
-              ? `${composed.composed} départ${composed.composed > 1 ? "s" : ""} composé${composed.composed > 1 ? "s" : ""} — à relire dans « Départs du jour ».`
-              : `Aucun départ composé. ${composed.blocked ?? ""}`}
-        </p>
       )}
 
       {outcome !== null && (

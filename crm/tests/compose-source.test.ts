@@ -36,7 +36,7 @@ describe("la composition immédiate passe par la boucle du matin", () => {
   const now = sourceOf("lib/api/compose-now.ts");
 
   it("appelle composeDepartures avec une portée, et n'écrit aucun départ elle-même", () => {
-    expect(now).toMatch(/composeDepartures\(\s*now\s*,\s*\{\s*sequenceId\s*\}/);
+    expect(now).toMatch(/composeDepartures\(\s*now\s*,\s*\{\s*sequenceId\s*,/);
     // Créer un départ ici, c'est avoir réécrit la boucle.
     expect(now).not.toMatch(/sequenceDeparture\s*\.\s*create/);
     // Et ce serait aussi avoir contourné les règles qui décident.
@@ -88,22 +88,42 @@ describe("la portée est un paramètre, pas une seconde fonction", () => {
   });
 });
 
-describe("« Enregistrer » compose, et c'est tout l'objet du jalon", () => {
-  it("l'enregistrement d'une séquence compose pour sa campagne", () => {
-    // C'était le seul geste du parcours qui ne composait pas : on
-    // enregistrait, la file restait vide, et il fallait trouver un second
-    // bouton ou attendre le lendemain.
+/**
+ * **Règle révisée au jalon 70, et c'est un renversement assumé.**
+ *
+ * Le jalon 56 avait câblé la composition sur « Enregistrer », pour supprimer la
+ * boucle de vingt-quatre heures : on enregistrait, la file restait vide, et il
+ * fallait attendre le lendemain. Le raccourci a été payé — enregistrer une
+ * seconde fois pour corriger une consigne relançait une écriture facturée, et
+ * écrasait des brouillons qu'on était peut-être en train de relire.
+ *
+ * Enregistrer et inscrire redeviennent donc de la **configuration pure** : ni
+ * appel au modèle, ni brouillon, ni effet de bord, autant de fois qu'on veut.
+ * L'écriture a son propre geste, « Écrire les mails », qui annonce son prix et
+ * ce qu'il va remplacer. Ce qui est supprimé ici, ce n'est pas l'immédiateté du
+ * jalon 56 — le bouton est sur la même carte, à un clic — c'est le fait qu'elle
+ * partait d'un geste qui ne la demandait pas.
+ */
+describe("enregistrer est une configuration, jamais une dépense", () => {
+  it("l'enregistrement d'une séquence ne compose rien", () => {
     const route = sourceOf("app/api/sequences-email/route.ts");
-    expect(route).toContain("composeAfterSave");
-    const post = route.slice(route.indexOf("export async function POST"), route.indexOf("export async function PUT"));
-    expect(post).toContain("composeAfterSave");
-    expect(post).toContain("composition");
+    expect(route).not.toContain("composeAfterSave");
+    expect(route).not.toContain("composeForCampaign");
+    expect(route).not.toContain("composeDepartures");
   });
 
-  it("l'inscription compose aussi, sans second geste", () => {
+  it("l'inscription non plus : inscrire, c'est choisir qui, pas écrire", () => {
     const route = sourceOf("app/api/campaigns/route.ts");
-    const put = route.slice(route.indexOf("export async function PUT"), route.indexOf("export async function DELETE"));
-    expect(put).toContain("composeForCampaign");
+    expect(route).not.toContain("composeForCampaign");
+    expect(route).not.toContain("composeDepartures");
+  });
+
+  it("l'écriture a son geste, et il annonce ce qu'il remplace", () => {
+    const action = sourceOf("components/campaigns/compose-action.tsx");
+    expect(action).toContain("Écrire les mails");
+    // Le nombre de brouillons retouchés à la main est dit **avant**.
+    expect(action).toContain("describeEdited");
+    expect(action).toMatch(/plan\.edited/);
   });
 
   it("une campagne naît avec une séquence active, sinon rien ne composerait", () => {

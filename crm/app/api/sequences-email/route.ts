@@ -7,7 +7,6 @@ import {
   saveSequence,
   sequenceSchema,
 } from "@/lib/api/email-sequences";
-import { composeAfterSave } from "@/lib/api/compose-now";
 
 export const dynamic = "force-dynamic";
 // Ces routes composent : jusqu'à dix brouillons, donc autant d'appels au
@@ -43,20 +42,19 @@ export async function POST(request: Request) {
     const result = await saveSequence(parsed.data);
     if (!result.ok) return badRequest(result.message);
 
-    // **« Enregistrer » compose. C'est tout l'objet du jalon 56.**
-    //
-    // C'est ici que l'on écrit la consigne d'une étape et que l'on active la
-    // séquence : c'est donc ici que la campagne devient prête, et c'est ce clic
-    // que l'on attend de voir suivi d'effet. L'enregistrement était le seul
-    // geste du parcours qui ne composait pas — on enregistrait, la file restait
-    // vide, et il fallait trouver un second bouton ou attendre le lendemain.
-    //
-    // Rien n'est envoyé : la file se remplit, on la relit, on valide à la main.
-    const composition = await composeAfterSave(result.sequence.id);
+    /*
+      **Enregistrer n'écrit que la configuration.** Le jalon 56 avait branché la
+      composition ici, pour que le clic qui rend la campagne prête soit suivi
+      d'effet. C'était juste au premier enregistrement et faux à tous les
+      suivants : on ne peut plus corriger une consigne, une étape ou un délai
+      sans déclencher des appels au modèle qu'on n'a pas demandés.
 
+      La composition est donc passée derrière son propre bouton, « Écrire les
+      mails ». Enregistrer redevient ce qu'un enregistrement doit être : sans
+      effet de bord, sans coût, et rejouable autant de fois qu'on veut.
+    */
     return jsonOk({
       sequence: result.sequence,
-      composition,
       sequences: await listSequences(),
     });
   } catch (error) {

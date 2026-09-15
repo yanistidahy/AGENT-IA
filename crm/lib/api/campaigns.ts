@@ -12,7 +12,7 @@ import { readFunnelFacts } from "./email-stats";
 import { readReplyFacts } from "./email-replies";
 import { contactTitle } from "../domain/contact-identity";
 import { buildFunnel, type FunnelStep } from "../domain/email-funnel";
-import { memberState, type CampaignMember } from "../domain/campaign-members";
+import { memberState, type CampaignMember, REMOVED } from "../domain/campaign-members";
 import { nameConfirms } from "../domain/campaign-deletion";
 
 /**
@@ -608,7 +608,10 @@ export {
 export async function listCampaignMembers(sequenceId: string): Promise<CampaignMember[]> {
   const [enrollments, sends, steps] = await Promise.all([
     prisma.sequenceEnrollment.findMany({
-      where: { sequenceId },
+      // **Les retirés ne sont plus dans la campagne.** Ils y restaient affichés
+      // « Arrêtée », ce qui contredit le geste qu'on vient de faire : retirer
+      // quelqu'un, c'est le sortir de la liste, pas l'y marquer.
+      where: { sequenceId, status: { not: REMOVED } },
       select: {
         id: true,
         status: true,
@@ -694,7 +697,19 @@ export async function removeMember(
   await prisma.$transaction([
     prisma.sequenceEnrollment.update({
       where: { id: enrollmentId },
-      data: { status: "stopped", stopReason: "Retiré de la campagne à la main" },
+      /*
+        **`removed`, et non `stopped`.** Les deux mots décrivaient la même
+        colonne et ce sont deux situations opposées : une inscription *arrêtée*
+        l'a été par le produit — la personne a répondu, la fiche s'est close —
+        et elle doit rester lisible dans la campagne, avec son motif. Une
+        inscription *retirée* l'a été par quelqu'un qui ne veut plus voir cette
+        personne ici.
+
+        Les confondre coûtait deux choses : la ligne restait affichée « Arrêtée »
+        alors qu'on venait de la retirer, et la fiche restait comptée comme
+        inscrite, donc **impossible à réinscrire** (voir `enroll`).
+      */
+      data: { status: REMOVED, stopReason: "Retiré de la campagne à la main" },
     }),
     prisma.sequenceDeparture.updateMany({
       where: { enrollmentId, status: "pending" },
@@ -708,7 +723,9 @@ export async function removeMember(
 /** Les contacts déjà inscrits — pour que /contacts les marque et les exclue. */
 export async function enrolledContactIds(sequenceId: string): Promise<Set<string>> {
   const rows = await prisma.sequenceEnrollment.findMany({
-    where: { sequenceId },
+    // Une fiche retirée n'est plus inscrite : /contacts doit la proposer de
+    // nouveau, sans quoi « retirer » serait un aller sans retour.
+    where: { sequenceId, status: { not: REMOVED } },
     select: { contactId: true },
   });
   return new Set(rows.map((row) => row.contactId));

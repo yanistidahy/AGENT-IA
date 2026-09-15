@@ -140,6 +140,18 @@ async function pendingColleagueOpening(
  */
 export interface ComposeScope {
   readonly sequenceId?: string;
+  /**
+   * Réécrire les brouillons **en attente** au lieu de les laisser tels quels.
+   *
+   * Le passage quotidien ne le fait jamais : rejouer le matin doit être sans
+   * effet, et remplacer un brouillon qu'on est peut-être en train de relire
+   * serait le contraire. Mais « Écrire les mails » est un geste délibéré, et il
+   * a une raison précise d'exister : si l'on vient de changer une note d'angle,
+   * le mail de référence ou le signataire, on veut que les brouillons non
+   * envoyés soient reconstruits avec les nouvelles consignes. Ce qui est
+   * **déjà parti** n'est jamais touché.
+   */
+  readonly rewritePending?: boolean;
 }
 
 export async function composeDepartures(
@@ -215,7 +227,12 @@ export async function composeDepartures(
     const existing = await prisma.sequenceDeparture.findUnique({
       where: { enrollmentId_step: { enrollmentId: enrollment.id, step: verdict.step } },
     });
-    if (existing !== null) continue;
+    if (existing !== null) {
+      // Un départ qui n'est plus en attente est décidé : envoyé, reporté,
+      // retiré. On n'y revient pas, quel que soit le mode.
+      if (!scope.rewritePending || existing.status !== "pending") continue;
+      await prisma.sequenceDeparture.delete({ where: { id: existing.id } });
+    }
 
     const step = enrollment.sequence.steps.find((entry) => entry.position === verdict.step);
 
@@ -288,11 +305,19 @@ export async function composeDepartures(
  * consultation qui écrit n'est plus une consultation (jalon 8). Les
  * inéligibles sont donc comptés, pas rangés, la boucle les rangera.
  */
+export interface ComposableCount {
+  readonly eligible: number;
+  readonly fresh: number;
+  readonly rewritten: number;
+  readonly edited: number;
+  readonly weekend: boolean;
+}
+
 export async function countComposable(
   scope: ComposeScope,
   now = new Date(),
-): Promise<{ readonly eligible: number; readonly weekend: boolean }> {
-  if (isWeekend(now)) return { eligible: 0, weekend: true };
+): Promise<ComposableCount> {
+  if (isWeekend(now)) return { eligible: 0, fresh: 0, rewritten: 0, edited: 0, weekend: true };
 
   const enrollments = await prisma.sequenceEnrollment.findMany({
     where: {
@@ -306,6 +331,13 @@ export async function countComposable(
   });
 
   let eligible = 0;
+  /** Jamais écrits : des contacts qui n'ont encore rien reçu de cette campagne. */
+  let fresh = 0;
+  /** Brouillons en attente qui seront reconstruits. */
+  let rewritten = 0;
+  /** Parmi eux, ceux retouchés à la main : c'est ce qu'il faut annoncer. */
+  let edited = 0;
+
   for (const enrollment of enrollments) {
     const replied = await repliedAfter(
       enrollment.contactId,
@@ -324,16 +356,28 @@ export async function countComposable(
     );
     if (!verdict.ok) continue;
 
-    // Déjà en file : recomposer coûterait un appel pour remplacer un brouillon
-    // que l'on est peut-être en train de relire.
+    // Déjà en file : le passage quotidien n'y revient pas, recomposer
+    // coûterait un appel pour remplacer un brouillon que l'on est peut-être en
+    // train de relire. « Écrire les mails » (`rewritePending`) le fait au
+    // contraire exprès, et compte alors ces brouillons.
     const existing = await prisma.sequenceDeparture.findUnique({
       where: { enrollmentId_step: { enrollmentId: enrollment.id, step: verdict.step } },
-      select: { id: true },
+      select: { id: true, status: true, editedAt: true },
     });
-    if (existing === null) eligible += 1;
+
+    if (existing === null) {
+      eligible += 1;
+      fresh += 1;
+      continue;
+    }
+    if (scope.rewritePending && existing.status === "pending") {
+      eligible += 1;
+      rewritten += 1;
+      if (existing.editedAt !== null) edited += 1;
+    }
   }
 
-  return { eligible, weekend: false };
+  return { eligible, fresh, rewritten, edited, weekend: false };
 }
 
 async function unlockOf(sequenceId: string) {
@@ -743,7 +787,10 @@ export async function saveDeparture(
 
   await prisma.sequenceDeparture.update({
     where: { id: departureId },
-    data: { subject: cleanSubject, body },
+    // `editedAt` marque la retouche à la main. Il ne sert pas à afficher une
+    // date : il sert à **prévenir** avant que « Écrire les mails » ne remplace
+    // un texte que quelqu'un a relu et corrigé.
+    data: { subject: cleanSubject, body, editedAt: new Date() },
   });
   return { ok: true };
 }

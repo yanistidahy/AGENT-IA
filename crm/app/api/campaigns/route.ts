@@ -10,13 +10,8 @@ import {
   updateCampaignSchema,
 } from "@/lib/api/campaigns";
 import { z } from "zod";
-import { composeForCampaign } from "@/lib/api/compose-now";
 
 export const dynamic = "force-dynamic";
-// Ces routes composent : jusqu'à dix brouillons, donc autant d'appels au
-// modèle, dans la requête. Au-delà, `composeForCampaign` passe en arrière-plan
-// — mais le plafond doit couvrir le cas en ligne, sinon le proxy couperait sur
-// un travail déjà payé.
 export const maxDuration = 300;
 
 /**
@@ -92,16 +87,15 @@ export async function PUT(request: Request) {
     );
     if (!result.ok) return badRequest(result.message);
 
-    // **Composer dans la foulée, pas demain matin.** Attendre le passage
-    // quotidien pour découvrir qu'une étape était vide, c'est une boucle de
-    // vingt-quatre heures pour une faute de saisie. Rien n'est envoyé : la file
-    // se remplit, on la relit, on valide à la main — la distinction du jalon 38
-    // ne bouge pas.
-    const composition = await composeForCampaign(parsed.data.campaignId, new Date(), "background");
-
+    /*
+      **L'inscription n'écrit plus de brouillon.** Le jalon 56 composait ici
+      pour éviter la boucle de vingt-quatre heures ; mais inscrire et écrire
+      sont deux décisions, et les lier obligeait à payer des appels au modèle au
+      moment où l'on constitue une sélection. « Écrire les mails », sur la carte
+      de la campagne, est le geste qui dépense, et il annonce son prix avant.
+    */
     return jsonOk({
       outcome: result.outcome,
-      composition,
       campaigns: await listCampaigns(),
     });
   } catch (error) {

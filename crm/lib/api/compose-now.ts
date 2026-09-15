@@ -38,6 +38,18 @@ export interface ComposePlan {
   readonly estimate: CostEstimate;
   /** Pourquoi il n'y a rien à composer, quand c'est le cas. */
   readonly blocked: string | null;
+  /** Contacts qui n'ont encore rien reçu de cette campagne. */
+  readonly fresh: number;
+  /** Brouillons en attente qui seront **reconstruits** avec les consignes du jour. */
+  readonly rewritten: number;
+  /**
+   * Parmi eux, ceux retouchés à la main.
+   *
+   * **C'est le seul chiffre de cette liste qui coûte quelque chose à
+   * l'utilisateur** : un texte relu et corrigé va être remplacé. Il est annoncé
+   * avant, dans la confirmation, jamais découvert après.
+   */
+  readonly edited: number;
 }
 
 /**
@@ -101,6 +113,9 @@ export async function planComposition(
       price: () => 0,
     }),
     blocked,
+    fresh: 0,
+    rewritten: 0,
+    edited: 0,
   });
 
   if (campaign === null) return nothing("Campagne introuvable.");
@@ -128,7 +143,10 @@ export async function planComposition(
     );
   }
 
-  const counted = await countComposable({ sequenceId: campaign.sequence.id }, now);
+  const counted = await countComposable(
+    { sequenceId: campaign.sequence.id, rewritePending: true },
+    now,
+  );
   const { weekend } = counted;
   const eligible = counted.eligible + Math.max(0, pending);
   if (weekend) {
@@ -153,12 +171,21 @@ export async function planComposition(
           cacheWrite: 0,
         }),
     }),
-    blocked: eligible === 0 ? "Personne n'est éligible : tout le monde est déjà en file, arrêté ou sans adresse." : null,
+    fresh: counted.fresh + Math.max(0, pending),
+    rewritten: counted.rewritten,
+    edited: counted.edited,
+    blocked:
+      eligible === 0
+        ? "Rien à écrire : tout le monde a déjà reçu son message, ou personne n'est éligible (arrêté, retiré, sans adresse)."
+        : null,
   };
 }
 
 export interface ComposeOutcome {
   readonly composed: number;
+  /** Brouillons en attente reconstruits, dont ceux retouchés à la main. */
+  readonly rewritten: number;
+  readonly edited: number;
   /** Vrai quand le travail continue en arrière-plan après la réponse. */
   readonly background: boolean;
   readonly estimateMicros: number;
@@ -200,6 +227,8 @@ export async function composeForCampaign(
     estimateMicros: plan.estimate.micros,
     drafts: plan.estimate.drafts,
     blocked: plan.blocked,
+    rewritten: plan.rewritten,
+    edited: plan.edited,
   };
   if (plan.blocked !== null || plan.estimate.drafts === 0) {
     return { ...base, composed: 0, background: false };
@@ -209,7 +238,7 @@ export async function composeForCampaign(
   if (sequenceId === null) return { ...base, composed: 0, background: false };
 
   if (mode === "auto" && !plan.estimate.background) {
-    const report = await composeDepartures(now, { sequenceId });
+    const report = await composeDepartures(now, { sequenceId, rewritePending: true });
     return { ...base, composed: report.composed, background: false };
   }
 
@@ -227,29 +256,6 @@ export async function composeForCampaign(
 
   void runInBackground(job.id, sequenceId, now);
   return { ...base, composed: 0, background: true };
-}
-
-/**
- * Composer après un enregistrement de séquence — **le geste qui manquait**.
- *
- * L'écran des étapes est monté dans la carte de campagne (jalon 54) : y cliquer
- * « Enregistrer » est le moment où l'on écrit la consigne et où la campagne
- * devient prête. C'était pourtant le seul geste du parcours qui ne composait
- * pas.
- *
- * Une séquence sans campagne — il n'en existe plus depuis le jalon 54, mais le
- * schéma l'autorise — ne compose pas : elle n'a pas d'écran d'où la relire.
- */
-export async function composeAfterSave(
-  sequenceId: string,
-  now = new Date(),
-): Promise<ComposeOutcome | null> {
-  const sequence = await prisma.emailSequence.findUnique({
-    where: { id: sequenceId },
-    select: { campaignId: true },
-  });
-  if (sequence?.campaignId == null) return null;
-  return composeForCampaign(sequence.campaignId, now, "background");
 }
 
 async function sequenceOf(campaignId: string): Promise<string | null> {
@@ -270,7 +276,7 @@ async function sequenceOf(campaignId: string): Promise<string | null> {
  */
 async function runInBackground(jobId: string, sequenceId: string, now: Date): Promise<void> {
   try {
-    const report = await composeDepartures(now, { sequenceId });
+    const report = await composeDepartures(now, { sequenceId, rewritePending: true });
     await prisma.compositionJob.update({
       where: { id: jobId },
       data: { done: report.composed, finishedAt: new Date() },
