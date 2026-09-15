@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { contactNameKey } from "./name-keys";
 import { prisma } from "../db";
 import { searchText } from "../domain/text";
 import { contactTitle } from "../domain/contact-identity";
@@ -360,6 +361,10 @@ export async function importContacts(
               String(merged.title ?? ""),
               String(merged.dep ?? ""),
             ]),
+            nameKey: contactNameKey({
+              firstName: String(merged.firstName ?? ""),
+              lastName: String(merged.lastName ?? ""),
+            }),
           },
         });
 
@@ -391,6 +396,7 @@ export async function importContacts(
             parsed.data.title ?? "",
             parsed.data.dep ?? "",
           ]),
+          nameKey: contactNameKey(parsed.data),
         },
       });
       created += 1;

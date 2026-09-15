@@ -58,6 +58,13 @@ model Company {
   /// Permet à « zenith » de trouver « Zénith » sans extension PostgreSQL.
   searchText String @default("")
 
+  /// Clé de tri alphabétique : le **nom seul**, plié (minuscules, sans accents).
+  /// Distincte de searchText, qui concatène tous les champs cherchables et ne
+  /// peut donc pas ordonner. `null` quand il n'y a pas de nom — c'est ce qui
+  /// range ces fiches en fin de liste via NULLS LAST, plutôt qu'en tête où la
+  /// chaîne vide les mettrait. Voir lib/domain/sort-key.ts.
+  nameKey String?
+
   contacts   Contact[]
   deals      Deal[]
   activities Activity[]
@@ -66,6 +73,7 @@ model Company {
   domainRejection DomainRejection?
 
   @@index([name])
+  @@index([nameKey])
   @@map("companies")
 }
 
@@ -144,6 +152,13 @@ model Contact {
   /// Miroir normalisé des champs cherchables — voir Company.searchText.
   searchText String @default("")
 
+  /// Clé de tri alphabétique : le **nom seul**, plié (minuscules, sans accents).
+  /// Distincte de searchText, qui concatène tous les champs cherchables et ne
+  /// peut donc pas ordonner. `null` quand il n'y a pas de nom — c'est ce qui
+  /// range ces fiches en fin de liste via NULLS LAST, plutôt qu'en tête où la
+  /// chaîne vide les mettrait. Voir lib/domain/sort-key.ts.
+  nameKey String?
+
   companyId String?
   company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
 
@@ -167,6 +182,7 @@ model Contact {
   @@index([companyId])
   @@index([lifecycle])
   @@index([tag])
+  @@index([nameKey])
   @@map("contacts")
 }
 
@@ -1239,6 +1255,13 @@ model Campaign {
   /// Ni Json (portabilité, règle du schéma), ni copie des identifiants : la
   /// sélection décrit une intention, l'inscription fige les personnes.
   selection String @default("")
+
+  /// Clé de tri alphabétique : le **nom seul**, plié (minuscules, sans accents).
+  /// Distincte de searchText, qui concatène tous les champs cherchables et ne
+  /// peut donc pas ordonner. `null` quand il n'y a pas de nom — c'est ce qui
+  /// range ces fiches en fin de liste via NULLS LAST, plutôt qu'en tête où la
+  /// chaîne vide les mettrait. Voir lib/domain/sort-key.ts.
+  nameKey String?
 
   createdAt DateTime @default(now())
 

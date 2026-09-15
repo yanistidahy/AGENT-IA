@@ -1,4 +1,5 @@
 import type { FilterState } from "../domain/column-filters";
+import { compareKeys, sortKey } from "../domain/sort-key";
 import { facetsFor, matchesAll, type FacetValue } from "../domain/column-match";
 import { CLIENT_FACET_COLUMNS } from "./client-columns";
 import { prisma } from "../db";
@@ -52,6 +53,9 @@ export interface ClientRow {
 }
 
 export const CLIENT_SORT_KEYS = [
+  // **Alphabétique par défaut** : le portefeuille est d'abord une liste où l'on
+  // cherche une maison. Le classement par chiffre d'affaires reste à un clic.
+  "company",
   "revenue",
   "name",
   "lastContact",
@@ -61,7 +65,7 @@ export const CLIENT_SORT_KEYS = [
 export type ClientSort = (typeof CLIENT_SORT_KEYS)[number];
 
 export function toClientSort(value: string | undefined): ClientSort {
-  return CLIENT_SORT_KEYS.find((candidate) => candidate === value) ?? "revenue";
+  return CLIENT_SORT_KEYS.find((candidate) => candidate === value) ?? "company";
 }
 
 export interface ClientPortfolio {
@@ -74,7 +78,7 @@ export interface ClientPortfolio {
 }
 
 export async function readClients(
-  sort: ClientSort = "revenue",
+  sort: ClientSort = "company",
   settings: PilotageSettings = DEFAULT_PILOTAGE,
   now: Date = new Date(),
   filters: FilterState = {},
@@ -152,13 +156,26 @@ export async function readClients(
   };
 }
 
-/** Les plus gros clients d'abord : c'est la lecture par défaut d'un portefeuille. */
+/**
+ * Par maison d'abord — le portefeuille est une liste de référence.
+ *
+ * **Il se trie en mémoire**, comme tout ce qui est agrégé ici : le portefeuille
+ * n'est pas une table mais une somme d'affaires gagnées. Il doit donc classer
+ * exactement comme SQL, et c'est pour cela que `compareKeys` existe — deux
+ * écrans qui ordonneraient les mêmes noms différemment seraient pires qu'un
+ * seul mal ordonné.
+ */
 function sortClients(clients: readonly ClientRow[], sort: ClientSort): ClientRow[] {
   const copy = [...clients];
+  const person = (row: ClientRow) => sortKey([row.lastName, row.firstName]);
 
   switch (sort) {
+    case "revenue":
+      return copy.sort((a, b) => b.wonValue - a.wonValue);
     case "name":
-      return copy.sort((a, b) => a.lastName.localeCompare(b.lastName));
+      // `localeCompare` suivait la locale du conteneur : le même portefeuille
+      // pouvait se classer autrement d'un environnement à l'autre.
+      return copy.sort((a, b) => compareKeys(person(a), person(b)));
     case "lastContact":
       // Le plus ancien contact en tête : c'est celui qu'on risque de perdre.
       return copy.sort(
@@ -174,6 +191,12 @@ function sortClients(clients: readonly ClientRow[], sort: ClientSort): ClientRow
         (a, b) => followUpRank(a.followUp) - followUpRank(b.followUp) || b.wonValue - a.wonValue,
       );
     default:
-      return copy.sort((a, b) => b.wonValue - a.wonValue);
+      // Les fiches sans société en fin de liste, et à l'intérieur d'une maison
+      // les personnes par ordre alphabétique.
+      return copy.sort(
+        (a, b) =>
+          compareKeys(sortKey([a.companyName]), sortKey([b.companyName])) ||
+          compareKeys(person(a), person(b)),
+      );
   }
 }

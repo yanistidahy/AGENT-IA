@@ -1,4 +1,6 @@
 import type { Prisma } from "@prisma/client";
+import { compareKeys, sortKey } from "../domain/sort-key";
+import { companyNameKey } from "./name-keys";
 import type { FilterState } from "../domain/column-filters";
 import { searchText, searchTerm } from "../domain/text";
 import { columnsWhere, derivedFilters } from "./column-filters";
@@ -73,7 +75,7 @@ const companyInclude = {
       email: true,
       lifecycle: true,
     },
-    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    orderBy: [{ nameKey: { sort: "asc", nulls: "last" } }, { firstName: "asc" }],
   },
   deals: {
     select: {
@@ -131,15 +133,21 @@ function orderBy(query: ListCompaniesQuery): Prisma.CompanyOrderByWithRelationIn
   const dir = query.dir ?? "asc";
   switch (query.sort) {
     case "industry":
-      return [{ industry: dir }, { name: "asc" }];
+      return [{ industry: dir }, { nameKey: { sort: "asc", nulls: "last" } }];
     case "size":
-      return [{ size: dir }, { name: "asc" }];
+      return [{ size: dir }, { nameKey: { sort: "asc", nulls: "last" } }];
     case "loc":
-      return [{ loc: dir }, { name: "asc" }];
+      return [{ loc: dir }, { nameKey: { sort: "asc", nulls: "last" } }];
     case "createdAt":
       return [{ createdAt: dir }];
     default:
-      return [{ name: dir }];
+      /*
+        **Par nom, et sur la clé pliée.** `{ name: dir }` trie selon la
+        collation du serveur : sur cette base (`C.UTF-8`) c'est l'ordre des
+        octets, où « ELIXIR » précède « Eden » et « Élixir » tombe après « Z ».
+        La clé range les sans-nom en fin de liste dans les deux sens.
+      */
+      return [{ nameKey: { sort: dir, nulls: "last" } }, { name: dir }];
   }
 }
 
@@ -252,7 +260,7 @@ export async function listIndustries(): Promise<ReadonlyArray<{ value: string; c
 
   return rows
     .map((row) => ({ value: row.industry, count: row._count._all }))
-    .sort((a, b) => a.value.localeCompare(b.value, "fr"));
+    .sort((a, b) => compareKeys(sortKey([a.value]), sortKey([b.value])));
 }
 
 /**
@@ -280,6 +288,7 @@ export async function createCompany(input: CreateCompanyInput): Promise<CompanyR
       loc: input.loc ?? "",
       desc: input.desc ?? "",
       searchText: companySearchText(input),
+      nameKey: companyNameKey(input.name),
     },
     include: companyInclude,
   });
@@ -314,7 +323,7 @@ export async function updateCompany(
   const updated = await prisma.company.update({ where: { id }, data, include: companyInclude });
   const row = await prisma.company.update({
     where: { id },
-    data: { searchText: companySearchText(updated) },
+    data: { searchText: companySearchText(updated), nameKey: companyNameKey(updated.name) },
     include: companyInclude,
   });
   return toRecord(row);

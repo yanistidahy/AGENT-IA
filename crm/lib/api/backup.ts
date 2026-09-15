@@ -119,6 +119,13 @@ const companyRow = z.object({
   createdAt: day,
   /** Miroir de recherche : sans lui, la société devient introuvable. */
   searchText: optionalText,
+  /**
+   * Clé de tri : sans elle, la société revient d'une restauration **en fin de
+   * liste alphabétique**, ce qui ne ressemble pas à une perte de données et en
+   * est une. Facultative, comme les autres ajouts : une sauvegarde plus
+   * ancienne ne peut pas porter une colonne qui n'existait pas.
+   */
+  nameKey: optionalText,
 });
 
 const contactRow = z.object({
@@ -150,6 +157,8 @@ const contactRow = z.object({
   website: optionalText,
   instagram: optionalText,
   searchText: optionalText,
+  /** Clé de tri — voir companyRow.nameKey. */
+  nameKey: optionalText,
   emailCount: z.number().int().optional(),
   lastEmailAt: optionalDay,
 });

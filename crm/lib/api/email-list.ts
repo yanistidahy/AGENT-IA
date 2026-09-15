@@ -1,4 +1,5 @@
 import "server-only";
+import { byName, compareKeys, sortKey } from "../domain/sort-key";
 import { prisma } from "../db";
 import { daysBetween, startOfDay } from "../domain/dates";
 import { optedOut, TERMINAL_LIFECYCLES } from "../domain/lost";
@@ -181,20 +182,24 @@ export async function readSentEmails(query: SentQuery, now = new Date()): Promis
     };
   });
 
-  const signatories = [...new Set(rows.map((row) => row.signatory))].sort((a, b) =>
-    a.localeCompare(b),
+  // Les sélecteurs du journal sont des listes où l'on **cherche** un nom :
+  // alphabétiques, sur la clé pliée, comme tous les menus de noms du produit.
+  const signatories = byName([...new Set(rows.map((row) => row.signatory))], (name) =>
+    sortKey([name]),
   );
-  const sequences = [...new Set(rows.map((row) => row.sequence))]
-    .filter((name) => name !== "")
-    .sort((a, b) => a.localeCompare(b));
+  const sequences = byName(
+    [...new Set(rows.map((row) => row.sequence))].filter((name) => name !== ""),
+    (name) => sortKey([name]),
+  );
 
   const campaigns = [
     ...new Map(
       rows.filter((row) => row.campaignId !== "").map((row) => [row.campaignId, row.campaign]),
     ),
   ]
-    .map(([id, name]) => ({ id, name }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .map(([id, name]) => ({ id, name }));
+  const sortedCampaigns = byName(campaigns, (entry) => sortKey([entry.name]));
+
 
   const filtered = rows.filter((row) => {
     if (query.signatory !== undefined && row.signatory !== query.signatory) return false;
@@ -211,7 +216,7 @@ export async function readSentEmails(query: SentQuery, now = new Date()): Promis
     total: rows.length,
     signatories,
     sequences,
-    campaigns,
+    campaigns: sortedCampaigns,
   };
 }
 
@@ -224,22 +229,30 @@ function sortRows(rows: readonly SentRow[], query: SentQuery): SentRow[] {
 
   const compare = (a: SentRow, b: SentRow): number => {
     switch (sort) {
+      // Les tris par nom passent par la clé pliée : « Élixir » se range entre
+      // « Eden » et « Effet », et les valeurs vides tombent en fin de liste.
       case "contact":
-        return a.contactName.localeCompare(b.contactName);
+        return compareKeys(sortKey([a.contactName]), sortKey([b.contactName]));
       case "societe":
-        return a.company.localeCompare(b.company);
+        return compareKeys(sortKey([a.company]), sortKey([b.company]));
       case "objet":
-        return a.subject.localeCompare(b.subject);
+        return compareKeys(sortKey([a.subject]), sortKey([b.subject]));
       case "ouvertures":
         return a.openCount - b.openCount;
       case "signataire":
-        return a.signatory.localeCompare(b.signatory);
+        return compareKeys(sortKey([a.signatory]), sortKey([b.signatory]));
       case "sequence":
-        return `${a.sequence}${a.step ?? ""}`.localeCompare(`${b.sequence}${b.step ?? ""}`);
+        return compareKeys(
+          sortKey([`${a.sequence}${a.step ?? ""}`]),
+          sortKey([`${b.sequence}${b.step ?? ""}`]),
+        );
       // Campagne puis étape : trier par campagne pour lire une campagne dans le
       // désordre de ses étapes n'apprendrait rien.
       case "campagne":
-        return `${a.campaign}${a.step ?? ""}`.localeCompare(`${b.campaign}${b.step ?? ""}`);
+        return compareKeys(
+          sortKey([`${a.campaign}${a.step ?? ""}`]),
+          sortKey([`${b.campaign}${b.step ?? ""}`]),
+        );
       default:
         return a.sentAt.getTime() - b.sentAt.getTime();
     }

@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { companyNameKey } from "./name-keys";
 import { searchText } from "../domain/text";
 
 /**
@@ -54,7 +55,7 @@ export async function resolveCompanyDetailed(
   const created = await tx.company.create({
     // `searchText` dès la création : une société créée à la volée doit être
     // trouvable immédiatement, pas à sa prochaine modification.
-    data: { name: trimmed, searchText: searchText([trimmed]) },
+    data: { name: trimmed, searchText: searchText([trimmed]), nameKey: companyNameKey(trimmed) },
     select: { id: true },
   });
   return { id: created.id, created: true };
