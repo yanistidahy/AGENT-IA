@@ -6,8 +6,10 @@ import {
   describeUngrounded,
   isUsable,
   ungroundedClaims,
+  researchCard,
   usableFacts,
   type Research,
+  type ResearchCard,
 } from "@/lib/domain/research";
 import { readCorpus, readResearch, researchCompany } from "@/lib/api/research";
 import { anthropic, describeAnthropicError } from "./runtime/client";
@@ -156,27 +158,9 @@ export interface EmailDraft {
    * moitié utile de l'information, et la taire ferait lire un message générique
    * comme un message documenté.
    */
-  readonly research: {
-    readonly usable: boolean;
-    readonly gap: string;
-    readonly summary: string;
-    readonly facts: readonly { label: string; detail: string; sourceUrl: string }[];
-    readonly sources: readonly { url: string; title: string }[];
-  } | null;
+  readonly research: ResearchCard;
   /** Une affirmation produit qu'aucune page lue ne soutient. */
   readonly ungrounded: string | null;
-}
-
-/** La recherche, mise à la forme que l'écran consomme. */
-function researchView(research: Research | null): EmailDraft["research"] {
-  if (research === null) return null;
-  return {
-    usable: isUsable(research),
-    gap: research.gap === null ? "" : GAP_LABELS[research.gap],
-    summary: research.summary,
-    facts: usableFacts(research.facts).map((fact) => ({ ...fact })),
-    sources: research.sources.map((source) => ({ ...source })),
-  };
 }
 
 export type DraftResult =
@@ -645,7 +629,7 @@ export async function draftEmail(
     ok: true,
     draft: {
       ...result.draft,
-      research: researchView(research),
+      research: researchCard(research),
       ungrounded,
       // La marque est imposée dans l'objet ici, où elle est connue : `complete`
       // sert aussi la reprise, qui n'a pas de dossier. Le remplacement est
@@ -761,7 +745,7 @@ async function complete(
         // brouillon étant déjà sous les yeux de son auteur. Même raison pour la
         // recherche et son garde-fou.
         colleagueWarning: null,
-        research: null,
+        research: researchCard(null),
         ungrounded: null,
       },
     };

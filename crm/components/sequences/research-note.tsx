@@ -1,44 +1,48 @@
+import type { ResearchCard } from "@/lib/domain/research";
+
 /**
- * Ce qu'Alex a lu avant d'écrire, sur la carte du départ.
+ * Ce qu'Alex a lu avant d'écrire, sur la carte du départ **et** dans le tiroir
+ * de contact.
  *
  * **Pour qu'une erreur se voie avant l'envoi, pas après.** Un brouillon
  * documenté et un brouillon générique se ressemblent : les deux sont bien
  * écrits, et seul le premier affirme quelque chose sur le prospect. Sans cette
  * note, la seule façon de vérifier une affirmation serait d'aller voir le site
- * soi-même — c'est-à-dire de refaire le travail qu'on vient de payer.
+ * soi-même, c'est-à-dire de refaire le travail qu'on vient de payer.
  *
- * Trois états, et le second est celui qui compte :
+ * ### Pourquoi trois états, et pourquoi ils ne se ressemblent pas
  *
- * - **lu** : le résumé d'une ligne, et les pages, cliquables ;
- * - **rien à lire** : la cause est nommée, et l'on sait que le message est
- *   générique **par décision** et non par paresse du modèle ;
- * - **une affirmation non sourcée** : signalée en rouge, avec le mot en cause.
+ * Jusqu'au jalon 74, une recherche cassée et une société sans site rendaient la
+ * même phrase tiède. On cherchait donc la donnée manquante pendant que c'était
+ * la chaîne qui était en panne, et cela a coûté une journée. Les trois états
+ * sont maintenant visuellement distincts, et le deuxième porte **la raison
+ * exacte** :
+ *
+ * - **rien à lire** (gris) : aucune société, ou aucun site connu sur la fiche.
+ *   C'est la fiche qu'il faut compléter, et le message est générique **par
+ *   décision** ;
+ * - **échec** (rouge) : la recherche a été tentée et n'a pas abouti. C'est nous
+ *   qu'il faut corriger ;
+ * - **lue** : le nombre de sources, le résumé, et les pages cliquables.
+ *
+ * Le composant est **partagé par les deux surfaces** : deux rendus de la même
+ * recherche finiraient par ne plus dire la même chose, et c'est toujours le
+ * second qu'on oublie de corriger (jalons 55, 66 et 67).
  */
-
-export interface ResearchNoteData {
-  readonly usable: boolean;
-  readonly gap: string;
-  readonly summary: string;
-  readonly sources: readonly { readonly url: string; readonly title: string }[];
-}
-
 export function ResearchNote({
   research,
   ungrounded,
 }: {
-  readonly research: ResearchNoteData | null;
+  readonly research: ResearchCard;
   readonly ungrounded: string | null;
 }) {
   return (
     <div className="mt-1 w-full text-[11.5px]">
-      {research === null ? (
-        <p className="text-muted">
-          Recherche : aucune société rattachée à cette fiche, donc rien à lire. Message générique.
-        </p>
-      ) : research.usable ? (
+      {research.state === "read" ? (
         <>
           <p className="text-muted">
-            <span className="font-semibold text-ink">Alex a lu :</span> {research.summary}
+            <span className="font-semibold text-ink">{research.headline} :</span>{" "}
+            {research.detail === "" ? "aucun résumé rendu" : research.detail}
           </p>
           {research.sources.length > 0 && (
             <p className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-muted">
@@ -58,10 +62,14 @@ export function ResearchNote({
             </p>
           )}
         </>
+      ) : research.state === "failed" ? (
+        <p className="rounded-control border border-danger px-2 py-1 text-danger">
+          <span className="font-semibold">{research.headline} :</span> {research.detail}. Le message
+          est générique, et c'est un défaut à corriger, pas une fiche à compléter.
+        </p>
       ) : (
         <p className="text-muted">
-          <span className="font-semibold text-ink">Aucune recherche :</span>{" "}
-          {research.gap === "" ? "rien d'exploitable n'a été lu" : research.gap}. Le message est
+          <span className="font-semibold text-ink">{research.headline}.</span> Le message est
           générique, et n'affirme donc rien sur cette entreprise.
         </p>
       )}

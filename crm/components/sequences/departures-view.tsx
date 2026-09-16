@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ResearchNote, type ResearchNoteData } from "./research-note";
+import { ResearchNote } from "./research-note";
+import type { ResearchCard } from "@/lib/domain/research";
 import { useRouter } from "next/navigation";
 import { requestJson } from "@/lib/client/http";
 import { formatDate } from "@/lib/format";
@@ -38,7 +39,7 @@ export interface Departure {
   /** Ce qu'Alex avait pour nommer la boutique. Voir `describeDemoSource`. */
   demoSource: string;
   /** Ce qu'Alex a lu sur la maison de ce contact. Voir `ResearchNote`. */
-  research: ResearchNoteData | null;
+  research: ResearchCard;
   /** Une affirmation produit qu'aucune page lue ne soutient. */
   ungrounded: string | null;
 }

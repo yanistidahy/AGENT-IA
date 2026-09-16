@@ -152,8 +152,10 @@ export async function researchCompany(
 
   const refusal = await budgetRefusal();
   if (refusal !== null) {
+    // Un plafond atteint n'est pas une société sans site : c'est la chaîne qui
+    // s'arrête, et l'écran doit le nommer pour qu'on sache où agir.
     return save(companyId, {
-      gap: "unreachable",
+      gap: "failed",
       summary: refusal,
       facts: [],
       sources: [],
@@ -218,9 +220,17 @@ export async function researchCompany(
       fetchedAt: now,
     });
   } catch (error) {
+    /*
+      **L'échec est enregistré nommé, et il ne se fige pas.** `gap: "failed"`
+      porte la raison exacte dans `summary` ; `isStale` le considère périmé au
+      bout de `RETRY_MINUTES`, donc le brouillon suivant retente au lieu de
+      rester générique jusqu'à la fin de la fenêtre de fraîcheur.
+    */
+    const reason = describeAnthropicError(error);
+    console.error(`[research] échec sur la société ${companyId} : ${reason}`);
     return save(companyId, {
-      gap: "unreachable",
-      summary: describeAnthropicError(error),
+      gap: "failed",
+      summary: reason,
       facts: [],
       sources: [],
       corpus: "",

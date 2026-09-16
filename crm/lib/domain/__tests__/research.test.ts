@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   FRESH_DAYS,
+  RETRY_MINUTES,
+  isStaleAt,
+  researchCard,
   describeUngrounded,
   isStale,
   isUsable,
@@ -113,5 +116,63 @@ describe("le garde-fou des affirmations produit", () => {
     const message = describeUngrounded(ungroundedClaims("Vos bougies.", corpus));
     expect(message).toContain("bougie");
     expect(message).toContain("À vérifier avant d'envoyer");
+  });
+});
+
+describe("la carte : trois états qui ne se confondent pas", () => {
+  it("aucune société rattachée, et aucun site : deux phrases, un même état", () => {
+    expect(researchCard(null).state).toBe("none");
+    expect(researchCard(null).headline).toContain("Aucune société");
+    const noSite = researchCard(research({ gap: "no-domain", facts: [], sources: [] }));
+    expect(noSite.state).toBe("none");
+    expect(noSite.headline).toBe("Aucun site connu sur la fiche");
+  });
+
+  it("un échec porte sa raison exacte, jamais une phrase tiède", () => {
+    // C'est le défaut qui a coûté une journée : une recherche cassée et une
+    // société sans site se lisaient pareil.
+    const card = researchCard(
+      research({ gap: "failed", summary: "L'API a refusé la requête (400)", facts: [] }),
+    );
+    expect(card.state).toBe("failed");
+    expect(card.detail).toContain("400");
+  });
+
+  it("un échec sans raison enregistrée le dit plutôt que de se taire", () => {
+    expect(researchCard(research({ gap: "failed", summary: "", facts: [] })).detail).toBe(
+      "raison non enregistrée",
+    );
+  });
+
+  it("une lecture compte ses sources, au singulier comme au pluriel", () => {
+    expect(researchCard(research()).headline).toBe("Recherche effectuée, 1 source lue");
+    const two = researchCard(
+      research({
+        sources: [
+          { url: "https://minimiil.com", title: "a" },
+          { url: "https://minimiil.com/b", title: "b" },
+        ],
+      }),
+    );
+    expect(two.headline).toBe("Recherche effectuée, 2 sources lues");
+  });
+
+  it("un seul fait ne fait pas une lecture : c'est un échec, et il est nommé", () => {
+    const card = researchCard(research({ facts: [fact("Shots probiotiques")] }));
+    expect(card.state).toBe("failed");
+  });
+});
+
+describe("un échec ne se garde pas comme un résultat", () => {
+  const now = new Date("2026-09-01T12:00:00Z");
+
+  it("il est périmé au bout de la fenêtre de reprise, pas au bout de 90 jours", () => {
+    const fresh = new Date(now.getTime() - (RETRY_MINUTES - 5) * 60 * 1000);
+    const aged = new Date(now.getTime() - (RETRY_MINUTES + 5) * 60 * 1000);
+    expect(isStaleAt(fresh, now, "failed")).toBe(false);
+    expect(isStaleAt(aged, now, "failed")).toBe(true);
+    // Une lecture réussie du même âge, elle, reste fraîche : sans cela on
+    // repaierait chaque demi-heure.
+    expect(isStaleAt(aged, now, null)).toBe(false);
   });
 });
