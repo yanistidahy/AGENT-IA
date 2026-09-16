@@ -40,6 +40,7 @@ interface Plan {
     readonly model: string;
     readonly source: string;
     readonly background: boolean;
+    readonly researches: number;
   };
   readonly blocked: string | null;
   readonly fresh: number;
@@ -196,6 +197,20 @@ export function ComposeAction({
                 {plan.estimate.background &&
                   " Au-delà de dix brouillons, l'écriture se fait en arrière-plan."}
               </p>
+              {/*
+                La recherche se compte **par maison**, et le dire évite la
+                surprise inverse : une campagne de cinquante contacts chez dix
+                marques ne paie pas cinquante lectures.
+              */}
+              {plan.estimate.researches > 0 && (
+                <p className="mt-1 text-muted">
+                  Dont {plan.estimate.researches} recherche
+                  {plan.estimate.researches > 1 ? "s" : ""} de société
+                  {plan.estimate.researches > 1 ? "s" : ""} : Alex lit le site du prospect avant
+                  d'écrire. Les collègues d'une même maison la partagent, et elle ne se repaie pas
+                  à la recomposition.
+                </p>
+              )}
               <p className="mt-1 text-muted">
                 Les contacts déjà servis ne sont pas réécrits.
               </p>

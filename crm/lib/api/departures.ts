@@ -1,4 +1,11 @@
 import "server-only";
+import {
+  GAP_LABELS,
+  describeUngrounded,
+  isStaleAt,
+  ungroundedClaims,
+  type ResearchGap,
+} from "../domain/research";
 import { prisma } from "../db";
 import { draftEmail } from "../agents/email-draft";
 import { openingLine } from "./account";
@@ -310,6 +317,15 @@ export interface ComposableCount {
   readonly fresh: number;
   readonly rewritten: number;
   readonly edited: number;
+  /**
+   * Sociétés à lire : celles des contacts composables qui n'ont pas de
+   * recherche fraîche.
+   *
+   * **Comptées une fois par société, pas par contact.** C'est ce qui rend
+   * l'estimation honnête sur une campagne où plusieurs personnes travaillent
+   * dans la même maison.
+   */
+  readonly researches: number;
   readonly weekend: boolean;
 }
 
@@ -317,7 +333,9 @@ export async function countComposable(
   scope: ComposeScope,
   now = new Date(),
 ): Promise<ComposableCount> {
-  if (isWeekend(now)) return { eligible: 0, fresh: 0, rewritten: 0, edited: 0, weekend: true };
+  if (isWeekend(now)) {
+    return { eligible: 0, fresh: 0, rewritten: 0, edited: 0, researches: 0, weekend: true };
+  }
 
   const enrollments = await prisma.sequenceEnrollment.findMany({
     where: {
@@ -326,7 +344,16 @@ export async function countComposable(
     },
     include: {
       sequence: { include: { steps: { orderBy: { position: "asc" } } } },
-      contact: { select: { id: true, lifecycle: true, lostReason: true, email: true } },
+      contact: {
+        select: {
+          id: true,
+          lifecycle: true,
+          lostReason: true,
+          email: true,
+          companyId: true,
+          company: { select: { research: { select: { fetchedAt: true } } } },
+        },
+      },
     },
   });
 
@@ -337,6 +364,8 @@ export async function countComposable(
   let rewritten = 0;
   /** Parmi eux, ceux retouchés à la main : c'est ce qu'il faut annoncer. */
   let edited = 0;
+  /** Les sociétés à lire, dédoublonnées : une maison compte pour une. */
+  const toResearch = new Set<string>();
 
   for (const enrollment of enrollments) {
     const replied = await repliedAfter(
@@ -365,6 +394,16 @@ export async function countComposable(
       select: { id: true, status: true, editedAt: true },
     });
 
+    const composable = existing === null || (scope.rewritePending && existing.status === "pending");
+    if (composable) {
+      const companyId = enrollment.contact.companyId;
+      const read = enrollment.contact.company?.research?.fetchedAt ?? null;
+      // Une recherche fraîche ne se repaie pas : c'est la moitié du cache.
+      if (companyId !== null && (read === null || isStaleAt(read, now))) {
+        toResearch.add(companyId);
+      }
+    }
+
     if (existing === null) {
       eligible += 1;
       fresh += 1;
@@ -377,7 +416,7 @@ export async function countComposable(
     }
   }
 
-  return { eligible, fresh, rewritten, edited, weekend: false };
+  return { eligible, fresh, rewritten, edited, researches: toResearch.size, weekend: false };
 }
 
 async function unlockOf(sequenceId: string) {
@@ -425,6 +464,47 @@ export interface DepartureView {
    * meme, brouillon par brouillon.
    */
   readonly demoSource: string;
+  /**
+   * Ce qu'Alex a lu sur la maison de ce contact, et ce qu'il en a retenu.
+   *
+   * **Lu à l'affichage, jamais copié sur le départ** : la recherche appartient
+   * à la société, et la recopier ligne à ligne ferait trois versions d'une même
+   * lecture pour trois collègues, qui divergeraient dès la première relecture
+   * du site.
+   */
+  readonly research: {
+    readonly usable: boolean;
+    readonly gap: string;
+    readonly summary: string;
+    readonly sources: readonly { url: string; title: string }[];
+  } | null;
+  /**
+   * Une affirmation produit qu'aucune page lue ne soutient.
+   *
+   * **Recalculée à la lecture**, comme la virgule de l'appel : c'est ce qui
+   * fait qu'une retouche à la main est vérifiée elle aussi, et non seulement ce
+   * qu'Alex avait écrit.
+   */
+  readonly ungrounded: string | null;
+}
+
+/** La recherche d'une société, mise à la forme de la carte. */
+function researchCard(
+  row: {
+    readonly gap: string;
+    readonly summary: string;
+    readonly corpus: string;
+    readonly sources: readonly { url: string; title: string }[];
+  } | null,
+): DepartureView["research"] {
+  if (row === null) return null;
+  const gap = row.gap === "" ? null : (row.gap as NonNullable<ResearchGap>);
+  return {
+    usable: gap === null,
+    gap: gap === null ? "" : (GAP_LABELS[gap] ?? row.gap),
+    summary: row.summary,
+    sources: row.sources.map((source) => ({ url: source.url, title: source.title })),
+  };
 }
 
 /** La file du jour, telle qu'elle s'affiche. */
@@ -458,7 +538,13 @@ export async function listDepartures(
               lastName: true,
               email: true,
               website: true,
-              company: { select: { name: true, domain: true } },
+              company: {
+        select: {
+          name: true,
+          domain: true,
+          research: { select: { gap: true, summary: true, corpus: true, sources: true } },
+        },
+      },
             },
           },
         },
@@ -501,6 +587,13 @@ export async function listDepartures(
           companyDomain: row.enrollment.contact.company?.domain ?? "",
           companyName: row.enrollment.contact.company?.name ?? "",
         }),
+      ),
+      research: researchCard(row.enrollment.contact.company?.research ?? null),
+      ungrounded: describeUngrounded(
+        ungroundedClaims(
+          repairGreeting(row.body, row.enrollment.contact),
+          row.enrollment.contact.company?.research?.corpus ?? "",
+        ),
       ),
     });
   }

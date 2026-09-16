@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 73 | **Alex lit le prospect avant d'écrire** — recherche web outillée, mise en cache par société, et la règle qui décide de tout : un fait vient d'une page lue, ou il ne s'écrit pas | **livré, à valider** |
 | 72 | **Les listes de référence s'ouvrent alphabétiques** — clé de tri pliée (accents et casse), valeurs vides en fin de liste, et les écrans d'urgence restent chronologiques | **livré, à valider** |
 | 71 | **Les campagnes en deux niveaux** — une grille de vignettes pour choisir, une page par campagne pour travailler ; et la dernière puce d'un agent désactivé retirée | **livré, à valider** |
 | 70 | **Enregistrer n'écrit plus, « Écrire les mails » écrit** — la sauvegarde redevient une configuration rejouable, le retrait d'un inscrit le retire vraiment sans toucher au passé | **livré, à valider** |
@@ -10076,3 +10077,162 @@ lecture « qui pèse le plus » demande maintenant un clic sur la colonne.
 
 **Aucun index sur `campaigns.nameKey`** : la table se compte en dizaines, là où
 contacts et sociétés se comptent en centaines et portent chacune le leur.
+
+---
+
+## Jalon 73 — Alex lit le prospect avant de lui écrire
+
+### La règle qui décide de tout le jalon
+
+**Un fait sur le prospect vient d'une page lue, ou il ne s'écrit pas.** Un
+brouillon qui parle de « votre gamme de probiotiques » à une marque de bougies
+ne coûte pas un email, il coûte le prospect, définitivement. La recherche ajoute
+de la précision ; elle n'ajoute jamais de licence à supposer.
+
+Tout le reste en découle : la recherche ne rend pas une prose libre mais des
+**faits attribués**, chacun avec son URL. Une prose se recopie sans qu'on sache
+ce qui vient de la page et ce qui vient du modèle ; un fait porte sa source, et
+la carte de départ peut la montrer.
+
+### Un appel séparé, et non des outils greffés sur la rédaction
+
+C'est la décision d'architecture. Brancher `web_search` sur l'appel de rédaction
+était plus court à écrire et faux sur trois points :
+
+1. **le cache** — une recherche appartient à la *société*. Trois personnes d'une
+   même maison la partagent ; inline, chacun des trois brouillons la repaierait ;
+2. **la persistance** — recomposer un brouillon, ce que « Écrire les mails » fait
+   délibérément depuis le jalon 70, repaierait la lecture à chaque fois ;
+3. **le garde-fou** — vérifier qu'une affirmation vient d'une page suppose de
+   *disposer* de ce qui a été lu, comme donnée, séparément du brouillon. Fondus
+   dans un seul appel, les deux ne sont plus comparables.
+
+La rédaction garde donc exactement la forme qu'elle avait — un appel, aucun
+outil, un JSON — et reçoit la recherche comme un fait de plus dans son dossier.
+
+`web_fetch_20260209` et `web_search_20260209`, et **rien d'autre** : ces variantes
+exécutent déjà du code sous le capot pour leur filtrage, et déclarer
+`code_execution` à côté embrouillerait le modèle. `web_fetch` ne va chercher que
+des URL déjà présentes dans la conversation, d'où l'adresse du site écrite en
+toutes lettres dans la demande.
+
+### Ce qu'Alex reçoit, sous les deux formes
+
+Même construction que le DM du jalon 48 et l'angle de rôle du jalon 53 : la
+consigne se déduit du fait, et **le cas négatif est une interdiction explicite**,
+jamais une omission.
+
+| | Ce que la consigne dit |
+|---|---|
+| recherche exploitable | les faits, un par ligne, avec leur URL, puis « tout ce qui ne figure pas dans cette liste, tu ne le sais pas » |
+| rien d'exploitable | « AUCUNE RECHERCHE EXPLOITABLE » + la cause + « les déduire de son nom ou de son secteur est exactement l'erreur qui fait perdre un prospect » |
+
+« Exploitable » demande **deux faits, pas un** : un seul produit l'accroche
+générique qu'on cherche à quitter. Un fait **sans URL est écarté avant d'atteindre
+le prompt** — le modèle peut rendre un fait parfaitement plausible sans l'avoir
+lu, et c'est précisément le mode de défaillance qu'on craint.
+
+### Le garde-fou, et pourquoi il signale au lieu de corriger
+
+`ungroundedClaims()` compare les affirmations produit du brouillon au **texte
+réellement lu** — le corpus, pas le résumé : un résumé aurait déjà perdu le mot
+cherché, et la garde signalerait un fait pourtant exact.
+
+Elle **ne réécrit rien** : un remplacement automatique dans un texte commercial
+ferait plus de dégâts qu'il n'en répare. Elle signale, en rouge, sur la carte,
+avant l'envoi. Et elle est volontairement **étroite** — le vocabulaire de
+catégorie, pas toute phrase : une garde large sonnerait sur chaque brouillon, et
+une alerte qui sonne toujours est une alerte qu'on apprend à ignorer (jalon 62).
+
+Elle est **recalculée à la lecture**, comme la virgule de l'appel au jalon 68 :
+c'est ce qui fait qu'une retouche à la main est vérifiée elle aussi.
+
+### Le coût, et ce qui est mesuré séparément
+
+`research` devient un **usage à part entière** du compteur du jalon 36. Le mêler
+à `draft` ferait une moyenne qui ne décrit ni l'un ni l'autre : une recherche lit
+des pages, son entrée pèse un ordre de grandeur de plus. Elle n'a pas de réglage
+de modèle propre pour autant — elle suit celui de la rédaction : un usage
+distinct pour la *mesure*, pas une seconde décision à prendre dans un écran.
+
+La confirmation de « Écrire les mails » annonce les recherches **par maison** :
+une campagne de cinquante contacts chez dix marques paie dix lectures, pas
+cinquante, et le dire évite la surprise dans les deux sens.
+
+### Jalon 73 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `32_company_research` appliquée puis
+`migrate diff` **vide**), le serveur standalone, le substitut Anthropic étendu
+pour rejouer **les blocs de résultat des outils serveur** tels que l'API les
+rend, et un navigateur piloté :
+
+- **une recherche pour trois collègues** : 4 contacts, 2 maisons, **1 seul appel
+  de recherche facturé** ; recomposer les quatre brouillons n'en déclenche
+  **aucun** de plus, et le plan annonce alors « 0 recherche » ;
+- **sur le fil** : outils `web_fetch_20260209 ×4` et `web_search_20260209 ×3`,
+  **aucun `code_execution`**, l'URL du site dans le message, effort `medium` ;
+- **la rédaction reçoit les faits** : produit, modèle d'affaires, hésitation
+  d'achat et l'URL source, plus l'interdiction d'écrire autre chose ;
+- **le contact sans site reçoit l'interdiction**, avec sa cause nommée, et
+  **aucun fait de l'autre maison ne fuite** dans sa requête ;
+- **une lecture qui échoue ne fabrique rien** : erreur d'outil rejouée (un objet
+  là où le succès met une liste, en HTTP 200) → 0 fait, cause `thin`, corpus vide ;
+- **le garde-fou** : une retouche à la main inventant « bougies parfumées » est
+  signalée en rouge sur la carte (« « bougie » n'apparaît dans aucune des pages
+  lues ») ; une phrase appuyée sur le site ne déclenche rien ;
+- **la carte** : « Alex a lu : … » avec deux sources cliquables
+  (`target="_blank"`, `rel="noopener noreferrer"`), et « Aucune recherche : Aucun
+  site connu sur la fiche ni sur la société » pour le repli ;
+- **les règles précédentes tiennent**, vérifiées sur le fil : le fait des 69 %,
+  « conseiller de vente », la signature, le DM conditionnel, l'angle de rôle,
+  l'appel, l'objet qui nomme la marque, **aucun tiret long** ;
+- **0 erreur console** ; `npm run build`, `npx tsc --noEmit`,
+  `npx vitest run` (**1246 tests**) et `npm run e2e` (**37 tests**) verts.
+
+`tests/research-grounding-source.test.ts` ferme les trois façons de rater ce
+jalon, et a été **éprouvée en réintroduisant deux d'entre elles** : la consigne
+rendue inconditionnelle, et le garde-fou débranché. Chaque fois un test tombe en
+nommant le défaut.
+
+### Jalon 73 — ce qui n'est PAS vérifié, et c'est important
+
+**Aucun site réel n'a été lu, et aucun appel Anthropic réel n'a eu lieu.** Deux
+blocages indépendants dans cet environnement : il n'y a pas de clé d'API, et la
+sortie réseau est restreinte à une liste blanche (npm, PyPI, l'API Anthropic) —
+`minimiil.com` est injoignable d'ici. Le contenu de page servi au substitut est
+donc **écrit à la main**, pas récupéré.
+
+Ce que cela établit : la forme de la requête, la lecture des blocs de résultat,
+le cache par société, la persistance, le repli nommé, le garde-fou, la carte, et
+que les faits atteignent bien le modèle. Ce que cela **n'établit pas** :
+
+1. **que la recherche ramène de bonnes pages.** Que `web_search` trouve le bon
+   site et que `web_fetch` en tire ce qui compte relève de l'outil et du modèle ;
+2. **qu'Alex juge bien ce qui est pertinent.** C'est le point que seul un vrai
+   brouillon montrera, et c'est le risque principal du jalon ;
+3. **le coût et la durée réels.** Le substitut facture ce qu'il reçoit, or les
+   pages ramenées par les outils sont facturées en entrée par la vraie API. Les
+   chiffres mesurés ici (462 jetons d'entrée, 48 ms) ne décrivent donc **pas** une
+   vraie recherche. L'estimation part de repères prudents — 25 000 jetons
+   d'entrée, 1 200 de sortie — et le compteur du jalon 36 les remplacera par la
+   moyenne réelle dès les trois premières recherches facturées, l'écran disant
+   laquelle des deux sources il utilise.
+
+**Le premier vrai brouillon en production est le seul juge** des trois points.
+
+### Jalon 73 — ce qui n'est pas fait
+
+**La recherche n'est pas sauvegardée.** `CompanyResearch` ne fait pas partie des
+dix modèles de `BACKED_UP` : c'est de la donnée dérivée et volumineuse (le corpus
+d'une page), qui se relit. Même décision que le logo au jalon 62, avec la même
+conséquence assumée — après une restauration, la première composition relit les
+sites.
+
+**Aucun bouton pour relancer une recherche à la main.** `researchCompany(id,
+{force: true})` existe et est exercée, mais aucun écran ne l'appelle : une
+recherche se rafraîchit quand elle a plus de `FRESH_DAYS` (90 jours), ou jamais.
+
+**Le garde-fou ne connaît que des noms de catégorie.** Une affirmation fausse
+formulée sans l'un de ces mots — « votre modèle par abonnement » sur une marque
+qui vend à l'unité — passera. La liste est volontairement courte pour ne pas
+sonner à tort ; elle s'allongera avec ce que les vrais brouillons montreront.

@@ -30,6 +30,16 @@
  */
 export const DEFAULT_DRAFT_TOKENS = { input: 3000, output: 1500 } as const;
 
+/**
+ * Repères d'une **recherche**, en l'absence d'historique.
+ *
+ * Une recherche lit des pages : son entrée est dominée par le texte ramené par
+ * les outils, pas par le prompt. D'où un ordre de grandeur nettement supérieur
+ * à celui d'un brouillon. Ce sont des repères prudents, remplacés par la mesure
+ * dès que des recherches ont été facturées.
+ */
+export const DEFAULT_RESEARCH_TOKENS = { input: 25000, output: 1200 } as const;
+
 /** En dessous, la moyenne mesurée ne décrit pas encore le prochain appel. */
 export const MIN_SAMPLE = 3;
 
@@ -53,6 +63,16 @@ export interface DraftSample {
 export interface CostEstimate {
   /** Combien de brouillons seront composés — donc combien d'appels. */
   readonly drafts: number;
+  /**
+   * Combien de **sociétés** seront lues.
+   *
+   * Pas un par contact : la recherche appartient à la société et se partage
+   * entre ses collègues. Trois personnes chez une même marque, c'est trois
+   * brouillons et **une** recherche — et l'estimation doit le dire, sans quoi
+   * une campagne de cinquante contacts chez dix marques paraîtrait cinq fois
+   * plus chère qu'elle ne l'est.
+   */
+  readonly researches: number;
   readonly micros: number;
   /** D'où viennent les jetons : mesurés chez nous, ou repères du jalon 36. */
   readonly source: "measured" | "default";
@@ -69,8 +89,12 @@ export interface CostEstimate {
  */
 export function estimateComposition(input: {
   readonly drafts: number;
+  /** Sociétés à lire : celles sans recherche fraîche parmi les composables. */
+  readonly researches?: number;
   readonly model: string;
   readonly sample: DraftSample | null;
+  /** Moyenne mesurée des recherches, quand il y en a assez. */
+  readonly researchSample?: DraftSample | null;
   /** `costMicros` du modèle — injecté pour que ce module reste pur. */
   readonly price: (usage: { input: number; output: number }) => number;
 }): CostEstimate {
@@ -80,10 +104,20 @@ export function estimateComposition(input: {
       : null;
 
   const perDraft = usable ?? DEFAULT_DRAFT_TOKENS;
-  const micros = Math.max(0, input.drafts) * input.price(perDraft);
+
+  const sampledResearch =
+    input.researchSample != null && input.researchSample.calls >= MIN_SAMPLE
+      ? { input: input.researchSample.inputTokens, output: input.researchSample.outputTokens }
+      : null;
+  const perResearch = sampledResearch ?? DEFAULT_RESEARCH_TOKENS;
+  const researches = Math.max(0, input.researches ?? 0);
+
+  const micros =
+    Math.max(0, input.drafts) * input.price(perDraft) + researches * input.price(perResearch);
 
   return {
     drafts: Math.max(0, input.drafts),
+    researches,
     micros: Math.round(micros),
     source: usable === null ? "default" : "measured",
     model: input.model,
@@ -115,5 +149,12 @@ export function describeEstimate(estimate: CostEstimate): string {
       ? "d'après vos brouillons déjà facturés"
       : "d'après les repères du jalon 36, faute d'historique";
 
-  return `${estimate.drafts} brouillon${estimate.drafts > 1 ? "s" : ""} à composer — ${calls}, environ ${describeCost(estimate.micros)} (${basis}, ${estimate.model}).`;
+  const research =
+    estimate.researches === 0
+      ? ""
+      : ` Dont ${estimate.researches} recherche${estimate.researches > 1 ? "s" : ""} de société${
+          estimate.researches > 1 ? "s" : ""
+        } : les collègues d'une même maison la partagent, et elle ne se repaie pas à la recomposition.`;
+
+  return `${estimate.drafts} brouillon${estimate.drafts > 1 ? "s" : ""} à composer — ${calls}, environ ${describeCost(estimate.micros)} (${basis}, ${estimate.model}).${research}`;
 }

@@ -67,6 +67,7 @@ model Company {
 
   contacts   Contact[]
   deals      Deal[]
+  research   CompanyResearch?
   activities Activity[]
   tasks      Task[]
 
@@ -1243,6 +1244,64 @@ model MailLogo {
 /// endroit, et une séquence sans campagne n'est plus qu'un gabarit orphelin.
 /// La migration 23 enveloppe chaque séquence existante dans une campagne pour
 /// qu'aucune inscription en cours ne soit interrompue.
+/// Ce qu'Alex a lu sur une société avant d'écrire.
+///
+/// **Attachée à la société, jamais au contact** : trois personnes d'une même
+/// maison partagent une recherche — c'est moins cher, et surtout plus cohérent,
+/// deux lectures du même site pouvant retenir deux choses différentes.
+/// Persistée pour que recomposer un brouillon ne la repaie pas.
+model CompanyResearch {
+  id        String  @id @default(cuid())
+  companyId String  @unique
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  /// Vide = exploitable. Sinon la cause, telle que la carte l'affiche.
+  gap     String @default("")
+  /// Une ligne : ce qu'Alex a appris. C'est elle que la carte de départ montre.
+  summary String @default("")
+
+  /// **Le texte réellement lu**, borné. C'est lui — et non le résumé — que le
+  /// garde-fou interroge : un résumé aurait déjà perdu le mot cherché, et la
+  /// garde signalerait un fait pourtant exact.
+  corpus String @default("")
+
+  model      String   @default("")
+  micros     Int      @default(0)
+  durationMs Int      @default(0)
+  fetchedAt  DateTime @default(now())
+
+  facts   ResearchFact[]
+  sources ResearchSource[]
+
+  @@map("company_research")
+}
+
+model ResearchFact {
+  id         String          @id @default(cuid())
+  researchId String
+  research   CompanyResearch @relation(fields: [researchId], references: [id], onDelete: Cascade)
+
+  label  String @default("")
+  detail String @default("")
+  /// Sans elle, le fait est écarté : voir lib/domain/research.ts.
+  sourceUrl String @default("")
+
+  @@index([researchId])
+  @@map("research_facts")
+}
+
+model ResearchSource {
+  id         String          @id @default(cuid())
+  researchId String
+  research   CompanyResearch @relation(fields: [researchId], references: [id], onDelete: Cascade)
+
+  url   String @default("")
+  title String @default("")
+
+  @@index([researchId])
+  @@map("research_sources")
+}
+
 model Campaign {
   id   String @id @default(cuid())
   name String
