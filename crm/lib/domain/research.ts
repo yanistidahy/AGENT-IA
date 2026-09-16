@@ -13,14 +13,39 @@
  * un fait porte son URL, et la carte de départ peut le montrer.
  */
 
-/** Pourquoi une recherche n'a rien donné. L'ordre est celui de la cause. */
-export type ResearchGap = "no-domain" | "unreachable" | "thin" | null;
+/**
+ * Pourquoi une recherche n'a rien donné. L'ordre est celui de la cause.
+ *
+ * **`failed` est séparé de `unreachable`, et c'est la leçon du jalon 74.** Les
+ * deux produisaient le même repli générique et la même ligne à l'écran, si bien
+ * qu'un appel refusé par l'API et une société sans site se lisaient pareil : on
+ * cherchait la donnée manquante pendant que c'était la chaîne qui était cassée.
+ *
+ * - `no-domain` : la fiche ne porte aucune adresse. **Rien n'a été tenté.**
+ * - `failed` : l'appel lui-même n'a pas abouti. `summary` porte la raison
+ *   exacte, et c'est elle qu'il faut lire.
+ * - `unreachable` : l'appel a abouti, le site n'a pas pu être lu.
+ * - `thin` : le site a été lu, il n'apprend rien d'exploitable.
+ */
+export type ResearchGap = "no-domain" | "failed" | "unreachable" | "thin" | null;
 
 export const GAP_LABELS: Readonly<Record<NonNullable<ResearchGap>, string>> = {
   "no-domain": "Aucun site connu sur la fiche ni sur la société",
+  failed: "La recherche a échoué",
   unreachable: "Le site n'a pas pu être lu",
   thin: "Le site a été lu mais n'apprend rien d'exploitable",
 };
+
+/**
+ * Une recherche échouée ne se garde pas trois mois.
+ *
+ * Un `failed` mis en cache comme un résultat gèle la société sur le repli
+ * générique pour toute la fraîcheur — c'est-à-dire qu'une coupure d'une minute
+ * coûte quatre-vingt-dix jours de messages tièdes, sans que rien ne le dise.
+ * On réessaie donc au prochain brouillon, après une courte fenêtre qui évite de
+ * rappeler l'API à chaque contact d'une même maison composé dans la foulée.
+ */
+export const RETRY_MINUTES = 30;
 
 export interface ResearchSource {
   readonly url: string;
@@ -87,7 +112,7 @@ export const FRESH_DAYS = 90;
  * appauvrissement du message.
  */
 export function isStale(research: Research, now: Date): boolean {
-  return isStaleAt(research.fetchedAt, now);
+  return isStaleAt(research.fetchedAt, now, research.gap);
 }
 
 /**
@@ -98,9 +123,98 @@ export function isStale(research: Research, now: Date): boolean {
  * incomplet demanderait une assertion de type, c'est-à-dire de mentir au
  * compilateur pour une question de fraîcheur.
  */
-export function isStaleAt(fetchedAt: Date, now: Date): boolean {
+export function isStaleAt(fetchedAt: Date, now: Date, gap: ResearchGap = null): boolean {
   const age = now.getTime() - fetchedAt.getTime();
+  if (gap === "failed") return age > RETRY_MINUTES * 60 * 1000;
   return age > FRESH_DAYS * 24 * 60 * 60 * 1000;
+}
+
+/* ------------------------------------------------------------------------ */
+
+/**
+ * **Ce que l'écran dit d'une recherche : une seule décision, deux surfaces.**
+ *
+ * Le tiroir de contact et la file des départs affichaient deux choses
+ * différentes de la même recherche — l'un ne disait rien du tout. Ils rendent
+ * désormais cette carte, et aucun des deux ne recompose la phrase : c'est la
+ * discipline du panneau de rédaction (jalon 66) et de la signature (jalon 67),
+ * appliquée à l'affichage de la recherche.
+ *
+ * Trois états, et ils doivent rester **distinguables d'un coup d'œil** :
+ *
+ * - `none` — aucune société rattachée, ou aucun site connu : rien n'a été
+ *   tenté, et c'est la fiche qu'il faut compléter ;
+ * - `failed` — la chaîne est cassée, et `detail` porte la raison exacte : c'est
+ *   nous qu'il faut corriger, pas la fiche ;
+ * - `read` — la lecture a eu lieu, et le nombre de sources le prouve.
+ */
+export type ResearchState = "none" | "failed" | "read";
+
+export interface ResearchCard {
+  readonly state: ResearchState;
+  /** La ligne que l'écran affiche, déjà accordée. */
+  readonly headline: string;
+  /** La raison exacte d'un échec, ou le résumé d'une lecture. Vide sinon. */
+  readonly detail: string;
+  readonly sources: readonly ResearchSource[];
+}
+
+/**
+ * La carte d'une recherche, ou de son absence.
+ *
+ * `null` veut dire « aucune société rattachée à cette fiche » : il n'y a même
+ * pas de maison à documenter, ce qui n'est pas la même chose qu'une maison sans
+ * site.
+ */
+export function researchCard(research: Research | null): ResearchCard {
+  if (research === null) {
+    return {
+      state: "none",
+      headline: "Aucune société rattachée à cette fiche",
+      detail: "",
+      sources: [],
+    };
+  }
+
+  if (research.gap === "failed") {
+    return {
+      state: "failed",
+      headline: "La recherche a échoué",
+      // Sans la raison, un échec ressemble à une fiche incomplète — c'est
+      // exactement la confusion qui a coûté une journée.
+      detail: research.summary.trim() === "" ? "raison non enregistrée" : research.summary.trim(),
+      sources: research.sources,
+    };
+  }
+
+  if (research.gap === "no-domain") {
+    return {
+      state: "none",
+      headline: "Aucun site connu sur la fiche",
+      detail: "",
+      sources: [],
+    };
+  }
+
+  if (!isUsable(research)) {
+    return {
+      state: "failed",
+      headline: "La recherche a échoué",
+      detail:
+        research.gap === null
+          ? "le site a été lu mais aucun fait sourcé n'en est ressorti"
+          : GAP_LABELS[research.gap].toLowerCase(),
+      sources: research.sources,
+    };
+  }
+
+  const count = research.sources.length;
+  return {
+    state: "read",
+    headline: `Recherche effectuée, ${count} source${count > 1 ? "s" : ""} lue${count > 1 ? "s" : ""}`,
+    detail: research.summary,
+    sources: research.sources,
+  };
 }
 
 /* ------------------------------------------------------------------------ */

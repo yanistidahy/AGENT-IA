@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 74 | **La recherche dit ce qu'elle a fait** : une carte sur les deux surfaces, l'échec nommé avec sa raison exacte, et un appel raté qui se retente au lieu de geler la société trois mois | **livré, à valider** |
 | 73 | **Alex lit le prospect avant d'écrire** — recherche web outillée, mise en cache par société, et la règle qui décide de tout : un fait vient d'une page lue, ou il ne s'écrit pas | **livré, à valider** |
 | 72 | **Les listes de référence s'ouvrent alphabétiques** — clé de tri pliée (accents et casse), valeurs vides en fin de liste, et les écrans d'urgence restent chronologiques | **livré, à valider** |
 | 71 | **Les campagnes en deux niveaux** — une grille de vignettes pour choisir, une page par campagne pour travailler ; et la dernière puce d'un agent désactivé retirée | **livré, à valider** |
@@ -10236,3 +10237,150 @@ recherche se rafraîchit quand elle a plus de `FRESH_DAYS` (90 jours), ou jamais
 formulée sans l'un de ces mots — « votre modèle par abonnement » sur une marque
 qui vend à l'unité — passera. La liste est volontairement courte pour ne pas
 sonner à tort ; elle s'allongera avec ce que les vrais brouillons montreront.
+
+
+---
+
+## Jalon 74 — une recherche cassée ne ressemble plus à une fiche incomplète
+
+### Le diagnostic, dans l'ordre des trois hypothèses
+
+**1 · La recherche est-elle branchée sur le chemin du tiroir de contact ?**
+**Oui, et elle l'a toujours été.** `draftEmail` est le seul appelant de
+`researchCompany` (`lib/agents/email-draft.ts:599`), et les deux chemins y
+passent : `app/api/emails/route.ts:66` pour le tiroir,
+`lib/api/departures.ts:258` pour la campagne. Le brouillon du tiroir portait donc
+bien sa recherche.
+
+**Ce qui divergeait, c'est l'écran.** `ResearchNote` n'était monté que dans
+`components/sequences/departures-view.tsx` ; `components/emails/compose-panel.tsx`
+n'en portait aucune trace. Le tiroir ne pouvait donc **rien** montrer de la
+recherche, réussie ou non — « aucun signe de recherche » était garanti par
+construction, indépendamment de ce qui s'était passé.
+
+Une seconde divergence, trouvée en lisant les deux : la file jugeait
+qu'une recherche était exploitable sur son seul `gap`
+(`usable: gap === null`), **sans regarder les faits**, et ne chargeait même pas
+la table des faits. Elle pouvait annoncer « Alex a lu » au-dessus d'un brouillon
+qui n'avait rien lu.
+
+**2 · L'appel part-il ?** Non vérifiable depuis cet environnement — il n'y a ni
+clé d'API ni accès à la base de production. **Où le lire chez vous** :
+`/reglages` → « Coûts de l'API », ventilation par usage. La ligne `research`
+existe depuis le jalon 73 et n'est écrite qu'**après une réponse reçue**
+(`recordUsage` est appelé après `messages.create`). Zéro appel facturé veut donc
+dire l'un de trois choses, et elles ne se corrigent pas au même endroit :
+aucune société rattachée, aucun site connu, ou un appel qui n'a jamais abouti.
+C'est précisément ce que la carte distingue désormais.
+
+**3 · Les identifiants d'outil sont-ils les bons ?** **Oui.**
+`web_fetch_20260209` et `web_search_20260209` figurent tous deux dans le
+`ToolUnion` **hors bêta** du SDK installé (`@anthropic-ai/sdk` 0.115.0,
+`resources/messages/messages.d.ts:1701` et `:1954`) — ce sont des identifiants
+courants, sans en-tête bêta. Le SDK connaît aussi des variantes plus récentes
+(`web_fetch_20260309`, `*_20260318`) ; celles employées restent valides. Ce que
+je **ne peux pas** établir d'ici : qu'elles soient activées **sur ce compte**.
+Une garde compare maintenant les deux chaînes au SDK installé, à chaque suite de
+tests.
+
+### La cause nommée
+
+**Aucune des trois hypothèses n'était la cause unique, et c'est le fond du
+problème : rien à l'écran ne permettait de les départager.** Un appel refusé
+était rangé sous le même `gap: "unreachable"` qu'un site illisible, et une
+société sans site rendait une phrase de la même couleur, du même ton, au même
+endroit. Pire, le tiroir n'en montrait aucune. On cherchait donc la donnée
+manquante pendant que la chaîne pouvait être en panne.
+
+**Et l'échec se figeait.** `researchCompany` enregistrait l'erreur avec
+`fetchedAt: now`, donc `isStale` la tenait pour fraîche pendant les 90 jours de
+`FRESH_DAYS` : **une coupure d'une minute coûtait un trimestre de messages
+génériques sur cette maison**, sans rien qui le dise et sans aucun bouton pour
+relancer (dette reconnue au jalon 73).
+
+### Ce qui change
+
+| | Avant | Après |
+|---|---|---|
+| états de recherche | `no-domain` / `unreachable` / `thin` | **`failed` séparé**, avec la raison exacte en `summary` |
+| un appel refusé | `unreachable`, indiscernable d'un site illisible | `failed`, nommé, et journalisé côté serveur |
+| un plafond de budget atteint | `unreachable` | `failed` — ce n'est pas une fiche à compléter |
+| un échec en cache | frais 90 jours | périmé après `RETRY_MINUTES` (30 min), donc **retenté** |
+| le verdict d'exploitabilité | recomposé dans la file | `researchCard()`, dans le domaine |
+| le tiroir de contact | **rien** | la même carte que la file |
+
+`researchCard()` (pur, testé) rend les trois états demandés, et ils sont
+**visuellement distincts** :
+
+- « Aucun site connu sur la fiche » / « Aucune société rattachée à cette fiche »,
+  en gris : c'est la fiche qu'il faut compléter ;
+- « **La recherche a échoué : <raison exacte>** », en rouge encadré : c'est nous
+  qu'il faut corriger, pas la fiche ;
+- « Recherche effectuée, N sources lues », avec le résumé et les pages
+  cliquables.
+
+Les deux surfaces montent le **même composant**. Deux rendus d'une même
+recherche finiraient par ne plus dire la même chose, et c'est toujours le second
+qu'on oublie de corriger (jalons 55, 66 et 67).
+
+### La garde
+
+`tests/research-single-source.test.ts` ferme les trois façons de refaire le
+défaut : un second point d'appel de `researchCompany`, une seconde carte, et un
+échec rangé sous le même manque qu'une fiche sans site. Elle vérifie aussi les
+identifiants d'outil **contre le SDK installé** plutôt que contre un souvenir :
+un nom périmé fait échouer l'appel, et le repli rend exactement le brouillon
+générique qu'on cherche à quitter — le vérifier coûte une lecture de fichier, le
+découvrir en production a coûté une journée.
+
+**Éprouvée en réintroduisant deux défauts exacts** : la note retirée du tiroir,
+et l'échec remis sous `unreachable`. Deux tests tombent, chacun nommant le
+fichier.
+
+### Jalon 74 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide** — aucune migration, `gap`
+étant déjà une colonne texte), le serveur standalone de production, le substitut
+Anthropic, et **par la route réelle du tiroir de contact**
+(`POST /api/emails`, `mode: "draft"`) — c'est le chemin signalé :
+
+- **société avec site lisible** → `state: "read"`, « Recherche effectuée, **2
+  sources lues** », le résumé, et les deux URL ;
+- **société sans site** → `state: "none"`, « **Aucun site connu sur la fiche** » ;
+- **recherche échouée** → `state: "failed"`, « La recherche a échoué » **avec la
+  raison exacte** (« L'API Anthropic a refusé la requête (400) : tools.0:
+  unknown tool type ») ;
+- **le substitut réellement arrêté** en cours de recette → la carte a rendu
+  « La recherche a échoué : Impossible de joindre l'API Anthropic. Vérifiez la
+  connexion réseau du service. » C'est exactement la situation qui, avant ce
+  jalon, se lisait comme une fiche incomplète ;
+- **la reprise** : un échec vieilli de 31 minutes est retenté au brouillon
+  suivant et rend « Recherche effectuée, 2 sources lues » — la société n'est plus
+  gelée ; un échec de moins de 30 minutes est servi depuis le cache, sans
+  rappeler l'API ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1262 tests**) verts.
+
+### Jalon 74 — ce qui n'est pas vérifié
+
+**Toujours aucun appel Anthropic réel, et aucun site réel lu.** Les deux
+blocages du jalon 73 tiennent : pas de clé dans cet environnement, et la sortie
+réseau est sur liste blanche. Ce que cela établit, c'est la chaîne, les trois
+états et la reprise ; pas que les outils serveur soient activés sur le compte.
+
+**Le compteur `research` de production n'a pas été lu.** Il est à lire dans
+`/reglages` → « Coûts de l'API ». S'il reste à zéro alors qu'une carte annonce
+« Recherche effectuée », c'est que tout venait du cache ; s'il reste à zéro avec
+des cartes rouges, la raison exacte est maintenant à l'écran.
+
+**Le chemin campagne n'a pas été rejoué dans un navigateur ce jalon.** Il rend
+le même `ResearchCard` par le typage, et la garde exige que les deux surfaces
+montent la note ; ce qui n'est pas mesuré, c'est son allure sur la carte de
+départ après le changement de composant.
+
+**Le garde-fou du tiroir n'est pas recalculé à la retouche.** La file recalcule
+`ungrounded` à chaque lecture (jalon 73) ; le tiroir le reçoit avec le brouillon
+et ne le recalcule pas si l'on modifie le texte à la main avant d'envoyer.
+
+**Toujours aucun bouton pour relancer une recherche à la main.** La reprise
+automatique après échec supprime le cas le plus grave ; rafraîchir une lecture
+réussie mais périmée reste l'affaire des 90 jours.

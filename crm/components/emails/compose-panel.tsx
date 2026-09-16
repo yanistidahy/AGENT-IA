@@ -11,6 +11,8 @@ import {
 } from "@/lib/domain/signatory-choice";
 import { isEdited, popVersion, pushVersion, type DraftVersion } from "./draft-revisions";
 import { ComposeThread } from "./compose-thread";
+import { ResearchNote } from "@/components/sequences/research-note";
+import type { ResearchCard } from "@/lib/domain/research";
 
 /**
  * Rédiger et envoyer un courriel.
@@ -57,6 +59,17 @@ interface Draft {
     date: string;
     days: number;
   } | null;
+  /**
+   * Ce qu'Alex a lu sur la maison de ce prospect, ou pourquoi il n'a rien lu.
+   *
+   * **Le tiroir l'affichait nulle part jusqu'au jalon 74**, alors que la file
+   * des départs le montrait : la même recherche, invisible d'un côté, si bien
+   * qu'un brouillon générique et une recherche en panne étaient indiscernables
+   * depuis une fiche. Les deux surfaces rendent maintenant le même composant.
+   */
+  research: ResearchCard;
+  /** Une affirmation produit qu'aucune page lue ne soutient. */
+  ungrounded: string | null;
 }
 
 interface Sent {
@@ -358,6 +371,16 @@ export function ComposePanel({
           même maison, a reçu un email le {draft.colleagueWarning.date} — il y a{" "}
           {draft.colleagueWarning.days} jour
           {draft.colleagueWarning.days > 1 ? "s" : ""}. Les deux se parlent : relisez l'accroche.
+        </div>
+      )}
+
+      {/*
+        Ce qu'Alex a lu, avant le texte : on relit un brouillon autrement quand
+        on sait sur quoi il s'appuie — ou qu'il ne s'appuie sur rien.
+      */}
+      {draft !== null && (
+        <div className="mb-3">
+          <ResearchNote research={draft.research} ungrounded={draft.ungrounded} />
         </div>
       )}
 

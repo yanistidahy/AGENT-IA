@@ -1,9 +1,10 @@
 import "server-only";
 import {
-  GAP_LABELS,
   describeUngrounded,
   isStaleAt,
+  researchCard,
   ungroundedClaims,
+  type ResearchCard,
   type ResearchGap,
 } from "../domain/research";
 import { prisma } from "../db";
@@ -351,7 +352,7 @@ export async function countComposable(
           lostReason: true,
           email: true,
           companyId: true,
-          company: { select: { research: { select: { fetchedAt: true } } } },
+          company: { select: { research: { select: { fetchedAt: true, gap: true } } } },
         },
       },
     },
@@ -397,9 +398,13 @@ export async function countComposable(
     const composable = existing === null || (scope.rewritePending && existing.status === "pending");
     if (composable) {
       const companyId = enrollment.contact.companyId;
-      const read = enrollment.contact.company?.research?.fetchedAt ?? null;
-      // Une recherche fraîche ne se repaie pas : c'est la moitié du cache.
-      if (companyId !== null && (read === null || isStaleAt(read, now))) {
+      const stored = enrollment.contact.company?.research ?? null;
+      // Une recherche fraîche ne se repaie pas : c'est la moitié du cache. Une
+      // recherche **échouée**, en revanche, se retente : sinon une coupure d'une
+      // minute gèlerait la maison sur le repli générique.
+      const read = stored?.fetchedAt ?? null;
+      const gap = stored === null || stored.gap === "" ? null : (stored.gap as ResearchGap);
+      if (companyId !== null && (read === null || isStaleAt(read, now, gap))) {
         toResearch.add(companyId);
       }
     }
@@ -472,12 +477,7 @@ export interface DepartureView {
    * lecture pour trois collègues, qui divergeraient dès la première relecture
    * du site.
    */
-  readonly research: {
-    readonly usable: boolean;
-    readonly gap: string;
-    readonly summary: string;
-    readonly sources: readonly { url: string; title: string }[];
-  } | null;
+  readonly research: ResearchCard;
   /**
    * Une affirmation produit qu'aucune page lue ne soutient.
    *
@@ -488,23 +488,32 @@ export interface DepartureView {
   readonly ungrounded: string | null;
 }
 
-/** La recherche d'une société, mise à la forme de la carte. */
-function researchCard(
+/**
+ * La recherche d'une société, mise à la forme de la carte.
+ *
+ * **La décision appartient au domaine, pas à ce fichier.** La version
+ * précédente jugeait ici qu'une recherche était exploitable sur son seul
+ * `gap`, sans regarder les faits : la file pouvait annoncer « Alex a lu »
+ * au-dessus d'un brouillon qui n'avait rien lu. `researchCard` tranche, et le
+ * tiroir de contact en dit exactement la même chose.
+ */
+function cardFor(
   row: {
     readonly gap: string;
     readonly summary: string;
-    readonly corpus: string;
+    readonly fetchedAt: Date;
+    readonly facts: readonly { label: string; detail: string; sourceUrl: string }[];
     readonly sources: readonly { url: string; title: string }[];
   } | null,
-): DepartureView["research"] {
-  if (row === null) return null;
-  const gap = row.gap === "" ? null : (row.gap as NonNullable<ResearchGap>);
-  return {
-    usable: gap === null,
-    gap: gap === null ? "" : (GAP_LABELS[gap] ?? row.gap),
+): ResearchCard {
+  if (row === null) return researchCard(null);
+  return researchCard({
+    gap: row.gap === "" ? null : (row.gap as NonNullable<ResearchGap>),
     summary: row.summary,
+    facts: row.facts.map((fact) => ({ ...fact })),
     sources: row.sources.map((source) => ({ url: source.url, title: source.title })),
-  };
+    fetchedAt: row.fetchedAt,
+  });
 }
 
 /** La file du jour, telle qu'elle s'affiche. */
@@ -542,7 +551,16 @@ export async function listDepartures(
         select: {
           name: true,
           domain: true,
-          research: { select: { gap: true, summary: true, corpus: true, sources: true } },
+          research: {
+              select: {
+                gap: true,
+                summary: true,
+                corpus: true,
+                fetchedAt: true,
+                facts: true,
+                sources: true,
+              },
+            },
         },
       },
             },
@@ -588,7 +606,7 @@ export async function listDepartures(
           companyName: row.enrollment.contact.company?.name ?? "",
         }),
       ),
-      research: researchCard(row.enrollment.contact.company?.research ?? null),
+      research: cardFor(row.enrollment.contact.company?.research ?? null),
       ungrounded: describeUngrounded(
         ungroundedClaims(
           repairGreeting(row.body, row.enrollment.contact),
