@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ResearchNote, type ResearchNoteData } from "./research-note";
 import { useRouter } from "next/navigation";
 import { requestJson } from "@/lib/client/http";
 import { formatDate } from "@/lib/format";
@@ -36,6 +37,10 @@ export interface Departure {
   lastActivityAt: string | null;
   /** Ce qu'Alex avait pour nommer la boutique. Voir `describeDemoSource`. */
   demoSource: string;
+  /** Ce qu'Alex a lu sur la maison de ce contact. Voir `ResearchNote`. */
+  research: ResearchNoteData | null;
+  /** Une affirmation produit qu'aucune page lue ne soutient. */
+  ungrounded: string | null;
 }
 
 function isPayload(value: unknown): value is { departures: Departure[]; message?: string } {
@@ -269,6 +274,15 @@ export function DeparturesView({ initial }: { readonly initial: readonly Departu
                     <span className="text-[11.5px] text-muted">
                       Données de démonstration : {departure.demoSource}
                     </span>
+                    {/*
+                      Ce qu'Alex a lu, et ce qu'il n'a pas pu lire. C'est la
+                      seule façon de repérer une affirmation fausse **avant**
+                      l'envoi plutôt qu'après.
+                    */}
+                    <ResearchNote
+                      research={departure.research}
+                      ungrounded={departure.ungrounded}
+                    />
                   </div>
                 </>
               )}

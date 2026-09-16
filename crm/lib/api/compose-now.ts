@@ -50,6 +50,8 @@ export interface ComposePlan {
    * avant, dans la confirmation, jamais découvert après.
    */
   readonly edited: number;
+  /** Sociétés à lire : une par maison, jamais une par contact. */
+  readonly researches: number;
 }
 
 /**
@@ -59,12 +61,15 @@ export interface ComposePlan {
  * décrit plus celui d'aujourd'hui, et c'est justement la dérive qu'une
  * constante ne verrait pas.
  */
-async function draftSample(model: string): Promise<DraftSample | null> {
+async function draftSample(
+  model: string,
+  purpose: "draft" | "research" = "draft",
+): Promise<DraftSample | null> {
   const since = new Date();
   since.setDate(since.getDate() - 90);
 
   const rows = await prisma.apiUsage.aggregate({
-    where: { purpose: "draft", model, createdAt: { gte: since } },
+    where: { purpose, model, createdAt: { gte: since } },
     _count: { _all: true },
     _avg: { inputTokens: true, outputTokens: true },
   });
@@ -116,6 +121,7 @@ export async function planComposition(
     fresh: 0,
     rewritten: 0,
     edited: 0,
+    researches: 0,
   });
 
   if (campaign === null) return nothing("Campagne introuvable.");
@@ -156,12 +162,17 @@ export async function planComposition(
     );
   }
 
-  const sample = await draftSample(model);
+  const [sample, researchSample] = await Promise.all([
+    draftSample(model),
+    draftSample(model, "research"),
+  ]);
   return {
     estimate: estimateComposition({
       drafts: eligible,
+      researches: counted.researches,
       model,
       sample,
+      researchSample,
       price: (usage) =>
         costMicros(model, {
           input: usage.input,
@@ -174,6 +185,7 @@ export async function planComposition(
     fresh: counted.fresh + Math.max(0, pending),
     rewritten: counted.rewritten,
     edited: counted.edited,
+    researches: counted.researches,
     blocked:
       eligible === 0
         ? "Rien à écrire : tout le monde a déjà reçu son message, ou personne n'est éligible (arrêté, retiré, sans adresse)."

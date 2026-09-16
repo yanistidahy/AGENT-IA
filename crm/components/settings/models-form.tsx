@@ -2,7 +2,12 @@
 
 import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
-import { MODELS, PURPOSES, PURPOSE_LABELS, type Purpose } from "@/lib/domain/model-pricing";
+import {
+  MODELS,
+  PURPOSE_LABELS,
+  TUNABLE_PURPOSES,
+  type TunablePurpose,
+} from "@/lib/domain/model-pricing";
 
 /**
  * Un modèle par usage, et le plafond mensuel.
@@ -24,7 +29,7 @@ export interface ModelsSettings {
 const CONTROL =
   "w-full rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] outline-none focus:border-brand";
 
-const FIELD: Record<Purpose, string> = {
+const FIELD: Record<TunablePurpose, string> = {
   draft: "modelDraft",
   revision: "modelRevision",
   chat: "modelChat",
@@ -32,7 +37,7 @@ const FIELD: Record<Purpose, string> = {
 };
 
 /** Pourquoi ce défaut, en une phrase — la question qu'on se pose devant le menu. */
-const WHY: Record<Purpose, string> = {
+const WHY: Record<TunablePurpose, string> = {
   draft: "Écrire depuis un dossier fourni n'est pas du raisonnement.",
   revision: "Même travail que la rédaction, même modèle.",
   chat: "Milieu de gamme : on y pose de vraies questions.",
@@ -50,7 +55,7 @@ export function ModelsForm({
   readonly initial: ModelsSettings;
   readonly onSaved: () => void;
 }) {
-  const [models, setModels] = useState<Record<Purpose, string>>({
+  const [models, setModels] = useState<Record<TunablePurpose, string>>({
     draft: initial.draft,
     revision: initial.revision,
     chat: initial.chat,
@@ -72,7 +77,7 @@ export function ModelsForm({
     setBusy(true);
     setError(null);
     const body: Record<string, unknown> = { monthlyBudgetCents: Math.round(dollars * 100) };
-    for (const purpose of PURPOSES) body[FIELD[purpose]] = models[purpose];
+    for (const purpose of TUNABLE_PURPOSES) body[FIELD[purpose]] = models[purpose];
 
     const result = await requestJson(
       "/api/settings",
@@ -91,7 +96,7 @@ export function ModelsForm({
   return (
     <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2">
-        {PURPOSES.map((purpose) => (
+        {TUNABLE_PURPOSES.map((purpose) => (
           <label key={purpose} className="block">
             <span className="mb-1 block text-[12.5px] font-medium">{PURPOSE_LABELS[purpose]}</span>
             <select

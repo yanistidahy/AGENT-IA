@@ -1,6 +1,15 @@
 import "server-only";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import {
+  GAP_LABELS,
+  describeUngrounded,
+  isUsable,
+  ungroundedClaims,
+  usableFacts,
+  type Research,
+} from "@/lib/domain/research";
+import { readCorpus, readResearch, researchCompany } from "@/lib/api/research";
 import { anthropic, describeAnthropicError } from "./runtime/client";
 import { requestFor } from "./runtime/request";
 import { modelFor } from "@/lib/api/reference";
@@ -139,6 +148,35 @@ export interface EmailDraft {
     readonly date: string;
     readonly days: number;
   } | null;
+  /**
+   * Ce qu'Alex a lu avant d'écrire : les sources et ce qu'il en a retenu.
+   *
+   * Rendu jusqu'à l'écran pour qu'une erreur se repère **avant** l'envoi. Un
+   * brouillon sans recherche exploitable porte le manque, nommé : c'est la
+   * moitié utile de l'information, et la taire ferait lire un message générique
+   * comme un message documenté.
+   */
+  readonly research: {
+    readonly usable: boolean;
+    readonly gap: string;
+    readonly summary: string;
+    readonly facts: readonly { label: string; detail: string; sourceUrl: string }[];
+    readonly sources: readonly { url: string; title: string }[];
+  } | null;
+  /** Une affirmation produit qu'aucune page lue ne soutient. */
+  readonly ungrounded: string | null;
+}
+
+/** La recherche, mise à la forme que l'écran consomme. */
+function researchView(research: Research | null): EmailDraft["research"] {
+  if (research === null) return null;
+  return {
+    usable: isUsable(research),
+    gap: research.gap === null ? "" : GAP_LABELS[research.gap],
+    summary: research.summary,
+    facts: usableFacts(research.facts).map((fact) => ({ ...fact })),
+    sources: research.sources.map((source) => ({ ...source })),
+  };
 }
 
 export type DraftResult =
@@ -388,9 +426,11 @@ interface ContextResult {
  * Ne reste ici que ce que le prompt système ne peut pas porter : **la forme de
  * la réponse**. Le reste est au-dessus.
  */
-function draftInstruction(context: ContextResult): string {
+function draftInstruction(context: ContextResult, research: Research | null): string {
   return `Rédige **un** email à partir du dossier ci-dessus, en appliquant les
 règles de forme, de signature et de lien données plus haut.
+
+${researchRule(research)}
 
 ${demoTargetRule(context.target)}
 
@@ -412,6 +452,45 @@ Rends exclusivement un objet JSON, sans texte autour, sans bloc de code :
 Deux points propres à cette forme :
 - \`body\` sépare ses paragraphes par une ligne vide (\\n\\n) ;
 - n'invente aucun fait qui ne soit pas dans le dossier.`;
+}
+
+
+/**
+ * **Ce qu'Alex a lu, ou l'interdiction de supposer.**
+ *
+ * Même construction que le DM du jalon 48 et l'angle de rôle du jalon 53 : la
+ * consigne se déduit du fait, sous ses **deux** formes. Une absence de ligne se
+ * lit comme une absence d'information ; une ligne qui dit « rien » se lit comme
+ * une règle, et c'est cette règle-là qui empêche de parler de probiotiques à
+ * une marque de bougies.
+ */
+export function researchRule(research: Research | null): string {
+  const facts = research === null ? [] : usableFacts(research.facts);
+
+  if (research === null || !isUsable(research)) {
+    const cause =
+      research === null || research.gap === null
+        ? "aucune page exploitable n'a pu être lue"
+        : GAP_LABELS[research.gap].toLowerCase();
+    return `**AUCUNE RECHERCHE EXPLOITABLE sur cette entreprise** : ${cause}.
+N'écris donc **aucun** fait sur ce qu'elle vend, sur son modèle d'affaires ou
+sur son positionnement : tu ne les connais pas, et les déduire de son nom ou de
+son secteur est exactement l'erreur qui fait perdre un prospect. Écris le
+message générique : ouvre sur le fait des 69 %, et parle du problème sans
+prétendre connaître son catalogue.`;
+  }
+
+  const lines = facts.map((fact) => `- ${fact.label} : ${fact.detail} (source : ${fact.sourceUrl})`);
+  return `**CE QUE TU AS LU SUR CETTE ENTREPRISE**, et la seule matière dont tu
+disposes à son sujet :
+
+${lines.join("\n")}
+
+Appuie le message sur ces faits : nomme ce qu'elle vend et, si tu l'as lu, ce
+qui fait hésiter ses visiteurs avant d'acheter. **N'écris rien d'autre sur
+elle.** Tout ce qui ne figure pas dans cette liste, tu ne le sais pas :
+ni son chiffre d'affaires, ni sa taille, ni ses concurrents, ni une gamme que tu
+n'as pas vue. Ne cite pas les URL dans le message.`;
 }
 
 /**
@@ -492,7 +571,7 @@ export async function draftEmail(
       email: true,
       owner: true,
       instagram: true,
-      company: { select: { name: true } },
+      company: { select: { id: true, name: true } },
     },
   });
 
@@ -509,6 +588,16 @@ export async function draftEmail(
   const context = await contextFor(contactId, focusActivityId);
   if (context === null) return { ok: false, message: "Contact introuvable." };
 
+  /*
+    **La recherche est lue ici, une fois par société.** `researchCompany` rend
+    le cache quand il existe et n'est pas périmé : trois collègues d'une même
+    maison ne déclenchent donc qu'une seule lecture, et recomposer un brouillon
+    n'en repaie aucune. Sans société rattachée, il n'y a rien à lire, et c'est
+    un manque nommé, pas un silence.
+  */
+  const companyId = contact.company?.id ?? null;
+  const research = companyId === null ? null : await researchCompany(companyId);
+
   const [config, signatories] = await Promise.all([readMailConfig(mailboxId), listSignatories()]);
   // La boîte imposée d'abord ; sinon le propriétaire de la fiche : si « Yanis »
   // suit ce prospect, c'est sa boîte qui écrit. Proposer systématiquement la
@@ -524,7 +613,7 @@ export async function draftEmail(
 
   const result = await complete(
     system,
-    `${context.dossier}\n\n---\n\n${draftInstruction(context)}${
+    `${context.dossier}\n\n---\n\n${draftInstruction(context, research)}${
       stepBrief === undefined || stepBrief.trim() === ""
         ? ""
         : `\n\nConsigne propre à ce message : ${stepBrief.trim()}`
@@ -542,10 +631,22 @@ export async function draftEmail(
   // personne qui s'apprête à envoyer.
   if (!result.ok) return result;
   const { colleague } = context;
+
+  /*
+    **Le garde-fou, posé au retour.** Il ne réécrit rien : un remplacement
+    automatique dans un texte commercial ferait plus de dégâts qu'il n'en
+    répare. Il signale, et c'est la carte de départ qui le montre, pour qu'une
+    erreur se voie **avant** l'envoi, pas après.
+  */
+  const corpus = companyId === null ? "" : await readCorpus(companyId);
+  const ungrounded = describeUngrounded(ungroundedClaims(result.draft.body, corpus));
+
   return {
     ok: true,
     draft: {
       ...result.draft,
+      research: researchView(research),
+      ungrounded,
       // La marque est imposée dans l'objet ici, où elle est connue : `complete`
       // sert aussi la reprise, qui n'a pas de dossier. Le remplacement est
       // etroit, voir `enforceSubjectBrand`.
@@ -657,8 +758,11 @@ async function complete(
         // `complete()` ne connaît pas le compte : la rédaction et la reprise
         // partagent ce chemin, et seule la première dispose du contexte. Elle
         // pose l'avertissement au retour ; la reprise n'en a pas besoin, le
-        // brouillon étant déjà sous les yeux de son auteur.
+        // brouillon étant déjà sous les yeux de son auteur. Même raison pour la
+        // recherche et son garde-fou.
         colleagueWarning: null,
+        research: null,
+        ungrounded: null,
       },
     };
   } catch (error) {

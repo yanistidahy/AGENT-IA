@@ -14,12 +14,30 @@
 /** Date de relecture de la référence. À reporter si les tarifs changent. */
 export const PRICING_READ_AT = "2026-08-18";
 
-/** Les quatre usages qui appellent le modèle. */
-export const PURPOSES = ["draft", "revision", "chat", "shift"] as const;
+/**
+ * Les cinq usages qui appellent le modèle.
+ *
+ * `research` est **distinct de `draft`**, et c'est ce qui rend la mesure
+ * honnête : une recherche lit des pages entières, son entrée pèse dix fois
+ * celle d'une rédaction, et les mêler ferait une moyenne qui ne décrit ni l'une
+ * ni l'autre. Le compteur du jalon 36 les sépare donc à la source, et
+ * l'estimation de « Écrire les mails » les additionne en connaissance de cause.
+ */
+export const PURPOSES = ["draft", "research", "revision", "chat", "shift"] as const;
 export type Purpose = (typeof PURPOSES)[number];
+
+/**
+ * Les usages que l'écran des réglages propose de choisir.
+ *
+ * `research` en est exclue : elle suit le modèle de la rédaction. L'exposer
+ * serait offrir un second réglage pour une décision qui n'en est pas une.
+ */
+export const TUNABLE_PURPOSES = ["draft", "revision", "chat", "shift"] as const;
+export type TunablePurpose = (typeof TUNABLE_PURPOSES)[number];
 
 export const PURPOSE_LABELS: Record<Purpose, string> = {
   draft: "Rédaction d'email",
+  research: "Recherche sur un prospect",
   revision: "Reprise de brouillon",
   chat: "Conversation",
   shift: "Vacation",
@@ -120,6 +138,7 @@ export function isKnownModel(id: string): boolean {
  */
 export const DEFAULT_MODELS: Record<Purpose, string> = {
   draft: "claude-sonnet-5",
+  research: "claude-sonnet-5",
   revision: "claude-sonnet-5",
   chat: "claude-sonnet-5",
   shift: "claude-opus-5",
@@ -193,6 +212,8 @@ export function formatCost(micros: number): string {
  */
 export const EXPECTED_MICROS: Record<Purpose, number> = {
   draft: 15_000,
+  // Une recherche ramène des pages : son ordinaire est bien au-dessus.
+  research: 120_000,
   revision: 15_000,
   chat: 40_000,
   shift: 60_000,

@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { inspectTool } from "../lib/domain/tool-schema";
 
 /**
@@ -85,6 +85,95 @@ const SIGNED = process.env.MOCK_SIGNED === "1";
  * sinon la recette ne prouve pas la garantie qui le remplace.
  */
 const GENERIC = process.env.MOCK_GENERIC === "1";
+
+/**
+ * Le contenu de page servi aux **recherches** (`MOCK_SITE`, un fichier JSON).
+ *
+ * Forme attendue :
+ * `{"<hôte>": {"title": "...", "text": "...", "facts": [...], "summary": "..."}}`
+ *
+ * Le substitut rejoue les **blocs de résultat des outils serveur** tels que
+ * l'API les rend — `web_fetch_tool_result` avec son document,
+ * `web_search_tool_result` avec sa liste — pour que le produit exerce son vrai
+ * chemin de lecture : `harvest()`, le corpus, le cache, le garde-fou.
+ *
+ * `MOCK_SITE_FAIL=<hôte>` rend au contraire l'**erreur** d'outil : un objet à
+ * la place de la liste. C'est la forme qui ne lève pas et qu'il faut distinguer
+ * d'une recherche vide.
+ */
+const SITES: Record<string, { title?: string; text?: string; summary?: string; facts?: unknown[] }> =
+  (() => {
+    const file = process.env.MOCK_SITE ?? "";
+    if (file === "") return {};
+    try {
+      return JSON.parse(readFileSync(file, "utf8")) as Record<string, never>;
+    } catch {
+      return {};
+    }
+  })();
+
+const SITE_FAIL = process.env.MOCK_SITE_FAIL ?? "";
+
+/** Reconnaît une requête de recherche à ses outils serveur. */
+function isResearch(body: { tools?: unknown }): boolean {
+  return (
+    Array.isArray(body.tools) &&
+    body.tools.some(
+      (tool) =>
+        typeof tool === "object" &&
+        tool !== null &&
+        typeof (tool as { type?: unknown }).type === "string" &&
+        (tool as { type: string }).type.startsWith("web_"),
+    )
+  );
+}
+
+/** Les blocs qu'une recherche rend : résultats d'outils, puis le JSON. */
+function researchBlocks(body: { messages?: unknown }): unknown[] {
+  const asked = JSON.stringify(body.messages ?? "");
+  const host = Object.keys(SITES).find((key) => asked.includes(key)) ?? "";
+  const site = host === "" ? undefined : SITES[host];
+  const url = `https://${host}/`;
+
+  if (host !== "" && host === SITE_FAIL) {
+    return [
+      // **L'erreur d'outil ne lève pas** : HTTP 200, et un objet là où le
+      // succès met une liste.
+      { type: "web_search_tool_result", content: { error_code: "unavailable" } },
+      {
+        type: "text",
+        text: JSON.stringify({ summary: "", facts: [] }),
+      },
+    ];
+  }
+
+  if (site === undefined) {
+    return [{ type: "text", text: JSON.stringify({ summary: "", facts: [] }) }];
+  }
+
+  return [
+    {
+      type: "web_fetch_tool_result",
+      content: {
+        type: "web_fetch_result",
+        url,
+        content: {
+          type: "document",
+          title: site.title ?? host,
+          source: { type: "text", media_type: "text/plain", data: site.text ?? "" },
+        },
+      },
+    },
+    {
+      type: "web_search_tool_result",
+      content: [{ type: "web_search_result", url: `${url}a-propos`, title: `${site.title ?? host} — à propos` }],
+    },
+    {
+      type: "text",
+      text: JSON.stringify({ summary: site.summary ?? "", facts: site.facts ?? [] }),
+    },
+  ];
+}
 
 const wait = (ms: number): Promise<void> =>
   ms <= 0 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, ms));
@@ -404,6 +493,7 @@ createServer((req, res) => {
       return;
     }
 
+    const research = isResearch(body);
     res.writeHead(200, { "content-type": "application/json" });
     res.end(
       JSON.stringify({
@@ -411,7 +501,7 @@ createServer((req, res) => {
         type: "message",
         role: "assistant",
         model: body.model,
-        content: [{ type: "text", text }],
+        content: research ? researchBlocks(body) : [{ type: "text", text }],
         stop_reason: "end_turn",
         usage: { input_tokens: estimatedInput(body), output_tokens: Math.ceil(text.length / 4) },
       }),

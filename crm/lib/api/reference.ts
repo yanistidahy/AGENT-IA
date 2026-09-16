@@ -84,6 +84,11 @@ export async function modelFor(purpose: Purpose): Promise<string> {
       ? null
       : {
           draft: row.modelDraft,
+          // **La recherche suit le modèle de la rédaction**, sans réglage
+          // propre : c'est un usage distinct pour la *mesure* (son entrée pèse
+          // dix fois celle d'un brouillon, les mêler fausserait la moyenne),
+          // pas une seconde décision à prendre dans un écran.
+          research: row.modelDraft,
           revision: row.modelRevision,
           chat: row.modelChat,
           shift: row.modelShift,

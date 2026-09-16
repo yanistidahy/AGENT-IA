@@ -37,6 +37,8 @@ export interface BaseRequest {
  */
 export const MAX_TOKENS_BY_PURPOSE: Record<Purpose, number> = {
   draft: 2000,
+  // La recherche rend des faits, pas une prose : peu de sortie.
+  research: 4000,
   revision: 3000,
   chat: 8000,
   shift: 4000,
@@ -53,6 +55,8 @@ export const MAX_TOKENS_BY_PURPOSE: Record<Purpose, number> = {
  */
 const EFFORT_BY_PURPOSE: Record<Purpose, "low" | "medium"> = {
   draft: "low",
+  // Lire et rapporter demande un peu plus que mettre en forme.
+  research: "medium",
   revision: "low",
   chat: "medium",
   shift: "low",
