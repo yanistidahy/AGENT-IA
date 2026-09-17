@@ -1,5 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
+import { proposeDomain } from "../domain/domain-guess";
+import { acceptDomain } from "./domain-review";
 import { fold, searchText } from "../domain/text";
 import { nameOverflow, splitOverflow } from "../domain/status";
 import {
@@ -1041,4 +1043,108 @@ export async function applyTerminalFix(plan: readonly TerminalFixRow[]): Promise
   });
 
   return plan.length;
+}
+
+// ---------------------- le domaine de la société, déduit des adresses email
+
+/**
+ * **Une déduction ponctuelle devient une donnée permanente.**
+ *
+ * Depuis le jalon 75, Alex sait lire `dermoplant.com` dans
+ * `roxana.beraud@dermoplant.com` pour choisir quoi documenter. Mais tant que la
+ * société ne porte pas ce domaine, chaque écran continue d'afficher un champ
+ * vide, chaque nouvelle fiche de la maison repart de la même déduction, et la
+ * carte annonce une cible « déduite » là où elle pourrait annoncer un fait
+ * saisi. Remplir la colonne une fois règle les trois.
+ *
+ * **La règle n'est pas réécrite ici** : `proposeDomain` (jalon 25) la porte
+ * depuis toujours, exclusion des messageries grand public comprise. On la
+ * filtre seulement sur `rule === "email"` — la règle `name`, qui fabrique
+ * `bacha.com` à partir de « Bacha », n'a jamais eu le droit de s'appliquer sans
+ * relecture ligne à ligne, et ce n'est pas un rattrapage groupé qui va le lui
+ * accorder (jalon 26).
+ *
+ * Deux façades, une règle : ce panneau écrit en masse ce que le bloc « Domaines
+ * proposés » fait relire une par une. Elles ne peuvent pas diverger puisqu'elles
+ * appellent la même fonction.
+ */
+export interface CompanyDomainRow {
+  readonly id: string;
+  readonly name: string;
+  readonly value: string;
+  readonly because: string;
+  /** Plusieurs domaines parmi les fiches : proposé, mais signalé. */
+  readonly ambiguous: boolean;
+}
+
+export interface CompanyDomainPlan {
+  readonly rows: readonly CompanyDomainRow[];
+  /** Sociétés sans domaine dont aucune adresse ne permet de déduire quoi que ce soit. */
+  readonly withoutClue: number;
+}
+
+export async function planCompanyDomainFix(): Promise<CompanyDomainPlan> {
+  const companies = await prisma.company.findMany({
+    where: { domain: "" },
+    select: { id: true, name: true, contacts: { select: { email: true } } },
+  });
+
+  const rows: CompanyDomainRow[] = [];
+  let withoutClue = 0;
+
+  for (const company of companies) {
+    const proposal = proposeDomain(
+      company.name,
+      company.contacts.map((contact) => contact.email),
+    );
+
+    // **Seule la déduction**, jamais la supposition tirée du nom.
+    if (proposal === null || proposal.rule !== "email") {
+      withoutClue += 1;
+      continue;
+    }
+
+    rows.push({
+      id: company.id,
+      name: company.name,
+      value: proposal.value,
+      because: proposal.because,
+      ambiguous: proposal.confidence === "low",
+    });
+  }
+
+  // Les cas douteux en tête : c'est là que la relecture compte (jalon 26).
+  rows.sort((left, right) => Number(right.ambiguous) - Number(left.ambiguous));
+  return { rows, withoutClue };
+}
+
+/** État avant écriture — une colonne, et de quoi la revider. */
+export function companyDomainSnapshot(plan: CompanyDomainPlan): unknown {
+  return {
+    takenAt: new Date().toISOString(),
+    note: "État AVANT report du domaine déduit des adresses. Restaurer en revidant domain sur ces sociétés.",
+    companies: plan.rows.map((row) => ({ id: row.id, name: row.name, written: row.value })),
+  };
+}
+
+/**
+ * L'écriture passe par `acceptDomain`, jamais par un `update` local.
+ *
+ * C'est elle qui porte, depuis le jalon 25, la garde « le domaine a été
+ * renseigné entre-temps », le recalcul du miroir de recherche et de la clé de
+ * tri, et l'effacement d'un refus devenu sans objet. Réécrire ces quatre gestes
+ * ici en oublierait un, et ce serait le miroir — la société resterait alors
+ * introuvable par son propre domaine, exactement le défaut du jalon 12.
+ *
+ * Pas de transaction d'ensemble, comme l'acceptation groupée du jalon 26 : une
+ * coupure au milieu laisse écrit ce qui l'était déjà, et la simulation suivante
+ * ne propose plus que le reste.
+ */
+export async function applyCompanyDomainFix(plan: CompanyDomainPlan): Promise<number> {
+  let written = 0;
+  for (const row of plan.rows) {
+    const decision = await acceptDomain(row.id, row.value);
+    if (decision.ok) written += 1;
+  }
+  return written;
 }

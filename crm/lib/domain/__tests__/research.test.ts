@@ -20,6 +20,7 @@ const fact = (detail: string, sourceUrl = "https://minimiil.com") => ({
 
 const research = (over: Partial<Research> = {}): Research => ({
   gap: null,
+  target: { url: "https://minimiil.com/", host: "minimiil.com", source: "contact-site" },
   summary: "Shots probiotiques pour enfants, vendus par abonnement.",
   facts: [fact("Shots probiotiques pour enfants"), fact("Vente par abonnement mensuel")],
   sources: [{ url: "https://minimiil.com", title: "minimiil" }],
@@ -125,7 +126,7 @@ describe("la carte : trois états qui ne se confondent pas", () => {
     expect(researchCard(null).headline).toContain("Aucune société");
     const noSite = researchCard(research({ gap: "no-domain", facts: [], sources: [] }));
     expect(noSite.state).toBe("none");
-    expect(noSite.headline).toBe("Aucun site connu sur la fiche");
+    expect(noSite.headline).toBe("Aucun site exploitable");
   });
 
   it("un échec porte sa raison exacte, jamais une phrase tiède", () => {

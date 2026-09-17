@@ -6,6 +6,11 @@ import { modelFor } from "./reference";
 import { recordUsage, usageOf, budgetRefusal } from "./usage";
 import { costMicros } from "../domain/model-pricing";
 import {
+  resolveResearchTarget,
+  storedTarget,
+  type ResearchTarget,
+} from "../domain/research-target";
+import {
   isStale,
   usableFacts,
   type Research,
@@ -72,33 +77,21 @@ Réponds en JSON, sans bloc de code :
             "detail": "le fait, en une phrase",
             "sourceUrl": "https://la-page-lue"}]}`;
 
-function askFor(name: string, domain: string): string {
+function askFor(name: string, target: ResearchTarget): string {
   return `Entreprise : ${name}
-Site : ${domain}
+Site : ${target.url}${
+    target.source === "email"
+      ? `
+(Cette adresse est **déduite du domaine des adresses électroniques** des fiches,
+elle n'a pas été saisie à la main. Si la page lue n'est manifestement pas le site
+marchand de cette entreprise, rends une liste de faits vide : ne rapporte rien
+d'un site qui appartient à quelqu'un d'autre.)`
+      : ""
+  }
 
 Lis ce site, puis complète si besoin par une recherche. Rapporte ce que tu as
 lu, avec les URL. Si le site est inaccessible ou n'apprend rien d'exploitable,
 rends une liste de faits vide.`;
-}
-
-/** L'adresse à lire : celle de la fiche, à défaut le domaine de la société. */
-export function siteOf(input: {
-  readonly domain: string;
-  readonly website: string;
-}): string | null {
-  const raw = (input.website.trim() !== "" ? input.website : input.domain).trim();
-  if (raw === "") return null;
-  const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-  try {
-    const parsed = new URL(url);
-    // Un « site » qui n'est pas un domaine — « Shopify », un titre de page — ne
-    // se lit pas. C'est le cas des 59 fiches du jalon 24, et le deviner
-    // enverrait le modèle chercher une entreprise qui n'existe pas.
-    if (!parsed.hostname.includes(".")) return null;
-    return parsed.toString();
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -119,7 +112,10 @@ export async function researchCompany(
       name: true,
       domain: true,
       research: { include: { facts: true, sources: true } },
-      contacts: { select: { website: true }, take: 5 },
+      // Les fiches de la maison, pour y lire un site saisi ou, à défaut, le
+      // domaine porté par une adresse électronique (jalon 75). Bornée : au-delà
+      // de vingt fiches, la vingt-et-unième n'apprendra rien de plus.
+      contacts: { select: { website: true, email: true }, take: 20 },
     },
   });
   if (company === null) return null;
@@ -127,12 +123,18 @@ export async function researchCompany(
   const stored = company.research === null ? null : toResearch(company.research);
   if (stored !== null && options.force !== true && !isStale(stored, now)) return stored;
 
-  const site =
-    siteOf({ domain: company.domain, website: "" }) ??
-    company.contacts.map((c) => siteOf({ domain: "", website: c.website })).find((s) => s !== null) ??
-    null;
+  /*
+    **L'ordre est la décision** : un champ saisi l'emporte sur une déduction, et
+    la déduction ne comble qu'un vide. Voir `research-target.ts` pour le
+    raisonnement complet, et pour l'exclusion des messageries grand public.
+  */
+  const target = resolveResearchTarget({
+    website: company.contacts.map((c) => c.website).find((w) => w.trim() !== "") ?? "",
+    companyDomain: company.domain,
+    emails: company.contacts.map((c) => c.email),
+  });
 
-  if (site === null) {
+  if (target === null) {
     // **Aucun site : on n'invente pas de recherche.** Un modèle à qui l'on
     // demande de documenter une entreprise sans lui donner d'adresse en
     // fabrique une — c'est le défaut du jalon 48 sur les sites de démonstration,
@@ -143,6 +145,7 @@ export async function researchCompany(
       facts: [],
       sources: [],
       corpus: "",
+      target: null,
       model: "",
       micros: 0,
       durationMs: 0,
@@ -160,6 +163,7 @@ export async function researchCompany(
       facts: [],
       sources: [],
       corpus: "",
+      target,
       model: "",
       micros: 0,
       durationMs: 0,
@@ -188,7 +192,7 @@ export async function researchCompany(
         { type: "web_fetch_20260209", name: "web_fetch", max_uses: 4 },
         { type: "web_search_20260209", name: "web_search", max_uses: 3 },
       ],
-      messages: [{ role: "user", content: askFor(company.name, site) }],
+      messages: [{ role: "user", content: askFor(company.name, target) }],
     });
 
     const durationMs = Date.now() - started;
@@ -208,6 +212,7 @@ export async function researchCompany(
       facts,
       sources: read.sources,
       corpus: read.corpus,
+      target,
       model,
       micros: costMicros(model, {
         input: usage.input,
@@ -234,6 +239,7 @@ export async function researchCompany(
       facts: [],
       sources: [],
       corpus: "",
+      target,
       model,
       micros: 0,
       durationMs: Date.now() - started,
@@ -348,6 +354,7 @@ interface Stored {
   readonly facts: readonly ResearchFact[];
   readonly sources: readonly ResearchSource[];
   readonly corpus: string;
+  readonly target: ResearchTarget | null;
   readonly model: string;
   readonly micros: number;
   readonly durationMs: number;
@@ -359,6 +366,8 @@ async function save(companyId: string, input: Stored): Promise<Research> {
     gap: input.gap ?? "",
     summary: input.summary,
     corpus: input.corpus,
+    targetHost: input.target?.host ?? "",
+    targetSource: input.target?.source ?? "",
     model: input.model,
     micros: input.micros,
     durationMs: input.durationMs,
@@ -389,6 +398,7 @@ async function save(companyId: string, input: Stored): Promise<Research> {
     summary: input.summary,
     facts: [...input.facts],
     sources: [...input.sources],
+    target: input.target,
     fetchedAt: input.fetchedAt,
   };
 }
@@ -396,6 +406,8 @@ async function save(companyId: string, input: Stored): Promise<Research> {
 interface Row {
   readonly gap: string;
   readonly summary: string;
+  readonly targetHost: string;
+  readonly targetSource: string;
   readonly fetchedAt: Date;
   readonly facts: readonly { label: string; detail: string; sourceUrl: string }[];
   readonly sources: readonly { url: string; title: string }[];
@@ -407,6 +419,7 @@ function toResearch(row: Row): Research {
     summary: row.summary,
     facts: row.facts.map((fact) => ({ ...fact })),
     sources: row.sources.map((source) => ({ ...source })),
+    target: storedTarget(row.targetHost, row.targetSource),
     fetchedAt: row.fetchedAt,
   };
 }

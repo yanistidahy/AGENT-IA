@@ -44,6 +44,15 @@ export function ResearchNote({
             <span className="font-semibold text-ink">{research.headline} :</span>{" "}
             {research.detail === "" ? "aucun résumé rendu" : research.detail}
           </p>
+          {/*
+            **D'où venait l'adresse lue**, et non seulement laquelle. Une cible
+            déduite d'une adresse électronique se diagnostique autrement qu'un
+            champ saisi : si la lecture dérape, c'est la première chose à savoir
+            (jalon 75).
+          */}
+          {research.target !== "" && (
+            <p className="mt-0.5 text-muted">Site lu : {research.target}</p>
+          )}
           {research.sources.length > 0 && (
             <p className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-muted">
               <span>Sources :</span>
@@ -66,11 +75,13 @@ export function ResearchNote({
         <p className="rounded-control border border-danger px-2 py-1 text-danger">
           <span className="font-semibold">{research.headline} :</span> {research.detail}. Le message
           est générique, et c'est un défaut à corriger, pas une fiche à compléter.
+          {research.target === "" ? "" : ` Site visé : ${research.target}.`}
         </p>
       ) : (
         <p className="text-muted">
-          <span className="font-semibold text-ink">{research.headline}.</span> Le message est
-          générique, et n'affirme donc rien sur cette entreprise.
+          <span className="font-semibold text-ink">{research.headline}.</span> Ni site sur la fiche,
+          ni domaine sur la société, ni adresse électronique professionnelle à en déduire. Le
+          message est générique, et n'affirme donc rien sur cette entreprise.
         </p>
       )}
 

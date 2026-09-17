@@ -1265,6 +1265,14 @@ model CompanyResearch {
   /// garde signalerait un fait pourtant exact.
   corpus String @default("")
 
+  /// L'hote reellement lu, et d'ou venait son adresse (jalon 75).
+  /// Vide quand rien n'etait lisible. La source se lit sur la carte : une
+  /// recherche qui derape sur une cible deduite ne se diagnostique pas comme
+  /// une recherche qui derape sur un champ saisi.
+  targetHost   String @default("")
+  /// "contact-site" | "company-domain" | "email" | "" — voir research-target.ts
+  targetSource String @default("")
+
   model      String   @default("")
   micros     Int      @default(0)
   durationMs Int      @default(0)

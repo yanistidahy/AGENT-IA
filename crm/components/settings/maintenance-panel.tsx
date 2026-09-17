@@ -5,6 +5,7 @@ import { requestJson } from "@/lib/client/http";
 import { MaintenanceBlock as Block } from "./maintenance-block";
 import { StatusesBlock, type StatusPlan } from "./statuses-block";
 import { WebsitesBlock, type WebsitePlan } from "./websites-block";
+import { CompanyDomainsBlock, type CompanyDomainPlanView } from "./company-domains-block";
 import { SitesBlock, type SitePlan } from "./sites-block";
 import { TerminalBlock, type TerminalPlan } from "./terminal-block";
 import { DealCompanyBlock, type DealCompanyPlanView } from "./deal-company-block";
@@ -55,6 +56,7 @@ interface Plans {
   names: NamePlan;
   statuses: StatusPlan;
   websites: WebsitePlan;
+  companyDomains: CompanyDomainPlanView;
   sites: SitePlan;
   terminal: TerminalPlan;
   dealCompanies: DealCompanyPlanView;
@@ -104,6 +106,7 @@ export function MaintenancePanel() {
       | "names"
       | "statuses"
       | "websites"
+      | "company-domains"
       | "sites"
       | "terminal"
       | "deal-companies",
@@ -215,6 +218,7 @@ export function MaintenancePanel() {
           <DealCompanyBlock plan={plans.dealCompanies} busy={busy} onApply={apply} />
 
           <WebsitesBlock plan={plans.websites} busy={busy} onApply={apply} />
+          <CompanyDomainsBlock plan={plans.companyDomains} busy={busy} onApply={apply} />
 
           <DomainsBlock plan={plans.domains} />
 
