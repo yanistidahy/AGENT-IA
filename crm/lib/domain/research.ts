@@ -13,6 +13,8 @@
  * un fait porte son URL, et la carte de départ peut le montrer.
  */
 
+import { describeTarget, type ResearchTarget } from "./research-target";
+
 /**
  * Pourquoi une recherche n'a rien donné. L'ordre est celui de la cause.
  *
@@ -30,7 +32,7 @@
 export type ResearchGap = "no-domain" | "failed" | "unreachable" | "thin" | null;
 
 export const GAP_LABELS: Readonly<Record<NonNullable<ResearchGap>, string>> = {
-  "no-domain": "Aucun site connu sur la fiche ni sur la société",
+  "no-domain": "Aucun site exploitable",
   failed: "La recherche a échoué",
   unreachable: "Le site n'a pas pu être lu",
   thin: "Le site a été lu mais n'apprend rien d'exploitable",
@@ -63,6 +65,14 @@ export interface ResearchFact {
 
 export interface Research {
   readonly gap: ResearchGap;
+  /**
+   * Le site réellement visé, et d'où venait son adresse (jalon 75).
+   *
+   * `null` pour une recherche antérieure, ou quand rien n'était lisible. La
+   * provenance voyage jusqu'à la carte : si la lecture dérape, il faut savoir
+   * si la cible elle-même était déduite.
+   */
+  readonly target: ResearchTarget | null;
   /** Une ligne : ce qu'Alex a appris. C'est elle que la carte affiche. */
   readonly summary: string;
   readonly facts: readonly ResearchFact[];
@@ -152,6 +162,8 @@ export type ResearchState = "none" | "failed" | "read";
 
 export interface ResearchCard {
   readonly state: ResearchState;
+  /** « dermoplant.com (déduit de l'adresse email) », ou vide. */
+  readonly target: string;
   /** La ligne que l'écran affiche, déjà accordée. */
   readonly headline: string;
   /** La raison exacte d'un échec, ou le résumé d'une lecture. Vide sinon. */
@@ -170,15 +182,19 @@ export function researchCard(research: Research | null): ResearchCard {
   if (research === null) {
     return {
       state: "none",
+      target: "",
       headline: "Aucune société rattachée à cette fiche",
       detail: "",
       sources: [],
     };
   }
 
+  const target = research.target === null ? "" : describeTarget(research.target);
+
   if (research.gap === "failed") {
     return {
       state: "failed",
+      target,
       headline: "La recherche a échoué",
       // Sans la raison, un échec ressemble à une fiche incomplète — c'est
       // exactement la confusion qui a coûté une journée.
@@ -188,9 +204,13 @@ export function researchCard(research: Research | null): ResearchCard {
   }
 
   if (research.gap === "no-domain") {
+    // **Ni une panne, ni une omission** : la fiche ne porte rien de lisible —
+    // pas de site, pas de domaine de société, et aucune adresse ailleurs que
+    // chez un fournisseur grand public. C'est la fiche qu'il faut compléter.
     return {
       state: "none",
-      headline: "Aucun site connu sur la fiche",
+      target: "",
+      headline: "Aucun site exploitable",
       detail: "",
       sources: [],
     };
@@ -199,6 +219,7 @@ export function researchCard(research: Research | null): ResearchCard {
   if (!isUsable(research)) {
     return {
       state: "failed",
+      target,
       headline: "La recherche a échoué",
       detail:
         research.gap === null
@@ -211,6 +232,7 @@ export function researchCard(research: Research | null): ResearchCard {
   const count = research.sources.length;
   return {
     state: "read",
+    target,
     headline: `Recherche effectuée, ${count} source${count > 1 ? "s" : ""} lue${count > 1 ? "s" : ""}`,
     detail: research.summary,
     sources: research.sources,

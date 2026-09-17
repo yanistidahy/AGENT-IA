@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 75 | **Le domaine se lit dans l'adresse email** : troisième source de recherche, provenance affichée sur la carte, et un rattrapage qui rend la déduction permanente | **livré, à valider** |
 | 74 | **La recherche dit ce qu'elle a fait** : une carte sur les deux surfaces, l'échec nommé avec sa raison exacte, et un appel raté qui se retente au lieu de geler la société trois mois | **livré, à valider** |
 | 73 | **Alex lit le prospect avant d'écrire** — recherche web outillée, mise en cache par société, et la règle qui décide de tout : un fait vient d'une page lue, ou il ne s'écrit pas | **livré, à valider** |
 | 72 | **Les listes de référence s'ouvrent alphabétiques** — clé de tri pliée (accents et casse), valeurs vides en fin de liste, et les écrans d'urgence restent chronologiques | **livré, à valider** |
@@ -10384,3 +10385,174 @@ et ne le recalcule pas si l'on modifie le texte à la main avant d'envoyer.
 **Toujours aucun bouton pour relancer une recherche à la main.** La reprise
 automatique après échec supprime le cas le plus grave ; rafraîchir une lecture
 réussie mais périmée reste l'affaire des 90 jours.
+
+
+---
+
+## Jalon 75 — le domaine était dans l'adresse depuis toujours
+
+### Une déduction, pas une supposition
+
+`roxana.beraud@dermoplant.com` **dit** que le site est `dermoplant.com`. La
+chaîne est dans la valeur saisie : on ne la devine pas, on la lit. C'est ce qui
+sépare cette règle de celle que le jalon 25 a refusé de généraliser — `name`
+fabrique `bacha.com` à partir de « Bacha », et rien dans la donnée ne dit que ce
+domaine existe, encore moins qu'il appartient au prospect.
+
+La cible de recherche se résout donc en quatre temps, dans l'ordre de certitude
+décroissante (`lib/domain/research-target.ts`, pur) :
+
+| Ordre | Source | Ce que la carte affiche |
+|---|---|---|
+| 1 | `Contact.website` | `dermoplant.com (fiche)` |
+| 2 | `Company.domain` | `dermoplant.com (société)` |
+| 3 | **domaine de l'adresse électronique** | `dermoplant.com (déduit de l'adresse email)` |
+| 4 | rien de lisible | « Aucun site exploitable » — la marque est nommée, aucune adresse n'est inventée (jalon 48) |
+
+**L'ordre est la décision.** Un champ que quelqu'un a saisi l'emporte toujours,
+même quand il contredit l'adresse : corriger une valeur saisie à partir d'une
+déduction serait décider à la place de l'utilisateur (jalon 8). Vérifié — une
+fiche dont le site est `minimiil.test` et la société `societe-autre.test` lit le
+premier.
+
+**Un cran moins sûr qu'un champ saisi, tout de même.** Une adresse peut être
+celle d'un revendeur, d'une agence, ou fausse dans le fichier source
+(`@teledyne.com` sur deux marques de cosmétique, jalon 26). Quand la cible est
+déduite, la demande envoyée au modèle porte donc une mise en garde explicite :
+*« si la page lue n'est manifestement pas le site marchand de cette entreprise,
+rends une liste de faits vide »*. C'est un **échec de recherche**, nommé comme
+tel depuis le jalon 74 — jamais une licence à inventer des faits.
+
+### La liste d'exclusion, en un seul exemplaire
+
+Elle vit dans `lib/domain/domain-guess.ts` depuis le jalon 25 et sert désormais
+trois choses : la proposition de domaine, l'acceptation groupée, et la cible de
+recherche. **Deux listes finiraient par diverger, et c'est la seconde qu'on
+oublie de compléter** — une garde statique le vérifie.
+
+Ce qu'elle contient, en entier :
+
+- **Google / Microsoft / Yahoo / Apple** : `gmail.com`, `googlemail.com`,
+  `hotmail.com`, `hotmail.fr`, `hotmail.be`, `hotmail.es`, `hotmail.it`,
+  `hotmail.co.uk`, `outlook.com`, `outlook.fr`, `outlook.be`, `outlook.es`,
+  `outlook.it`, `live.com`, `live.fr`, `live.be`, `msn.com`, `yahoo.com`,
+  `yahoo.fr`, `yahoo.co.uk`, `yahoo.es`, `yahoo.it`, `yahoo.de`, `yahoo.ca`,
+  `yahoo.com.br`, `ymail.com`, `icloud.com`, `me.com`, `mac.com`, `aol.com` ;
+- **fournisseurs d'accès français**, actuels et historiques — ils survivent
+  longtemps au fournisseur et restent nombreux dans un vivier importé :
+  `orange.fr`, `wanadoo.fr`, `free.fr`, `sfr.fr`, `neuf.fr`, `laposte.net`,
+  `bbox.fr`, `numericable.fr`, `club-internet.fr`, `aliceadsl.fr`, `voila.fr`,
+  `cegetel.net`, `9online.fr`, `dbmail.com` ;
+- **messageries gratuites sans attache** : `gmx.fr`, `gmx.com`, `gmx.de`,
+  `gmx.net`, `web.de`, `mail.com`, `email.com`, `protonmail.com`,
+  `protonmail.ch`, `proton.me`, `pm.me`, `tutanota.com`, `tuta.com`,
+  `fastmail.com`, `hushmail.com`, `zoho.com`, `yandex.com`, `yandex.ru`,
+  `qq.com`, `163.com`, `126.com`, `naver.com`.
+
+**Un domaine absent de la liste est traité comme professionnel.** C'est le bon
+sens de l'erreur : le manque se voit alors comme une recherche qui n'apprend
+rien — nommée, rouge, avec sa raison (jalon 74) — et non comme une invention.
+
+### La provenance voyage jusqu'à l'écran
+
+Deux colonnes sur `CompanyResearch` (migration `33_research_target`) :
+`targetHost` et `targetSource`. La carte écrit « Site lu : dermoplant.com
+(déduit de l'adresse email) », et l'échec écrit « Site visé : … ».
+
+**C'était la demande, et elle est juste** : si la recherche dérape, la première
+question est de savoir si la cible elle-même était déduite. Une recherche
+antérieure au jalon 75 ne porte aucune source et la carte **se tait** sur la
+provenance plutôt que d'affirmer « fiche » par défaut — afficher une valeur par
+défaut ferait passer une inconnue pour un fait.
+
+### Le rattrapage rend la déduction permanente
+
+`/reglages` → « Domaine de société, depuis les adresses email ». Simulation
+d'abord, compte relu au moment d'écrire, sauvegarde rendue, idempotent.
+
+Trois décisions, et aucune n'est nouvelle :
+
+1. **Seule la règle `email`.** `proposeDomain` (jalon 25) porte déjà les deux
+   règles ; ce panneau filtre sur `rule === "email"`. La supposition tirée du
+   nom reste à relire ligne à ligne dans « Domaines proposés », et ce n'est pas
+   un rattrapage groupé qui va lui accorder ce que le jalon 26 lui a refusé.
+2. **L'écriture passe par `acceptDomain`**, le seul écrivain de domaine du
+   produit : il porte la garde « renseigné entre-temps », le recalcul du miroir
+   de recherche, la clé de tri et l'effacement d'un refus devenu sans objet.
+   Réécrire ces quatre gestes ici en oublierait un, et ce serait le miroir — la
+   société resterait introuvable par son propre domaine, défaut du jalon 12.
+3. **Les cas douteux en tête** : plusieurs domaines parmi les fiches d'une même
+   maison sont proposés en ambre, parce que c'est là que la relecture compte.
+
+**Et cela ferme la boucle** : une fois le domaine écrit, la carte passe de
+« déduit de l'adresse email » à « société ». Vérifié.
+
+### La couverture — ce que je peux dire, et ce que je ne peux pas
+
+**Je n'ai pas pu mesurer votre base.** La base locale de vérification a été
+vidée au fil des recettes précédentes : elle porte quatre sociétés semées pour
+ce jalon, et un chiffre tiré de là ne décrirait rien.
+
+**Le chiffre que je peux citer vient de votre vraie feuille**, relue au
+jalon 25 : sur **125 sociétés sans domaine**, **96 portaient une adresse
+professionnelle** permettant la déduction et 29 n'offraient que leur nom. Soit
+**77 % des sociétés aveugles qui gagnent une cible de recherche**, sans rien
+saisir. C'est l'ordre de grandeur, pas votre compte d'aujourd'hui.
+
+**Votre compte exact est désormais affiché dans le produit** : `/reglages` →
+« Domaine de société, depuis les adresses email » annonce en tête « N société(s)
+sans domaine dont une adresse professionnelle en porte un » et « M autre(s)
+n'offrent aucune déduction ». C'est la mesure, et elle se lit sans rien écrire.
+
+### Jalon 75 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (migration `33_research_target` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production, le substitut
+Anthropic, et **par la route réelle du tiroir de contact** :
+
+- **adresse professionnelle seule** → `state: "read"`, « Recherche effectuée,
+  2 sources lues », **« dermoplant.test (déduit de l'adresse email) »** ;
+- **adresse chez un fournisseur grand public** → `state: "none"`, **« Aucun site
+  exploitable »**, et non un échec : rien n'a été tenté, c'est la fiche qu'il
+  faut compléter ;
+- **site saisi sur la fiche** → « minimiil.test (**fiche**) », alors que la
+  société porte un autre domaine : le champ saisi l'emporte ;
+- **domaine de société saisi** → « linae.test (**société**) » ;
+- **le rattrapage** : simulation « 1 société, 1 sans déduction possible », la
+  raison citée ; `expected: 99` → refus chiffré ; application → 1 domaine écrit,
+  **miroir de recherche recalculé** (`dermoplant dermoplant.test`), les trois
+  autres sociétés **intactes**, sauvegarde rendue ; rejoué → 0 ;
+- **la boucle se ferme** : après le rattrapage, la même fiche rend
+  « dermoplant.test (**société**) » ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1286 tests**) verts.
+
+`tests/research-target-source.test.ts` ferme les trois rechutes : une seconde
+liste d'exclusion, une seconde résolution de cible dans le service, une seconde
+règle de déduction dans le rattrapage. `lib/domain/__tests__/research-target.ts`
+couvre l'ordre des sources, les quatorze familles de fournisseurs, le titre de
+page refusé et la provenance affichée.
+
+### Jalon 75 — ce qui n'est pas vérifié
+
+**Toujours aucun appel Anthropic réel, aucun site réel lu.** Les deux blocages
+des jalons 73 et 74 tiennent. Ce qui est établi : la résolution de la cible, son
+enregistrement, son affichage, l'exclusion, le rattrapage et la boucle complète.
+Ce qui ne l'est pas : qu'une cible **déduite** ramène effectivement le bon site.
+C'est le risque propre à ce jalon, et il se juge sur les premiers vrais
+brouillons — la mise en garde envoyée au modèle et la ligne de provenance sur la
+carte sont là précisément pour le rendre lisible.
+
+**La couverture de production n'est pas mesurée** — voir plus haut, et le
+panneau qui l'affiche.
+
+**Une adresse électronique est lue par société, pas par contact.** La cible est
+attachée à la maison (jalon 73) : si deux fiches d'une même société portent deux
+domaines professionnels différents, le premier rencontré gagne. `proposeDomain`
+sait compter et signaler l'ambiguïté ; la cible de recherche, elle, tranche en
+silence. Le cas ne s'est pas présenté sur la base de vérification.
+
+**Les recherches déjà en cache ne sont pas relancées.** Une société marquée
+« aucun site » avant ce jalon le reste jusqu'à ce que sa lecture ait plus de
+90 jours — ou jusqu'au rattrapage, qui écrit un domaine et rend la fiche
+composable à la prochaine recherche. Il n'y a toujours pas de bouton « relire
+maintenant » (dette du jalon 73).

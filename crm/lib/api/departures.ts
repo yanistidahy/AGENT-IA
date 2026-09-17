@@ -1,4 +1,5 @@
 import "server-only";
+import { storedTarget } from "../domain/research-target";
 import {
   describeUngrounded,
   isStaleAt,
@@ -502,6 +503,8 @@ function cardFor(
     readonly gap: string;
     readonly summary: string;
     readonly fetchedAt: Date;
+    readonly targetHost: string;
+    readonly targetSource: string;
     readonly facts: readonly { label: string; detail: string; sourceUrl: string }[];
     readonly sources: readonly { url: string; title: string }[];
   } | null,
@@ -512,6 +515,7 @@ function cardFor(
     summary: row.summary,
     facts: row.facts.map((fact) => ({ ...fact })),
     sources: row.sources.map((source) => ({ url: source.url, title: source.title })),
+    target: storedTarget(row.targetHost, row.targetSource),
     fetchedAt: row.fetchedAt,
   });
 }
@@ -557,6 +561,8 @@ export async function listDepartures(
                 summary: true,
                 corpus: true,
                 fetchedAt: true,
+                targetHost: true,
+                targetSource: true,
                 facts: true,
                 sources: true,
               },

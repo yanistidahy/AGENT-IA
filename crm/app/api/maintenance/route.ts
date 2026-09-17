@@ -20,6 +20,9 @@ import {
   terminalSnapshot,
   statusSnapshot,
   websiteSnapshot,
+  planCompanyDomainFix,
+  applyCompanyDomainFix,
+  companyDomainSnapshot,
 } from "@/lib/api/maintenance";
 import { readDomainReview } from "@/lib/api/domain-review";
 import {
@@ -57,6 +60,7 @@ const OPERATIONS = [
   "sites",
   "terminal",
   "deal-companies",
+  "company-domains",
 ] as const;
 
 const applySchema = z.object({
@@ -67,8 +71,18 @@ const applySchema = z.object({
 
 export async function GET() {
   try {
-    const [search, lifecycles, names, statuses, websites, sites, terminal, domains, dealCompanies] =
-      await Promise.all([
+    const [
+      search,
+      lifecycles,
+      names,
+      statuses,
+      websites,
+      sites,
+      terminal,
+      domains,
+      dealCompanies,
+      companyDomains,
+    ] = await Promise.all([
       planSearchBackfill(),
       planLifecycleFix(STATUS_CORRECTIONS),
       planNameFix(),
@@ -78,6 +92,7 @@ export async function GET() {
       planTerminalFix(),
       readDomainReview(),
       planDealCompanyBackfill(),
+      planCompanyDomainFix(),
     ]);
 
     return jsonOk({
@@ -192,6 +207,16 @@ export async function GET() {
           fillCompanyDomain: row.fillCompanyDomain,
         })),
       },
+      companyDomains: {
+        total: companyDomains.rows.length,
+        withoutClue: companyDomains.withoutClue,
+        rows: companyDomains.rows.map((row) => ({
+          name: row.name,
+          value: row.value,
+          because: row.because,
+          ambiguous: row.ambiguous,
+        })),
+      },
     });
   } catch (error) {
     return serverError("GET /api/maintenance", error);
@@ -273,6 +298,19 @@ export async function POST(request: Request) {
       return jsonOk({
         applied: await applyWebsiteFix(plan),
         snapshot: websiteSnapshot(plan),
+      });
+    }
+
+    if (parsed.data.operation === "company-domains") {
+      const plan = await planCompanyDomainFix();
+      if (plan.rows.length !== parsed.data.expected) {
+        return badRequest(
+          `La base a changé depuis la simulation (${plan.rows.length} sociétés au lieu de ${parsed.data.expected}). Relancez la simulation.`,
+        );
+      }
+      return jsonOk({
+        applied: await applyCompanyDomainFix(plan),
+        snapshot: companyDomainSnapshot(plan),
       });
     }
 

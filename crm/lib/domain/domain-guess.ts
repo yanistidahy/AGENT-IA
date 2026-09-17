@@ -27,7 +27,20 @@
  * feuille source. C'est pourquoi il n'y a pas d'application en masse.
  */
 
-/** Fournisseurs grand public : leur domaine n'est jamais celui d'une société. */
+/**
+ * Fournisseurs grand public : leur domaine n'est jamais celui d'une société.
+ *
+ * **Une seule liste pour tout le produit.** Elle sert la proposition de domaine
+ * (jalon 25), l'acceptation groupée (jalon 26) et, depuis le jalon 75, la cible
+ * de recherche d'Alex. Deux listes d'exclusion finiraient par diverger, et la
+ * seconde laisserait un jour partir une lecture de `gmail.com`.
+ *
+ * Elle couvre les fournisseurs grand public du marché français — les
+ * historiques des fournisseurs d'accès compris, qui survivent longtemps aux
+ * fournisseurs eux-mêmes — plus les messageries internationales courantes. Un
+ * domaine absent de la liste est traité comme professionnel : l'erreur se voit
+ * alors comme une recherche qui n'apprend rien, et non comme une invention.
+ */
 const FREE_PROVIDERS: ReadonlySet<string> = new Set([
   "gmail.com",
   "googlemail.com",
@@ -57,6 +70,48 @@ const FREE_PROVIDERS: ReadonlySet<string> = new Set([
   "protonmail.com",
   "proton.me",
   "yandex.com",
+  "yandex.ru",
+  // Historiques des fournisseurs d'accès français : ils survivent au
+  // fournisseur, et restent nombreux dans un vivier importé.
+  "neuf.fr",
+  "club-internet.fr",
+  "aliceadsl.fr",
+  "voila.fr",
+  "cegetel.net",
+  "9online.fr",
+  "dbmail.com",
+  // Variantes nationales des grandes messageries.
+  "hotmail.be",
+  "hotmail.es",
+  "hotmail.it",
+  "hotmail.co.uk",
+  "outlook.be",
+  "outlook.es",
+  "outlook.it",
+  "live.be",
+  "yahoo.co.uk",
+  "yahoo.es",
+  "yahoo.it",
+  "yahoo.de",
+  "yahoo.ca",
+  "yahoo.com.br",
+  "gmx.de",
+  "gmx.net",
+  "web.de",
+  // Messageries gratuites sans attache nationale.
+  "mail.com",
+  "email.com",
+  "zoho.com",
+  "tutanota.com",
+  "tuta.com",
+  "fastmail.com",
+  "hushmail.com",
+  "pm.me",
+  "protonmail.ch",
+  "qq.com",
+  "163.com",
+  "126.com",
+  "naver.com",
 ]);
 
 export type DomainRule = "email" | "name";
