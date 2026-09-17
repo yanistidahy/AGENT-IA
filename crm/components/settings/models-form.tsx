@@ -6,6 +6,9 @@ import {
   MODELS,
   PURPOSE_LABELS,
   TUNABLE_PURPOSES,
+  findModel,
+  researchModelFor,
+  supportsResearchTools,
   type TunablePurpose,
 } from "@/lib/domain/model-pricing";
 
@@ -117,6 +120,26 @@ export function ModelsForm({
           </label>
         ))}
       </div>
+
+      {/*
+        **La recherche suit la rédaction, sauf quand elle ne le peut pas.**
+        Avant le jalon 76, choisir Haiku 4.5 pour écrire faisait échouer la
+        recherche sur chaque société, sans que rien ici ne le dise : on
+        découvrait le défaut sur un mur de cartes rouges. L'avertissement décrit
+        ce que le service fera réellement, puisqu'il appelle la même fonction.
+      */}
+      {!supportsResearchTools(models.draft) && (
+        <p className="rounded-control border border-[#EAD9AE] bg-[#FCF6E7] px-3 py-2 text-[12.5px] text-[#7A5A12]">
+          <strong>
+            {findModel(models.draft)?.label ?? models.draft} ne sait pas lire le site d&apos;un
+            prospect.
+          </strong>{" "}
+          Les outils de recherche web ne sont pas disponibles sur ce modèle. La recherche
+          continuera donc de tourner sur{" "}
+          {findModel(researchModelFor(models.draft))?.label ?? researchModelFor(models.draft)},
+          facturée à son tarif — les brouillons, eux, seront bien écrits par le modèle choisi.
+        </p>
+      )}
 
       <label className="block max-w-xs">
         <span className="mb-1 block text-[12.5px] font-medium">

@@ -1,7 +1,12 @@
 import { prisma } from "../db";
 import { DEFAULT_REMINDER_DELAYS, type ReminderDelays } from "../domain/automation";
 import { DEFAULT_PILOTAGE, type PilotageSettings, type StageLike } from "../domain/types";
-import { DEFAULT_MODELS, isKnownModel, type Purpose } from "../domain/model-pricing";
+import {
+  DEFAULT_MODELS,
+  isKnownModel,
+  researchModelFor,
+  type Purpose,
+} from "../domain/model-pricing";
 
 /** Données de référence : étapes, réglages, listes éditables. */
 
@@ -84,11 +89,16 @@ export async function modelFor(purpose: Purpose): Promise<string> {
       ? null
       : {
           draft: row.modelDraft,
-          // **La recherche suit le modèle de la rédaction**, sans réglage
-          // propre : c'est un usage distinct pour la *mesure* (son entrée pèse
-          // dix fois celle d'un brouillon, les mêler fausserait la moyenne),
-          // pas une seconde décision à prendre dans un écran.
-          research: row.modelDraft,
+          /*
+            **La recherche suit le modèle de la rédaction — tant qu'il sait
+            chercher.** C'est un usage distinct pour la *mesure* (son entrée
+            pèse dix fois celle d'un brouillon), pas une seconde décision à
+            prendre dans un écran ; mais un modèle qui ne connaît pas les outils
+            serveur — Haiku 4.5 — fait échouer la recherche sur chaque société,
+            avec un 400 nommant l'appel d'outil programmatique (jalon 76). Le
+            réglage de prose ne décide donc pas de ce que la lecture peut faire.
+          */
+          research: researchModelFor(row.modelDraft),
           revision: row.modelRevision,
           chat: row.modelChat,
           shift: row.modelShift,

@@ -61,6 +61,24 @@ export interface ModelSpec {
   readonly adaptiveThinking: boolean;
   /** Le modèle accepte-t-il `output_config.effort` ? */
   readonly effort: boolean;
+  /**
+   * Le modèle accepte-t-il les outils serveur de la recherche ?
+   *
+   * `web_fetch_20260209` et `web_search_20260209` portent un filtrage
+   * dynamique qui exécute du code sous le capot : leur jeu d'appelants par
+   * défaut exige donc l'appel d'outil programmatique, que Haiku 4.5 ne sait pas
+   * faire. La réponse de l'API est sans ambiguïté :
+   *
+   * > 'claude-haiku-4-5-20251001' does not support programmatic tool calling.
+   *
+   * Poser `allowed_callers: ["direct"]` retire cette exigence, mais ne suffit
+   * pas : la référence de l'API ne liste ces variantes que sur Opus 5 / 4.8 /
+   * 4.7 / 4.6, Sonnet 5 et Sonnet 4.6. Un modèle absent de cette liste est donc
+   * marqué `false` — y compris Fable 5, qui n'y figure pas. Marquer « non »
+   * coûte un repli vers un modèle capable ; marquer « oui » à tort coûte une
+   * recherche en panne sur chaque société.
+   */
+  readonly researchTools: boolean;
   /** Une phrase pour le sélecteur — pourquoi on le choisirait. */
   readonly note: string;
 }
@@ -80,7 +98,8 @@ export const MODELS: readonly ModelSpec[] = [
     output: 5,
     adaptiveThinking: false,
     effort: false,
-    note: "Le moins cher. Prose plus plate, pas de réflexion adaptative.",
+    researchTools: false,
+    note: "Le moins cher. Prose plus plate, pas de réflexion adaptative, pas de recherche web.",
   },
   {
     id: "claude-sonnet-5",
@@ -89,6 +108,7 @@ export const MODELS: readonly ModelSpec[] = [
     output: 10,
     adaptiveThinking: true,
     effort: true,
+    researchTools: true,
     note: "Qualité proche d'Opus à la moitié du prix. Le bon défaut pour écrire.",
   },
   {
@@ -98,6 +118,7 @@ export const MODELS: readonly ModelSpec[] = [
     output: 25,
     adaptiveThinking: true,
     effort: true,
+    researchTools: true,
     note: "Le plus fort sur le raisonnement. À garder là où l'on juge.",
   },
   {
@@ -107,6 +128,7 @@ export const MODELS: readonly ModelSpec[] = [
     output: 50,
     adaptiveThinking: true,
     effort: true,
+    researchTools: false,
     note: "Capacité maximale, deux fois le prix d'Opus. Rarement justifié ici.",
   },
 ];
@@ -117,6 +139,40 @@ export function findModel(id: string): ModelSpec | null {
 
 export function isKnownModel(id: string): boolean {
   return findModel(id) !== null;
+}
+
+/**
+ * Ce modèle sait-il faire une recherche web ?
+ *
+ * Un modèle inconnu rend `false` : la recherche retombera alors sur un modèle
+ * capable plutôt que de partir à l'API pour se faire refuser. C'est la même
+ * posture que `modelFor`, qui retombe sur le défaut sur un identifiant
+ * inconnu — une faute de frappe dans un réglage ne doit pas devenir une panne.
+ */
+export function supportsResearchTools(id: string): boolean {
+  return findModel(id)?.researchTools === true;
+}
+
+/**
+ * Le modèle retenu quand celui de la rédaction ne sait pas chercher.
+ *
+ * **La recherche ne partage pas le modèle de la rédaction quand celui-ci ne
+ * peut pas faire le travail.** Écrire et lire des pages sont deux tâches
+ * distinctes, et rien n'oblige à les payer au même tarif — mais rien n'oblige
+ * non plus à ce qu'un choix fait pour la prose casse la lecture. Le repli est
+ * le moins cher des modèles capables.
+ */
+export const RESEARCH_FALLBACK_MODEL = "claude-sonnet-5";
+
+/**
+ * Le modèle qui fera réellement la recherche, pour un modèle de rédaction donné.
+ *
+ * Une seule fonction, appelée par le service **et** par l'écran des réglages :
+ * l'avertissement de `/reglages` décrit alors exactement ce que le service
+ * fera, au lieu de décrire ce qu'on croit qu'il fait.
+ */
+export function researchModelFor(draftModel: string): string {
+  return supportsResearchTools(draftModel) ? draftModel : RESEARCH_FALLBACK_MODEL;
 }
 
 /**

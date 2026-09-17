@@ -187,10 +187,28 @@ export async function researchCompany(
         déclare surtout pas `code_execution` à côté : ces variantes l'exécutent
         déjà sous le capot pour leur filtrage, et un second environnement
         embrouille le modèle.
+
+        **`allowed_callers: ["direct"]` est posé explicitement**, et ce n'est
+        pas une précaution de style : omis, ces variantes prennent un jeu
+        d'appelants qui comprend l'exécution de code, donc exigent l'appel
+        d'outil programmatique — et l'API refuse la requête entière (400) sur
+        tout modèle qui ne le sait pas faire. Nous ne déclarons aucun
+        environnement d'exécution : « direct » est littéralement la seule façon
+        dont ces outils sont appelés ici.
       */
       tools: [
-        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 4 },
-        { type: "web_search_20260209", name: "web_search", max_uses: 3 },
+        {
+          type: "web_fetch_20260209",
+          name: "web_fetch",
+          max_uses: 4,
+          allowed_callers: ["direct"],
+        },
+        {
+          type: "web_search_20260209",
+          name: "web_search",
+          max_uses: 3,
+          allowed_callers: ["direct"],
+        },
       ],
       messages: [{ role: "user", content: askFor(company.name, target) }],
     });
