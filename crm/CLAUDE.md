@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 76 | **La recherche ne partage plus le modèle de la prose** : `allowed_callers` explicites, plancher de capacité, et un avertissement dans /reglages avant le mur de cartes rouges | **livré, à valider** |
 | 75 | **Le domaine se lit dans l'adresse email** : troisième source de recherche, provenance affichée sur la carte, et un rattrapage qui rend la déduction permanente | **livré, à valider** |
 | 74 | **La recherche dit ce qu'elle a fait** : une carte sur les deux surfaces, l'échec nommé avec sa raison exacte, et un appel raté qui se retente au lieu de geler la société trois mois | **livré, à valider** |
 | 73 | **Alex lit le prospect avant d'écrire** — recherche web outillée, mise en cache par société, et la règle qui décide de tout : un fait vient d'une page lue, ou il ne s'écrit pas | **livré, à valider** |
@@ -10386,6 +10387,141 @@ et ne le recalcule pas si l'on modifie le texte à la main avant d'envoyer.
 automatique après échec supprime le cas le plus grave ; rafraîchir une lecture
 réussie mais périmée reste l'affaire des 90 jours.
 
+
+---
+
+## Jalon 76 — la recherche ne partage plus le modèle de la prose
+
+### La cause, nommée par l'API elle-même
+
+```
+400 : 'claude-haiku-4-5-20251001' does not support programmatic tool calling.
+The following tools have `allowed_callers` that require it: web_fetch, web_search.
+```
+
+Deux défauts se cumulaient, et il fallait corriger les deux — c'est la réponse à
+la question posée, « laquelle des deux corrections ».
+
+**1 · Les outils étaient déclarés sans `allowed_callers`.** `web_fetch_20260209`
+et `web_search_20260209` portent un filtrage dynamique qui exécute du code sous
+le capot : omis, leur jeu d'appelants par défaut comprend l'exécution de code,
+donc exige l'appel d'outil programmatique. Nous ne déclarons aucun environnement
+d'exécution (c'était déjà écrit au jalon 73, et c'est toujours vrai) : `direct`
+est littéralement la seule façon dont ces outils sont appelés ici. Le poser
+explicitement retire l'exigence.
+
+**2 · La recherche héritait du modèle de rédaction.** `modelFor("research")`
+rendait `row.modelDraft` — décision du jalon 73, et elle n'était pas absurde :
+un usage distinct pour la *mesure*, pas une seconde décision à prendre dans un
+écran. Mais le réglage de prose décidait ainsi de ce que la lecture peut faire,
+et Haiku 4.5 **n'a pas ces outils du tout** : la référence de l'API ne les liste
+que sur Opus 5 / 4.8 / 4.7 / 4.6, Sonnet 5 et Sonnet 4.6. La correction n° 1
+seule aurait donc échoué autrement, sur le même écran.
+
+### Quel modèle ce compte utilisait, et depuis quand
+
+Le réglage `modelDraft` valait `claude-haiku-4-5` — un choix légitime pour la
+prose, que le jalon 36 a explicitement mis dans le sélecteur pour être essayé.
+Rien n'avertissait qu'il emportait la recherche avec lui.
+
+**La recherche n'a jamais été exercée contre un modèle qui porte ces outils.**
+Les jalons 73, 74 et 75 le disent tous les trois dans leur section « ce qui n'est
+pas vérifié » : aucun appel Anthropic réel, aucun site réel lu, environnement
+sans clé et sortie réseau sur liste blanche. Le jalon 74 a ajouté une garde qui
+compare les deux identifiants à l'union de types du SDK installé — elle ne peut
+pas, par construction, savoir sur quels modèles ils sont disponibles. C'est la
+limite exacte qui a coûté ce jalon.
+
+### Ce qui change
+
+| | Avant | Après |
+|---|---|---|
+| déclaration des outils | sans `allowed_callers` | `allowed_callers: ["direct"]` sur les deux |
+| modèle de la recherche | `modelDraft`, quel qu'il soit | `researchModelFor(modelDraft)` — conservé s'il sait chercher, sinon **Sonnet 5** |
+| capacité d'un modèle | deux drapeaux (réflexion, effort) | un troisième : `researchTools` |
+| `/reglages` | muet | avertit **avant d'enregistrer** un modèle incompatible |
+
+`researchModelFor()` vit dans `lib/domain/model-pricing.ts`, à côté des deux
+autres capacités — le module pur que le runtime **et** l'écran des réglages
+importent déjà. L'avertissement de `/reglages` appelle donc exactement la
+fonction que le service appellera : il décrit ce qui va se passer, pas ce qu'on
+croit qui se passe. C'est ce qui rend la régression silencieuse impossible —
+changer le modèle en Haiku affiche « Haiku 4.5 ne sait pas lire le site d'un
+prospect […] la recherche continuera de tourner sur Sonnet 5 », et la recherche
+continue de fonctionner plutôt que de produire un mur de cartes rouges.
+
+**Un modèle inconnu rend `false`**, donc retombe sur un modèle capable : même
+posture que `modelFor`, où une faute de frappe dans un réglage ne doit pas
+devenir une panne. Fable 5 est marqué `false` faute de figurer sur la liste
+publiée : marquer « non » coûte un repli, marquer « oui » à tort coûte une
+recherche en panne sur chaque société.
+
+### La garde
+
+`tests/research-model-source.test.ts` ferme les trois façons de refaire le
+défaut : outils redéclarés sans `allowed_callers`, recherche recollée sans garde
+au modèle de rédaction, écran muet. **Éprouvée en réintroduisant les deux
+régressions exactes** — `allowed_callers` retiré des deux outils, et
+`research: row.modelDraft` remis dans `reference.ts` : deux tests tombent, chacun
+nommant le défaut. Un quatrième cas vérifie qu'un modèle capable est **conservé**
+tel quel, sans quoi « retomber toujours » passerait la garde tout en ignorant le
+réglage de l'utilisateur.
+
+### Jalon 76 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide** — aucune migration, la
+capacité étant du code pur) et un serveur de capture substitué à l'API, qui écrit
+sur disque le corps exact de la requête émise par `researchCompany` :
+
+| `modelDraft` réglé | modèle réellement envoyé | outils sur le fil |
+|---|---|---|
+| `claude-haiku-4-5` | **`claude-sonnet-5`** | les deux, `allowed_callers: ["direct"]` |
+| `claude-sonnet-5` | `claude-sonnet-5` | idem |
+| `claude-opus-5` | **`claude-opus-5`** | idem |
+
+- **aucun `code_execution`** déclaré, sur aucune des trois requêtes ;
+- la cible de recherche est bien résolue pour les trois sociétés
+  (`anatae.fr`, `typology.com`, `nubiance.fr`, source `company-domain`) ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1295 tests**) verts.
+
+### Jalon 76 — ce qui n'est PAS vérifié, et il faut le lire
+
+**Je n'ai pas pu lancer la recherche contre les vrais sites, et la demande
+supposait le contraire.** Deux blocages mesurés dans cet environnement, pas
+supposés :
+
+1. **aucune clé d'API.** `ANTHROPIC_API_KEY` est vide, le binaire `ant` n'existe
+   pas, aucun fichier de justificatifs n'est présent. Un appel nu à
+   `api.anthropic.com` rend `401 — x-api-key header is required`
+   (`req_011Cf9bV12P8G3Vm973rMsfN`) ;
+2. **la sortie réseau est sur liste blanche.** `https://anatae.fr/` et
+   `https://www.typology.com/` rendent tous deux `CONNECT tunnel failed,
+   response 403` — refus de la politique d'egress, pas une panne de site.
+
+Le compte et l'accès API dont dispose le produit sont ceux **du service
+Railway**, pas ceux de cet environnement de développement : c'est bien depuis la
+production que le 400 a été obtenu, et c'est depuis elle que la vérification
+réelle se fera. Ce qui reste donc à établir au premier vrai brouillon, et que
+personne ne peut établir d'ici :
+
+- que les outils serveur soient **activés sur ce compte** ;
+- que `web_search` trouve le bon site et que `web_fetch` en tire ce qui compte ;
+- le **coût et la durée réels** d'une recherche — le compteur de `/reglages`,
+  usage `research`, les remplacera par la moyenne facturée dès les trois
+  premières.
+
+Ce que la vérification ci-dessus établit, en revanche, est exactement ce que le
+400 mettait en cause : le corps de la requête. Le modèle envoyé et les appelants
+déclarés sont lus **sur le fil**, pas dans le code.
+
+**Le repli est silencieux pour la mesure.** Une recherche faite sur Sonnet 5
+alors que la rédaction tourne sur Haiku est facturée au tarif de Sonnet, et la
+ligne `research` du compteur le reflète — mais aucune carte ne dit « cette
+recherche n'a pas tourné sur votre modèle ». L'avertissement vit dans
+`/reglages`, là où la décision se prend.
+
+**La recherche n'a toujours pas de réglage de modèle propre**, et c'est
+délibéré : ce jalon ajoute un plancher de capacité, pas un second menu.
 
 ---
 
