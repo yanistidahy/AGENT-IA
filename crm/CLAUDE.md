@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 80 | **Les étapes se lisent comme une suite** : un bloc numéroté par étape, une frise verticale qui porte les délais, un aperçu sans ouvrir, et des flèches pour réordonner | **livré, à valider** |
 | 79 | **Les listes rentrent dans /contacts** : la section « Listes » retirée, les tables supprimées, et des « filtres personnalisés » qui se posent comme une puce à côté des autres et se croisent avec elles | **livré, à valider** |
 | 78 | **Le tableau des inscrits répond aux questions qu'on lui pose** : une puce « a reçu un premier message », des en-têtes qui trient, les ouvertures vérifiables ligne à ligne, et l'écart entre la carte et le tableau nommé plutôt que laissé à deviner | **livré, à valider** |
 | 77 | **Des listes nommées, constituées à la main** : une entrée « Listes » dans le rail, la sélection à la case ouverte à tous les écrans, et un filtre « dans cette liste » qui se croise avec les autres | **livré, à valider** |
@@ -11128,3 +11129,121 @@ demande : la migration supprime les deux tables. Aucune reprise n'est possible
 après coup.
 
 **Les chiffres ci-dessus viennent d'un jeu de vérification**, pas de votre base.
+
+---
+
+## Jalon 80 — une séquence est une suite, et l'écran le montre enfin
+
+### Ce qui n'allait pas
+
+Trois rangées de champs alignées — un délai, une consigne, un « Retirer » — se
+lisent comme un tableau de réglages, pas comme « ce message part, puis quatre
+jours plus tard celui-ci ». Deux informations manquaient à l'œil : **où
+commence et où finit une étape**, et **le rythme**, qui n'apparaissait nulle
+part sans lire chaque champ de délai et les additionner soi-même.
+
+### La frise, et où vit le délai
+
+Chaque étape a son bloc — un vrai conteneur, pastille numérotée et titre
+« Étape N » — et les blocs sont reliés par un trait vertical qui **porte le
+délai** : « J+4 » entre la première et la deuxième. Le délai décrit le passage
+de l'une à l'autre, pas un réglage de l'une des deux : il appartient au
+connecteur, et c'est ce qui rend la cadence lisible d'un coup d'œil.
+
+Le trait est calé sur le centre des pastilles, pour que la frise passe *par* les
+numéros plutôt que de longer le bord. Verticale seule, donc **identique à
+390 px** : pas de variante mobile à maintenir, ce qui est aussi la seule façon
+qu'elle ne diverge pas.
+
+**Le jour cumulé est calculé, jamais stocké** (`stepDays`) : le stocker le ferait
+mentir à la première modification d'un délai. Et la première étape part le jour
+de l'inscription **quoi que porte son champ** — c'est la règle du moteur depuis
+le jalon 38, et un écran qui promettrait J+9 mentirait.
+
+### Repliées par défaut
+
+On vient d'abord voir la structure, on ouvre celle qu'on veut écrire. Ce n'est
+pas un gain de place, c'est l'ordre des deux questions.
+
+Ce que chaque bloc dit sans être ouvert : **quand il part** (« Part 4 jours après
+l'étape 1 · jour 4 de la séquence »), **qui l'écrit**, et **un aperçu** — la
+première ligne de la consigne, tronquée à quatre-vingt-dix caractères. Un aperçu,
+pas le texte : rendre quatre cents caractères remettrait le contenu par-dessus la
+structure, exactement ce qu'on vient de défaire.
+
+Quand des départs ont déjà été composés, le bloc porte en plus **le dernier objet
+réellement sorti** pour cette étape. C'est le seul aperçu honnête de ce qu'elle
+produit : une étape ne porte pas de texte, elle porte une consigne, et le message
+est écrit par contact au moment de composer. Vide tant que rien n'est parti,
+jamais un exemple inventé.
+
+**Une consigne vide se voit en rouge** — « cette étape n'écrira rien tant qu'elle
+reste vide ». C'est la première cause de silence d'une campagne neuve (jalon 56),
+et elle méritait d'être lisible sans ouvrir trois blocs.
+
+### La numérotation ne peut pas trouer
+
+Elle **est l'indice**, jamais une valeur stockée : retirer la deuxième étape
+renumérote la troisième par construction, il n'existe aucun état à recalculer.
+« Étape 1, Étape 3 » n'est donc pas un cas à traiter, c'est un cas impossible.
+(`EmailSequenceStep.position` est réécrit à l'enregistrement, déjà depuis le
+jalon 38 : les étapes sont remplacées d'un bloc.)
+
+### Réordonner déplace le message, pas le rythme
+
+Flèches ↑↓ plutôt qu'un glisser-déposer : le glisser tactile fiable est un
+chantier à part (la même décision qu'au jalon 47 pour le pipeline), et deux
+boutons de 44 px fonctionnent au doigt comme à la souris.
+
+**Le délai reste attaché au rang.** Monter la troisième étape veut dire « ce
+message part plus tôt », pas « toute la cadence change » — et faire voyager le
+délai avec le message donnerait en prime une première étape à J+4 que le moteur
+ramènerait à zéro en silence. Vérifié en base : après un déplacement et un
+enregistrement, les briefs ont changé de rang et les délais sont restés
+0 / 4 / 7.
+
+### Jalon 80 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide** — aucune migration, tout
+se dérive des colonnes existantes), le serveur standalone de production et un
+navigateur piloté, sur une séquence de trois étapes 0 / 4 / 7 :
+
+- **trois blocs numérotés et séparés** : trois `<section>` distinctes, empilées
+  (le second commence après la fin du premier, mesuré), reliées par des
+  connecteurs portant **« J+4 »** et **« J+7 »**, tous deux **atteignables**
+  (`reachable()`, jamais `isVisible()`) ;
+- **l'aperçu se lit sans ouvrir** : les trois consignes sont à l'écran, et
+  **aucun champ d'édition n'est monté** (`input[type=number]` compté à 0) ;
+  ouvrir l'étape 2 fait apparaître son délai à « 4 » ;
+- **retirer celle du milieu renumérote** : « Étape 3 » disparaît, « Étape 2 »
+  porte désormais « clore poliment », et l'ancienne deuxième consigne n'est plus
+  nulle part ;
+- **réordonner survit à l'enregistrement** : après « Descendre l'étape 1 » puis
+  « Enregistrer », la page rechargée rend « Étape 1 · relancer… » et « Étape 2 ·
+  présenter… », **avec les délais restés à leur rang** ;
+- **à 390×844** : blocs empilés, connecteurs et délais lisibles, commandes sur
+  leur propre rangée à 44 px, **0 débordement horizontal**, **0 erreur
+  console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1350 tests**) et
+  `npm run e2e` (**54 tests**, dix fichiers) verts.
+
+### Jalon 80 — ce qui n'est pas fait
+
+**Une étape ne peut pas être écrite à la main.** La demande parlait d'un bloc
+disant « rédigée par Alex ou écrite à la main » ; le modèle ne connaît pas la
+seconde possibilité — une étape porte une consigne, et le message est composé
+par contact. La pastille dit donc ce qui est vrai : « Rédigée par Alex », ou
+« Sans consigne » quand l'étape n'écrira rien. Un vrai texte figé par étape est
+un changement de modèle (colonne, chemin de composition, garde-fous d'envoi),
+pas un effet de bord d'une refonte d'affichage — à demander si c'est voulu.
+
+**Pas de glisser-déposer**, seulement les flèches — voir plus haut.
+
+**L'aperçu du dernier objet composé est une lecture bornée** aux soixante
+derniers départs de la séquence : au-delà, une étape qui n'aurait plus rien
+composé depuis longtemps n'affiche pas d'objet. Elle affiche alors sa consigne,
+ce qui reste le bon repère.
+
+**Le repli n'est pas mémorisé.** Recharger la page referme tout : c'est l'état
+qu'on veut au premier coup d'œil, et le conserver demanderait un stockage local
+pour une préférence qui dure une minute.

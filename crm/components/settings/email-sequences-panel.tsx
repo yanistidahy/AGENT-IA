@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
-import { AUTO_MIN_VALIDATED, MAX_STEPS } from "@/lib/domain/sequence-rules";
+import { AUTO_MIN_VALIDATED } from "@/lib/domain/sequence-rules";
+import { SequenceSteps } from "./sequence-steps";
 
 /**
  * Les séquences d'emails, et l'interrupteur qui ne s'active pas tout seul.
@@ -22,6 +23,8 @@ export interface SequenceStepView {
   position: number;
   delayDays: number;
   brief: string;
+  /** Le dernier objet réellement composé pour cette étape, s'il y en a un. */
+  lastSubject?: string;
 }
 
 export interface SequenceView {
@@ -186,78 +189,16 @@ export function EmailSequencesPanel({
             </div>
           )}
 
-          <ol className="mt-3 space-y-2">
-            {sequence.steps.map((step, index) => (
-              <li key={index} className="grid gap-2 sm:grid-cols-[7rem_1fr_auto]">
-                <label>
-                  <span className="block text-[11.5px] font-semibold text-muted">
-                    {index === 0 ? "Jour 0" : "Jours après"}
-                  </span>
-                  <input
-                    className={FIELD}
-                    type="number"
-                    value={step.delayDays}
-                    disabled={index === 0}
-                    onChange={(event) =>
-                      patch(sequence.id, {
-                        steps: sequence.steps.map((entry, position) =>
-                          position === index
-                            ? { ...entry, delayDays: Number(event.target.value) }
-                            : entry,
-                        ),
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  <span className="block text-[11.5px] font-semibold text-muted">
-                    Consigne donnée à Alex pour l'étape {index + 1}
-                  </span>
-                  <input
-                    className={FIELD}
-                    value={step.brief}
-                    placeholder="ex. rappeler la démonstration sans répéter le premier message"
-                    onChange={(event) =>
-                      patch(sequence.id, {
-                        steps: sequence.steps.map((entry, position) =>
-                          position === index ? { ...entry, brief: event.target.value } : entry,
-                        ),
-                      })
-                    }
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="self-end text-[11.5px] font-semibold text-[#B2311F] underline disabled:opacity-40"
-                  disabled={sequence.steps.length === 1}
-                  onClick={() =>
-                    patch(sequence.id, {
-                      steps: sequence.steps.filter((_, position) => position !== index),
-                    })
-                  }
-                >
-                  Retirer
-                </button>
-              </li>
-            ))}
-          </ol>
-
-          {sequence.steps.length < MAX_STEPS && (
-            <button
-              type="button"
-              className="mt-2 text-[12px] font-semibold text-brand underline"
-              onClick={() =>
-                patch(sequence.id, {
-                  steps: [
-                    ...sequence.steps,
-                    { position: sequence.steps.length + 1, delayDays: 4, brief: "" },
-                  ],
-                })
-              }
-            >
-              Ajouter une étape ({sequence.steps.length} sur {MAX_STEPS})
-            </button>
-          )}
+          {/*
+            La frise vit dans son propre composant : les deux écrans qui
+            montrent des étapes — la campagne et /reglages — passent par lui,
+            et une seconde mise en forme finirait par ne plus dire le même
+            rythme que la première.
+          */}
+          <SequenceSteps
+            steps={sequence.steps}
+            onChange={(steps) => patch(sequence.id, { steps })}
+          />
 
           <div className="mt-3 rounded-control border border-line bg-surface px-3 py-2">
             <label className="flex items-start gap-2">
