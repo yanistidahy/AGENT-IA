@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 78 | **Le tableau des inscrits répond aux questions qu'on lui pose** : une puce « a reçu un premier message », des en-têtes qui trient, les ouvertures vérifiables ligne à ligne, et l'écart entre la carte et le tableau nommé plutôt que laissé à deviner | **livré, à valider** |
 | 77 | **Des listes nommées, constituées à la main** : une entrée « Listes » dans le rail, la sélection à la case ouverte à tous les écrans, et un filtre « dans cette liste » qui se croise avec les autres | **livré, à valider** |
 | 76 | **La recherche ne partage plus le modèle de la prose** : `allowed_callers` explicites, plancher de capacité, et un avertissement dans /reglages avant le mur de cartes rouges | **livré, à valider** |
 | 75 | **Le domaine se lit dans l'adresse email** : troisième source de recherche, provenance affichée sur la carte, et un rattrapage qui rend la déduction permanente | **livré, à valider** |
@@ -10857,3 +10858,135 @@ silence. Le cas ne s'est pas présenté sur la base de vérification.
 90 jours — ou jusqu'au rattrapage, qui écrit un domaine et rend la fiche
 composable à la prochaine recherche. Il n'y a toujours pas de bouton « relire
 maintenant » (dette du jalon 73).
+
+---
+
+## Jalon 78 — l'audit du tableau des inscrits
+
+### 1 · L'écart de « Personnes écrites », nommé
+
+La question posée — *52 contre 55, est-ce 55 − 3 ?* — a une réponse, et elle est
+oui **sur cette campagne**, pour une raison qui n'est pas celle qu'on croit.
+
+**Deux chemins retirent quelqu'un d'une campagne et n'écrivent pas le même
+statut :**
+
+| Geste | Statut écrit | Dans le tableau |
+|---|---|---|
+| « Retirer » sur la carte de campagne (`removeMember`) | `removed` | **la ligne disparaît** |
+| « Retirer » depuis la file des départs (`removeFromSequence`) | `stopped`, raison « Retiré de la séquence à la main » | **la ligne reste**, avec un tiret |
+
+Les trois lignes signalées viennent du second chemin. Elles sont donc bien
+listées, et n'ont jamais rien reçu — d'où 52 personnes écrites pour 55 lignes.
+
+**« Personnes écrites » n'était pas faux, il était seul.** Deux nombres justes
+affichés l'un au-dessus de l'autre, sans phrase entre eux, se lisent comme une
+erreur — et l'on cesse alors de croire les deux. La première carte porte donc
+son rapprochement : « sur 55 inscrits · 3 jamais écrits · 52 messages partis ».
+
+**Ce n'est pas un second calcul**, et c'est ce qui compte : `listed` est compté
+avec **exactement le filtre de `listCampaignMembers`** (`status != removed`), et
+`neverWritten` se lit dans `facts.firstSend` — la source du sommet de
+l'entonnoir. `written + neverWritten = listed` ne peut donc pas cesser d'être
+vrai. Le libellé de la carte, lui, ne bouge pas : « Écrites (hors retraits
+manuels) » serait faux le jour où quelqu'un est inscrit sans avoir encore été
+servi, ce qui arrive tous les matins.
+
+### 2 · « A reçu un premier message »
+
+Septième puce, **juste après « Tous »** comme demandé. Les quatre puces d'état
+découpent les écrits en trois — silencieux, a répondu, arrêtés — et n'en rendent
+jamais la somme : la question la plus simple qu'on se pose sur une campagne
+n'avait aucun contrôle.
+
+Elle se lit **dans les envois**, jamais dans `lastStep` ni dans `lastSentAt` de
+l'inscription : c'est la même source que « Personnes écrites », donc les deux
+nombres ne peuvent pas se contredire. Les compteurs portent sur **tous** les
+inscrits, jamais sur la liste filtrée (règle du jalon 6).
+
+### 3 · Le tableau se trie par ses en-têtes
+
+Contact, société, rôle, étape, dernier message, ouvert, réponse, état — le motif
+de `/contacts`. L'ordre d'insertion ne répond à aucune question : il dit dans
+quel ordre on a coché des cases il y a trois semaines.
+
+Trois décisions, toutes reprises de règles déjà payées :
+
+- **les valeurs absentes sortent en fin dans les deux sens** — inverser un tri
+  ne doit pas ramener les lignes vides en tête (jalon 30) ;
+- **l'ordre des états suit la progression**, pas l'alphabet : jamais écrit,
+  silencieux, a répondu, arrêté ;
+- **aucun `localeCompare`** : il suit la locale du conteneur, donc l'ordre
+  changerait d'un environnement à l'autre (jalon 72).
+
+Le premier clic sur une colonne de date donne le plus récent d'abord, sur une
+colonne de texte l'ordre alphabétique : l'inverse obligerait à cliquer deux fois
+pour obtenir ce qu'on attendait.
+
+### 4 · Les ouvertures se comptent ligne à ligne
+
+Colonne « Ouvert », portant la **date** de la première ouverture — celle que
+compte l'entonnoir — et non une pastille. « 13 sur 52 » ne se vérifie que si
+chaque ligne dit *quand*. Une colonne « Réponse » l'accompagne, pour la même
+raison et parce que le tri par réponse était demandé. Estimation, toujours :
+l'image se charge sans qu'on ait lu (jalon 37).
+
+### 5 · Les retraits à la main ne se mêlent plus au reste
+
+Fond gris, **rangés en fin de tableau quel que soit le tri** (la partition du
+tri des fiches closes, jalon 30), et une phrase au-dessus qui les compte et dit
+d'où ils viennent. Le tiret de « dernier message » devient « jamais » : un tiret
+se lit comme une donnée manquante, alors que c'est un fait.
+
+### Jalon 78 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (`migrate diff` **vide** — aucune migration,
+tout se dérive de colonnes existantes), le serveur standalone de production et
+un navigateur piloté, sur une campagne semée à la forme signalée — **55
+inscrits, 3 retirés depuis la file, 52 écrits, 13 ouverts** :
+
+- **l'audit recolle** : `enrolled` 55, tableau 55 lignes, `contacted` 52,
+  `neverWritten` 3, et `52 + 3 = 55` ; la carte rend « sur 55 inscrits · 3
+  jamais écrits · 52 messages partis » ;
+- **la puce rend exactement le compte de la carte** : `written` = 52 = ce que
+  compte « Personnes écrites » ;
+- **les ouvertures se recomptent** : 13 lignes portant une date d'ouverture,
+  égal au 13 de l'entonnoir ;
+- **les 3 retirés** sont marqués, sans envoi, et **en fin de tableau dans les
+  deux sens de tri** ;
+- **au navigateur** : la phrase de rapprochement **atteignable**
+  (`reachable()`, jamais `isVisible()`), la puce atteignable et le tableau
+  réduit à ses écrits au clic, les en-têtes « Dernier message » et « Contact »
+  qui **changent réellement l'ordre** dans les deux sens, les lignes grises
+  exactement en fin, la colonne « Ouvert » comptée — **0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1338 tests**) et
+  `npm run e2e` (**48 tests**, neuf fichiers) verts.
+
+`tests/campaign-roster-source.test.ts` ferme les trois rechutes : « a reçu un
+message » déduit de l'étape plutôt que lu dans les envois, l'écart laissé sans
+phrase, un tri ou un filtre réimplémenté dans l'écran. **Éprouvée en
+réintroduisant le défaut exact** (`written: enrollment.lastSentAt !== null`) :
+deux tests tombent en le nommant.
+
+### Jalon 78 — ce qui n'est pas fait
+
+**Les chiffres ci-dessus viennent d'une campagne semée à l'image de la vôtre**,
+pas de votre base. Le mécanisme est celui-ci ; si vos 52 et 55 ne recollent pas
+en production, la phrase sous la carte dira exactement où passe l'écart — c'est
+précisément ce qu'elle est là pour faire.
+
+**Le tri et le filtre ne vivent pas dans l'URL.** Ils sont dans l'état du
+composant : un tri mis en favori n'est pas rejouable, et recharger la page
+repart du dernier message décroissant. `/contacts` fait mieux ; ici le tableau
+est déjà borné à une campagne, et l'URL de la campagne suffit à y revenir.
+
+**Une personne retirée depuis la carte de campagne reste invisible**, et c'est
+le choix du jalon 70 : retirer, c'est sortir de la liste. Elle n'entre donc ni
+dans le tableau, ni dans `listed` — mais **ses envois passés comptent toujours**
+dans « Personnes écrites ». Sur une campagne où l'on aurait retiré quelqu'un
+après lui avoir écrit, `written` peut donc dépasser `listed` : la phrase du
+rapprochement l'affiche alors telle quelle plutôt que de la lisser.
+
+**Le tri par étape ne distingue pas deux inscrits à la même étape.** Il n'y a
+pas de second critère : l'ordre à l'intérieur d'un groupe est celui que le tri
+précédent avait laissé.
