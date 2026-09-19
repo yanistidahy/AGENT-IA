@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 79 | **Les listes rentrent dans /contacts** : la section « Listes » retirée, les tables supprimées, et des « filtres personnalisés » qui se posent comme une puce à côté des autres et se croisent avec elles | **livré, à valider** |
 | 78 | **Le tableau des inscrits répond aux questions qu'on lui pose** : une puce « a reçu un premier message », des en-têtes qui trient, les ouvertures vérifiables ligne à ligne, et l'écart entre la carte et le tableau nommé plutôt que laissé à deviner | **livré, à valider** |
 | 77 | **Des listes nommées, constituées à la main** : une entrée « Listes » dans le rail, la sélection à la case ouverte à tous les écrans, et un filtre « dans cette liste » qui se croise avec les autres | **livré, à valider** |
 | 76 | **La recherche ne partage plus le modèle de la prose** : `allowed_callers` explicites, plancher de capacité, et un avertissement dans /reglages avant le mur de cartes rouges | **livré, à valider** |
@@ -10990,3 +10991,140 @@ rapprochement l'affiche alors telle quelle plutôt que de la lisser.
 **Le tri par étape ne distingue pas deux inscrits à la même étape.** Il n'y a
 pas de second critère : l'ordre à l'intérieur d'un groupe est celui que le tri
 précédent avait laissé.
+
+---
+
+## Jalon 79 — la liste devient une puce, dans le seul tableau qui existe
+
+### Ce que le jalon 77 avait mal placé, et pourquoi c'est structurel
+
+Le jalon 77 livrait la bonne fonctionnalité au mauvais endroit : une section
+« Listes » dans le rail, une grille de vignettes, et la page d'une liste qui
+était **l'écran de `/contacts` avec une portée**. Deux routes pour un même
+tableau, c'est-à-dire deux endroits où ajouter une colonne — et c'est toujours
+le second qu'on oublie (jalons 55, 64, 66, 67, 74).
+
+Le choix du propriétaire du produit ferme la question : **il n'existe qu'un
+tableau de contacts**, et un groupe nommé y est une puce de plus, à côté de
+« Jamais contacté » et « À relancer ». `/listes`, `components/lists/` et
+`app/api/lists/` sont supprimés ; `screen.tsx` est replié dans `page.tsx`.
+
+### La distinction que la puce doit porter, et qui est dite à l'écran
+
+| | Les autres puces | Un filtre personnalisé |
+|---|---|---|
+| ce que c'est | une **question** (« les Lead sans DM ») | un **choix** (« les vingt marques du salon ») |
+| quand ça change | à chaque écriture du CRM | quand quelqu'un le change |
+
+Les deux se croisent par construction, parce que la clause vit dans
+`contactsWhere` avec le cycle de vie et le reste :
+`{ customFilters: { some: { filterId } } }` rejoint le `and` commun. Rien de
+particulier n'a été écrit pour la combinaison — c'est ce qui la rend vraie.
+
+Le panneau dit la différence en une phrase, parce qu'elle n'est pas devinable :
+*« Contrairement aux autres puces, il ne change jamais tout seul : il ne
+contient que ce que vous y mettez. »*
+
+### Le contrôle est en tête de rangée, et ce n'est pas de la mise en page
+
+Deux règles déjà payées, appliquées ici :
+
+1. **sur la première rangée de puces**, jamais la seconde : celle-ci est un
+   groupe `overflow-hidden` qui découpe tout panneau posé en `absolute` — le
+   défaut du jalon 60, qu'une garde statique interdit désormais de refaire ;
+2. **avant ses propres puces.** Le panneau est ancré `left-0` sur son bouton :
+   chaque filtre créé poussait le bouton vers la droite, et au troisième le
+   panneau de 320 px débordait de l'écran. La ligne « Supprimer » sortait alors
+   du champ, atteignable par aucun doigt. **Trouvé par le test qui clique, pas à
+   la lecture** — `reachable()` rendait `false` là où `isVisible()` aurait dit
+   vrai (quatrième fois : jalons 60, 61, 77, 79).
+
+Le bouton de suppression porte `aria-label="Supprimer le filtre <nom>"` : nommer
+le filtre départage les suppressions de l'écran, pour qui clique comme pour qui
+teste.
+
+### Ce que ces gestes ne font jamais
+
+- **supprimer un filtre ne touche aucune fiche** : `deleteCustomFilter` ne
+  contient aucun `prisma.contact.`, la cascade ne porte que sur les
+  appartenances, et la confirmation — composée dans le domaine pour ne pas être
+  dite de deux façons — répond à la seule question qu'on se pose devant ce
+  bouton : « Ses 9 fiches restent dans le CRM avec tout leur historique : seule
+  l'appartenance à ce filtre disparaît. » ;
+- **retirer quelqu'un d'un filtre n'écrit rien sur sa fiche** — vérifié champ
+  pour champ avant/après ;
+- **l'unicité vient de la base** (`@@unique([filterId, contactId])` +
+  `skipDuplicates`), pas d'une vérification applicative que deux onglets
+  contourneraient (jalon 8).
+
+### La sélection est celle qui existe déjà
+
+`resolveSelectionIds` (jalon 77) reste **le seul** résolveur : les fiches
+cochées l'emportent sur le filtre, et c'est ce qui fait que cocher deux fiches
+sous un filtre puis deux sous un autre en range quatre. La réécrire pour les
+filtres personnalisés aurait garanti que la seconde version oublie la règle.
+
+### La base, et la sauvegarde
+
+Migration `35_custom_filters` : les tables du jalon 77 sont **supprimées avec
+leurs données** (décision explicite, rien à migrer), `custom_filters` et
+`custom_filter_members` les remplacent. Les deux rejoignent l'export, le schéma
+de restauration et la garde `backup-columns` — un choix fait à la main est la
+seule donnée du produit que rien ne sait reconstituer (jalon 42).
+
+### Jalon 79 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `35_custom_filters` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production, **par les routes
+HTTP réelles** et **dans un navigateur piloté** :
+
+- **les anciennes routes sont parties** : `/listes` → 404, `/api/lists` → 404,
+  `/contacts` → 200, `/api/custom-filters` → 200, et « Listes » ne figure plus
+  dans le rail ;
+- **créer depuis /contacts** : « &nbsp;Salon Paris&nbsp; » → nom nettoyé,
+  **l'URL n'a pas changé** — on n'a jamais quitté l'écran ;
+- **six puis quatre fiches cochées au fil de deux filtres de colonne** →
+  `{added: 10, already: 0}`, et le filtre contient **exactement ces dix-là** ;
+  rejoué → `{added: 0, already: 10}` ;
+- **la puce se croise** : `?filtre=…` → 10 fiches, `&lifecycle=Prospect` → 3 ;
+- **depuis la vue filtrée, inscrire dans une campagne** → 5 inscrites, par la
+  sélection `filtre=<id>` ;
+- **retirer une fiche** → 1 appartenance partie, l'enregistrement du contact
+  **identique champ pour champ** ;
+- **renommer** → `nameKey` recalculé (`salon paris 2026`) ;
+- **supprimer** → 9 appartenances parties, **les 10 fiches intactes** ;
+- **au navigateur (1440×900)** : création, cases cochées sous
+  `f.owner=E2eOwnerA` puis `f.owner=E2eOwnerB` avec **« 4 sélectionnés »** —
+  le compte ne tombe pas au changement de filtre —, rangement, puce portant son
+  compte, croisement à 0 ligne, retrait, suppression par la confirmation, et
+  **0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1339 tests**) et
+  `npm run e2e` (**49 tests**, neuf fichiers) verts.
+
+`tests/custom-filters-source.test.ts` ferme les quatre rechutes : une seconde
+résolution de sélection, un second écran de contacts, un retrait qui touche la
+fiche, une clause sortie de `contactsWhere`.
+
+### Jalon 79 — ce qui n'est pas fait
+
+**Rien ne remplit un filtre tout seul**, et c'est la définition : il n'y a ni
+règle d'entrée, ni mise à jour automatique. Le jour où ce serait souhaité, ce
+serait un autre objet, et il faudrait dire à l'écran lequel des deux on regarde.
+
+**La fiche ne dit pas à quels filtres elle appartient.** L'appartenance se lit
+depuis la puce, pas depuis la personne. La donnée existe en base ; c'est un
+affichage à ajouter, pas un modèle à changer.
+
+**Deux filtres peuvent porter le même nom** — c'est une étiquette humaine, pas
+une clé (même choix qu'au jalon 77).
+
+**Le panneau ne se filtre ni ne se trie**, et les puces sortent dans l'ordre de
+la liste rendue par le service. À vingt filtres, la rangée de puces deviendra
+illisible bien avant que le panneau ne gêne : il faudra alors n'y épingler que
+les filtres choisis.
+
+**Les données des listes du jalon 77 sont perdues**, délibérément et sur
+demande : la migration supprime les deux tables. Aucune reprise n'est possible
+après coup.
+
+**Les chiffres ci-dessus viennent d'un jeu de vérification**, pas de votre base.

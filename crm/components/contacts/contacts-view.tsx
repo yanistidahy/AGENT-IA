@@ -26,13 +26,9 @@ import {
 } from "./contact-table-columns";
 import { usePersistedSet } from "@/lib/client/persisted";
 import { ContactDrawer } from "./contact-drawer";
-import { ListActions } from "@/components/lists/list-actions";
 import type { Colleague } from "@/lib/api/account";
-import {
-  SelectionBar,
-  useContactSelection,
-  type ListOption,
-} from "./selection-bar";
+import { SelectionBar, useContactSelection } from "./selection-bar";
+import type { CustomFilterOption } from "./custom-filter-chips";
 import { ContactForm, type ContactFormOptions } from "./contact-form";
 import { ContactsTable, type ContactSortKey } from "./contacts-table";
 import { ImportDialog } from "./import-dialog";
@@ -65,10 +61,8 @@ interface ContactsViewProps extends ContactFormOptions {
     readonly id: string;
     readonly name: string;
   } | null;
-  /** La liste qu'on regarde, quand la page est celle d'une liste (jalon 77). */
-  readonly listScope: { readonly id: string; readonly name: string } | null;
-  /** Les listes existantes, pour y ranger la sélection courante. */
-  readonly lists: readonly ListOption[];
+  /** Les filtres personnalisés, avec leur compte (jalon 79). */
+  readonly customFilters: readonly CustomFilterOption[];
   /** Les fiches déjà inscrites à cette campagne : marquées, jamais recochables. */
   readonly enrolledIds: readonly string[];
   /** Valeurs distinctes par colonne, calculées côté serveur. */
@@ -99,8 +93,7 @@ export function ContactsView({
   focused,
   colleagues,
   campaignTarget,
-  listScope,
-  lists,
+  customFilters,
   enrolledIds,
   reminderCounts,
   account,
@@ -120,12 +113,6 @@ export function ContactsView({
 }: ContactsViewProps) {
   const router = useRouter();
   const params = useSearchParams();
-  /*
-    **L'écran sert deux routes** (/contacts et /listes/<id>, jalon 77) : écrire
-    « /contacts » en dur dans les liens de filtre ferait quitter la page d'une
-    liste au premier clic sur une puce. Le chemin courant est donc lu, jamais
-    supposé.
-  */
   const pathname = usePathname();
   const [, startTransition] = useTransition();
   // Le choix de colonnes vit dans le poste, pas dans l'URL : ce n'est pas un
@@ -168,19 +155,16 @@ export function ContactsView({
   // est partageable, et le bouton « précédent » referme le tiroir.
   const fiche = params.get("fiche");
   const societe = params.get("societe");
-  const listeFilter = params.get("liste");
+  const activeFilter = params.get("filtre");
   /*
     **La sélection est toujours disponible**, et plus seulement en arrivant
     d'une campagne : cocher des fiches au fil des filtres sert aussi à les ranger
-    dans une liste (jalon 77). Sa portée dit ce qu'on est en train de composer —
-    trois brouillons distincts, jamais mélangés (lib/client/selection.ts).
+    dans un filtre personnalisé (jalon 79). Sa portée dit ce qu'on est en train
+    de composer — des brouillons distincts, jamais mélangés
+    (lib/client/selection.ts).
   */
   const selectionScope =
-    campaignTarget !== null
-      ? `campagne:${campaignTarget.id}`
-      : listScope !== null
-        ? `liste:${listScope.id}`
-        : "contacts";
+    campaignTarget !== null ? `campagne:${campaignTarget.id}` : "contacts";
   const selection = useContactSelection(selectionScope);
   const enrolled = new Set(enrolledIds);
   const selected =
@@ -201,33 +185,14 @@ export function ContactsView({
     <div className="px-6 py-6">
       <header className="mb-5 flex flex-wrap items-end gap-4">
         <div>
-          {/*
-            Sur la page d'une liste, l'en-tête porte **son** nom et son compte :
-            le tableau est le même, la question posée ne l'est pas.
-          */}
           <h1 className="font-display text-2xl font-semibold tracking-tight">
-            {listScope === null ? "Contacts" : listScope.name}
+            Contacts
           </h1>
           <p className="mt-0.5 text-[13px] text-muted">
-            {listScope === null ? (
-              <>
-                {contacts.length} contacts · {clients} clients
-              </>
-            ) : (
-              <>
-                Liste · {contacts.length} fiche{contacts.length > 1 ? "s" : ""}{" "}
-                —{" "}
-                <Link href="/listes" className="text-brand-d hover:underline">
-                  toutes les listes
-                </Link>
-              </>
-            )}
+            {contacts.length} contacts · {clients} clients
           </p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {listScope !== null && (
-            <ListActions list={{ ...listScope, members: contacts.length }} />
-          )}
           <a
             href={`/api/contacts/export?${params.toString()}`}
             className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-3.5 py-2 text-[13px] font-semibold transition-colors hover:bg-surface-2"
@@ -258,43 +223,14 @@ export function ContactsView({
         selected={selection.selected}
         onCleared={selection.reset}
         campaign={campaignTarget}
-        lists={lists}
-        listScope={listScope}
+        filters={customFilters}
+        activeFilter={
+          activeFilter === null
+            ? null
+            : (customFilters.find((entry) => entry.id === activeFilter) ?? null)
+        }
         onChanged={() => router.refresh()}
       />
-
-      {/*
-        Un filtre par liste actif se **nomme** lui aussi, et il est annulable.
-        Sans cette ligne, `?liste=` filtrerait la liste sans qu'aucun contrôle ne
-        dise laquelle, et on ne pourrait l'annuler qu'en éditant l'URL — le
-        filtre invisible que le jalon 31 s'est interdit. Sur la page d'une liste
-        (`listScope`), c'est l'en-tête qui le dit : le répéter ferait deux
-        contrôles pour un seul état.
-      */}
-      {listScope === null && listeFilter !== null && (
-        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-card border border-brand-l bg-brand-l/40 px-3 py-2 text-[12.5px]">
-          <span>
-            Liste :{" "}
-            <strong className="font-semibold">
-              {lists.find((list) => list.id === listeFilter)?.name ??
-                "liste inconnue"}
-            </strong>
-          </span>
-          <Link
-            href={`/listes/${listeFilter}`}
-            className="min-h-[44px] text-brand-d hover:underline lg:min-h-0"
-          >
-            Ouvrir la liste
-          </Link>
-          <button
-            type="button"
-            onClick={() => setParam({ liste: null })}
-            className="ml-auto min-h-[44px] text-brand-d hover:underline lg:min-h-0"
-          >
-            Voir tous les contacts
-          </button>
-        </div>
-      )}
 
       {/*
         Un filtre par société actif se **nomme**. Sans cette ligne, arriver par
@@ -335,6 +271,9 @@ export function ContactsView({
         du={du}
         au={au}
         addedWeekCount={addedWeekCount}
+        customFilters={customFilters}
+        activeFilter={activeFilter}
+        onFiltersChanged={() => router.refresh()}
         owners={options.owners}
         sources={options.sources}
         companies={companyOptions}

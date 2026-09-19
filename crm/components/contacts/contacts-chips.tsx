@@ -11,6 +11,7 @@ import type { AccountState, DmState } from "@/lib/domain/instagram-filter";
 import { InstagramChip } from "./instagram-chip";
 import { AddedChip } from "./added-chip";
 import type { AddedPreset } from "@/lib/domain/added-window";
+import { CustomFilterChips, type CustomFilterOption } from "./custom-filter-chips";
 
 /**
  * Les puces de `/contacts` : cycle de vie, puis relances.
@@ -40,6 +41,9 @@ export function ContactChips({
   du,
   au,
   addedWeekCount,
+  customFilters,
+  activeFilter,
+  onFiltersChanged,
   expanded,
   onExpand,
   onChange,
@@ -57,6 +61,9 @@ export function ContactChips({
   du: string | undefined;
   au: string | undefined;
   addedWeekCount: number;
+  customFilters: readonly CustomFilterOption[];
+  activeFilter: string | null;
+  onFiltersChanged: () => void;
   expanded: boolean;
   onExpand: () => void;
   onChange: (updates: Record<string, string | null>) => void;
@@ -104,6 +111,19 @@ export function ContactChips({
          Une puce à menu ne peut pas vivre dans un conteneur qui rogne.
     */}
     <AddedChip preset={ajout} from={du} to={au} weekCount={addedWeekCount} onChange={onChange} />
+
+    {/*
+      Les filtres personnalisés, **à côté des puces de cycle de vie** : ce sont
+      des filtres comme les autres, et ils se croisent avec elles. Ici encore, la
+      première rangée — le panneau du contrôle est posé en `absolute`, et la
+      seconde rangée le rognerait (jalon 60).
+    */}
+    <CustomFilterChips
+      filters={customFilters}
+      active={activeFilter}
+      onChange={onChange}
+      onChanged={onFiltersChanged}
+    />
 
     <button
       type="button"

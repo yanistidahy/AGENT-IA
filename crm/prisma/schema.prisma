@@ -179,7 +179,7 @@ model Contact {
   emailSends   EmailSend[]
   emailReplies EmailReply[]
   enrollments  SequenceEnrollment[]
-  lists        ContactListMember[]
+  customFilters CustomFilterMember[]
 
   @@index([companyId])
   @@index([lifecycle])
@@ -1391,19 +1391,19 @@ model CompositionJob {
   @@index([campaignId])
   @@map("composition_jobs")
 }
-
-/// Une liste de contacts **constituée à la main**, et rien d'autre.
+/// **Un filtre personnalisé : un groupe nommé, constitué à la main.**
 ///
-/// Elle ne se recalcule jamais : contrairement à un filtre — qui décrit une
-/// question et dont la réponse change à chaque écriture — une liste décrit un
-/// choix, et un choix ne bouge que lorsque quelqu'un le change. C'est
-/// précisément ce qui la rend utile à côté des filtres : « les vingt marques
-/// que j'ai retenues au salon » n'est la réponse d'aucune requête.
+/// Ce n'est pas un filtre au sens des puces existantes — celles-ci posent une
+/// question (« les Lead sans DM ») et leur réponse change à chaque écriture du
+/// CRM. Un filtre personnalisé porte un **choix** (« les vingt marques du
+/// salon »), et ne bouge que quand quelqu'un le change. Les deux cohabitent
+/// volontairement : un groupe qui se recalculerait serait une puce portant un
+/// nom, donc un second vocabulaire pour une chose qui existe déjà.
 ///
-/// Elle est aussi distincte d'une inscription de campagne : une campagne dit ce
-/// qu'on envoie, une liste dit qui l'on a retenu. Supprimer la première ne doit
-/// pas emporter la seconde, et l'inverse non plus.
-model ContactList {
+/// Il est aussi distinct d'une inscription de campagne : une campagne dit ce
+/// qu'on envoie, un filtre personnalisé dit qui l'on a retenu. Supprimer le
+/// premier ne doit pas emporter le second, et l'inverse non plus.
+model CustomFilter {
   id        String   @id @default(cuid())
   name      String
   createdAt DateTime @default(now())
@@ -1411,35 +1411,35 @@ model ContactList {
   /// Clé de tri alphabétique pliée — voir lib/domain/sort-key.ts et le jalon 72.
   nameKey String?
 
-  members ContactListMember[]
+  members CustomFilterMember[]
 
   @@index([nameKey])
-  @@map("contact_lists")
+  @@map("custom_filters")
 }
 
-/// L'appartenance d'une fiche à une liste.
+/// L'appartenance d'une fiche à un filtre personnalisé.
 ///
 /// Une table de jointure, et non une colonne sur le contact : une fiche
-/// appartient à autant de listes qu'on veut, et c'est l'usage demandé.
-/// L'unicité `(listId, contactId)` est portée par la base : ajouter deux fois
+/// appartient à autant de groupes qu'on veut, et c'est l'usage demandé.
+/// L'unicité `(filterId, contactId)` est portée par la base : ajouter deux fois
 /// la même fiche est alors impossible plutôt qu'improbable, et une course ne
 /// contourne pas un index unique (jalon 8).
 ///
-/// `onDelete: Cascade` des deux côtés ne dit pas la même chose : supprimer la
-/// liste efface les appartenances **et rien d'autre** — les fiches ne sont pas
-/// des enfants de la liste ; supprimer une fiche du CRM emporte évidemment ses
+/// `onDelete: Cascade` des deux côtés ne dit pas la même chose : supprimer le
+/// filtre efface les appartenances **et rien d'autre** — les fiches ne sont pas
+/// ses enfants ; supprimer une fiche du CRM emporte évidemment ses
 /// appartenances, puisqu'elle n'existe plus.
-model ContactListMember {
-  id     String      @id @default(cuid())
-  listId String
-  list   ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+model CustomFilterMember {
+  id       String       @id @default(cuid())
+  filterId String
+  filter   CustomFilter @relation(fields: [filterId], references: [id], onDelete: Cascade)
 
   contactId String
   contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   addedAt DateTime @default(now())
 
-  @@unique([listId, contactId])
+  @@unique([filterId, contactId])
   @@index([contactId])
-  @@map("contact_list_members")
+  @@map("custom_filter_members")
 }

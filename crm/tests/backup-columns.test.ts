@@ -44,8 +44,8 @@ const BACKED_UP: ReadonlyArray<{ model: string; key: string }> = [
   { model: "RoleAngle", key: "roleAngles" },
   { model: "RoleAngleLabel", key: "roleAngleLabels" },
   { model: "Mailbox", key: "mailboxes" },
-  { model: "ContactList", key: "contactLists" },
-  { model: "ContactListMember", key: "contactListMembers" },
+  { model: "CustomFilter", key: "customFilters" },
+  { model: "CustomFilterMember", key: "customFilterMembers" },
 ];
 
 /**

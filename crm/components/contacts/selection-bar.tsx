@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import type { EnrollSelectionOutcome } from "@/lib/api/campaigns";
-import { describeAddOutcome, type AddOutcome } from "@/lib/domain/contact-lists";
+import { describeAddOutcome, type AddOutcome } from "@/lib/domain/custom-filters";
+import type { CustomFilterOption } from "./custom-filter-chips";
 import {
   clearSelection,
   readSelection,
@@ -27,10 +28,10 @@ import {
  * ### Pourquoi une seule barre plutôt qu'une par destination
  *
  * Le geste est le même — cocher des fiches au fil des filtres — et seule la
- * phrase finale change : les inscrire à une campagne, les ranger dans une liste,
- * ou les retirer de celle qu'on regarde. Deux barres auraient dupliqué le
- * compteur, le « Vider » et la promesse de survie au filtre, et c'est toujours
- * la seconde qu'on oublie de corriger (jalons 55, 64 et 66).
+ * phrase finale change : les inscrire à une campagne, les ranger dans un filtre
+ * personnalisé, ou les retirer de celui qu'on regarde. Deux barres auraient
+ * dupliqué le compteur, le « Vider » et la promesse de survie au filtre, et
+ * c'est toujours la seconde qu'on oublie de corriger (jalons 55, 64 et 66).
  */
 
 function isOutcome(value: unknown): value is { outcome: EnrollSelectionOutcome } {
@@ -55,11 +56,6 @@ function selectionOf(params: URLSearchParams): string {
   return kept.toString();
 }
 
-export interface ListOption {
-  readonly id: string;
-  readonly name: string;
-}
-
 const ACTION =
   "min-h-[44px] rounded-control bg-brand px-3 text-[12.5px] font-medium text-white hover:bg-brand-d disabled:opacity-50 lg:min-h-0 lg:py-1";
 const SECONDARY =
@@ -71,8 +67,8 @@ export function SelectionBar({
   selected,
   onCleared,
   campaign,
-  lists,
-  listScope,
+  filters,
+  activeFilter,
   onChanged,
 }: {
   readonly params: URLSearchParams;
@@ -82,10 +78,10 @@ export function SelectionBar({
   readonly onCleared: () => void;
   /** La campagne dont on choisit le public, quand on arrive par /campagnes. */
   readonly campaign: { readonly id: string; readonly name: string } | null;
-  /** Les listes existantes, pour y ranger la sélection. */
-  readonly lists: readonly ListOption[];
-  /** La liste qu'on est en train de regarder, quand on vient de /listes. */
-  readonly listScope: { readonly id: string; readonly name: string } | null;
+  /** Les filtres personnalisés existants, pour y ranger la sélection. */
+  readonly filters: readonly CustomFilterOption[];
+  /** Le filtre personnalisé posé, quand il y en a un : on peut alors en retirer. */
+  readonly activeFilter: CustomFilterOption | null;
   /** Rejoue la page : c'est le serveur qui redit ce qui reste, pas le navigateur. */
   readonly onChanged: () => void;
 }) {
@@ -94,7 +90,7 @@ export function SelectionBar({
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<"enroll" | "remove" | null>(null);
   const [adding, setAdding] = useState(false);
-  const [newList, setNewList] = useState("");
+  const [newFilter, setNewFilter] = useState("");
 
   const scope = selected.size;
   const plural = scope > 1 ? "s" : "";
@@ -148,16 +144,16 @@ export function SelectionBar({
     onCleared();
   };
 
-  /** Ranger la sélection dans une liste existante, ou dans une liste à créer. */
-  const addTo = async (listId: string) => {
+  /** Ranger la sélection dans un filtre existant, ou dans un filtre à créer. */
+  const addTo = async (filterId: string) => {
     setBusy(true);
     reset();
     const result = await requestJson(
-      "/api/lists",
+      "/api/custom-filters",
       {
         method: "PUT",
         body: JSON.stringify({
-          listId,
+          filterId,
           selection: selectionOf(params),
           contactIds: [...selected],
         }),
@@ -179,8 +175,8 @@ export function SelectionBar({
     setBusy(true);
     reset();
     const created = await requestJson(
-      "/api/lists",
-      { method: "POST", body: JSON.stringify({ name: newList }) },
+      "/api/custom-filters",
+      { method: "POST", body: JSON.stringify({ name: newFilter }) },
       (value): value is { id: string } =>
         typeof value === "object" && value !== null && "id" in value,
     );
@@ -189,24 +185,24 @@ export function SelectionBar({
       setError(created.message);
       return;
     }
-    setNewList("");
+    setNewFilter("");
     setBusy(false);
     await addTo(created.data.id);
   };
 
   /**
-   * Retirer de la liste **sans toucher aux fiches**, et la confirmation le dit :
+   * Retirer du filtre **sans toucher aux fiches**, et la confirmation le dit :
    * c'est la question qu'on se pose la première fois qu'on clique.
    */
-  const removeFromList = async () => {
-    if (listScope === null) return;
+  const removeFromFilter = async () => {
+    if (activeFilter === null) return;
     setBusy(true);
     reset();
     const result = await requestJson(
-      "/api/lists",
+      "/api/custom-filters",
       {
         method: "DELETE",
-        body: JSON.stringify({ listId: listScope.id, contactIds: [...selected] }),
+        body: JSON.stringify({ filterId: activeFilter.id, contactIds: [...selected] }),
       },
       isRemoved,
     );
@@ -214,7 +210,7 @@ export function SelectionBar({
     setConfirming(null);
     if (result.ok) {
       setMessage(
-        `${result.data.removed} fiche${result.data.removed > 1 ? "s" : ""} retirée${result.data.removed > 1 ? "s" : ""} de la liste. Aucune fiche n'a été modifiée.`,
+        `${result.data.removed} fiche${result.data.removed > 1 ? "s" : ""} retirée${result.data.removed > 1 ? "s" : ""} du filtre. Aucune fiche n'a été modifiée.`,
       );
       clearScope();
       onChanged();
@@ -257,7 +253,7 @@ export function SelectionBar({
             disabled={busy || scope === 0}
             className={ACTION}
           >
-            Ajouter à une liste
+            Ajouter à un filtre
           </button>
 
           {campaign !== null && (
@@ -274,7 +270,7 @@ export function SelectionBar({
             </button>
           )}
 
-          {listScope !== null && (
+          {activeFilter !== null && (
             <button
               type="button"
               onClick={() => {
@@ -284,7 +280,7 @@ export function SelectionBar({
               disabled={busy || scope === 0}
               className={SECONDARY}
             >
-              Retirer de la liste
+              Retirer du filtre
             </button>
           )}
 
@@ -313,36 +309,36 @@ export function SelectionBar({
       {adding && (
         <div className="mt-1.5 rounded-control border border-brand bg-surface px-3 py-2">
           <p className="mb-1.5">
-            Ranger <strong className="font-semibold">{scope} fiche{plural}</strong> dans une
-            liste. Une liste ne change jamais toute seule : elle ne contiendra que ce que vous y
-            mettez.
+            Ranger <strong className="font-semibold">{scope} fiche{plural}</strong> dans un
+            filtre personnalisé. Contrairement aux autres puces, il ne change jamais tout seul :
+            il ne contiendra que ce que vous y mettez.
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {lists.map((list) => (
+            {filters.map((entry) => (
               <button
-                key={list.id}
+                key={entry.id}
                 type="button"
                 disabled={busy}
-                onClick={() => void addTo(list.id)}
+                onClick={() => void addTo(entry.id)}
                 className={SECONDARY}
               >
-                {list.name}
+                {entry.name}
               </button>
             ))}
-            {lists.length === 0 && (
-              <span className="text-muted">Aucune liste pour l&apos;instant.</span>
+            {filters.length === 0 && (
+              <span className="text-muted">Aucun filtre personnalisé pour l&apos;instant.</span>
             )}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <input
-              value={newList}
-              onChange={(event) => setNewList(event.target.value)}
-              placeholder="Nouvelle liste…"
+              value={newFilter}
+              onChange={(event) => setNewFilter(event.target.value)}
+              placeholder="Nouveau filtre…"
               className="min-h-[44px] rounded-control border border-line bg-surface px-2.5 text-[12.5px] lg:min-h-0 lg:py-1"
             />
             <button
               type="button"
-              disabled={busy || newList.trim() === ""}
+              disabled={busy || newFilter.trim() === ""}
               onClick={() => void createAndAdd()}
               className={ACTION}
             >
@@ -375,17 +371,17 @@ export function SelectionBar({
         </div>
       )}
 
-      {confirming === "remove" && listScope !== null && (
+      {confirming === "remove" && activeFilter !== null && (
         <div className="mt-1.5 rounded-control border border-brand bg-surface px-3 py-2">
           <p>
             Retirer <strong className="font-semibold">{scope} fiche{plural}</strong> de «{" "}
-            {listScope.name} ». Les fiches, leur historique et leurs autres listes ne sont pas
-            touchés : seule l&apos;appartenance à cette liste prend fin.
+            {activeFilter.name} ». Les fiches, leur historique et leurs autres filtres ne sont pas
+            touchés : seule l&apos;appartenance à ce filtre prend fin.
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => void removeFromList()}
+              onClick={() => void removeFromFilter()}
               disabled={busy}
               className={ACTION}
             >
