@@ -78,6 +78,12 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         desc: "Recherche, cycle de vie, import et export CSV.",
       },
       {
+        label: "Listes",
+        href: "/listes",
+        icon: "people",
+        desc: "Des listes nommées, constituées à la main : elles ne changent que quand vous les changez.",
+      },
+      {
         label: "Clients",
         href: "/clients",
         icon: "people",

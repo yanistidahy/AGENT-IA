@@ -3,11 +3,7 @@ import { campaignNameKey } from "./name-keys";
 import { z } from "zod";
 
 import { prisma } from "../db";
-import { parseContactsQuery } from "./contact-schemas";
-import { CONTACT_FILTER_COLUMNS } from "./contact-columns";
-import { parseFilters } from "../domain/column-filters";
-import { listContacts } from "./contacts";
-import { getPilotage } from "./reference";
+import { resolveSelectionIds } from "./contact-selection";
 import { enroll } from "./email-sequences";
 import { readFunnelFacts } from "./email-stats";
 import { readReplyFacts } from "./email-replies";
@@ -346,27 +342,15 @@ export async function enrollSelection(
     return { ok: false, message: "Cette campagne n'a pas de séquence." };
   }
 
-  let ids: string[];
-
-  if (contactIds !== undefined && contactIds.length > 0) {
-    ids = [...new Set(contactIds)];
-  } else {
-    const params = new URLSearchParams(selection);
-    const query = parseContactsQuery(params);
-    if (!query.success) {
-      return { ok: false, message: "La sélection enregistrée n'est plus un filtre valide." };
-    }
-
-    const record: Record<string, string | string[] | undefined> = {};
-    for (const key of new Set(params.keys())) {
-      const all = params.getAll(key);
-      record[key] = all.length > 1 ? all : all[0];
-    }
-    const filters = parseFilters(record, CONTACT_FILTER_COLUMNS);
-
-    const contacts = await listContacts(query.data, await getPilotage(), new Date(), filters);
-    ids = contacts.map((contact) => contact.id);
-  }
+  /*
+    **La sélection se résout à un seul endroit** (`contact-selection.ts`) :
+    l'ajout à une liste (jalon 77) pose exactement la même question, et deux
+    résolutions auraient fini par ne plus accorder la même primauté aux fiches
+    cochées.
+  */
+  const resolved = await resolveSelectionIds(selection, contactIds);
+  if (!resolved.ok) return { ok: false, message: resolved.message };
+  const ids = resolved.ids;
 
   // La sélection est mémorisée sur la campagne : c'est elle que « Réinscrire »
   // ré-évaluera, et elle que l'écran affiche comme définition du public.
