@@ -179,6 +179,7 @@ model Contact {
   emailSends   EmailSend[]
   emailReplies EmailReply[]
   enrollments  SequenceEnrollment[]
+  lists        ContactListMember[]
 
   @@index([companyId])
   @@index([lifecycle])
@@ -1389,4 +1390,56 @@ model CompositionJob {
 
   @@index([campaignId])
   @@map("composition_jobs")
+}
+
+/// Une liste de contacts **constituée à la main**, et rien d'autre.
+///
+/// Elle ne se recalcule jamais : contrairement à un filtre — qui décrit une
+/// question et dont la réponse change à chaque écriture — une liste décrit un
+/// choix, et un choix ne bouge que lorsque quelqu'un le change. C'est
+/// précisément ce qui la rend utile à côté des filtres : « les vingt marques
+/// que j'ai retenues au salon » n'est la réponse d'aucune requête.
+///
+/// Elle est aussi distincte d'une inscription de campagne : une campagne dit ce
+/// qu'on envoie, une liste dit qui l'on a retenu. Supprimer la première ne doit
+/// pas emporter la seconde, et l'inverse non plus.
+model ContactList {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  /// Clé de tri alphabétique pliée — voir lib/domain/sort-key.ts et le jalon 72.
+  nameKey String?
+
+  members ContactListMember[]
+
+  @@index([nameKey])
+  @@map("contact_lists")
+}
+
+/// L'appartenance d'une fiche à une liste.
+///
+/// Une table de jointure, et non une colonne sur le contact : une fiche
+/// appartient à autant de listes qu'on veut, et c'est l'usage demandé.
+/// L'unicité `(listId, contactId)` est portée par la base : ajouter deux fois
+/// la même fiche est alors impossible plutôt qu'improbable, et une course ne
+/// contourne pas un index unique (jalon 8).
+///
+/// `onDelete: Cascade` des deux côtés ne dit pas la même chose : supprimer la
+/// liste efface les appartenances **et rien d'autre** — les fiches ne sont pas
+/// des enfants de la liste ; supprimer une fiche du CRM emporte évidemment ses
+/// appartenances, puisqu'elle n'existe plus.
+model ContactListMember {
+  id     String      @id @default(cuid())
+  listId String
+  list   ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  addedAt DateTime @default(now())
+
+  @@unique([listId, contactId])
+  @@index([contactId])
+  @@map("contact_list_members")
 }

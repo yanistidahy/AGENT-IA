@@ -191,6 +191,15 @@ export const listContactsQuerySchema = z.object({
    */
   societe: z.string().optional(),
   /**
+   * L'appartenance à une **liste nommée**, par identifiant (jalon 77).
+   *
+   * C'est un filtre comme les autres — il se croise avec le cycle de vie, le
+   * rôle ou les axes Instagram, ce qui était la demande. Il se distingue de tous
+   * les autres sur un point : sa réponse ne change pas quand le CRM change, mais
+   * quand quelqu'un modifie la liste. Voir lib/domain/contact-lists.ts.
+   */
+  liste: z.string().optional(),
+  /**
    * Depuis quand la fiche est dans le vivier : un préréglage, ou une plage.
    *
    * Trois paramètres plutôt qu'un seul encodé : `ajout=semaine` se lit dans la

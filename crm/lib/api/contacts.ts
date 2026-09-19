@@ -472,6 +472,16 @@ function contactsWhere(
     and.push({ companyId: query.societe });
   }
 
+  /*
+    **L'appartenance à une liste nommée** (jalon 77). Une clause SQL et non un
+    tri en mémoire : c'est une vraie table de jointure, la base sait répondre, et
+    la filtrer après lecture obligerait à charger tout le vivier pour en garder
+    vingt lignes — exactement ce que la fenêtre d'ajout évite ci-dessous.
+  */
+  if (query.liste !== undefined && query.liste !== "") {
+    and.push({ lists: { some: { listId: query.liste } } });
+  }
+
   if (query.lifecycle !== undefined && query.lifecycle !== "all") {
     and.push({ lifecycle: query.lifecycle });
   } else if (query.lifecycle === undefined && filters.lifecycle === undefined) {

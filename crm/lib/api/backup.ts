@@ -30,6 +30,8 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     roleAngles,
     roleAngleLabels,
     mailboxes,
+    contactLists,
+    contactListMembers,
   ] = await Promise.all([
     prisma.stage.findMany({ orderBy: { position: "asc" } }),
     prisma.company.findMany(),
@@ -44,6 +46,8 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     prisma.roleAngle.findMany({ orderBy: { position: "asc" } }),
     prisma.roleAngleLabel.findMany(),
     prisma.mailbox.findMany({ orderBy: { position: "asc" } }),
+    prisma.contactList.findMany(),
+    prisma.contactListMember.findMany(),
   ]);
 
   return {
@@ -62,6 +66,8 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     roleAngles,
     roleAngleLabels,
     mailboxes,
+    contactLists,
+    contactListMembers,
   };
 }
 
@@ -364,6 +370,29 @@ const mailboxRow = z.object({
   createdAt: day,
 });
 
+/**
+ * Une liste de contacts, et ses appartenances (jalon 77).
+ *
+ * **Sauvegardées, contrairement à la recherche ou au logo.** Ces deux-là sont
+ * dérivés : ils se relisent et se retéléversent. Une liste, non — c'est un
+ * choix fait à la main, que rien ne sait reconstituer. La perdre à une
+ * restauration serait exactement l'incident du jalon 42, sur la donnée la plus
+ * chère du produit : celle qu'aucune requête ne retrouve.
+ */
+const contactListRow = z.object({
+  id: z.string(),
+  name: text,
+  nameKey: z.string().nullable().optional(),
+  createdAt: day,
+});
+
+const contactListMemberRow = z.object({
+  id: z.string(),
+  listId: z.string(),
+  contactId: z.string(),
+  addedAt: day,
+});
+
 export const backupSchema = z.object({
   version: z.number().int(),
   stages: z.array(stageRow),
@@ -381,6 +410,8 @@ export const backupSchema = z.object({
   roleAngles: z.array(roleAngleRow).optional(),
   roleAngleLabels: z.array(roleAngleLabelRow).optional(),
   mailboxes: z.array(mailboxRow).optional(),
+  contactLists: z.array(contactListRow).optional(),
+  contactListMembers: z.array(contactListMemberRow).optional(),
 });
 
 export type BackupPayload = z.infer<typeof backupSchema>;
@@ -447,6 +478,27 @@ export async function restoreBackup(payload: BackupPayload): Promise<RestoreResu
               where: { id: mailbox.id },
               create: mailbox,
               update: mailbox,
+            });
+          }
+        }
+        /*
+          Les listes, restaurées **seulement si la sauvegarde en porte** — même
+          garde que les rôles et les boîtes ci-dessus : un fichier d'avant le
+          jalon 77 ne doit pas effacer des listes qu'il ne connaît pas.
+
+          Les appartenances viennent après les contacts, qui viennent d'être
+          recréés : la clé étrangère l'impose, et une appartenance dont la fiche
+          n'est plus dans la sauvegarde est écartée plutôt que de faire échouer
+          la restauration entière.
+        */
+        if (payload.contactLists !== undefined) {
+          await tx.contactListMember.deleteMany();
+          await tx.contactList.deleteMany();
+          await tx.contactList.createMany({ data: payload.contactLists });
+          if (payload.contactListMembers !== undefined) {
+            const known = new Set(payload.contacts.map((contact) => contact.id));
+            await tx.contactListMember.createMany({
+              data: payload.contactListMembers.filter((member) => known.has(member.contactId)),
             });
           }
         }

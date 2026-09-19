@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 77 | **Des listes nommées, constituées à la main** : une entrée « Listes » dans le rail, la sélection à la case ouverte à tous les écrans, et un filtre « dans cette liste » qui se croise avec les autres | **livré, à valider** |
 | 76 | **La recherche ne partage plus le modèle de la prose** : `allowed_callers` explicites, plancher de capacité, et un avertissement dans /reglages avant le mur de cartes rouges | **livré, à valider** |
 | 75 | **Le domaine se lit dans l'adresse email** : troisième source de recherche, provenance affichée sur la carte, et un rattrapage qui rend la déduction permanente | **livré, à valider** |
 | 74 | **La recherche dit ce qu'elle a fait** : une carte sur les deux surfaces, l'échec nommé avec sa raison exacte, et un appel raté qui se retente au lieu de geler la société trois mois | **livré, à valider** |
@@ -10387,6 +10388,170 @@ et ne le recalcule pas si l'on modifie le texte à la main avant d'envoyer.
 automatique après échec supprime le cas le plus grave ; rafraîchir une lecture
 réussie mais périmée reste l'affaire des 90 jours.
 
+
+---
+
+## Jalon 77 — des listes nommées, qui ne changent que quand on les change
+
+### La distinction qui justifie la table
+
+| | Ce que ça décrit | Quand ça change |
+|---|---|---|
+| un **filtre** | une question (« les Lead sans DM ») | à chaque écriture du CRM |
+| une **liste** | un choix (« les vingt marques du salon ») | quand quelqu'un le change |
+| une **inscription** de campagne | ce qu'on envoie, et où on en est | à chaque étape envoyée |
+
+Les trois cohabitent, et c'est délibéré. Une liste qui se recalculerait serait un
+filtre portant un nom — donc un second vocabulaire pour une chose qui existe
+déjà ; et enregistrer un filtre sous un nom ne saurait pas décrire « ces
+vingt-là », qu'aucune requête unique ne retient. Cocher huit fiches sous un
+filtre Instagram puis cinq sous un filtre de rôle produit treize personnes, et
+c'est exactement ce qu'une liste sait garder.
+
+Migration `34_contact_lists` : `contact_lists` et `contact_list_members`.
+**Une table de jointure, pas une colonne sur la fiche** — une fiche appartient à
+autant de listes qu'on veut, et c'est l'usage demandé. L'unicité
+`(listId, contactId)` est portée par la base : ajouter deux fois la même fiche
+est impossible plutôt qu'improbable, et une course ne contourne pas un index
+unique (jalon 8).
+
+`onDelete: Cascade` des deux côtés ne dit pas la même chose : supprimer la liste
+efface les appartenances **et rien d'autre** ; supprimer une fiche du CRM emporte
+évidemment les siennes, puisqu'elle n'existe plus.
+
+### Un seul tableau, deux routes
+
+`/listes` est une grille de vignettes — nom, compte — et la page d'une liste est
+**l'écran de `/contacts` avec une portée** (`app/(crm)/contacts/screen.tsx`).
+C'était la demande (« le même tableau, avec les colonnes et le sélecteur
+existants ») et la seule façon de la tenir dans le temps : un second tableau
+aurait fini par ne plus offrir les mêmes colonnes, et c'est toujours le second
+qu'on oublie de compléter (jalons 55, 64 et 66). Colonnes, sélecteur de colonnes,
+tri, filtres, tiroir de fiche et sélection à la case viennent donc tels quels.
+
+**Deux défauts que cette réutilisation a créés, et corrigés :** les liens de
+filtre écrivaient `/contacts` en dur — au premier clic sur une puce, on aurait
+quitté la page de la liste — et le cycle de vie par défaut. Le chemin courant est
+maintenant lu (`usePathname`), et la page d'une liste ouvre en `lifecycle=all`
+**sauf si l'URL en choisit un** : une liste est un choix fait à la main, en
+masquer les fiches closes ferait diverger le compte de la vignette de ce que la
+page montre — l'écart que le jalon 49 a payé une fois entre une puce et sa liste.
+
+### Une seule barre de sélection, trois destinations
+
+La sélection à la case du jalon 55 n'existait que pour les campagnes. Elle est
+désormais **toujours disponible**, et la barre collée en haut propose, selon le
+contexte : « Ajouter à une liste » (partout, avec création à la volée),
+« Inscrire dans la campagne » (en arrivant de /campagnes), « Retirer de la
+liste » (sur la page d'une liste). Une barre par destination aurait dupliqué le
+compteur, le « Vider » et la promesse de survie au filtre.
+
+La portée de la sélection (`lib/client/selection.ts`) distingue
+`campagne:<id>`, `liste:<id>` et `contacts` : cocher douze fiches pour une liste
+puis passer à une campagne ne doit pas retrouver les douze — on ne voulait pas
+les inscrire, on voulait les ranger.
+
+**`resolveSelectionIds` est extraite** (`lib/api/contact-selection.ts`) : la
+primauté des fiches cochées sur le filtre est une règle subtile, et la réécrire
+pour les listes aurait garanti que la seconde version l'oublie. L'inscription de
+campagne l'appelle désormais elle aussi — pas une copie de la logique, la
+logique.
+
+### Ce que ces gestes ne font jamais
+
+- **retirer quelqu'un d'une liste n'écrit rien sur sa fiche** : ni cycle de vie,
+  ni statut, ni relance. Même discipline que le retrait d'un inscrit de campagne
+  (jalon 70), et la confirmation le dit avant le clic ;
+- **supprimer une liste ne supprime aucun contact**, et la phrase de
+  confirmation — composée dans le domaine, pour qu'elle ne soit pas dite de deux
+  façons — répond à la seule question qu'on se pose devant ce bouton ;
+- **aucune friction de nom à retaper**, contrairement à une campagne qui a envoyé
+  (jalon 61) : là-bas des faits mesurés disparaissaient. Ici rien
+  d'irremplaçable ne part, et exiger une cérémonie pour un rangement apprendrait
+  à cliquer sans lire les vraies confirmations ;
+- **ajouter à une liste n'inscrit personne à une campagne**, et l'inverse non
+  plus : lier les deux ferait partir des messages depuis un geste de rangement.
+
+### Les listes se sauvegardent, contrairement à la recherche et au logo
+
+Ces deux-là sont dérivés : ils se relisent, se retéléversent. Une liste, non —
+c'est un choix fait à la main, que **rien ne sait reconstituer**. La perdre à une
+restauration serait l'incident du jalon 42 sur la donnée la plus chère du
+produit. `contactLists` et `contactListMembers` rejoignent donc l'export, le
+schéma de restauration et la garde `backup-columns` ; la restauration ne les
+efface que si le fichier en porte (règle du jalon 54), et une appartenance dont
+la fiche n'est pas dans la sauvegarde est écartée plutôt que de faire échouer la
+restauration entière.
+
+### Les gardes
+
+`tests/contact-lists-source.test.ts` ferme les trois façons de rater ce jalon :
+une seconde résolution de sélection, un second tableau de contacts, un retrait
+qui touche la fiche. **Éprouvée en réintroduisant deux régressions exactes** —
+un `contact.updateMany` dans le retrait, et `/contacts` réécrit en dur dans les
+liens de filtre : deux tests tombent, chacun nommant le défaut.
+`lib/domain/__tests__/contact-lists.test.ts` couvre le nom, la clé de tri, les
+deux nombres de l'ajout et la promesse de la suppression.
+
+### Jalon 77 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `34_contact_lists` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production, **par les routes
+HTTP réelles** et **dans un navigateur piloté** :
+
+- **1 · créer** : « &nbsp;Salon Beauté 2026&nbsp; » → nom nettoyé de ses espaces,
+  liste ouverte sur sa propre page ;
+- **2 · dix fiches choisies au fil de deux filtres** (7 sous `owner=Mohamed`,
+  3 sous `owner=Yanis`) → `{added: 10, already: 0}`, et la liste contient
+  **exactement ces dix-là** — pas les sept du filtre mémorisé ; rejoué →
+  `{added: 0, already: 10}`, toujours dix membres ;
+- **3 · retirer une fiche** → 1 appartenance retirée, 9 restantes, et
+  l'enregistrement du contact **identique champ pour champ** avant/après ;
+- **4 · depuis la liste, inscrire à une campagne** → 4 inscrites, 0 refusée ;
+- **5 · filtrer /contacts par liste, croisé** : `?liste=…` → 9 fiches ;
+  `?liste=…&lifecycle=Prospect` → 3 ; la page nomme la liste et l'offre à
+  annuler ;
+- **6 · supprimer la liste** → 9 appartenances parties, **14 fiches avant, 14
+  après**, et les 8 inscriptions de campagne conservées ;
+- **au navigateur (1440×900)** : création depuis `/listes`, cases cochées sur
+  `/contacts`, barre et panneau **atteignables** (`reachable()`, jamais
+  `isVisible()`), ajout confirmé, retrait confirmé avec sa promesse, suppression
+  et retour à `/listes` — **0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1320 tests**) et
+  `npm run e2e` (**42 tests**, huit fichiers) verts.
+
+**Un défaut trouvé au navigateur, pas à la lecture** : vider la sélection après
+un ajout faisait disparaître la barre — donc le « 8 ajoutées · 2 déjà dans la
+liste » avec elle, au moment précis où l'on veut le lire. La barre décide
+désormais elle-même de son affichage et reste tant qu'elle a quelque chose à
+dire. C'est la troisième fois qu'un test qui clique attrape ce qu'aucune lecture
+n'aurait vu (jalons 60, 61, 77).
+
+### Jalon 77 — ce qui n'est pas fait
+
+**Aucune liste ne se remplit toute seule**, et c'est la définition : il n'y a ni
+règle d'entrée, ni « ajouter automatiquement les nouvelles fiches d'une
+société ». Le jour où ce serait souhaité, ce serait un autre objet — une liste
+dynamique — et il faudrait alors dire à l'écran laquelle des deux on regarde.
+
+**La fiche ne dit pas à quelles listes elle appartient.** Le tiroir de contact
+n'affiche rien de ses appartenances : on les voit depuis les listes, pas depuis
+la personne. Ce n'était pas demandé, et la lecture existe déjà en base — c'est
+un affichage à ajouter, pas un modèle à changer.
+
+**Deux listes peuvent porter le même nom.** Le nom est une étiquette humaine, pas
+une clé : refuser un homonyme obligerait à inventer « Salon 2026 (2) » là où
+l'utilisateur sait ce qu'il fait. Les deux restent distinctes par leur contenu.
+
+**La grille ne se filtre ni ne se trie** — alphabétique, comme toute liste de
+référence depuis le jalon 72. À trente listes il faudra au moins une recherche.
+
+**L'export CSV de la page d'une liste exporte le filtre courant**, donc bien les
+membres de la liste ; mais rien à l'écran ne le dit, et le bouton porte le même
+libellé que sur `/contacts`.
+
+**Les chiffres ci-dessus viennent d'un jeu de vérification** (14 fiches semées),
+pas de votre base. Le mécanisme est celui-ci ; vos comptes seront les vôtres.
 
 ---
 
