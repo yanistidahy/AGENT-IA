@@ -79,6 +79,21 @@ export interface FunnelInput {
   readonly tracked: number;
   readonly replied: number;
   readonly meetings: number;
+  /**
+   * De quoi rapprocher le sommet de l'entonnoir du tableau qui suit.
+   *
+   * « Personnes écrites 52 » au-dessus d'un tableau de 55 lignes se lit comme
+   * un écart inexpliqué, et l'on cesse de croire les deux. Quand la portée sait
+   * combien de personnes sont listées et combien n'ont jamais rien reçu, la
+   * première carte le dit — ce n'est pas un second calcul, c'est le même
+   * nombre, nommé.
+   */
+  readonly roster?: {
+    /** Inscrits tels que le tableau les liste (retraits de campagne exclus). */
+    readonly listed: number;
+    /** Parmi eux, ceux à qui aucun message n'est jamais parti. */
+    readonly neverWritten: number;
+  };
 }
 
 /**
@@ -90,6 +105,26 @@ export interface FunnelInput {
  * plutôt que d'être corrigée en silence. C'est même un signal utile : il dit
  * que l'estimation d'ouverture est basse ce mois-ci.
  */
+/**
+ * Ce que dit la première carte sous son nombre.
+ *
+ * Toujours les messages partis — un repère, pas une étape. Et, quand la portée
+ * le sait, **l'écart avec le tableau** : « 52 sur 55 inscrits · 3 jamais
+ * écrits ». C'est la phrase qui manquait : sans elle, deux nombres justes
+ * affichés l'un au-dessus de l'autre se lisent comme une erreur.
+ */
+function writtenNote(input: FunnelInput): string {
+  const messages = `${input.messages} message${input.messages > 1 ? "s" : ""} parti${
+    input.messages > 1 ? "s" : ""
+  }`;
+  const roster = input.roster;
+  if (roster === undefined) return messages;
+  if (roster.neverWritten === 0) return `${messages} · ${roster.listed} inscrit${roster.listed > 1 ? "s" : ""}`;
+  return `sur ${roster.listed} inscrits · ${roster.neverWritten} jamais écrit${
+    roster.neverWritten > 1 ? "s" : ""
+  } · ${messages}`;
+}
+
 export function buildFunnel(input: FunnelInput): readonly FunnelStep[] {
   return [
     {
@@ -98,7 +133,7 @@ export function buildFunnel(input: FunnelInput): readonly FunnelStep[] {
       count: input.written,
       kind: "fact",
       rate: null,
-      rateOf: `${input.messages} message${input.messages > 1 ? "s" : ""} parti${input.messages > 1 ? "s" : ""}`,
+      rateOf: writtenNote(input),
       drop: null,
     },
     {

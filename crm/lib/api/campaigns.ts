@@ -9,7 +9,12 @@ import { readFunnelFacts } from "./email-stats";
 import { readReplyFacts } from "./email-replies";
 import { contactTitle } from "../domain/contact-identity";
 import { buildFunnel, type FunnelStep } from "../domain/email-funnel";
-import { memberState, type CampaignMember, REMOVED } from "../domain/campaign-members";
+import {
+  isHandRemoval,
+  memberState,
+  type CampaignMember,
+  REMOVED,
+} from "../domain/campaign-members";
 import { nameConfirms } from "../domain/campaign-deletion";
 
 /**
@@ -32,6 +37,13 @@ import { nameConfirms } from "../domain/campaign-deletion";
 export interface CampaignFunnel {
   readonly enrolled: number;
   readonly running: number;
+  /**
+   * Inscrits **tels que le tableau les liste** — les retraits faits depuis la
+   * carte de campagne (`removed`) en sont exclus des deux côtés.
+   */
+  readonly listed: number;
+  /** Parmi eux, ceux à qui aucun message n'est jamais parti. */
+  readonly neverWritten: number;
   /**
    * L'entonnoir **tel que /emails le construit**, borné à cette campagne.
    *
@@ -99,16 +111,30 @@ export interface CampaignView {
  * précisément ce qu'on veut voir.
  */
 export async function readCampaignFunnel(sequenceId: string): Promise<CampaignFunnel> {
-  const [enrolled, running, facts] = await Promise.all([
+  const [enrolled, running, listedRows, facts] = await Promise.all([
     prisma.sequenceEnrollment.count({ where: { sequenceId } }),
     prisma.sequenceEnrollment.count({ where: { sequenceId, status: "active" } }),
+    // Exactement ce que `listCampaignMembers` liste : même filtre, donc le
+    // dénominateur affiché sous la première carte est **le nombre de lignes du
+    // tableau**, et non un second comptage qui pourrait en différer.
+    prisma.sequenceEnrollment.findMany({
+      where: { sequenceId, status: { not: REMOVED } },
+      select: { contactId: true },
+    }),
     readFunnelFacts({ sequenceId }),
   ]);
+
+  const listed = listedRows.length;
+  // Jamais écrit se lit **dans les envois**, la source du sommet de
+  // l'entonnoir : c'est ce qui garantit que `written + neverWritten` recolle.
+  const neverWritten = listedRows.filter((row) => !facts.firstSend.has(row.contactId)).length;
 
   return {
     enrolled,
     running,
-    steps: buildFunnel(facts.input),
+    listed,
+    neverWritten,
+    steps: buildFunnel({ ...facts.input, roster: { listed, neverWritten } }),
     messages: facts.input.messages,
     contacted: facts.input.written,
     opened: facts.input.opened,
@@ -120,6 +146,8 @@ export async function readCampaignFunnel(sequenceId: string): Promise<CampaignFu
 const EMPTY_FUNNEL: CampaignFunnel = {
   enrolled: 0,
   running: 0,
+  listed: 0,
+  neverWritten: 0,
   steps: buildFunnel({ written: 0, messages: 0, opened: 0, tracked: 0, replied: 0, meetings: 0 }),
   messages: 0,
   contacted: 0,
@@ -652,9 +680,11 @@ async function deleteEmptyCampaign(
 /* ------------------------------------------------ qui est dans la campagne */
 
 export {
+  MEMBER_FILTERS,
   MEMBER_STATES,
   memberState,
   type CampaignMember,
+  type MemberFilter,
   type MemberState,
 } from "../domain/campaign-members";
 
@@ -700,11 +730,18 @@ export async function listCampaignMembers(sequenceId: string): Promise<CampaignM
   ]);
 
   const firstSend = new Map<string, Date>();
-  const opened = new Set<string>();
+  const openedAt = new Map<string, Date>();
   for (const send of sends) {
     if (send.contactId === null) continue;
     if (!firstSend.has(send.contactId)) firstSend.set(send.contactId, send.sentAt);
-    if (send.firstOpenAt !== null) opened.add(send.contactId);
+    // La **première** ouverture, pas la dernière : c'est celle que compte
+    // l'entonnoir, donc la seule qui rende « 13 sur 52 » vérifiable ligne à
+    // ligne plutôt que seulement plausible.
+    const open = send.firstOpenAt;
+    if (open !== null) {
+      const known = openedAt.get(send.contactId);
+      if (known === undefined || open < known) openedAt.set(send.contactId, open);
+    }
   }
   const facts = await readReplyFacts(firstSend);
 
@@ -720,7 +757,11 @@ export async function listCampaignMembers(sequenceId: string): Promise<CampaignM
       step: enrollment.lastStep,
       steps,
       lastSentAt: enrollment.lastSentAt,
-      opened: opened.has(contact.id),
+      // « A reçu un premier message » se lit **dans les envois**, jamais dans
+      // `lastStep` ni dans `lastSentAt` de l'inscription : c'est ce que compte
+      // « Personnes écrites », et deux sources se contrediraient un jour.
+      written: firstSend.has(contact.id),
+      openedAt: openedAt.get(contact.id) ?? null,
       repliedAt,
       state: memberState({
         status: enrollment.status,
@@ -728,6 +769,7 @@ export async function listCampaignMembers(sequenceId: string): Promise<CampaignM
         repliedAt,
       }),
       stopReason: enrollment.stopReason,
+      handRemoved: enrollment.status !== "active" && isHandRemoval(enrollment.stopReason),
     };
   });
 }
