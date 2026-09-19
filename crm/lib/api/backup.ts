@@ -30,8 +30,8 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     roleAngles,
     roleAngleLabels,
     mailboxes,
-    contactLists,
-    contactListMembers,
+    customFilters,
+    customFilterMembers,
   ] = await Promise.all([
     prisma.stage.findMany({ orderBy: { position: "asc" } }),
     prisma.company.findMany(),
@@ -46,8 +46,8 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     prisma.roleAngle.findMany({ orderBy: { position: "asc" } }),
     prisma.roleAngleLabel.findMany(),
     prisma.mailbox.findMany({ orderBy: { position: "asc" } }),
-    prisma.contactList.findMany(),
-    prisma.contactListMember.findMany(),
+    prisma.customFilter.findMany(),
+    prisma.customFilterMember.findMany(),
   ]);
 
   return {
@@ -66,8 +66,8 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     roleAngles,
     roleAngleLabels,
     mailboxes,
-    contactLists,
-    contactListMembers,
+    customFilters,
+    customFilterMembers,
   };
 }
 
@@ -379,16 +379,16 @@ const mailboxRow = z.object({
  * restauration serait exactement l'incident du jalon 42, sur la donnée la plus
  * chère du produit : celle qu'aucune requête ne retrouve.
  */
-const contactListRow = z.object({
+const customFilterRow = z.object({
   id: z.string(),
   name: text,
   nameKey: z.string().nullable().optional(),
   createdAt: day,
 });
 
-const contactListMemberRow = z.object({
+const customFilterMemberRow = z.object({
   id: z.string(),
-  listId: z.string(),
+  filterId: z.string(),
   contactId: z.string(),
   addedAt: day,
 });
@@ -410,8 +410,8 @@ export const backupSchema = z.object({
   roleAngles: z.array(roleAngleRow).optional(),
   roleAngleLabels: z.array(roleAngleLabelRow).optional(),
   mailboxes: z.array(mailboxRow).optional(),
-  contactLists: z.array(contactListRow).optional(),
-  contactListMembers: z.array(contactListMemberRow).optional(),
+  customFilters: z.array(customFilterRow).optional(),
+  customFilterMembers: z.array(customFilterMemberRow).optional(),
 });
 
 export type BackupPayload = z.infer<typeof backupSchema>;
@@ -491,14 +491,14 @@ export async function restoreBackup(payload: BackupPayload): Promise<RestoreResu
           n'est plus dans la sauvegarde est écartée plutôt que de faire échouer
           la restauration entière.
         */
-        if (payload.contactLists !== undefined) {
-          await tx.contactListMember.deleteMany();
-          await tx.contactList.deleteMany();
-          await tx.contactList.createMany({ data: payload.contactLists });
-          if (payload.contactListMembers !== undefined) {
+        if (payload.customFilters !== undefined) {
+          await tx.customFilterMember.deleteMany();
+          await tx.customFilter.deleteMany();
+          await tx.customFilter.createMany({ data: payload.customFilters });
+          if (payload.customFilterMembers !== undefined) {
             const known = new Set(payload.contacts.map((contact) => contact.id));
-            await tx.contactListMember.createMany({
-              data: payload.contactListMembers.filter((member) => known.has(member.contactId)),
+            await tx.customFilterMember.createMany({
+              data: payload.customFilterMembers.filter((member) => known.has(member.contactId)),
             });
           }
         }
