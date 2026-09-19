@@ -123,7 +123,11 @@ describe.skipIf(skip)("les campagnes, en grille puis en détail", () => {
     // en petites capitales CSS, donc il remonte en majuscules.
     expect(body).toMatch(/Inscrits/i);
     expect(body).toContain("Voir ses départs du jour");
-    // Les étapes sont éditables ici, et seulement ici.
+    // Les étapes sont éditables ici, et seulement ici — mais **repliées**
+    // depuis le jalon 80 : la structure d'abord, le champ à l'ouverture.
+    expect(body).toContain("Étape 1");
+    expect(await session.page.locator('input[placeholder^="ex. rappeler"]').count()).toBe(0);
+    await session.page.getByRole("button", { name: "Ouvrir l'étape 1" }).click();
     expect(
       await session.page.locator('input[placeholder^="ex. rappeler"]').count(),
     ).toBeGreaterThan(0);

@@ -19,6 +19,15 @@ export interface SequenceStepView {
   readonly position: number;
   readonly delayDays: number;
   readonly brief: string;
+  /**
+   * Le dernier objet **réellement composé** pour cette étape.
+   *
+   * Une étape ne porte pas de texte : elle porte une consigne, et le message
+   * est écrit par contact au moment de composer. Le seul aperçu honnête de ce
+   * qu'elle produit est donc un objet déjà sorti — vide tant qu'aucun départ
+   * n'a été écrit, jamais un exemple inventé.
+   */
+  readonly lastSubject: string;
 }
 
 export interface SequenceView {
@@ -57,6 +66,26 @@ async function unlockFor(sequenceId: string): Promise<AutoUnlock> {
   return autoUnlock(validated, replies);
 }
 
+/**
+ * Le dernier objet composé, par rang d'étape.
+ *
+ * Une seule requête pour toute la séquence plutôt qu'une par étape : trois
+ * allers-retours pour trois lignes d'aperçu seraient un prix absurde, et la
+ * liste des rangs se compte sur les doigts d'une main.
+ */
+async function lastSubjects(sequenceId: string): Promise<Map<number, string>> {
+  const rows = await prisma.sequenceDeparture.findMany({
+    where: { enrollment: { sequenceId }, subject: { not: "" } },
+    orderBy: { createdAt: "desc" },
+    select: { step: true, subject: true },
+    take: 60,
+  });
+  const map = new Map<number, string>();
+  // Antéchronologique : la première rencontrée est la plus récente.
+  for (const row of rows) if (!map.has(row.step)) map.set(row.step, row.subject);
+  return map;
+}
+
 export async function listSequences(): Promise<SequenceView[]> {
   const rows = await prisma.emailSequence.findMany({
     orderBy: { createdAt: "asc" },
@@ -71,6 +100,7 @@ export async function listSequences(): Promise<SequenceView[]> {
     const running = await prisma.sequenceEnrollment.count({
       where: { sequenceId: row.id, status: "active" },
     });
+    const samples = await lastSubjects(row.id);
     views.push({
       id: row.id,
       name: row.name,
@@ -81,6 +111,7 @@ export async function listSequences(): Promise<SequenceView[]> {
         position: step.position,
         delayDays: step.delayDays,
         brief: step.brief,
+        lastSubject: samples.get(step.position) ?? "",
       })),
       enrolled: row._count.enrollments,
       running,
