@@ -2,7 +2,16 @@ import "server-only";
 import { z } from "zod";
 import { REMOVED } from "../domain/campaign-members";
 import { prisma } from "../db";
-import { autoUnlock, MAX_STEPS, type AutoUnlock } from "../domain/sequence-rules";
+import { autoUnlock, BLOCK_LABELS, MAX_STEPS, type AutoUnlock } from "../domain/sequence-rules";
+import { contactTitle } from "../domain/contact-identity";
+import {
+  daysUntilDue,
+  FINISHED_STATUS,
+  reopenable,
+  type ReopenCandidate,
+  type ReopenExclusion,
+  type ReopenPlan,
+} from "../domain/sequence-reopen";
 
 /**
  * Les séquences d'emails : définition, inscriptions, état du verrou.
@@ -121,6 +130,108 @@ export async function listSequences(): Promise<SequenceView[]> {
   return views;
 }
 
+/**
+ * Qui l'ajout d'une étape rouvrirait, et quand chacun serait dû.
+ *
+ * **N'écrit rien** : c'est la phrase de confirmation qui se compose ici, et
+ * elle est demandée avant l'enregistrement — les étapes proposées viennent donc
+ * du formulaire, pas de la base.
+ */
+export async function planReopen(
+  sequenceId: string,
+  steps: ReadonlyArray<{ readonly delayDays: number }>,
+  now = new Date(),
+): Promise<ReopenPlan> {
+  const rows = await prisma.sequenceEnrollment.findMany({
+    where: { sequenceId, status: { not: "active" } },
+    include: {
+      contact: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+          instagram: true,
+          company: { select: { name: true } },
+        },
+      },
+    },
+  });
+
+  const candidates: ReopenCandidate[] = [];
+  const excluded: ReopenExclusion[] = [];
+  let step = Number.POSITIVE_INFINITY;
+
+  for (const row of rows) {
+    const name = contactTitle(row.contact);
+    if (!reopenable(row.status, row.stopReason)) {
+      // Retirée à la main, a répondu, fiche close, opposition : ces motifs
+      // protègent la personne, et ils sont nommés plutôt que tus.
+      excluded.push({ name, reason: row.stopReason });
+      continue;
+    }
+
+    const wanted = row.lastStep + 1;
+    const next = steps[wanted - 1];
+    // Personne ne rouvre sans étape à recevoir : quelqu'un qui a déjà eu les
+    // trois étapes n'est pas concerné par l'ajout d'une quatrième, qui
+    // n'existe pas.
+    if (next === undefined) continue;
+
+    step = Math.min(step, wanted);
+    candidates.push({
+      enrollmentId: row.id,
+      name,
+      inDays: daysUntilDue(row.lastSentAt, next.delayDays, now),
+    });
+  }
+
+  return {
+    step: Number.isFinite(step) ? step : steps.length,
+    candidates,
+    excluded,
+  };
+}
+
+/**
+ * Rouvre les inscriptions que la séquence avait épuisées.
+ *
+ * `lastStep` et `lastSentAt` ne bougent pas, et c'est tout le mécanisme : la
+ * personne reprend **là où elle en était**, donc son étape suivante et son
+ * délai se calculent depuis son dernier message. Les remettre à zéro lui
+ * renverrait le premier message.
+ */
+export async function applyReopen(sequenceId: string): Promise<{ reopened: number }> {
+  const steps = await prisma.emailSequenceStep.count({ where: { sequenceId } });
+  const { count } = await prisma.sequenceEnrollment.updateMany({
+    where: {
+      sequenceId,
+      status: FINISHED_STATUS,
+      stopReason: BLOCK_LABELS.finished,
+      lastStep: { lt: steps },
+    },
+    data: { status: "active", stopReason: "" },
+  });
+  return { reopened: count };
+}
+
+/**
+ * Referme celles qui n'ont plus d'étape à recevoir.
+ *
+ * Retirer une étape qu'on vient d'ajouter doit **rendre l'état d'avant**, sans
+ * attendre qu'une composition passe : les inscriptions rouvertes redeviennent
+ * terminées, et leurs brouillons jamais partis disparaissent avec l'étape qui
+ * les justifiait. Ce qui est **envoyé** ne bouge pas — c'est un fait.
+ */
+async function closeWithoutNextStep(sequenceId: string, steps: number): Promise<void> {
+  await prisma.sequenceDeparture.deleteMany({
+    where: { enrollment: { sequenceId }, step: { gt: steps }, status: { not: "sent" } },
+  });
+  await prisma.sequenceEnrollment.updateMany({
+    where: { sequenceId, status: "active", lastStep: { gte: steps } },
+    data: { status: FINISHED_STATUS, stopReason: BLOCK_LABELS.finished },
+  });
+}
+
 export const sequenceSchema = z.object({
   id: z.string().optional(),
   name: z.string().trim().min(1, "Le nom ne peut pas être vide").max(80),
@@ -192,6 +303,11 @@ export async function saveSequence(
     }
     return sequence.id;
   });
+
+  // Après l'écriture, et non dedans : la fermeture lit les inscriptions et les
+  // départs, ce qui n'a rien à faire dans la transaction qui remplace trois
+  // lignes d'étapes.
+  await closeWithoutNextStep(saved, input.steps.length);
 
   const all = await listSequences();
   const sequence = all.find((entry) => entry.id === saved);
