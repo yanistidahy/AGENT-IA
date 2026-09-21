@@ -3,6 +3,7 @@ import {
   daysUntilDue,
   describeExclusions,
   describeReopen,
+  describeSilence,
   reopenable,
 } from "../sequence-reopen";
 import { BLOCK_LABELS } from "../sequence-rules";
@@ -21,10 +22,26 @@ describe("un seul motif rouvre", () => {
     expect(reopenable("removed", "Retiré de la séquence à la main")).toBe(false);
   });
 
-  it("le statut seul ne suffit pas", () => {
-    // Redondance voulue : le jour où un autre chemin écrirait `done`, il ne
-    // rouvrirait pas des relances par accident.
-    expect(reopenable("done", "Autre chose")).toBe(false);
+  it("le statut `done` suffit, motif vide ou non", () => {
+    // **Ce que la première version refusait.** Elle exigeait le couple exact,
+    // si bien qu'une base portant l'une des deux moitiés autrement ne rouvrait
+    // rien — et ne le disait pas.
+    expect(reopenable("done", "")).toBe(true);
+    expect(reopenable("done", "Autre chose")).toBe(true);
+  });
+
+  it("le motif d'épuisement suffit aussi, quel que soit le statut", () => {
+    expect(reopenable("stopped", "Toutes les étapes ont été envoyées")).toBe(true);
+    // Sans accents ni casse : un aller-retour d'export ne doit pas décider
+    // qu'une campagne ne se prolonge plus.
+    expect(reopenable("stopped", "TOUTES LES ETAPES ONT ETE ENVOYEES")).toBe(true);
+    expect(reopenable("stopped", "  Toutes les étapes  ont été envoyées ")).toBe(true);
+  });
+
+  it("mais un motif vide sur un statut quelconque ne rouvre pas", () => {
+    // On ne sait pas pourquoi elle s'est arrêtée : dans le doute, on ne
+    // relance pas — et l'écran le dira.
+    expect(reopenable("stopped", "")).toBe(false);
   });
 
   it("une inscription active n'est pas à rouvrir", () => {
@@ -52,6 +69,45 @@ describe("le délai court depuis le dernier message", () => {
   });
 });
 
+describe("quand personne ne rouvre, l'écran dit pourquoi", () => {
+  const base = { step: 2, candidates: [], excluded: [], reasons: [], exhausted: 0 };
+
+  it("se tait dès qu'il y a des candidats", () => {
+    expect(
+      describeSilence({
+        ...base,
+        candidates: [{ enrollmentId: "e1", name: "P", inDays: 0 }],
+      }),
+    ).toBe("");
+  });
+
+  it("dit qu'il n'y a personne quand la campagne n'a rien de clos", () => {
+    expect(describeSilence(base)).toMatch(/Aucune inscription close/);
+  });
+
+  it("montre les motifs **tels qu'en base**", () => {
+    const phrase = describeSilence({
+      ...base,
+      reasons: [
+        { reason: "Le contact a répondu", count: 3 },
+        { reason: "", count: 2 },
+      ],
+    });
+    expect(phrase).toContain("3 × « Le contact a répondu »");
+    expect(phrase).toContain("2 × « (aucun motif écrit) »");
+  });
+
+  it("distingue « déjà servies jusqu'au bout » de « protégées »", () => {
+    expect(
+      describeSilence({
+        ...base,
+        reasons: [{ reason: "Toutes les étapes ont été envoyées", count: 4 }],
+        exhausted: 4,
+      }),
+    ).toMatch(/déjà reçu toutes les étapes existantes/);
+  });
+});
+
 describe("la phrase de confirmation", () => {
   const plan = (candidates: Array<{ inDays: number }>) => ({
     step: 2,
@@ -61,6 +117,8 @@ describe("la phrase de confirmation", () => {
       inDays: entry.inDays,
     })),
     excluded: [],
+    reasons: [],
+    exhausted: 0,
   });
 
   it("sépare ce qui part maintenant de ce qui part plus tard", () => {

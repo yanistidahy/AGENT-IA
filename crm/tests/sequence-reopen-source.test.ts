@@ -39,13 +39,20 @@ const reopenBody = service.slice(
 );
 
 describe("on ne rouvre qu'une séquence épuisée", () => {
-  it("la requête filtre sur le statut **et** sur le motif", () => {
-    // Borné à `applyReopen` : `closeWithoutNextStep` écrit le même motif juste
-    // en dessous, et un `slice` ouvert laisserait la garde se satisfaire de
-    // cette autre occurrence — elle a été prise en défaut une fois ainsi.
+  it("l'écriture demande au domaine, elle ne réécrit pas la règle", () => {
+    // **Le défaut du jalon 81.** `applyReopen` portait sa propre clause SQL —
+    // `status: FINISHED_STATUS` et `stopReason: BLOCK_LABELS.finished` — donc
+    // une seconde écriture de la règle, à côté de celle du domaine, et c'est
+    // elle qui décidait réellement. Le plan et l'écriture pouvaient alors ne
+    // pas voir les mêmes lignes, sans que rien ne lève.
     const body = reopenBody;
-    expect(body).toMatch(/status: FINISHED_STATUS/);
-    expect(body).toMatch(/stopReason: BLOCK_LABELS\.finished/);
+    expect(body).toMatch(/reopenable\(row\.status, row\.stopReason\)/);
+    expect(body).not.toMatch(/stopReason: BLOCK_LABELS\.finished/);
+  });
+
+  it("jamais une inscription vivante ni retirée", () => {
+    const body = reopenBody;
+    expect(body).toMatch(/status: \{ not: "active" \}/);
   });
 
   it("et seulement ceux à qui il reste une étape", () => {
@@ -97,6 +104,25 @@ describe("rien ne rouvre sans confirmation", () => {
     expect(route).toMatch(/describeReopen\(plan\)/);
     expect(route).toMatch(/describeExclusions\(plan\.excluded\)/);
     expect(panel).not.toMatch(/personnes ont terminé/);
+  });
+});
+
+describe("zéro rouverture ne s'enregistre pas en silence", () => {
+  const panel = sourceOf("components/settings/email-sequences-panel.tsx");
+
+  it("l'écran montre le plan même quand personne ne rouvre", () => {
+    // La version fautive : `if (candidates.length === 0) { await save(); }` —
+    // la main rendue sans un mot, et aucun moyen de savoir depuis la
+    // production si la règle est trop étroite ou si la base dit autre chose.
+    expect(panel).not.toMatch(/candidates\.length === 0[\s\S]{0,120}await save\(sequence\)/);
+    expect(panel).toMatch(/silence/);
+  });
+
+  it("et il dit ce que la base porte vraiment", () => {
+    expect(service).toMatch(/reasons\.set\(row\.stopReason/);
+    const domain = sourceOf("lib/domain/sequence-reopen.ts");
+    expect(domain).toMatch(/export function describeSilence/);
+    expect(domain).toMatch(/Motifs enregistrés/);
   });
 });
 

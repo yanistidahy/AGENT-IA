@@ -159,10 +159,16 @@ export async function planReopen(
 
   const candidates: ReopenCandidate[] = [];
   const excluded: ReopenExclusion[] = [];
+  // Les motifs **tels qu'en base** : c'est ce que l'écran affichera le jour où
+  // rien ne rouvre, et c'est la seule façon de voir ce que la base porte
+  // vraiment plutôt que ce que le code croit qu'elle porte.
+  const reasons = new Map<string, number>();
+  let exhausted = 0;
   let step = Number.POSITIVE_INFINITY;
 
   for (const row of rows) {
     const name = contactTitle(row.contact);
+    reasons.set(row.stopReason, (reasons.get(row.stopReason) ?? 0) + 1);
     if (!reopenable(row.status, row.stopReason)) {
       // Retirée à la main, a répondu, fiche close, opposition : ces motifs
       // protègent la personne, et ils sont nommés plutôt que tus.
@@ -175,7 +181,10 @@ export async function planReopen(
     // Personne ne rouvre sans étape à recevoir : quelqu'un qui a déjà eu les
     // trois étapes n'est pas concerné par l'ajout d'une quatrième, qui
     // n'existe pas.
-    if (next === undefined) continue;
+    if (next === undefined) {
+      exhausted += 1;
+      continue;
+    }
 
     step = Math.min(step, wanted);
     candidates.push({
@@ -189,6 +198,10 @@ export async function planReopen(
     step: Number.isFinite(step) ? step : steps.length,
     candidates,
     excluded,
+    reasons: [...reasons.entries()]
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count),
+    exhausted,
   };
 }
 
@@ -202,13 +215,28 @@ export async function planReopen(
  */
 export async function applyReopen(sequenceId: string): Promise<{ reopened: number }> {
   const steps = await prisma.emailSequenceStep.count({ where: { sequenceId } });
+
+  /*
+    **La sélection se fait par `reopenable`, pas par une clause SQL jumelle.**
+    La première version filtrait `status: FINISHED_STATUS` et
+    `stopReason: BLOCK_LABELS.finished` directement dans le `updateMany` : une
+    seconde écriture de la règle, à côté de celle du domaine, et c'est celle-là
+    qui décidait réellement. Le jour où la base porte l'une des deux moitiés
+    sous une autre forme, le plan annonce des candidats et l'écriture n'en
+    trouve aucun — ou l'inverse. Une seule fonction tranche désormais, et le
+    `updateMany` ne fait qu'appliquer sa liste.
+  */
+  const closed = await prisma.sequenceEnrollment.findMany({
+    where: { sequenceId, status: { not: "active" }, lastStep: { lt: steps } },
+    select: { id: true, status: true, stopReason: true },
+  });
+  const ids = closed
+    .filter((row) => reopenable(row.status, row.stopReason))
+    .map((row) => row.id);
+  if (ids.length === 0) return { reopened: 0 };
+
   const { count } = await prisma.sequenceEnrollment.updateMany({
-    where: {
-      sequenceId,
-      status: FINISHED_STATUS,
-      stopReason: BLOCK_LABELS.finished,
-      lastStep: { lt: steps },
-    },
+    where: { id: { in: ids } },
     data: { status: "active", stopReason: "" },
   });
   return { reopened: count };
