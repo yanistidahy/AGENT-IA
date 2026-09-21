@@ -82,8 +82,33 @@ export async function signIn(browser: Browser, password: string): Promise<Sessio
   page.on("pageerror", (error) => errors.push(`exception : ${error.message}`));
 
   await page.goto(`${BASE_URL}/login`, { waitUntil: "domcontentloaded" });
+
+  /*
+    **Remplir avant l'hydratation ne remplit rien.** Le champ est contrôlé par
+    React : `fill()` pose la valeur dans le DOM, et le premier rendu du
+    composant la remplace par sa chaîne vide. Le bouton, lui, reste désactivé
+    « tant que le champ est vide » — et le test échoue trente secondes plus
+    tard sur un bouton qui n'est jamais devenu cliquable, ce qui ressemble à
+    une panne de la page de connexion.
+
+    On remplit donc, puis on **vérifie que le bouton a suivi**, et on refait
+    une passe si l'hydratation est arrivée entre les deux. Ce flottement a
+    coûté trois recettes.
+  */
+  const submit = page.locator('button[type="submit"]');
   await page.fill('input[type="password"]', password);
-  await page.click('button[type="submit"]');
+  try {
+    await submit.waitFor({ state: "attached", timeout: 15_000 });
+    await page.waitForFunction(
+      () => document.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled === false,
+      undefined,
+      { timeout: 3_000 },
+    );
+  } catch {
+    await page.fill('input[type="password"]', "");
+    await page.fill('input[type="password"]', password);
+  }
+  await submit.click();
   await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 15_000 });
   return { page, errors };
 }

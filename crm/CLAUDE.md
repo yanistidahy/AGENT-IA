@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 81 | **Ajouter une étape rattrape ceux qui avaient fini** : réouverture des seules inscriptions épuisées, délai compté depuis leur dernier message, et une confirmation qui nomme les exclus | **livré, à valider** |
 | 80 | **Les étapes se lisent comme une suite** : un bloc numéroté par étape, une frise verticale qui porte les délais, un aperçu sans ouvrir, et des flèches pour réordonner | **livré, à valider** |
 | 79 | **Les listes rentrent dans /contacts** : la section « Listes » retirée, les tables supprimées, et des « filtres personnalisés » qui se posent comme une puce à côté des autres et se croisent avec elles | **livré, à valider** |
 | 78 | **Le tableau des inscrits répond aux questions qu'on lui pose** : une puce « a reçu un premier message », des en-têtes qui trient, les ouvertures vérifiables ligne à ligne, et l'écart entre la carte et le tableau nommé plutôt que laissé à deviner | **livré, à valider** |
@@ -11247,3 +11248,152 @@ ce qui reste le bon repère.
 **Le repli n'est pas mémorisé.** Recharger la page referme tout : c'est l'état
 qu'on veut au premier coup d'œil, et le conserver demanderait un stockage local
 pour une préférence qui dure une minute.
+
+---
+
+## Jalon 81 — ajouter une étape rattrape ceux qui avaient déjà fini
+
+### Le cas, et pourquoi rien ne se passait
+
+Une campagne à une seule étape ferme chaque inscription dès que cette étape est
+partie : la composition écrit `done` avec le motif « Toutes les étapes ont été
+envoyées ». Sur la campagne signalée, les cinquante-deux personnes servies
+étaient donc **hors de la mécanique** — ajouter une relance ne leur apportait
+rien, puisque la boucle ne lit que les inscriptions actives.
+
+Ce n'était pas un défaut : c'est le comportement correct d'une séquence qui n'a
+plus rien à dire. Ce qui manquait, c'est le geste qui les fait **rentrer** quand
+elle a de nouveau quelque chose à dire.
+
+### Un seul motif rouvre, et c'est toute la sécurité
+
+| Motif | Ce qu'il dit | Rouvert ? |
+|---|---|---|
+| Toutes les étapes ont été envoyées | **la séquence** n'avait plus rien à dire | **oui** |
+| Le contact a répondu | une décision sur la personne | non |
+| Fiche close — la relation est terminée | idem | non |
+| Opposition au démarchage | idem | non |
+| Retiré de la séquence à la main | idem | non |
+
+La distinction est celle-ci : la première ligne est une **fin technique**, les
+quatre autres sont des décisions *sur quelqu'un* — et ce sont exactement elles
+qui protègent un prospect d'une relance qu'il ne doit pas recevoir. Les traiter
+d'un même geste reviendrait à écrire à quelqu'un qui a dit non, pour la seule
+raison qu'on a ajouté un paragraphe.
+
+`reopenable()` (pur) vérifie **le statut et le motif**, alors que le premier
+suffirait aujourd'hui : `done` n'est écrit qu'à cet endroit du produit. La
+redondance coûte une comparaison et ferme la porte au jour où un autre chemin
+écrirait `done` pour autre chose — une relance partie par erreur ne se rattrape
+pas.
+
+### Le délai court depuis leur dernier message
+
+`daysUntilDue(lastSentAt, delayDays, now)`. Quelqu'un servi il y a dix jours est
+**dû tout de suite** pour une étape à J+4 ; le compter depuis l'instant de
+l'ajout lui ferait attendre quatre jours de plus sans raison, et surtout ferait
+mentir la phrase de confirmation.
+
+C'est aussi pour cela que la réouverture **ne touche ni `lastStep` ni
+`lastSentAt`** : la personne reprend là où elle en était, donc son étape suivante
+et son échéance se calculent depuis son propre historique. Les remettre à zéro
+lui renverrait le premier message.
+
+Rien d'autre n'a eu à changer dans le moteur : `nextStep` calcule déjà
+l'échéance depuis `lastSentAt` (jalon 38), et une inscription active est
+composable par construction. **« Écrire les mails » les reprend donc sans le
+savoir**, avec tous les garde-fous de l'envoi appliqués au moment de l'envoi.
+
+### On ne rouvre jamais sans avoir montré qui
+
+Deux verbes, deux gestes : `POST /api/sequences-email/reopen` **regarde** — il
+compose la phrase à partir des étapes *proposées*, avant tout enregistrement —
+et `PUT` rouvre, après lecture. Une seule route aurait fait de l'affichage d'un
+écran une relance de cinquante-deux personnes.
+
+> **52 personnes ont terminé cette campagne. Elles recevront l'étape 2 :
+> 49 immédiatement, 3 dans 2 jours.**
+> Le délai court depuis leur dernier message, pas depuis maintenant.
+> 4 inscriptions restent arrêtées : Margaux Keller (le contact a répondu), …
+
+La phrase sépare **immédiatement** de **plus tard** parce que ce sont deux
+engagements différents ; un total unique laisserait croire que tout part le
+matin même. Les retardataires sont groupés par échéance — « 3 dans 2 jours » se
+lit, « 1 dans 2 jours, 1 dans 2 jours, 1 dans 3 jours » ne se lit pas.
+
+**Les exclus sont nommés**, et c'est la moitié de la confiance qu'on accorde au
+bouton : voir « Margaux Keller (le contact a répondu) reste arrêtée » dit en une
+ligne que la garde ne se contente pas d'exister.
+
+Trois réponses possibles, parce que certaines campagnes ne se prolongent pas :
+**Enregistrer et relancer**, **Enregistrer sans relancer**, **Annuler**. Et
+l'enregistrement seul reste ce qu'il est depuis le jalon 70 : sans effet de
+bord, sans coût, rejouable.
+
+### Retirer l'étape rend l'état d'avant, tout de suite
+
+`closeWithoutNextStep` s'exécute après chaque enregistrement : les inscriptions
+actives qui n'ont plus d'étape à recevoir redeviennent terminées, avec leur
+motif, et les brouillons **jamais partis** de l'étape disparue sont effacés. Ce
+qui est **envoyé** ne bouge pas — c'est un fait, et /emails le compte.
+
+Sans cela, il aurait fallu attendre une composition pour que l'état redevienne
+cohérent, c'est-à-dire laisser l'écran mentir jusqu'au lendemain matin.
+
+### Jalon 81 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (`migrate diff` **vide** — aucune migration :
+tout se décide sur `status` et `stopReason`, qui existent depuis le jalon 38),
+sur le cas signalé reconstitué — **52 terminées** (49 servies il y a 10 jours,
+3 il y a 2 jours), plus une réponse, une fiche close, une opposition et un
+retrait à la main :
+
+- **le plan n'écrit rien** : « 52 personnes ont terminé cette campagne. Elles
+  recevront l'étape 2 : 49 immédiatement, 3 dans 2 jours. », les **4 exclues
+  nommées avec leur motif**, et **0 inscription active** après l'appel ;
+- **la réouverture est exacte** : 52 rouvertes, 0 terminée, **Margaux reste
+  `stopped`** ; `lastStep` reste à 1 et `lastSentAt` au 11/09 — personne ne
+  repart du premier message ;
+- **le délai compte depuis leur envoi** : la composition écrit **49 brouillons**
+  d'étape 2 et laisse **3 en attente**, exactement les trois servis il y a deux
+  jours ;
+- **retirer l'étape rend l'état d'avant** : 0 active, 52 terminées avec le motif
+  d'origine, **0 départ restant** ;
+- **au navigateur** : « Ajouter une étape » puis « Enregistrer » ouvre la
+  confirmation, qui nomme le compte, l'échéance et Margaux Keller — **avec 0
+  inscription active à cet instant** ; « Enregistrer et relancer » rouvre les
+  trois et laisse la répondante arrêtée ; **0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1374 tests**) et
+  `npm run e2e` (**57 tests**, onze fichiers) verts.
+
+`tests/sequence-reopen-source.test.ts` ferme les trois rechutes : rouvrir large,
+rouvrir sans le dire, repartir de zéro. **Éprouvée en retirant le filtre sur le
+motif** — et la première version de la garde n'a rien vu : son `slice` allait
+jusqu'à la fin du fichier, où `closeWithoutNextStep` écrit le même motif, si bien
+qu'elle se satisfaisait de cette autre occurrence. Bornée à `applyReopen`, elle
+tombe en nommant le défaut. **Un test qui passe ne prouve rien tant qu'on ne l'a
+pas vu échouer sur le défaut qu'il vise** — leçon du jalon 49, resservie.
+
+### Jalon 81 — ce qui n'est pas fait
+
+**La confirmation n'apparaît que lorsque le nombre d'étapes augmente.** Changer
+un délai ou une consigne n'ouvre rien et ne rouvre personne : c'est voulu, mais
+cela veut dire qu'allonger le délai de l'étape 2 après avoir relancé ne
+« rattrape » pas ceux qui l'ont déjà reçue — il n'y a rien à rattraper.
+
+**Aucune réouverture depuis l'API sans passer par le plan.** `PUT` rouvre tout ce
+qui est éligible pour la séquence, sans relire ce que l'écran a montré : un appel
+direct rouvre donc sans confirmation. C'est le même compromis que partout
+ailleurs — l'écran n'est pas la seule porte, mais le garde-fou qui compte (le
+motif) est au serveur, pas à l'écran.
+
+**Les personnes dues n'ont pas de vue à elles.** Elles deviennent des inscrits
+actifs ordinaires : la liste des inscrits les montre « pas encore écrit » pour
+l'étape 2, sans dire qu'elles viennent d'être rouvertes. L'historique du geste
+n'est nulle part.
+
+**Le flottement de connexion des recettes est corrigé au passage** : `signIn`
+remplissait le champ avant l'hydratation, React reposait sa valeur vide, et le
+bouton restait désactivé trente secondes — trois recettes perdues sur ce qui
+ressemblait à une panne de la page de connexion. Le helper vérifie désormais que
+le bouton a suivi, et refait une passe sinon.

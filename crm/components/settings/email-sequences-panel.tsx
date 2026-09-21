@@ -38,6 +38,12 @@ export interface SequenceView {
   unlock: { unlocked: boolean; validated: number; replies: number; reason: string };
 }
 
+function isReopenPlan(
+  value: unknown,
+): value is { message: string; exclusions: string; plan: { candidates: unknown[] } } {
+  return typeof value === "object" && value !== null && "plan" in value;
+}
+
 function isPayload(
   value: unknown,
 ): value is {
@@ -65,6 +71,20 @@ export function EmailSequencesPanel({
   readonly embedded?: boolean;
 }) {
   const [sequences, setSequences] = useState<SequenceView[]>([...initial]);
+  /**
+   * Le nombre d'étapes **enregistrées**, par séquence.
+   *
+   * C'est lui qui dit qu'on vient d'en ajouter une : comparer à la liste
+   * affichée ne dirait rien, puisqu'elle porte déjà la modification en cours.
+   */
+  const [savedSteps, setSavedSteps] = useState<Record<string, number>>(() =>
+    Object.fromEntries(initial.map((entry) => [entry.id, entry.steps.length])),
+  );
+  const [confirm, setConfirm] = useState<{
+    sequence: SequenceView;
+    message: string;
+    exclusions: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -74,7 +94,15 @@ export function EmailSequencesPanel({
       current.map((entry) => (entry.id === id ? { ...entry, ...change } : entry)),
     );
 
-  const save = async (sequence: SequenceView) => {
+  /**
+   * Enregistre, puis rouvre **si on l'a demandé**.
+   *
+   * L'ordre compte : rouvrir avant d'écrire les étapes rendrait des
+   * inscriptions actives pour une étape qui n'existe pas encore en base, et la
+   * composition suivante les refermerait aussitôt.
+   */
+  const save = async (sequence: SequenceView, reopen = false) => {
+    setConfirm(null);
     setBusy(true);
     setError(null);
     setDone(null);
@@ -128,8 +156,77 @@ export function EmailSequencesPanel({
         appel au modèle, aucun départ composé, aucune facture. Écrire les mails
         est un geste séparé, avec son bouton et son estimation de coût.
       */
+      setSavedSteps((current) => ({
+        ...current,
+        [result.data.sequence?.id ?? sequence.id]: sequence.steps.length,
+      }));
+
+      if (reopen) {
+        const reopened = await requestJson(
+          "/api/sequences-email/reopen",
+          { method: "PUT", body: JSON.stringify({ sequenceId: sequence.id }) },
+          (value): value is { reopened: number } =>
+            typeof value === "object" && value !== null && "reopened" in value,
+        );
+        if (!reopened.ok) {
+          setError(reopened.message);
+          return;
+        }
+        setDone(
+          `Séquence enregistrée. ${reopened.data.reopened} inscription${
+            reopened.data.reopened > 1 ? "s" : ""
+          } rouverte${reopened.data.reopened > 1 ? "s" : ""} — les personnes dues entreront dans la prochaine composition.`,
+        );
+        return;
+      }
       setDone("Séquence enregistrée.");
     } else setError(result.message);
+  };
+
+  /**
+   * Le clic sur « Enregistrer ».
+   *
+   * **On ne rouvre jamais sans avoir montré qui.** Ajouter une étape à une
+   * campagne qui a tourné peut relancer cinquante-deux personnes : c'est une
+   * décision, pas un effet de bord d'un enregistrement — et certaines
+   * campagnes, on ne veut précisément pas les prolonger.
+   */
+  const askThenSave = async (sequence: SequenceView) => {
+    const before = savedSteps[sequence.id] ?? 0;
+    if (sequence.id === "" || sequence.steps.length <= before) {
+      await save(sequence);
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setDone(null);
+    const plan = await requestJson(
+      "/api/sequences-email/reopen",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          sequenceId: sequence.id,
+          steps: sequence.steps.map((step) => ({ delayDays: step.delayDays })),
+        }),
+      },
+      isReopenPlan,
+    );
+    setBusy(false);
+
+    if (!plan.ok) {
+      setError(plan.message);
+      return;
+    }
+    if (plan.data.plan.candidates.length === 0) {
+      await save(sequence);
+      return;
+    }
+    setConfirm({
+      sequence,
+      message: plan.data.message,
+      exclusions: plan.data.exclusions,
+    });
   };
 
   const create = () =>
@@ -228,10 +325,49 @@ export function EmailSequencesPanel({
             type="button"
             className={`${BUTTON} mt-3 bg-brand text-white hover:bg-brand-d`}
             disabled={busy}
-            onClick={() => void save(sequence)}
+            onClick={() => void askThenSave(sequence)}
           >
             Enregistrer
           </button>
+
+          {confirm !== null && confirm.sequence.id === sequence.id && (
+            <div className="mt-3 rounded-card border border-brand-lift bg-brand-l p-3 text-[12.5px]">
+              <p className="font-semibold text-ink">{confirm.message}</p>
+              <p className="mt-1 text-muted">
+                Le délai court depuis leur dernier message, pas depuis maintenant. Rien ne part
+                sans validation : les personnes dues entrent dans la prochaine composition.
+              </p>
+              {confirm.exclusions !== "" && (
+                <p className="mt-1 text-muted">{confirm.exclusions}</p>
+              )}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  className={`${BUTTON} bg-brand text-white hover:bg-brand-d`}
+                  onClick={() => void save(confirm.sequence, true)}
+                >
+                  Enregistrer et relancer
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  className={`${BUTTON} border border-line bg-surface hover:bg-surface-2`}
+                  onClick={() => void save(confirm.sequence)}
+                >
+                  Enregistrer sans relancer
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  className={`${BUTTON} border border-line bg-surface hover:bg-surface-2`}
+                  onClick={() => setConfirm(null)}
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       ))}
 
