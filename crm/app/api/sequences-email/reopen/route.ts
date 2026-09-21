@@ -2,7 +2,11 @@ import { z } from "zod";
 import { badRequest, invalidPayload, jsonOk, serverError } from "@/lib/api/errors";
 import { readJson } from "@/lib/api/request";
 import { applyReopen, listSequences, planReopen } from "@/lib/api/email-sequences";
-import { describeExclusions, describeReopen } from "@/lib/domain/sequence-reopen";
+import {
+  describeExclusions,
+  describeReopen,
+  describeSilence,
+} from "@/lib/domain/sequence-reopen";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +45,8 @@ export async function POST(request: Request) {
       // même chose que ce que le bouton fait.
       message: describeReopen(plan),
       exclusions: describeExclusions(plan.excluded),
+      // Vide dès qu'il y a des candidats : il n'y a alors rien à expliquer.
+      silence: describeSilence(plan),
     });
   } catch (error) {
     return serverError("POST /api/sequences-email/reopen", error);

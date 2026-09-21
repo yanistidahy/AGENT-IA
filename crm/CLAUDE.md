@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 82 | **Le jalon 81, rendu robuste et bruyant** : la règle ne dépend plus d'un couple statut+libellé exact, l'écriture demande au domaine au lieu de recomposer sa clause, et zéro réouverture ne s'enregistre plus en silence | **livré, à valider** |
 | 81 | **Ajouter une étape rattrape ceux qui avaient fini** : réouverture des seules inscriptions épuisées, délai compté depuis leur dernier message, et une confirmation qui nomme les exclus | **livré, à valider** |
 | 80 | **Les étapes se lisent comme une suite** : un bloc numéroté par étape, une frise verticale qui porte les délais, un aperçu sans ouvrir, et des flèches pour réordonner | **livré, à valider** |
 | 79 | **Les listes rentrent dans /contacts** : la section « Listes » retirée, les tables supprimées, et des « filtres personnalisés » qui se posent comme une puce à côté des autres et se croisent avec elles | **livré, à valider** |
@@ -11397,3 +11398,141 @@ remplissait le champ avant l'hydratation, React reposait sa valeur vide, et le
 bouton restait désactivé trente secondes — trois recettes perdues sur ce qui
 ressemblait à une panne de la page de connexion. Le helper vérifie désormais que
 le bouton a suivi, et refait une passe sinon.
+
+---
+
+## Jalon 82 — pourquoi le jalon 81 pouvait ne rien faire, sans le dire
+
+### Ce que la reproduction a établi, et ce qu'elle a démenti
+
+Les deux hypothèses proposées ont été exercées, dans l'ordre, sur le **vrai
+chemin** — l'éditeur en frise du jalon 80, dans un navigateur, sur un état
+produit par la composition elle-même (aucun statut écrit à la main) :
+
+| Hypothèse | Verdict |
+|---|---|
+| Le jalon 80 aurait introduit un chemin d'enregistrement que le jalon 81 n'a jamais vu | **Faux, mesuré.** « Ajouter une étape » ×2, consignes saisies, « Enregistrer » → `POST /api/sequences-email/reopen`, confirmation affichée, 0 erreur console. Le bouton appelle toujours `askThenSave` |
+| Le libellé stocké serait une variante | **Faux pour le libellé** : `git log -p` sur `sequence-rules.ts` ne rend **qu'une seule** écriture de la chaîne depuis le jalon 38. Le **statut**, lui, n'est pas vérifiable d'ici |
+
+**Je ne peux pas lire la base de production depuis cet environnement**, et je ne
+vais donc pas nommer une ligne qui aurait échoué chez vous : sur l'état que ce
+code produit, le chemin marche de bout en bout. Ce que je peux nommer, ce sont
+les trois lignes qui rendent ce mécanisme **muet** dès que la base porte autre
+chose que ce que le code suppose — et c'est ce silence, pas la règle, qui a
+coûté l'aller-retour.
+
+### Les trois causes nommées, avec leur fichier
+
+**1 · `lib/domain/sequence-reopen.ts:39` (jalon 81) — la redondance qui bloque.**
+
+```ts
+return status === FINISHED_STATUS && stopReason === BLOCK_LABELS.finished;
+```
+
+Écrite comme une ceinture-bretelles — « le statut suffirait, la comparaison
+ferme la porte au jour où un autre chemin écrirait `done` pour autre chose ».
+C'est un **ET** : il suffit que l'une des deux moitiés diffère — un `stopped`
+hérité d'un chemin plus ancien, un accent perdu dans un aller-retour d'export,
+un motif vide — pour que **rien ne corresponde**. La garde protégeait d'un
+danger imaginaire et créait un mode de panne réel.
+
+La règle repose désormais sur ce qui décide vraiment : jamais une inscription
+`active` ni `removed` ; `done` suffit, motif vide ou non ; **le motif
+d'épuisement suffit aussi**, comparé sans casse ni accents. Les quatre motifs
+qui protègent quelqu'un ne peuvent ressembler à aucun des deux.
+
+**2 · `lib/api/email-sequences.ts` — la règle écrite deux fois.**
+`applyReopen` portait sa propre clause SQL (`status: FINISHED_STATUS`,
+`stopReason: BLOCK_LABELS.finished`) : une seconde écriture de la règle, à côté
+de celle du domaine, et c'est **elle** qui décidait réellement. Le plan et
+l'écriture pouvaient donc ne pas voir les mêmes lignes sans que rien ne lève.
+Elle lit maintenant les inscriptions closes et demande à `reopenable()` —
+une seule fonction tranche, le `updateMany` applique sa liste.
+
+**3 · `components/settings/email-sequences-panel.tsx` — le silence.**
+
+```ts
+if (plan.data.plan.candidates.length === 0) { await save(sequence); return; }
+```
+
+**C'est la ligne qui a rendu le défaut invisible.** Zéro candidat, on
+enregistrait sans un mot : impossible, depuis la production, de trancher entre
+« la règle est trop étroite » et « la base ne dit pas ce qu'on croit ».
+
+### Ce que l'écran dit maintenant quand rien ne rouvre
+
+> **Aucune inscription ne sera rouverte.**
+> 52 inscriptions closes, aucune rouvrable. Motifs enregistrés :
+> 52 × « … » . Seules les inscriptions arrêtées faute d'étape suivante se
+> rouvrent ; les autres protègent la personne.
+
+Les motifs sont rendus **tels qu'ils sont écrits en base**, y compris
+« (aucun motif écrit) » : c'est le seul moyen de voir ce que la base porte
+plutôt que ce que le code croit qu'elle porte. Le cas « elles ont déjà reçu
+toutes les étapes existantes » est distingué, parce qu'il appelle un autre
+geste — en ajouter une de plus.
+
+Et le bouton « Enregistrer et relancer » **n'existe pas** dans ce cas : il n'y
+a rien à relancer. Reste « Enregistrer », qui demande un second clic — un ajout
+d'étape ne s'enregistre plus dans le dos.
+
+**Une quatrième contradiction est nommée aussi** : si la confirmation annonce
+des réouvertures et que l'écriture n'en fait aucune, l'écran ne dit plus
+« Séquence enregistrée » mais le contredit. Le plan lit les étapes *proposées*,
+l'écriture celles qui sont *en base* — l'écart est possible, il ne sera plus
+silencieux.
+
+### Ce qu'il faut regarder en production, dans cet ordre
+
+1. **`/reglages` → « Version déployée »** (jalon 51) : le commit servi
+   porte-t-il ce correctif ? Deux situations produisent le même écran — un
+   déploiement en retard et un défaut —, et c'est précisément pour les séparer
+   que cette carte existe ;
+2. **rouvrir la campagne et cliquer « Enregistrer »** : la confirmation nomme
+   désormais soit qui sera relancé, soit **les motifs réellement stockés sur
+   ces 52 lignes**. C'est la réponse à la question, et elle vient de votre base.
+
+### Jalon 82 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (`migrate diff` **vide** — aucune migration),
+le serveur standalone de production et un navigateur piloté :
+
+- **les trois formes rouvrent** : `done` + libellé, `done` + motif vide,
+  `stopped` + libellé, et `stopped` + libellé sans accents ni casse →
+  **4 candidats, 4 rouvertes** ;
+- **les quatre protégées ne bougent pas** : a répondu, fiche close, retirée à la
+  main, **et le motif vide sur `stopped`** — on ne sait pas pourquoi elle s'est
+  arrêtée, donc on ne relance pas, et l'écran le dit ;
+- **plan et écriture s'accordent** : les mêmes quatre noms des deux côtés ;
+- **la campagne muette parle**, au navigateur : « Aucune inscription ne sera
+  rouverte. » + « Motifs enregistrés : 1 × « Le contact a répondu » » + les
+  exclus nommés, **aucun bouton « et relancer »**, et **l'étape n'est pas
+  enregistrée** tant qu'on n'a pas cliqué une seconde fois ;
+- **le cas « déjà tout reçu »** rend sa propre phrase, distincte ;
+- **le jalon 81 n'a pas régressé** : confirmation avant toute écriture,
+  3 rouvertes, Margaux `stopped`, `lastStep` et `lastSentAt` intacts ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1383 tests**) et
+  `npm run e2e` (**59 tests**) verts.
+
+La garde `sequence-reopen-source` a été **réécrite dans l'autre sens** : elle
+exigeait la clause SQL jumelle qui est précisément le défaut ; elle exige
+maintenant que l'écriture demande au domaine, et que l'écran ne puisse plus
+enregistrer en silence.
+
+### Jalon 82 — ce qui n'est pas établi
+
+**La cause exacte de votre échec en production reste inconnue depuis ici**, et
+je préfère l'écrire que la deviner : sur l'état que ce code produit, le chemin
+complet fonctionne. Les deux mesures ci-dessus la nommeront en un clic — et si
+c'est un statut hérité ou un motif vide, le correctif de ce jalon la traite
+déjà.
+
+**Aucune migration de données.** Les lignes existantes ne sont pas réécrites :
+la règle s'adapte à ce qu'elles portent, plutôt que de les normaliser. Une
+correction en masse sur des inscriptions serait un geste à confirmer, pas un
+effet de bord d'un correctif.
+
+**`reopenable` reste conservatrice sur le motif vide avec un statut autre que
+`done`.** Elle ne rouvre pas — et l'écran compte ces lignes dans son
+diagnostic, sous « (aucun motif écrit) ». Si la production en porte beaucoup,
+c'est ce qu'il faudra regarder ensuite.

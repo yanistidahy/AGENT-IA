@@ -40,7 +40,12 @@ export interface SequenceView {
 
 function isReopenPlan(
   value: unknown,
-): value is { message: string; exclusions: string; plan: { candidates: unknown[] } } {
+): value is {
+  message: string;
+  exclusions: string;
+  silence: string;
+  plan: { candidates: unknown[] };
+} {
   return typeof value === "object" && value !== null && "plan" in value;
 }
 
@@ -84,6 +89,8 @@ export function EmailSequencesPanel({
     sequence: SequenceView;
     message: string;
     exclusions: string;
+    /** Pourquoi personne ne rouvre — vide quand quelqu'un rouvre. */
+    silence: string;
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -172,6 +179,20 @@ export function EmailSequencesPanel({
           setError(reopened.message);
           return;
         }
+        /*
+          **Zéro rouverture après une confirmation qui en annonçait est une
+          contradiction, pas un succès.** Le plan lit les étapes *proposées*,
+          l'écriture lit celles qui sont *en base* : si l'enregistrement n'a
+          pas porté, la promesse et le résultat divergent — et c'est
+          exactement le genre d'écart qui s'est lu « rien ne se passe » en
+          production. On le dit, plutôt que d'annoncer « enregistrée ».
+        */
+        if (reopened.data.reopened === 0) {
+          setError(
+            "Séquence enregistrée, mais aucune inscription n'a été rouverte alors que la confirmation en annonçait. Rechargez l'écran : l'étape n'a peut-être pas été enregistrée.",
+          );
+          return;
+        }
         setDone(
           `Séquence enregistrée. ${reopened.data.reopened} inscription${
             reopened.data.reopened > 1 ? "s" : ""
@@ -218,14 +239,19 @@ export function EmailSequencesPanel({
       setError(plan.message);
       return;
     }
-    if (plan.data.plan.candidates.length === 0) {
-      await save(sequence);
-      return;
-    }
+    /*
+      **Zéro rouverture ne s'enregistre plus en silence.** C'était le vrai
+      défaut du jalon 81 : ajouter une étape à une campagne pleine de gens qui
+      avaient terminé rendait la main sans un mot, et rien ne disait si la
+      règle était trop étroite ou si la base ne portait pas ce qu'on croyait.
+      L'écran montre donc ce qui est écrit en base, et c'est le seul geste qui
+      permette de trancher depuis la production.
+    */
     setConfirm({
       sequence,
       message: plan.data.message,
       exclusions: plan.data.exclusions,
+      silence: plan.data.silence,
     });
   };
 
@@ -332,30 +358,38 @@ export function EmailSequencesPanel({
 
           {confirm !== null && confirm.sequence.id === sequence.id && (
             <div className="mt-3 rounded-card border border-brand-lift bg-brand-l p-3 text-[12.5px]">
-              <p className="font-semibold text-ink">{confirm.message}</p>
-              <p className="mt-1 text-muted">
-                Le délai court depuis leur dernier message, pas depuis maintenant. Rien ne part
-                sans validation : les personnes dues entrent dans la prochaine composition.
+              <p className="font-semibold text-ink">
+                {confirm.silence === "" ? confirm.message : "Aucune inscription ne sera rouverte."}
               </p>
+              {confirm.silence === "" ? (
+                <p className="mt-1 text-muted">
+                  Le délai court depuis leur dernier message, pas depuis maintenant. Rien ne part
+                  sans validation : les personnes dues entrent dans la prochaine composition.
+                </p>
+              ) : (
+                <p className="mt-1 text-muted">{confirm.silence}</p>
+              )}
               {confirm.exclusions !== "" && (
                 <p className="mt-1 text-muted">{confirm.exclusions}</p>
               )}
               <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={busy}
-                  className={`${BUTTON} bg-brand text-white hover:bg-brand-d`}
-                  onClick={() => void save(confirm.sequence, true)}
-                >
-                  Enregistrer et relancer
-                </button>
+                {confirm.silence === "" && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className={`${BUTTON} bg-brand text-white hover:bg-brand-d`}
+                    onClick={() => void save(confirm.sequence, true)}
+                  >
+                    Enregistrer et relancer
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={busy}
                   className={`${BUTTON} border border-line bg-surface hover:bg-surface-2`}
                   onClick={() => void save(confirm.sequence)}
                 >
-                  Enregistrer sans relancer
+                  {confirm.silence === "" ? "Enregistrer sans relancer" : "Enregistrer"}
                 </button>
                 <button
                   type="button"

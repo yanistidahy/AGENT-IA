@@ -1,3 +1,5 @@
+import { REMOVED } from "./campaign-members";
+import { fold } from "./text";
 import { BLOCK_LABELS } from "./sequence-rules";
 
 /**
@@ -28,16 +30,41 @@ import { BLOCK_LABELS } from "./sequence-rules";
 /** Le statut écrit par la composition quand la séquence n'a plus d'étape. */
 export const FINISHED_STATUS = "done";
 
+/** Le motif, réduit à ce qui ne dépend ni de la casse ni des accents. */
+function normalize(reason: string): string {
+  return fold(reason).replace(/\s+/g, " ").trim();
+}
+
+const EXHAUSTED = normalize(BLOCK_LABELS.finished);
+
 /**
  * Cette inscription a-t-elle été fermée **faute d'étape suivante** ?
  *
- * Le statut *et* le motif sont vérifiés, alors que le premier suffirait
- * aujourd'hui : `done` n'est écrit qu'à cet endroit. La redondance coûte une
- * comparaison et ferme la porte au jour où un autre chemin écrirait `done`
- * pour autre chose — une relance envoyée par erreur ne se rattrape pas.
+ * **La première version exigeait le statut `done` ET le motif exact.** C'était
+ * une redondance délibérée — « le statut suffirait aujourd'hui, la comparaison
+ * ferme la porte au jour où un autre chemin écrirait `done` pour autre
+ * chose » — et c'est elle qui rend le mécanisme muet dès que la base porte
+ * l'une des deux moitiés sous une autre forme : un `stopped` hérité d'un
+ * chemin plus ancien, un accent perdu à l'import, un motif vide. Rien ne
+ * correspond, rien ne rouvre, et **rien ne le dit**.
+ *
+ * La règle repose donc désormais sur ce qui décide vraiment, dans cet ordre :
+ *
+ * 1. **jamais une inscription vivante ni retirée** — `active` n'a rien à
+ *    rouvrir, et `removed` est un geste de l'utilisateur ;
+ * 2. **`done` suffit** : ce statut n'est écrit qu'à l'épuisement de la
+ *    séquence, motif vide ou non ;
+ * 3. **le motif d'épuisement suffit aussi**, comparé sans casse ni accents :
+ *    les quatre motifs qui protègent quelqu'un — a répondu, fiche close,
+ *    opposition, retrait à la main — ne peuvent pas lui ressembler.
+ *
+ * Ce qui n'a pas bougé : aucune de ces trois portes ne laisse passer une
+ * inscription arrêtée **sur la personne**. C'est la seule chose qui compte.
  */
 export function reopenable(status: string, stopReason: string): boolean {
-  return status === FINISHED_STATUS && stopReason === BLOCK_LABELS.finished;
+  if (status === "active" || status === REMOVED) return false;
+  if (status === FINISHED_STATUS) return true;
+  return normalize(stopReason) === EXHAUSTED;
 }
 
 const DAY_MS = 86_400_000;
@@ -70,12 +97,26 @@ export interface ReopenExclusion {
   readonly reason: string;
 }
 
+export interface ReasonCount {
+  readonly reason: string;
+  readonly count: number;
+}
+
 export interface ReopenPlan {
   /** L'étape que ces personnes recevront. */
   readonly step: number;
   readonly candidates: readonly ReopenCandidate[];
   /** Arrêtées pour un motif qui les protège : nommées, jamais rouvertes. */
   readonly excluded: readonly ReopenExclusion[];
+  /**
+   * Les motifs **tels qu'ils sont écrits en base**, comptés.
+   *
+   * C'est le diagnostic : le jour où rien ne rouvre, il faut lire ce que la
+   * base porte vraiment, pas ce que le code croit qu'elle porte.
+   */
+  readonly reasons: readonly ReasonCount[];
+  /** Rouvrables, mais qui ont déjà reçu toutes les étapes existantes. */
+  readonly exhausted: number;
 }
 
 function plural(count: number, word: string): string {
@@ -112,6 +153,45 @@ export function describeReopen(plan: ReopenPlan): string {
   return (
     `${plural(total, "personne")} ${total > 1 ? "ont" : "a"} terminé cette campagne. ` +
     `Elle${total > 1 ? "s" : ""} recevront l'étape ${plan.step} : ${parts.join(", ")}.`
+  );
+}
+
+/**
+ * **Pourquoi personne ne rouvre**, quand personne ne rouvre.
+ *
+ * Le défaut qui a coûté ce jalon n'est pas qu'aucune inscription n'ait été
+ * rouverte : c'est que l'écran ait **enregistré sans rien dire**. Un ajout
+ * d'étape qui ne rattrape personne alors que la campagne est pleine de gens
+ * qui ont terminé est soit une règle trop étroite, soit une base qui ne dit
+ * pas ce qu'on croit — et dans les deux cas, la seule chose à faire est de
+ * montrer ce qui est écrit.
+ *
+ * Rend une chaîne vide quand il y a des candidats : il n'y a alors rien à
+ * expliquer.
+ */
+export function describeSilence(plan: ReopenPlan): string {
+  if (plan.candidates.length > 0) return "";
+
+  const closed = plan.reasons.reduce((total, entry) => total + entry.count, 0);
+  if (closed === 0) {
+    return "Aucune inscription close sur cette campagne : il n'y a personne à rouvrir.";
+  }
+
+  if (plan.exhausted > 0) {
+    return `${plural(
+      plan.exhausted,
+      "inscription",
+    )} ${plan.exhausted > 1 ? "ont" : "a"} déjà reçu toutes les étapes existantes : ajoutez-en une de plus pour les rattraper.`;
+  }
+
+  const detail = plan.reasons
+    .map((entry) => `${entry.count} × « ${entry.reason === "" ? "(aucun motif écrit)" : entry.reason} »`)
+    .join(", ");
+  return (
+    `${plural(closed, "inscription")} close${closed > 1 ? "s" : ""}, ` +
+    `aucune rouvrable. Motifs enregistrés : ${detail}. ` +
+    "Seules les inscriptions arrêtées faute d'étape suivante se rouvrent ; " +
+    "les autres protègent la personne."
   );
 }
 

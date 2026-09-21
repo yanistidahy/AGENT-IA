@@ -145,3 +145,101 @@ describe.skipIf(skip)("ajouter une étape rouvre les inscriptions épuisées", (
     expect(session.errors).toEqual([]);
   });
 });
+
+/**
+ * **Et quand personne ne rouvre, l'écran le dit.**
+ *
+ * C'est le défaut qui a fait croire le jalon 81 mort en production : ajouter
+ * une étape rendait la main sans un mot, et rien ne permettait de trancher
+ * entre « la règle est trop étroite » et « la base ne porte pas ce qu'on
+ * croit ». Seul un test qui clique peut voir qu'un écran se tait.
+ */
+describe.skipIf(skip)("une campagne où rien ne rouvre le dit", () => {
+  let browser: Browser;
+  let session: Session;
+  let campaignId: string;
+  let sequenceId: string;
+
+  beforeAll(async () => {
+    const mailbox = await prisma.mailbox.upsert({
+      where: { slug: "e2e-muet" },
+      update: {},
+      create: { slug: "e2e-muet", label: "E2E muet", signName: "Test" },
+    });
+    const campaign = await prisma.campaign.create({
+      data: { name: "E2E — rien à rouvrir", mailboxId: mailbox.id, selection: "" },
+    });
+    campaignId = campaign.id;
+    const sequence = await prisma.emailSequence.create({
+      data: {
+        name: "E2E — rien à rouvrir",
+        campaignId,
+        active: true,
+        steps: { create: [{ position: 1, delayDays: 0, brief: "présenter" }] },
+      },
+    });
+    sequenceId = sequence.id;
+
+    const contact = await prisma.contact.create({
+      data: {
+        firstName: "E2eMuet",
+        lastName: "Test",
+        email: "e2emuet@exemple.test",
+        lifecycle: "Prospect",
+        nameKey: "test e2emuet",
+        searchText: "e2emuet test",
+      },
+    });
+    await prisma.sequenceEnrollment.create({
+      data: {
+        sequenceId,
+        contactId: contact.id,
+        status: "stopped",
+        stopReason: "Le contact a répondu",
+        lastStep: 1,
+        lastSentAt: new Date(),
+      },
+    });
+
+    browser = await openBrowser();
+    session = await signIn(browser, PASSWORD as string);
+  }, 60_000);
+
+  afterAll(async () => {
+    await prisma.sequenceEnrollment.deleteMany({ where: { sequenceId } });
+    await prisma.emailSequence.deleteMany({ where: { id: sequenceId } });
+    await prisma.campaign.deleteMany({ where: { id: campaignId } });
+    await prisma.contact.deleteMany({ where: { searchText: { contains: "e2emuet" } } });
+    await prisma.mailbox.deleteMany({ where: { slug: "e2e-muet" } });
+    await browser?.close();
+  });
+
+  it("montre les motifs tels qu'en base, au lieu d'enregistrer en silence", async () => {
+    const { page } = session;
+    await page.goto(`${BASE_URL}/campagnes/${campaignId}`, { waitUntil: "domcontentloaded" });
+
+    const add = page.getByRole("button", { name: /Ajouter une étape/ });
+    await add.scrollIntoViewIfNeeded();
+    await add.click();
+    await page.getByRole("button", { name: "Ouvrir l'étape 2" }).click();
+    await page.locator('input[placeholder^="ex. rappeler"]').last().fill("relancer");
+
+    const save = page.getByRole("button", { name: "Enregistrer", exact: true });
+    await save.scrollIntoViewIfNeeded();
+    await save.click();
+
+    await page.getByText("Aucune inscription ne sera rouverte.").waitFor({ timeout: 15_000 });
+    const body = await page.evaluate(() => document.body.innerText);
+    expect(body).toContain("Motifs enregistrés : 1 × « Le contact a répondu »");
+
+    // **Le bouton de relance n'existe pas ici** : il n'y a rien à relancer.
+    expect(await page.getByRole("button", { name: "Enregistrer et relancer" }).count()).toBe(0);
+
+    // Et rien n'a été enregistré dans le dos : l'étape attend le second clic.
+    expect(await prisma.emailSequenceStep.count({ where: { sequenceId } })).toBe(1);
+  }, 90_000);
+
+  it("n'a produit aucune erreur de console", () => {
+    expect(session.errors).toEqual([]);
+  });
+});
