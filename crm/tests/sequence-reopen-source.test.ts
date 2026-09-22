@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -104,6 +104,65 @@ describe("rien ne rouvre sans confirmation", () => {
     expect(route).toMatch(/describeReopen\(plan\)/);
     expect(route).toMatch(/describeExclusions\(plan\.excluded\)/);
     expect(panel).not.toMatch(/personnes ont terminé/);
+  });
+});
+
+describe("une seule porte pour enregistrer les étapes d'une campagne", () => {
+  /*
+    **Le défaut du jalon 83**, et le plus cher des trois : la réouverture était
+    déclenchée par un delta d'état d'interface — « le nombre d'étapes a-t-il
+    grandi depuis le montage du composant ? ». Une fois les étapes
+    enregistrées, ce delta retombe à zéro pour toujours, donc plus aucun
+    enregistrement ne proposait de rattraper les personnes fermées. Le chemin
+    marchait en recette (on ajoutait une étape) et jamais en production (elles
+    étaient déjà là).
+  */
+  const files = readdirSync(path.join(ROOT, "components/campaigns"))
+    .filter((name) => name.endsWith(".tsx"))
+    .concat(
+      readdirSync(path.join(ROOT, "components/settings"))
+        .filter((name) => name.endsWith(".tsx"))
+        .map((name) => `../settings/${name}`),
+    );
+
+  it("un seul composant enregistre une séquence", () => {
+    const writers = files.filter((name) => {
+      const source = sourceOf(path.join("components/campaigns", name));
+      return /"\/api\/sequences-email"[\s\S]{0,200}method: "POST"|method: "POST"[\s\S]{0,200}"\/api\/sequences-email"/.test(
+        source,
+      );
+    });
+    expect(writers).toEqual(["../settings/email-sequences-panel.tsx"]);
+  });
+
+  it("son bouton passe par `askThenSave`, et rien d'autre n'appelle `save` directement", () => {
+    const panel = sourceOf("components/settings/email-sequences-panel.tsx");
+    expect(panel).toMatch(/onClick=\{\(\) => void askThenSave\(sequence\)\}/);
+    // `save(...)` n'est atteignable que depuis `askThenSave` ou le panneau de
+    // confirmation — jamais depuis un bouton de la page.
+    const direct = panel.match(/onClick=\{\(\) => void save\(/g) ?? [];
+    expect(direct.length).toBe(2);
+  });
+
+  it("le déclencheur est un fait, jamais un delta d'interface", () => {
+    const panel = sourceOf("components/settings/email-sequences-panel.tsx");
+    // La version fautive, mot pour mot.
+    expect(panel).not.toMatch(/savedSteps/);
+    expect(panel).not.toMatch(/steps\.length <= before/);
+    // Et c'est le domaine qui tranche.
+    expect(panel).toMatch(/plan\.data\.decision/);
+    const domain = sourceOf("lib/domain/sequence-reopen.ts");
+    expect(domain).toMatch(/export function needsDecision/);
+  });
+
+  it("la porte de secours existe, et passe par le même service", () => {
+    const action = sourceOf("components/campaigns/reopen-action.tsx");
+    expect(action).toMatch(/Relancer les personnes ayant terminé/);
+    expect(action).toMatch(/"\/api\/sequences-email\/reopen"/);
+    // Elle regarde avant d'écrire, comme l'éditeur.
+    expect(action).toMatch(/method: "POST"/);
+    expect(action).toMatch(/method: "PUT"/);
+    expect(sourceOf("components/campaigns/campaign-detail.tsx")).toMatch(/<ReopenAction/);
   });
 });
 

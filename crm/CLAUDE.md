@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 83 | **Le déclencheur de la réouverture était un état d'écran, pas un fait** : une fois les étapes enregistrées, plus aucun enregistrement ne proposait de rattraper les personnes fermées. Plus une porte de secours sur la page de campagne | **livré, à valider** |
 | 82 | **Le jalon 81, rendu robuste et bruyant** : la règle ne dépend plus d'un couple statut+libellé exact, l'écriture demande au domaine au lieu de recomposer sa clause, et zéro réouverture ne s'enregistre plus en silence | **livré, à valider** |
 | 81 | **Ajouter une étape rattrape ceux qui avaient fini** : réouverture des seules inscriptions épuisées, délai compté depuis leur dernier message, et une confirmation qui nomme les exclus | **livré, à valider** |
 | 80 | **Les étapes se lisent comme une suite** : un bloc numéroté par étape, une frise verticale qui porte les délais, un aperçu sans ouvrir, et des flèches pour réordonner | **livré, à valider** |
@@ -11536,3 +11537,142 @@ effet de bord d'un correctif.
 `done`.** Elle ne rouvre pas — et l'écran compte ces lignes dans son
 diagnostic, sous « (aucun motif écrit) ». Si la production en porte beaucoup,
 c'est ce qu'il faudra regarder ensuite.
+
+---
+
+## Jalon 83 — le déclencheur était un état d'écran, pas un fait
+
+### Trois jalons verts en recette, trois échecs en production
+
+C'est le troisième aller-retour sur cette fonctionnalité, et il faut nommer ce
+qui les relie : **les trois recettes exerçaient le geste qui marche, jamais
+l'état dans lequel la production se trouvait.**
+
+Le symptôme signalé était pourtant décisif et je ne l'avais pas pris au
+sérieux : l'écran disait « Séquence enregistrée. » — ni la confirmation de
+réouverture, ni l'explication bruyante du jalon 82. **Aucun des deux
+aboutissements possibles.** Ce n'était pas un troisième mode de panne, c'était
+la preuve que la route de réouverture n'était jamais appelée.
+
+### La cause, avec sa ligne
+
+**`components/settings/email-sequences-panel.tsx:217` (jalons 81-82) :**
+
+```ts
+const before = savedSteps[sequence.id] ?? 0;
+if (sequence.id === "" || sequence.steps.length <= before) { await save(sequence); return; }
+```
+
+`savedSteps` est semé **une fois, au montage**, depuis la séquence telle qu'elle
+existe en base. Le déclencheur de la réouverture était donc « le nombre
+d'étapes a-t-il grandi **dans cette session de navigateur** ? » — un delta
+d'état d'interface, pas un fait sur les données.
+
+Conséquence, et elle est définitive : **dès que les étapes sont enregistrées,
+le delta retombe à zéro pour toujours.** L'enregistrement silencieux du
+jalon 81 les avait persistées ; à chaque visite suivante, `before` valait 3,
+`steps.length` valait 3, et l'écran prenait la branche d'enregistrement simple —
+sans jamais appeler `/api/sequences-email/reopen`. Les cinquante-deux personnes
+étaient inatteignables depuis l'éditeur, quel que soit le nombre de clics.
+
+**Pourquoi les recettes ne l'ont pas vu :** elles ajoutaient une étape puis
+enregistraient dans la même session. Le delta valait 1, le chemin passait, tout
+était vert. Les deux scénarios, mesurés côte à côte sur la même campagne :
+
+| Scénario | Étapes à l'ouverture | Requête au clic | Message |
+|---|---|---|---|
+| Étapes **pas encore** enregistrées, j'en ajoute deux | 1 → 3 | `POST …/reopen` | « 52 personnes ont terminé… » |
+| Étapes **déjà** enregistrées, je clique | 3 | **`POST /api/sequences-email` seul** | **« Séquence enregistrée. »** |
+
+Le second est la production, mesuré au navigateur sur cinquante-deux
+inscriptions fermées par la composition elle-même.
+
+**Ce que la recherche a écarté en chemin**, et qui méritait de l'être :
+`« Séquence enregistrée »` n'est émis que par **un seul fichier**, le panneau, à
+trois lignes ; `/campagnes/[id]` ne monte qu'un seul éditeur de séquence
+(`campaign-detail.tsx:232`), dont l'unique bouton appelle `askThenSave`. Il n'y
+avait pas de second bouton non câblé — l'unique bouton était court-circuité par
+sa propre garde.
+
+### Le déclencheur devient un fait
+
+`needsDecision(plan)` (domaine, pur) répond à la seule question qui vaille :
+**y a-t-il quelqu'un dont il faille parler ?** Quelqu'un à rouvrir, ou au moins
+une inscription close dont il faut dire pourquoi elle ne rouvre pas. Le plan est
+demandé **à chaque enregistrement** d'une séquence existante ; `savedSteps` est
+supprimé.
+
+Une campagne qui n'a rien de clos s'enregistre sans un mot — il n'y a personne à
+mentionner, et c'est le seul silence légitime. C'est le serveur qui tranche
+(`decision` dans la réponse) : une seconde règle côté navigateur finirait par ne
+plus dire la même chose que celle qui compte.
+
+### La porte de secours
+
+`components/campaigns/reopen-action.tsx` — **« Relancer les personnes ayant
+terminé »**, sur la page de la campagne, à côté d'« Écrire les mails ».
+
+Elle part des étapes **telles qu'elles sont enregistrées** et ne dépend d'aucun
+état de formulaire : elle ne peut donc pas être neutralisée par un delta qui
+retombe à zéro. Même service, même confirmation, mêmes garde-fous — `POST`
+regarde, `PUT` écrit. Elle n'apparaît que lorsque la séquence porte plus d'une
+étape : sans étape suivante, il n'y a rien à rouvrir.
+
+Ce n'est pas une redondance de confort. **Un chemin unique porté par un écran
+est un chemin qui peut se dérober en silence** — c'est arrivé trois fois. Celui-ci
+est indépendant de l'éditeur, et c'est sa raison d'être.
+
+### La garde
+
+`tests/sequence-reopen-source.test.ts` gagne quatre invariants, dans la famille
+de `signature-block-source` et `research-single-source` :
+
+- **un seul composant enregistre une séquence** — la liste des fichiers de
+  `components/campagnes/` et `components/settings/` qui font un `POST` vers
+  `/api/sequences-email` doit être exactement `email-sequences-panel.tsx` ;
+- **son bouton passe par `askThenSave`**, et `save()` n'est atteignable que
+  depuis le panneau de confirmation (deux appels directs, pas trois) ;
+- **le déclencheur est un fait** : `savedSteps` et `steps.length <= before` sont
+  interdits, `plan.data.decision` et `needsDecision` exigés ;
+- **la porte de secours existe** et passe par le même service.
+
+**Éprouvée en réintroduisant le défaut mot pour mot** : le test tombe en nommant
+`savedSteps`.
+
+### Jalon 83 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (`migrate diff` **vide** — aucune migration),
+le serveur standalone de production et un navigateur piloté, sur cinquante-deux
+inscriptions fermées **par la composition elle-même** :
+
+- **le défaut reproduit** avant correctif : étapes déjà enregistrées → clic →
+  `POST /api/sequences-email` seul, « Séquence enregistrée. » nu ;
+- **après correctif, même campagne, même état** : clic → `POST …/reopen` →
+  « 52 personnes ont terminé cette campagne. Elles recevront l'étape 2 : 52
+  immédiatement. » ;
+- **la porte de secours** : bouton atteignable, `POST` n'écrit rien
+  (`done=52` avant et après), `PUT` rouvre → `active=52`, `lastStep` et
+  `lastSentAt` intacts ;
+- **la boucle entière** : « Écrire les mails » annonce **52 éligibles**, la
+  composition écrit **52 brouillons d'étape 2**, **0 envoi** ;
+- **aucune régression** : les campagnes sans inscription close s'enregistrent
+  toujours sans panneau, la campagne muette dit toujours ses motifs, et la
+  protection de celles qui ont répondu n'a pas bougé ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1387 tests**) et
+  `npm run e2e` (**62 tests**) verts.
+
+### Jalon 83 — ce qui n'est pas établi
+
+**Je n'ai toujours pas accès à la production depuis cet environnement** — pas de
+CLI Railway, pas de variable `RAILWAY_*`, hôte injoignable. Le commit à voir
+dans `/reglages` → « Version déployée » est donné à chaque livraison, et c'est
+le seul moyen de séparer « déploiement en retard » de « défaut ».
+
+**Un enregistrement de séquence coûte désormais une requête de plus** sur les
+campagnes qui portent des inscriptions closes. C'est une lecture, et c'est le
+prix d'un déclencheur qui ne peut plus se dérober.
+
+**La leçon de méthode, à retenir pour les prochains jalons :** une recette qui
+part d'une base vide n'exerce que le chemin heureux. **Il faut partir de l'état
+où se trouve la production**, pas de celui qu'on sait produire — c'est la
+troisième fois que cet écart coûte un aller-retour complet.

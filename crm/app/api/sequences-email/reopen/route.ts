@@ -6,6 +6,7 @@ import {
   describeExclusions,
   describeReopen,
   describeSilence,
+  needsDecision,
 } from "@/lib/domain/sequence-reopen";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +48,10 @@ export async function POST(request: Request) {
       exclusions: describeExclusions(plan.excluded),
       // Vide dès qu'il y a des candidats : il n'y a alors rien à expliquer.
       silence: describeSilence(plan),
+      // **C'est le domaine qui décide si l'écran doit s'arrêter**, pas le
+      // navigateur : une seconde règle côté client finirait par ne plus dire
+      // la même chose que celle qui compte.
+      decision: needsDecision(plan),
     });
   } catch (error) {
     return serverError("POST /api/sequences-email/reopen", error);

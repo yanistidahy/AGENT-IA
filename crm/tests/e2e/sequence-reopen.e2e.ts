@@ -243,3 +243,156 @@ describe.skipIf(skip)("une campagne où rien ne rouvre le dit", () => {
     expect(session.errors).toEqual([]);
   });
 });
+
+/**
+ * **L'état dans lequel la production se trouvait vraiment**, et que les
+ * recettes des jalons 81 et 82 n'ont jamais exercé : les étapes sont **déjà
+ * enregistrées**, et les inscriptions sont restées fermées.
+ *
+ * Le jalon 81 déclenchait la réouverture sur un delta d'état d'interface — « le
+ * nombre d'étapes a-t-il grandi depuis le montage du composant ? ». Les deux
+ * recettes précédentes ajoutaient une étape puis enregistraient dans la même
+ * session : le delta valait 1, le chemin passait, tout était vert. En
+ * production les étapes étaient déjà là, le delta valait zéro, et
+ * l'enregistrement rendait la main sur un « Séquence enregistrée. » nu sans
+ * jamais appeler la route de réouverture.
+ *
+ * Ce test rouvre la page sur des étapes déjà persistées et clique
+ * « Enregistrer » sans rien ajouter. C'est le seul geste qui aurait attrapé le
+ * défaut.
+ */
+describe.skipIf(skip)("des étapes déjà enregistrées proposent quand même la relance", () => {
+  let browser: Browser;
+  let session: Session;
+  let campaignId: string;
+  let sequenceId: string;
+
+  beforeAll(async () => {
+    const mailbox = await prisma.mailbox.upsert({
+      where: { slug: "e2e-deja" },
+      update: {},
+      create: { slug: "e2e-deja", label: "E2E déjà", signName: "Test", signTitle: "Rôle" },
+    });
+    const campaign = await prisma.campaign.create({
+      data: { name: "E2E — étapes déjà là", mailboxId: mailbox.id, selection: "" },
+    });
+    campaignId = campaign.id;
+
+    // **Trois étapes en base dès le départ** : rien à ajouter à l'écran.
+    const sequence = await prisma.emailSequence.create({
+      data: {
+        name: "E2E — étapes déjà là",
+        campaignId,
+        active: true,
+        steps: {
+          create: [
+            { position: 1, delayDays: 0, brief: "présenter" },
+            { position: 2, delayDays: 4, brief: "relancer" },
+            { position: 3, delayDays: 7, brief: "clore" },
+          ],
+        },
+      },
+    });
+    sequenceId = sequence.id;
+
+    for (const first of ["E2eDeja1", "E2eDeja2"]) {
+      const contact = await prisma.contact.create({
+        data: {
+          firstName: first,
+          lastName: "Test",
+          email: `${first.toLowerCase()}@e2e-deja.test`,
+          lifecycle: "Prospect",
+          nameKey: `test ${first.toLowerCase()}`,
+          searchText: `e2edeja ${first.toLowerCase()}`,
+        },
+      });
+      await prisma.sequenceEnrollment.create({
+        data: {
+          sequenceId,
+          contactId: contact.id,
+          status: "done",
+          stopReason: "Toutes les étapes ont été envoyées",
+          lastStep: 1,
+          lastSentAt: ago(10),
+        },
+      });
+    }
+
+    browser = await openBrowser();
+    session = await signIn(browser, PASSWORD as string);
+  }, 60_000);
+
+  afterAll(async () => {
+    await prisma.sequenceEnrollment.deleteMany({ where: { sequenceId } });
+    await prisma.emailSequence.deleteMany({ where: { id: sequenceId } });
+    await prisma.campaign.deleteMany({ where: { id: campaignId } });
+    await prisma.contact.deleteMany({ where: { searchText: { contains: "e2edeja" } } });
+    await prisma.mailbox.deleteMany({ where: { slug: "e2e-deja" } });
+    await browser?.close();
+  });
+
+  it("« Enregistrer », sans rien ajouter, appelle bien la route de réouverture", async () => {
+    const { page } = session;
+    const calls: string[] = [];
+    page.on("request", (request) => {
+      if (request.url().includes("/api/sequences-email")) {
+        calls.push(`${request.method()} ${new URL(request.url()).pathname}`);
+      }
+    });
+
+    await page.goto(`${BASE_URL}/campagnes/${campaignId}`, { waitUntil: "domcontentloaded" });
+    await page.getByText("Étape 1", { exact: false }).first().waitFor({ timeout: 15_000 });
+    // Trois blocs à l'ouverture : il n'y a rien à ajouter.
+    expect(await page.locator("li > section.rounded-card").count()).toBe(3);
+
+    calls.length = 0;
+    const save = page.getByRole("button", { name: "Enregistrer", exact: true });
+    await save.scrollIntoViewIfNeeded();
+    await save.click();
+
+    await page.getByText(/ont terminé cette campagne/).waitFor({ timeout: 15_000 });
+    // **La preuve** : la route de réouverture est appelée alors qu'aucune étape
+    // n'a été ajoutée. C'est ce qui n'arrivait pas en production.
+    expect(calls.some((call) => call.endsWith("/api/sequences-email/reopen"))).toBe(true);
+
+    const body = await page.evaluate(() => document.body.innerText);
+    expect(body).toContain("2 personnes ont terminé cette campagne.");
+    expect(body).not.toBe("Séquence enregistrée.");
+  }, 90_000);
+
+  it("la porte de secours rouvre sans passer par l'éditeur", async () => {
+    const { page } = session;
+    await page.goto(`${BASE_URL}/campagnes/${campaignId}`, { waitUntil: "domcontentloaded" });
+
+    const button = page.getByRole("button", { name: "Relancer les personnes ayant terminé" });
+    await button.scrollIntoViewIfNeeded();
+    expect(await reachable(button)).toBe(true);
+    await button.click();
+
+    await page.getByText(/ont terminé cette campagne/).waitFor({ timeout: 15_000 });
+    // Elle regarde d'abord : rien n'est écrit tant qu'on n'a pas confirmé.
+    expect(await prisma.sequenceEnrollment.count({ where: { sequenceId, status: "active" } })).toBe(
+      0,
+    );
+
+    const go = page.getByRole("button", { name: "Relancer", exact: true });
+    await go.scrollIntoViewIfNeeded();
+    expect(await reachable(go)).toBe(true);
+    await go.click();
+
+    await page.getByText(/rouvertes/).waitFor({ timeout: 15_000 });
+    expect(await prisma.sequenceEnrollment.count({ where: { sequenceId, status: "active" } })).toBe(
+      2,
+    );
+    // Reprise là où elles en étaient.
+    const first = await prisma.sequenceEnrollment.findFirst({
+      where: { sequenceId, contact: { firstName: "E2eDeja1" } },
+    });
+    expect(first?.lastStep).toBe(1);
+    expect(first?.lastSentAt).not.toBeNull();
+  }, 90_000);
+
+  it("n'a produit aucune erreur de console", () => {
+    expect(session.errors).toEqual([]);
+  });
+});

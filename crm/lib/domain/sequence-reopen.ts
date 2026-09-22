@@ -119,6 +119,27 @@ export interface ReopenPlan {
   readonly exhausted: number;
 }
 
+/**
+ * Cet enregistrement demande-t-il une décision, ou peut-il passer tout seul ?
+ *
+ * **La question ne porte pas sur ce que l'écran vient de faire, mais sur ce
+ * que la base porte.** Le jalon 81 déclenchait la réouverture quand le nombre
+ * d'étapes avait grandi *dans la session du navigateur* — un delta d'état
+ * d'interface, pas un fait. Il suffisait que les étapes soient déjà
+ * enregistrées (un enregistrement précédent les avait persistées) pour que le
+ * delta soit nul à chaque visite suivante : plus aucune décision n'était
+ * proposée, et cinquante-deux personnes restaient fermées pour toujours.
+ *
+ * On demande donc à chaque enregistrement : y a-t-il quelqu'un dont il faille
+ * parler ? Quelqu'un à rouvrir, ou au moins une inscription close dont il faut
+ * dire pourquoi elle ne rouvre pas. Une campagne qui n'a rien de clos
+ * s'enregistre sans un mot — il n'y a personne à mentionner.
+ */
+export function needsDecision(plan: ReopenPlan): boolean {
+  if (plan.candidates.length > 0) return true;
+  return plan.reasons.reduce((total, entry) => total + entry.count, 0) > 0;
+}
+
 function plural(count: number, word: string): string {
   return `${count} ${word}${count > 1 ? "s" : ""}`;
 }

@@ -14,6 +14,7 @@ import { CampaignMembers } from "./campaign-members";
 import { ComposeAction } from "./compose-action";
 import { CampaignDelete } from "./campaign-delete";
 import { CampaignHeader } from "./campaign-header";
+import { ReopenAction } from "./reopen-action";
 
 /**
  * Une campagne, en entier — le second niveau de `/campagnes`.
@@ -102,6 +103,22 @@ export function CampaignDetail({
         actions={
           <>
             <ComposeAction campaignId={campaign.id} onDone={() => router.refresh()} />
+
+            {/*
+              **La porte de secours.** Elle ne dépend d'aucun état du
+              formulaire d'étapes : elle part des étapes enregistrées et pose
+              la même question au même service. Le jalon 81 a montré qu'un
+              déclencheur porté par l'éditeur pouvait se dérober en silence ;
+              celui-ci est toujours là, et il dit toujours ce qu'il fera.
+            */}
+            {sequence !== null && sequence.steps.length > 1 && (
+              <ReopenAction
+                sequenceId={sequence.id}
+                steps={sequence.steps}
+                onDone={() => router.refresh()}
+                className={BUTTON}
+              />
+            )}
 
             {/*
               **Lancer n'est pas désarchiver.** La pause coupe l'envoi et laisse
