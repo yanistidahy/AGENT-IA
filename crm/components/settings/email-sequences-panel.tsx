@@ -44,9 +44,11 @@ function isReopenPlan(
   message: string;
   exclusions: string;
   silence: string;
+  /** Le domaine a-t-il quelque chose à faire dire à l'écran ? */
+  decision: boolean;
   plan: { candidates: unknown[] };
 } {
-  return typeof value === "object" && value !== null && "plan" in value;
+  return typeof value === "object" && value !== null && "plan" in value && "decision" in value;
 }
 
 function isPayload(
@@ -76,15 +78,6 @@ export function EmailSequencesPanel({
   readonly embedded?: boolean;
 }) {
   const [sequences, setSequences] = useState<SequenceView[]>([...initial]);
-  /**
-   * Le nombre d'étapes **enregistrées**, par séquence.
-   *
-   * C'est lui qui dit qu'on vient d'en ajouter une : comparer à la liste
-   * affichée ne dirait rien, puisqu'elle porte déjà la modification en cours.
-   */
-  const [savedSteps, setSavedSteps] = useState<Record<string, number>>(() =>
-    Object.fromEntries(initial.map((entry) => [entry.id, entry.steps.length])),
-  );
   const [confirm, setConfirm] = useState<{
     sequence: SequenceView;
     message: string;
@@ -163,11 +156,6 @@ export function EmailSequencesPanel({
         appel au modèle, aucun départ composé, aucune facture. Écrire les mails
         est un geste séparé, avec son bouton et son estimation de coût.
       */
-      setSavedSteps((current) => ({
-        ...current,
-        [result.data.sequence?.id ?? sequence.id]: sequence.steps.length,
-      }));
-
       if (reopen) {
         const reopened = await requestJson(
           "/api/sequences-email/reopen",
@@ -213,8 +201,20 @@ export function EmailSequencesPanel({
    * campagnes, on ne veut précisément pas les prolonger.
    */
   const askThenSave = async (sequence: SequenceView) => {
-    const before = savedSteps[sequence.id] ?? 0;
-    if (sequence.id === "" || sequence.steps.length <= before) {
+    /*
+      **Une séquence qui n'existe pas encore n'a personne à rouvrir.** C'est la
+      seule dispense : partout ailleurs, on demande au serveur avant
+      d'enregistrer.
+
+      Ce qu'il y avait ici jusqu'au jalon 83 : `sequence.steps.length <= before`,
+      où `before` était le nombre d'étapes lu **au montage du composant**. La
+      réouverture n'était donc proposée que si l'on venait d'ajouter une étape
+      *dans cette session de navigateur*. Une fois les étapes enregistrées, le
+      delta retombait à zéro à chaque visite suivante — et plus rien, jamais,
+      ne proposait de rattraper les cinquante-deux personnes fermées. Le
+      déclencheur était un état d'interface ; il devait être un fait.
+    */
+    if (sequence.id === "") {
       await save(sequence);
       return;
     }
@@ -240,13 +240,16 @@ export function EmailSequencesPanel({
       return;
     }
     /*
-      **Zéro rouverture ne s'enregistre plus en silence.** C'était le vrai
-      défaut du jalon 81 : ajouter une étape à une campagne pleine de gens qui
-      avaient terminé rendait la main sans un mot, et rien ne disait si la
-      règle était trop étroite ou si la base ne portait pas ce qu'on croyait.
-      L'écran montre donc ce qui est écrit en base, et c'est le seul geste qui
-      permette de trancher depuis la production.
+      **C'est le domaine qui dit s'il y a une décision à prendre.** Une
+      campagne sans aucune inscription close s'enregistre sans un mot : il n'y
+      a personne à mentionner. Dès qu'il y en a une, l'écran s'arrête et dit
+      soit qui sera rouvert, soit pourquoi personne ne l'est.
     */
+    if (!plan.data.decision) {
+      await save(sequence);
+      return;
+    }
+
     setConfirm({
       sequence,
       message: plan.data.message,
