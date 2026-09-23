@@ -26,6 +26,7 @@ import {
   nextStep,
   stopsEnrollment,
 } from "../domain/sequence-rules";
+import { replyAnchor } from "../domain/campaign-reset";
 import { contactTitle, repairGreeting } from "../domain/contact-identity";
 import { demoTarget, describeDemoSource } from "../domain/demo-target";
 import { listSignatories, pickSignatory } from "./signatories";
@@ -243,9 +244,17 @@ export async function composeDepartures(
   let stoppedByUser = false;
 
   for (const enrollment of enrollments) {
+    /*
+      **L'ancre des réponses suit le chapitre courant.** Après une
+      réinitialisation (jalon 86), c'est elle qui fait foi : sans ce
+      déplacement, quelqu'un qu'on a délibérément choisi d'inclure malgré sa
+      réponse ne produirait **aucun** brouillon : la composition retrouverait
+      la réponse d'avant et arrêterait l'inscription, pendant que l'écran
+      vient de lui promettre un message.
+    */
     const replied = await repliedAfter(
       enrollment.contactId,
-      enrollment.lastSentAt ?? enrollment.enrolledAt,
+      replyAnchor(enrollment.lastSentAt, enrollment.resetAt, enrollment.enrolledAt),
     );
 
     const verdict = nextStep(
@@ -280,7 +289,13 @@ export async function composeDepartures(
 
     // Déjà composé ce matin, le passage a été rejoué.
     const existing = await prisma.sequenceDeparture.findUnique({
-      where: { enrollmentId_step: { enrollmentId: enrollment.id, step: verdict.step } },
+      where: {
+        enrollmentId_step_round: {
+          enrollmentId: enrollment.id,
+          step: verdict.step,
+          round: enrollment.round,
+        },
+      },
     });
     if (existing !== null) {
       // Un départ qui n'est plus en attente est décidé : envoyé, reporté,
@@ -332,6 +347,7 @@ export async function composeDepartures(
         data: {
           enrollmentId: enrollment.id,
           step: verdict.step,
+          round: enrollment.round,
           day: dayKey(now),
           status: "failed",
           detail: draft.message,
@@ -344,6 +360,7 @@ export async function composeDepartures(
       data: {
         enrollmentId: enrollment.id,
         step: verdict.step,
+        round: enrollment.round,
         day: dayKey(now),
         subject: draft.draft.subject,
         body: draft.draft.body,
@@ -434,9 +451,11 @@ export async function countComposable(
   const toResearch = new Set<string>();
 
   for (const enrollment of enrollments) {
+    // Même ancre que la composition : le plan doit annoncer ce que l'écriture
+    // fera, pas autre chose (jalons 82 et 86).
     const replied = await repliedAfter(
       enrollment.contactId,
-      enrollment.lastSentAt ?? enrollment.enrolledAt,
+      replyAnchor(enrollment.lastSentAt, enrollment.resetAt, enrollment.enrolledAt),
     );
 
     const verdict = nextStep(
@@ -456,7 +475,13 @@ export async function countComposable(
     // train de relire. « Écrire les mails » (`rewritePending`) le fait au
     // contraire exprès, et compte alors ces brouillons.
     const existing = await prisma.sequenceDeparture.findUnique({
-      where: { enrollmentId_step: { enrollmentId: enrollment.id, step: verdict.step } },
+      where: {
+        enrollmentId_step_round: {
+          enrollmentId: enrollment.id,
+          step: verdict.step,
+          round: enrollment.round,
+        },
+      },
       select: { id: true, status: true, editedAt: true },
     });
 

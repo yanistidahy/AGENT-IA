@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 86 | **Réinitialiser une campagne** : tout le monde revient à l'étape 1 avec les consignes d'aujourd'hui, les envois passés restent des faits, et la confirmation dit ce que le destinataire va lire | **livré, à valider** |
 | 85 | **Le panneau lisait un champ que le serveur n'a jamais envoyé** : « Retravailler avec Alex » sur un départ faisait tomber l'écran ; la recherche voyage désormais avec le brouillon rouvert, et le type cesse de promettre ce qu'il ne reçoit pas | **livré, à valider** |
 | 84 | **Une relance n'est pas un premier message renvoyé** : l'étape 2 reçoit le message déjà envoyé et des interdits explicites, une garde signale la copie ; plus « Arrêter » sur la composition, « Réécrire tous les départs », et la pause rendue visible | **livré, à valider** |
 | 83 | **Le déclencheur de la réouverture était un état d'écran, pas un fait** : une fois les étapes enregistrées, plus aucun enregistrement ne proposait de rattraper les personnes fermées. Plus une porte de secours sur la page de campagne | **livré, à valider** |
@@ -11955,3 +11956,153 @@ texte à la main dans le panneau ne le recalcule pas. La file, elle, le recalcul
 fermé, c'est le chemin par lequel le défaut est réellement arrivé — un champ
 promis obligatoire et jamais envoyé. Une revue systématique des charges utiles
 qui traversent la frontière serveur → client serait un jalon à elle seule.
+
+---
+
+## Jalon 86 — réinitialiser une campagne, sans réécrire le passé
+
+### Ce n'est pas la réouverture du jalon 81, et l'écart n'est pas de degré
+
+Rouvrir reprend quelqu'un **là où il en était** pour lui donner la suite.
+Réinitialiser lui renvoie **un premier message**, avec le discours
+d'aujourd'hui. Le second geste s'adresse donc à des gens qui se souviennent
+peut-être du premier, et c'est ce qui décide de tout le reste.
+
+### Qui est repris, et pourquoi — la réponse à la question posée
+
+| État | Repris ? | Pourquoi |
+|---|---|---|
+| terminée (toutes les étapes envoyées) | **oui** | c'est le cas ordinaire : la séquence n'avait plus rien à dire, elle a de nouveau quelque chose |
+| arrêtée — fiche close, opposition, sans adresse | **oui** | ce sont des garde-fous **d'envoi**, revérifiés à l'envoi par `nextStep` : une fiche close ne recevra rien même remise à l'étape 1. Les doubler ici ferait deux règles pour une décision |
+| encore active | **oui** | elle recommence au premier message, ce que « réinitialiser » veut dire |
+| **a répondu** | **non par défaut**, opt-in | une réponse est le signal que la campagne cherchait. Le garde-fou existe, mais il agirait *après* coup, en silence, et l'écran aurait promis un message qui ne part pas |
+| **retirée à la main** | **non, jamais** | rien ne l'arrêterait à l'envoi, et la ramener annulerait le geste de quelqu'un sans le lui dire (jalon 70) |
+
+`resettable()` (`lib/domain/campaign-reset.ts`, pur) porte ces cinq lignes, et
+**l'écriture lui demande** plutôt que de recomposer une clause SQL jumelle :
+c'est la leçon du jalon 82, où une seconde écriture de la règle décidait
+réellement pendant que le plan annonçait autre chose.
+
+### La phrase se lit avant de confirmer, et décrit le destinataire
+
+> **2 personnes seront ramenées à l'étape 1 et recevront un nouveau premier
+> message, y compris celles qui ont déjà été contactées il y a plusieurs jours.
+> Cela peut se lire comme un second premier contact.**
+
+Elle est composée par le domaine, pas par l'écran — dite une seconde fois dans
+le navigateur, elle finirait par ne plus dire la même chose que ce que le bouton
+fait. Elle décrit **ce qui va se lire chez quelqu'un** : « 52 inscriptions
+repassent à l'étape 1 » décrit une colonne, pas un message reçu. Et la mention
+du second premier contact n'apparaît que si quelqu'un a réellement déjà été
+contacté.
+
+Les personnes ayant répondu sont **nommées**, en rouge, et la case qui les
+inclut est décochée. **Cocher redemande le plan** : le compte et la phrase
+changent avec elle, et une confirmation qui décrirait l'autre choix serait pire
+que pas de confirmation. L'avertissement est rendu **dans les deux sens** — la
+case cochée, il dit ce qu'on vient d'autoriser.
+
+`POST` regarde, `PUT` écrit (jalon 8) : un point d'entrée unique ferait d'un
+affichage d'écran cinquante-deux brouillons facturés.
+
+### Un chapitre s'ouvre, le précédent reste — `round`
+
+Migration `37_campaign_reset` : `SequenceEnrollment.round` et `resetAt`,
+`SequenceDeparture.round`, la clé d'unicité passant de `(inscription, étape)` à
+`(inscription, étape, tour)`.
+
+**Sans le tour, rien n'était possible :** la contrainte d'unicité qui empêche de
+recomposer deux fois un brouillon (jalon 56) aurait empêché de recomposer
+l'étape 1, et supprimer les départs **envoyés** pour la contourner aurait fait
+baisser en silence le compteur du double verrou du mode automatique
+(`unlockOf`, jalon 38). Le tour laisse chaque départ parti à sa place, avec son
+numéro.
+
+Ce que l'écriture touche, et rien d'autre : `status` redevient `active`,
+`stopReason` se vide, `lastStep` revient à `0` — **c'est ça, et seulement ça, la
+progression de la campagne** —, `round` avance, `resetAt` marque le début du
+chapitre. **`lastSentAt` ne bouge pas** : c'est la date d'un message réellement
+parti, un fait, et la liste des inscrits l'affiche.
+
+**`resetAt` sert d'ancre aux réponses**, et ce n'est pas un détail : sans lui,
+quelqu'un qu'on aurait délibérément choisi d'inclure malgré sa réponse ne
+produirait **aucun** brouillon — `nextStep` retrouverait la réponse d'avant et
+arrêterait l'inscription, pendant que l'écran vient de lui promettre un message.
+`replyAnchor()` retient la plus récente des trois dates, et la composition comme
+le plan l'appellent : une seule ancre, donc aucun écart possible entre ce qui
+est annoncé et ce qui est écrit.
+
+### Ce que ce geste ne fait jamais
+
+- **aucun envoi n'est supprimé ni modifié** : ils restent dans `/emails`, sur la
+  chronologie de chaque fiche, dans l'entonnoir de la campagne ;
+- **aucune interaction consignée n'est touchée** — le message d'origine reste
+  lisible dans l'historique du contact, à côté de ce que la réinitialisation
+  produira ;
+- **rien ne part** : les brouillons frais atterrissent dans « Départs du jour »
+  comme toute composition (jalon 70), et tous les garde-fous d'envoi
+  s'appliquent au moment de l'envoi ;
+- seuls les **brouillons jamais partis** du tour précédent sont effacés : ils
+  décrivaient une étape que la personne ne recevra plus sous cette forme.
+
+### Jalon 86 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `37_campaign_reset` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production, le substitut
+Anthropic et un navigateur piloté, sur un semis à l'image de la production —
+deux inscriptions closes par la composition, une personne qui a répondu, une
+retirée à la main, quatre envois et cinq interactions :
+
+- **le plan n'écrit rien** : 2 inclus, la phrase exacte ci-dessus, « Carine
+  Petit » nommée et **exclue par défaut**, « Denis Marchal (retirée de la
+  campagne à la main) » nommé aussi, et **0 inscription active** après l'appel ;
+- **l'option** : `includeRepliers` → 3 inclus, et la note bascule sur « Vous avez
+  choisi de l'inclure : elle recevra un nouveau premier message malgré sa
+  réponse » ;
+- **l'écriture** : 2 ramenées à `active`, `lastStep 0`, `round 2`, `resetAt`
+  posé, **`lastSentAt` conservé** ; la répondante reste `stopped`, la retirée
+  reste `removed` ;
+- **le passé est intact** : 4 envois, 5 interactions et 4 départs envoyés
+  **avant comme après**, et la chronologie du contact porte toujours « Objet :
+  Premier message pour Anna » ;
+- **les brouillons frais** : 2 départs composés en arrière-plan, **étape 1, tour
+  2**, et **0 envoi** ;
+- **au navigateur** : le bouton **atteignable** (`reachable()`, jamais
+  `isVisible()`), la confirmation affichée **avec 0 inscription active à cet
+  instant**, la phrase du second premier contact et celle qui dit que les envois
+  passés ne sont pas effacés ; après confirmation, tout le monde à l'étape 1 au
+  tour 2, **les 2 envois toujours en base**, **0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1430 tests**) et
+  `npm run e2e` (**68 tests**, quatorze fichiers) verts.
+
+`tests/campaign-reset-source.test.ts` ferme les trois rechutes : une clause SQL
+jumelle de `resettable`, une écriture qui touche au passé, une inclusion des
+repreneurs par défaut. **Éprouvée en réintroduisant une présélection
+`status: "done"`** dans la lecture des inscriptions : le test tombe en la
+nommant. Les gardes du tiret long (jalon 58) et du nom de contact (jalon 50) ont
+fait leur travail au passage — un tiret introduit dans un commentaire de
+`departures.ts`, attrapé avant de partir.
+
+### Jalon 86 — ce qui n'est pas fait
+
+**Le geste n'a pas d'annulation.** Réinitialiser ne se défait pas : le tour
+précédent reste en base, mais rien à l'écran ne propose de revenir en arrière.
+C'est la raison d'être de la confirmation, et elle est la seule barrière.
+
+**La confirmation ne dit pas le coût des brouillons.** « Écrire les mails »
+l'annonce (jalon 56) ; ici la composition part en arrière-plan sans chiffrer,
+alors qu'elle appelle le modèle une fois par personne reprise. À ajouter si la
+facture surprend.
+
+**Une personne retirée à la main reste dehors, définitivement**, et aucun écran
+ne propose de l'y remettre depuis ce panneau : il faut la réinscrire depuis
+`/contacts`, comme au jalon 70.
+
+**Aucun appel Anthropic réel**, comme depuis le jalon 73 : le substitut prouve
+que la composition part et écrit deux brouillons d'étape 1 au tour 2 ; que le
+texte soit meilleur que celui d'il y a trois mois relève du modèle et des
+consignes, et se jugera sur les premiers vrais brouillons.
+
+**Les chiffres ci-dessus viennent d'un semis de vérification**, pas de votre
+base. Le compte réel — et surtout le nom des personnes qui ont répondu —
+s'affichera dans la confirmation, avant d'écrire quoi que ce soit.

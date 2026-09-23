@@ -15,6 +15,7 @@ import { ComposeAction } from "./compose-action";
 import { CampaignDelete } from "./campaign-delete";
 import { CampaignHeader } from "./campaign-header";
 import { ReopenAction } from "./reopen-action";
+import { ResetAction } from "./reset-action";
 
 /**
  * Une campagne, en entier — le second niveau de `/campagnes`.
@@ -115,6 +116,21 @@ export function CampaignDetail({
               <ReopenAction
                 sequenceId={sequence.id}
                 steps={sequence.steps}
+                onDone={() => router.refresh()}
+                className={BUTTON}
+              />
+            )}
+
+            {/*
+              **Réinitialiser n'est pas rouvrir.** Rouvrir donne la suite à
+              ceux qui avaient fini ; réinitialiser renvoie à tout le monde un
+              premier message, avec les consignes d'aujourd'hui. Le second
+              geste s'adresse à des gens qui se souviennent peut-être du
+              premier, et c'est pour cela qu'il porte sa propre confirmation.
+            */}
+            {sequence !== null && (
+              <ResetAction
+                campaignId={campaign.id}
                 onDone={() => router.refresh()}
                 className={BUTTON}
               />
