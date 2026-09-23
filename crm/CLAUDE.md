@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 85 | **Le panneau lisait un champ que le serveur n'a jamais envoyé** : « Retravailler avec Alex » sur un départ faisait tomber l'écran ; la recherche voyage désormais avec le brouillon rouvert, et le type cesse de promettre ce qu'il ne reçoit pas | **livré, à valider** |
 | 84 | **Une relance n'est pas un premier message renvoyé** : l'étape 2 reçoit le message déjà envoyé et des interdits explicites, une garde signale la copie ; plus « Arrêter » sur la composition, « Réécrire tous les départs », et la pause rendue visible | **livré, à valider** |
 | 83 | **Le déclencheur de la réouverture était un état d'écran, pas un fait** : une fois les étapes enregistrées, plus aucun enregistrement ne proposait de rattraper les personnes fermées. Plus une porte de secours sur la page de campagne | **livré, à valider** |
 | 82 | **Le jalon 81, rendu robuste et bruyant** : la règle ne dépend plus d'un couple statut+libellé exact, l'écriture demande au domaine au lieu de recomposer sa clause, et zéro réouverture ne s'enregistre plus en silence | **livré, à valider** |
@@ -11860,3 +11861,97 @@ est déjà payé.
 brouillons en attente de toutes les campagnes, ou aucun. On ne choisit pas
 d'épargner celui qu'on vient de corriger — la confirmation le dit, et ne pas
 cliquer reste le refuge.
+
+---
+
+## Jalon 85 — le panneau lisait un champ que le serveur n'a jamais envoyé
+
+### La cause, reproduite puis nommée
+
+Reproduite d'abord, au clic, sur un départ **d'avant le jalon 84** (étape 2,
+aucune recherche, aucun message précédent enregistré) :
+
+```
+exception : Cannot read properties of undefined (reading 'state')
+Application error: a client-side exception has occurred
+```
+
+**`components/emails/compose-panel.tsx:383` lisait `draft.research.state`**
+(par `<ResearchNote research={draft.research} …>`) alors que
+**`lib/api/departures.ts` — `departureDraft()` — n'a jamais renvoyé ce champ**.
+Le panneau le déclarait pourtant **obligatoire** dans son interface `Draft` :
+la réponse traverse la frontière serveur → client en JSON, où le type n'existe
+plus, donc rien n'échouait à la compilation et aucun test ne rougissait.
+
+**Ce n'est pas le jalon 84.** `git log -S "ResearchNote"` sur le panneau rend un
+seul commit : `4ef7bf4`, **jalon 74** — c'est lui qui a monté la carte de
+recherche dans le tiroir, sans que le chemin « départ rouvert » la fournisse.
+Le défaut dormait depuis, latent : il ne se déclenche qu'en rouvrant un départ
+depuis la file, ce que le jalon 74 n'a pas rejoué (il l'écrit d'ailleurs dans sa
+section « ce qui n'est pas vérifié » — *« Le chemin campagne n'a pas été rejoué
+dans un navigateur ce jalon »*). Les nouveaux champs du jalon 84 — étape,
+message précédent, écho, pause — **ne sont lus nulle part par le panneau** ; ils
+vivent sur la carte de la file.
+
+Le défaut ne dépend pas non plus de l'ancienneté du brouillon : **tout** départ
+rouvert produisait la même exception, ancien comme frais, puisque le champ
+manquait pour tous.
+
+### Corrigé des deux côtés, et les deux sont nécessaires
+
+**À la source** — `departureDraft()` rend désormais la recherche et le verdict
+de garde-fou, par `cardFor()` et `ungroundedClaims()`, c'est-à-dire **les mêmes
+fonctions que la file**. La société d'abord, la fiche à défaut : l'ordre de
+`researchFor` (jalon 84). Un `RESEARCH_SELECT` unique sert les deux lectures —
+deux listes de champs finiraient par diverger, et c'est la seconde qu'on oublie
+de compléter (jalons 55, 64, 66, 74).
+
+**À l'écran** — `research` et `ungrounded` deviennent **facultatifs** dans le
+type du panneau, et la note n'est rendue que lorsqu'elle existe. Ce n'est pas
+une ceinture de confort : **c'est ce qui rend le type honnête**. Tant qu'il
+promettait un champ obligatoire, il décrivait ce qu'on espérait recevoir plutôt
+que ce qui arrive. Effet immédiat et mesuré : avec le champ déclaré facultatif,
+**`tsc` refuse la version non gardée du rendu** — le compilateur reprend la
+main sur un défaut qui lui échappait entièrement.
+
+### La garde
+
+`tests/e2e/departure-rework.e2e.ts` ouvre « Retravailler avec Alex » sur un
+départ semé **dans l'état de la production** (étape 2, sans recherche, sans
+retouche) et vérifie qu'aucune exception ne remonte. C'est la leçon du jalon 83,
+appliquée : partir de l'état où se trouve la production, pas de celui qu'on sait
+produire.
+
+L'assertion qui compte est `expect(session.errors).toEqual([])` autant que
+l'absence d'« Application error » : une exception non rattrapée est **la** trace
+qui blanchit la page, et aucune assertion de contenu ne l'attrape seule.
+
+**Éprouvée en réintroduisant le défaut mot pour mot** — champ retiré du service
+*et* rendu non gardé remis, type redevenu obligatoire : le test tombe sur
+« expected 'Application error: a client-side exce…' not to contain 'Application
+error' ». Avec le seul type corrigé, c'est `tsc` qui tombe d'abord.
+
+### Jalon 85 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (`migrate diff` **vide** — aucune migration),
+le serveur standalone de production et un navigateur piloté :
+
+- **le défaut reproduit** avant correctif, avec son exception exacte ;
+- **après correctif** : le panneau s'ouvre, porte le texte **de la file**
+  (« Ancien brouillon. ») et son bouton « Enregistrer le brouillon », **0 erreur
+  console** ;
+- **la garde éprouvée** sur le défaut exact (voir ci-dessus) ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1404 tests**) et
+  `npm run e2e` (**66 tests**, treize fichiers) verts.
+
+### Jalon 85 — ce qui n'est pas fait
+
+**Le garde-fou de recherche du tiroir n'est toujours pas recalculé à la
+retouche** (dette du jalon 74) : il est calculé à l'ouverture, et modifier le
+texte à la main dans le panneau ne le recalcule pas. La file, elle, le recalcule
+à chaque lecture.
+
+**Aucun autre champ du panneau n'a été audité de la même façon.** Ce qui est
+fermé, c'est le chemin par lequel le défaut est réellement arrivé — un champ
+promis obligatoire et jamais envoyé. Une revue systématique des charges utiles
+qui traversent la frontière serveur → client serait un jalon à elle seule.
