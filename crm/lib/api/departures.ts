@@ -559,6 +559,26 @@ export interface DepartureView {
 }
 
 /**
+ * Les champs d'une recherche que la carte demande.
+ *
+ * **Un seul `select`, deux lectures.** La file et le départ rouvert doivent
+ * montrer exactement la même carte ; deux listes de champs finiraient par
+ * diverger, et c'est la seconde qu'on oublie de compléter.
+ */
+const RESEARCH_SELECT = {
+  select: {
+    gap: true,
+    summary: true,
+    corpus: true,
+    fetchedAt: true,
+    targetHost: true,
+    targetSource: true,
+    facts: true,
+    sources: true,
+  },
+} as const;
+
+/**
  * La recherche d'une société, mise à la forme de la carte.
  *
  * **La décision appartient au domaine, pas à ce fichier.** La version
@@ -965,8 +985,22 @@ export async function departureDraft(
       enrollment: {
         select: {
           contact: {
-            select: { id: true, firstName: true, lastName: true, email: true, owner: true,
-              company: { select: { name: true } } },
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              owner: true,
+              /*
+                **La recherche voyage avec le brouillon rouvert.** Le panneau
+                l'affiche depuis le jalon 74 ; ce chemin ne l'a jamais
+                envoyée, et lire `research.state` sur `undefined` faisait
+                tomber tout l'écran. La file la rend déjà : la rendre ici
+                aussi, par la même fonction, est le correctif à la source.
+              */
+              research: RESEARCH_SELECT,
+              company: { select: { name: true, research: RESEARCH_SELECT } },
+            },
           },
           sequence: { select: { name: true, campaign: { select: { mailboxId: true } } } },
         },
@@ -1001,6 +1035,15 @@ export async function departureDraft(
       sequenceName: departure.enrollment.sequence.name,
       signatories,
       signatoryId: signatory?.id ?? null,
+      // La société d'abord, la fiche à défaut : l'ordre de `researchFor`, et
+      // exactement ce que rend la carte de la file.
+      research: cardFor(contact.company?.research ?? contact.research ?? null),
+      ungrounded: describeUngrounded(
+        ungroundedClaims(
+          repairGreeting(departure.body, contact),
+          contact.company?.research?.corpus ?? contact.research?.corpus ?? "",
+        ),
+      ),
     },
   };
 }
@@ -1015,6 +1058,10 @@ export interface DepartureDraft {
   readonly sequenceName: string;
   readonly signatories: Awaited<ReturnType<typeof listSignatories>>;
   readonly signatoryId: string | null;
+  /** Ce qu'Alex a lu, tel que la carte de la file le montre. */
+  readonly research: ResearchCard;
+  /** Une affirmation produit qu'aucune page lue ne soutient. */
+  readonly ungrounded: string | null;
 }
 
 /**

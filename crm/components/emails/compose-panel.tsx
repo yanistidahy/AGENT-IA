@@ -67,9 +67,13 @@ interface Draft {
    * qu'un brouillon générique et une recherche en panne étaient indiscernables
    * depuis une fiche. Les deux surfaces rendent maintenant le même composant.
    */
-  research: ResearchCard;
+  /**
+   * **Facultatif, et ce n'est pas une commodité** : un départ rouvert depuis
+   * la file n'en portait pas, et le panneau tombait tout entier dessus.
+   */
+  research?: ResearchCard;
   /** Une affirmation produit qu'aucune page lue ne soutient. */
-  ungrounded: string | null;
+  ungrounded?: string | null;
 }
 
 interface Sent {
@@ -378,9 +382,19 @@ export function ComposePanel({
         Ce qu'Alex a lu, avant le texte : on relit un brouillon autrement quand
         on sait sur quoi il s'appuie — ou qu'il ne s'appuie sur rien.
       */}
-      {draft !== null && (
+      {/*
+        **`research` peut manquer, et la panne l'a prouvé.** Le panneau le
+        déclarait obligatoire alors qu'un départ rouvert depuis la file n'en
+        portait pas : `research.state` sur `undefined` faisait tomber tout
+        l'écran en « Application error », sans que rien n'échoue à la
+        compilation — la réponse traverse la frontière serveur → client en
+        JSON, où le type n'existe plus. La source est corrigée, et le rendu ne
+        suppose plus : une charge utile incomplète n'affiche pas de note, elle
+        ne casse pas la page.
+      */}
+      {draft !== null && draft.research !== undefined && (
         <div className="mb-3">
-          <ResearchNote research={draft.research} ungrounded={draft.ungrounded} />
+          <ResearchNote research={draft.research} ungrounded={draft.ungrounded ?? null} />
         </div>
       )}
 
