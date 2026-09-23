@@ -174,16 +174,18 @@ export interface ResearchCard {
 /**
  * La carte d'une recherche, ou de son absence.
  *
- * `null` veut dire « aucune société rattachée à cette fiche » : il n'y a même
- * pas de maison à documenter, ce qui n'est pas la même chose qu'une maison sans
- * site.
+ * **`null` ne veut plus dire « pas de société » depuis le jalon 84** : une
+ * fiche sans maison est désormais une portée de recherche à part entière, donc
+ * elle est documentée comme les autres. Il ne reste que le cas où la fiche
+ * elle-même est introuvable au moment de lire, ce qui est un incident et non un
+ * manque de données.
  */
 export function researchCard(research: Research | null): ResearchCard {
   if (research === null) {
     return {
       state: "none",
       target: "",
-      headline: "Aucune société rattachée à cette fiche",
+      headline: "Aucune recherche n'a pu être lancée pour cette fiche",
       detail: "",
       sources: [],
     };

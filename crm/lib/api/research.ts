@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "../db";
+import { contactTitle } from "../domain/contact-identity";
 import { anthropic, describeAnthropicError } from "../agents/runtime/client";
 import { requestFor } from "../agents/runtime/request";
 import { modelFor } from "./reference";
@@ -100,24 +101,76 @@ rends une liste de faits vide.`;
  * `force` relit malgré le cache — c'est le geste explicite, jamais un effet de
  * bord : une recherche coûte un appel avec outils, le plus cher du produit.
  */
-export async function researchCompany(
-  companyId: string,
+/**
+ * À qui appartient une recherche.
+ *
+ * **Une société quand il y en a une** : trois personnes d'une même maison la
+ * partagent, et c'est ce qui la rend payable une fois pour toutes (jalon 73).
+ * **À défaut la fiche elle-même** — sans cette seconde ancre, le domaine déduit
+ * de l'adresse électronique (jalon 75) n'était jamais consulté pour une fiche
+ * sans maison : `researchCompany` était appelée avec l'identifiant de la
+ * société, donc pas appelée du tout.
+ */
+export type ResearchScope =
+  | { readonly companyId: string; readonly contactId?: undefined }
+  | { readonly contactId: string; readonly companyId?: undefined };
+
+/** La clé Prisma correspondante, en un seul endroit. */
+function scopeWhere(scope: ResearchScope): { companyId: string } | { contactId: string } {
+  return scope.companyId === undefined
+    ? { contactId: scope.contactId }
+    : { companyId: scope.companyId };
+}
+
+export async function researchFor(
+  scope: ResearchScope,
   options: { readonly force?: boolean; readonly now?: Date } = {},
 ): Promise<Research | null> {
   const now = options.now ?? new Date();
 
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: {
-      name: true,
-      domain: true,
-      research: { include: { facts: true, sources: true } },
-      // Les fiches de la maison, pour y lire un site saisi ou, à défaut, le
-      // domaine porté par une adresse électronique (jalon 75). Bornée : au-delà
-      // de vingt fiches, la vingt-et-unième n'apprendra rien de plus.
-      contacts: { select: { website: true, email: true }, take: 20 },
-    },
-  });
+  /*
+    **Les deux portées lisent la même chose**, et c'est ce qui fait que la
+    déduction par l'adresse électronique vaut désormais pour tout le monde :
+    un nom à citer, un domaine saisi s'il y en a un, et les adresses où lire un
+    domaine professionnel. Pour une société, ce sont les fiches de la maison ;
+    pour une fiche seule, la sienne.
+  */
+  const company =
+    scope.companyId === undefined
+      ? await (async () => {
+          const contact = await prisma.contact.findUnique({
+            where: { id: scope.contactId },
+            select: {
+              website: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              research: { include: { facts: true, sources: true } },
+            },
+          });
+          if (contact === null) return null;
+          return {
+            // `contactTitle` et non une recomposition : le nom d'une fiche se
+            // compose à un seul endroit (jalon 50), et une fiche sans personne
+            // nommée doit rendre sa marque, pas une chaîne vide.
+            name: contactTitle({ ...contact, company: null }),
+            domain: "",
+            research: contact.research,
+            contacts: [{ website: contact.website, email: contact.email }],
+          };
+        })()
+      : await prisma.company.findUnique({
+          where: { id: scope.companyId },
+          select: {
+            name: true,
+            domain: true,
+            research: { include: { facts: true, sources: true } },
+            // Les fiches de la maison, pour y lire un site saisi ou, à défaut, le
+            // domaine porté par une adresse électronique (jalon 75). Bornée : au-delà
+            // de vingt fiches, la vingt-et-unième n'apprendra rien de plus.
+            contacts: { select: { website: true, email: true }, take: 20 },
+          },
+        });
   if (company === null) return null;
 
   const stored = company.research === null ? null : toResearch(company.research);
@@ -139,7 +192,7 @@ export async function researchCompany(
     // demande de documenter une entreprise sans lui donner d'adresse en
     // fabrique une — c'est le défaut du jalon 48 sur les sites de démonstration,
     // une strate plus haut.
-    return save(companyId, {
+    return save(scope, {
       gap: "no-domain",
       summary: "",
       facts: [],
@@ -157,7 +210,7 @@ export async function researchCompany(
   if (refusal !== null) {
     // Un plafond atteint n'est pas une société sans site : c'est la chaîne qui
     // s'arrête, et l'écran doit le nommer pour qu'on sache où agir.
-    return save(companyId, {
+    return save(scope, {
       gap: "failed",
       summary: refusal,
       facts: [],
@@ -221,7 +274,7 @@ export async function researchCompany(
     const parsed = parseJson(response.content);
     const facts = usableFacts(toFacts(parsed?.facts));
 
-    return save(companyId, {
+    return save(scope, {
       // **`thin` plutôt qu'une prose inventée.** Un site lu qui n'apprend rien
       // est une réponse honnête ; le brouillon retombera en générique et le
       // dira.
@@ -250,8 +303,8 @@ export async function researchCompany(
       rester générique jusqu'à la fin de la fenêtre de fraîcheur.
     */
     const reason = describeAnthropicError(error);
-    console.error(`[research] échec sur la société ${companyId} : ${reason}`);
-    return save(companyId, {
+    console.error(`[research] échec sur ${JSON.stringify(scopeWhere(scope))} : ${reason}`);
+    return save(scope, {
       gap: "failed",
       summary: reason,
       facts: [],
@@ -379,7 +432,7 @@ interface Stored {
   readonly fetchedAt: Date;
 }
 
-async function save(companyId: string, input: Stored): Promise<Research> {
+async function save(scope: ResearchScope, input: Stored): Promise<Research> {
   const data = {
     gap: input.gap ?? "",
     summary: input.summary,
@@ -394,9 +447,9 @@ async function save(companyId: string, input: Stored): Promise<Research> {
 
   await prisma.$transaction(async (tx) => {
     const row = await tx.companyResearch.upsert({
-      where: { companyId },
+      where: scopeWhere(scope),
       update: data,
-      create: { companyId, ...data },
+      create: { ...scopeWhere(scope), ...data },
       select: { id: true },
     });
     // Remplacer plutôt qu'ajouter : une relecture décrit l'état d'aujourd'hui,
@@ -443,18 +496,18 @@ function toResearch(row: Row): Research {
 }
 
 /** La recherche déjà en base, sans jamais en déclencher une. */
-export async function readResearch(companyId: string): Promise<Research | null> {
+export async function readResearch(scope: ResearchScope): Promise<Research | null> {
   const row = await prisma.companyResearch.findUnique({
-    where: { companyId },
+    where: scopeWhere(scope),
     include: { facts: true, sources: true },
   });
   return row === null ? null : toResearch(row);
 }
 
 /** Le corpus, pour le garde-fou. Lu à part : il est volumineux. */
-export async function readCorpus(companyId: string): Promise<string> {
+export async function readCorpus(scope: ResearchScope): Promise<string> {
   const row = await prisma.companyResearch.findUnique({
-    where: { companyId },
+    where: scopeWhere(scope),
     select: { corpus: true },
   });
   return row?.corpus ?? "";

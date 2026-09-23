@@ -1,4 +1,5 @@
 import "server-only";
+import { describeEcho, echoOf } from "../domain/follow-up-echo";
 import { storedTarget } from "../domain/research-target";
 import {
   describeUngrounded,
@@ -83,6 +84,8 @@ export interface ComposeReport {
   readonly sentAutomatically: number;
   readonly stopped: number;
   readonly waiting: number;
+  /** Interrompue à la demande. Ce qui était composé reste en file. */
+  readonly stoppedByUser?: boolean;
 }
 
 /**
@@ -161,6 +164,48 @@ export interface ComposeScope {
    * **déjà parti** n'est jamais touché.
    */
   readonly rewritePending?: boolean;
+  /**
+   * Le journal de cette composition, quand elle en a un.
+   *
+   * **C'est par lui que passe l'arrêt** : la demande arrive sur une autre
+   * requête, donc elle ne peut pas être un drapeau en mémoire. La boucle relit
+   * la ligne avant chaque brouillon : une lecture par appel au modèle, c'est-à-
+   * dire une lecture toutes les huit secondes.
+   */
+  readonly jobId?: string;
+}
+
+/** Quelqu'un a-t-il demandé l'arrêt de cette composition ? */
+async function stopRequested(jobId: string | undefined): Promise<boolean> {
+  if (jobId === undefined) return false;
+  const job = await prisma.compositionJob.findUnique({
+    where: { id: jobId },
+    select: { stopRequestedAt: true },
+  });
+  return job?.stopRequestedAt != null;
+}
+
+/**
+ * Le message déjà envoyé à cette personne pour cette séquence.
+ *
+ * **Lu dans `email_sends`, jamais reconstruit** : c'est le texte exact qui est
+ * parti, et c'est lui qu'Alex doit éviter de refaire. Le plus récent, parce que
+ * c'est celui dont le destinataire se souvient.
+ */
+async function previousMessage(
+  contactId: string,
+  sequenceId: string,
+): Promise<{ sentOn: string; body: string } | null> {
+  const sent = await prisma.emailSend.findFirst({
+    where: { contactId, sequenceId },
+    orderBy: { sentAt: "desc" },
+    select: { body: true, sentAt: true },
+  });
+  if (sent === null || sent.body.trim() === "") return null;
+  return {
+    sentOn: sent.sentAt.toLocaleDateString("fr-FR"),
+    body: sent.body,
+  };
 }
 
 export async function composeDepartures(
@@ -195,6 +240,7 @@ export async function composeDepartures(
   let sentAutomatically = 0;
   let stopped = 0;
   let waiting = 0;
+  let stoppedByUser = false;
 
   for (const enrollment of enrollments) {
     const replied = await repliedAfter(
@@ -257,11 +303,29 @@ export async function composeDepartures(
         ? step?.brief
         : `${step?.brief ?? ""}\n\nUn collègue de la même maison (${colleagueOpening.name}) a un message composé ce matin dont la phrase d'ouverture est : « ${colleagueOpening.opening} ». N'écris ni cette phrase, ni une reformulation de cette phrase, trouve une autre entrée en matière, ancrée sur le rôle de ton destinataire.`;
 
+    /*
+      **L'arrêt est relu juste avant de payer.** Le brouillon suivant est la
+      prochaine dépense ; s'arrêter après l'avoir écrit ne servirait à rien.
+      Ce qui est déjà en file y reste : c'est du travail fait, et relu.
+    */
+    if (await stopRequested(scope.jobId)) {
+      stoppedByUser = true;
+      break;
+    }
+
+    // Le message déjà parti à cette personne pour cette séquence : c'est ce
+    // qu'Alex ne doit pas refaire (jalon 84).
+    const previous =
+      verdict.step <= 1
+        ? null
+        : await previousMessage(enrollment.contactId, enrollment.sequenceId);
+
     const draft = await draftEmail(
       enrollment.contactId,
       undefined,
       brief,
       enrollment.sequence.campaign?.mailboxId,
+      { step: verdict.step, previous },
     );
     if (!draft.ok) {
       await prisma.sequenceDeparture.create({
@@ -299,7 +363,7 @@ export async function composeDepartures(
     }
   }
 
-  return { skipped: null, composed, sentAutomatically, stopped, waiting };
+  return { skipped: null, composed, sentAutomatically, stopped, waiting, stoppedByUser };
 }
 
 /**
@@ -487,6 +551,11 @@ export interface DepartureView {
    * qu'Alex avait écrit.
    */
   readonly ungrounded: string | null;
+  /** La relance répète le message précédent. Vide quand elle ne le fait pas. */
+  readonly echo: string;
+  readonly campaignName: string;
+  /** Sa campagne est en pause : rien ne sera composé ni envoyé pour elle. */
+  readonly campaignPaused: boolean;
 }
 
 /**
@@ -543,7 +612,10 @@ export async function listDepartures(
     include: {
       enrollment: {
         include: {
-          sequence: { select: { name: true } },
+          // `active` : une campagne en pause ne compose ni n'envoie, et la
+          // file doit le dire plutôt que d'afficher des brouillons qui ne
+          // partiront pas (jalon 84).
+          sequence: { select: { name: true, active: true, campaign: { select: { name: true } } } },
           contact: {
             select: {
               id: true,
@@ -551,24 +623,38 @@ export async function listDepartures(
               lastName: true,
               email: true,
               website: true,
-              company: {
-        select: {
-          name: true,
-          domain: true,
-          research: {
-              select: {
-                gap: true,
-                summary: true,
-                corpus: true,
-                fetchedAt: true,
-                targetHost: true,
-                targetSource: true,
-                facts: true,
-                sources: true,
+              // La recherche de la fiche elle-même, quand elle n'a pas de
+              // maison : depuis le jalon 84 c'est une portée à part entière.
+              research: {
+                select: {
+                  gap: true,
+                  summary: true,
+                  corpus: true,
+                  fetchedAt: true,
+                  targetHost: true,
+                  targetSource: true,
+                  facts: true,
+                  sources: true,
+                },
               },
-            },
-        },
-      },
+              company: {
+                select: {
+                  name: true,
+                  domain: true,
+                  research: {
+                select: {
+                  gap: true,
+                  summary: true,
+                  corpus: true,
+                  fetchedAt: true,
+                  targetHost: true,
+                  targetSource: true,
+                  facts: true,
+                  sources: true,
+                },
+              },
+                },
+              },
             },
           },
         },
@@ -583,6 +669,17 @@ export async function listDepartures(
       orderBy: { date: "desc" },
       select: { date: true },
     });
+
+    /*
+      Le message déjà envoyé pour cette séquence, relu à chaque affichage de la
+      file : c'est contre lui que la relance est comparée.
+    */
+    const previous =
+      row.step <= 1 ? null : await previousMessage(row.enrollment.contactId, row.enrollment.sequenceId);
+    const echoText =
+      previous === null
+        ? ""
+        : describeEcho(echoOf(previous.body, repairGreeting(row.body, row.enrollment.contact)));
 
     views.push({
       id: row.id,
@@ -612,13 +709,27 @@ export async function listDepartures(
           companyName: row.enrollment.contact.company?.name ?? "",
         }),
       ),
-      research: cardFor(row.enrollment.contact.company?.research ?? null),
+      // La société d'abord, la fiche à défaut : c'est l'ordre de `researchFor`.
+      research: cardFor(
+        row.enrollment.contact.company?.research ?? row.enrollment.contact.research ?? null,
+      ),
       ungrounded: describeUngrounded(
         ungroundedClaims(
           repairGreeting(row.body, row.enrollment.contact),
-          row.enrollment.contact.company?.research?.corpus ?? "",
+          row.enrollment.contact.company?.research?.corpus ??
+            row.enrollment.contact.research?.corpus ??
+            "",
         ),
       ),
+      /*
+        **La garde d'écho, recalculée à la lecture**, comme la virgule de
+        l'appel et le garde-fou de recherche. C'est ce qui fait qu'une retouche
+        à la main est vérifiée elle aussi : un brouillon qu'on a rapproché du
+        premier message en le corrigeant doit se signaler comme les autres.
+      */
+      echo: echoText,
+      campaignName: row.enrollment.sequence.campaign?.name ?? "",
+      campaignPaused: !row.enrollment.sequence.active,
     });
   }
   return views;
@@ -652,7 +763,12 @@ export async function sendDeparture(
               name: true,
               steps: true,
               autoMode: true,
-              campaign: { select: { mailboxId: true } },
+              // **La pause vaut aussi à l'envoi.** La composition la respectait
+              // depuis le jalon 71 ; l'envoi non, si bien qu'une campagne mise
+              // en pause laissait partir à la main tout ce qui était déjà en
+              // file. « En pause » ne veut alors plus rien dire.
+              active: true,
+              campaign: { select: { mailboxId: true, name: true } },
             },
           },
           contact: {
@@ -674,6 +790,13 @@ export async function sendDeparture(
 
   if (departure === null) return { ok: false, message: "Départ introuvable." };
   if (departure.status === "sent") return { ok: false, message: "Ce départ est déjà parti." };
+  if (!departure.enrollment.sequence.active) {
+    const name = departure.enrollment.sequence.campaign?.name ?? departure.enrollment.sequence.name;
+    return {
+      ok: false,
+      message: `La campagne « ${name} » est en pause : rien ne part tant qu'elle ne redémarre pas. Relancez-la depuis sa page pour envoyer ce départ.`,
+    };
+  }
 
   const enrollment = departure.enrollment;
   const replied = await repliedAfter(
@@ -777,6 +900,8 @@ export async function postponeDeparture(id: string, now = new Date()): Promise<D
   });
   if (departure === null) return { ok: false, message: "Départ introuvable." };
   if (departure.status === "sent") return { ok: false, message: "Ce départ est déjà parti." };
+  // **Pas de garde de pause ici** : reporter n'est pas envoyer, et un départ
+  // qu'on écarte d'une campagne en pause est un geste parfaitement sensé.
 
   await prisma.$transaction([
     prisma.sequenceDeparture.delete({ where: { id } }),

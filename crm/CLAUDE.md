@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 84 | **Une relance n'est pas un premier message renvoyé** : l'étape 2 reçoit le message déjà envoyé et des interdits explicites, une garde signale la copie ; plus « Arrêter » sur la composition, « Réécrire tous les départs », et la pause rendue visible | **livré, à valider** |
 | 83 | **Le déclencheur de la réouverture était un état d'écran, pas un fait** : une fois les étapes enregistrées, plus aucun enregistrement ne proposait de rattraper les personnes fermées. Plus une porte de secours sur la page de campagne | **livré, à valider** |
 | 82 | **Le jalon 81, rendu robuste et bruyant** : la règle ne dépend plus d'un couple statut+libellé exact, l'écriture demande au domaine au lieu de recomposer sa clause, et zéro réouverture ne s'enregistre plus en silence | **livré, à valider** |
 | 81 | **Ajouter une étape rattrape ceux qui avaient fini** : réouverture des seules inscriptions épuisées, délai compté depuis leur dernier message, et une confirmation qui nomme les exclus | **livré, à valider** |
@@ -11676,3 +11677,186 @@ prix d'un déclencheur qui ne peut plus se dérober.
 part d'une base vide n'exerce que le chemin heureux. **Il faut partir de l'état
 où se trouve la production**, pas de celui qu'on sait produire — c'est la
 troisième fois que cet écart coûte un aller-retour complet.
+
+---
+
+## Jalon 84 — une relance n'est pas un premier message renvoyé
+
+### 3 · Le vrai problème : l'étape 2 refaisait l'étape 1
+
+Alex ne savait ni **qu'il** écrivait une relance, ni **ce qui avait déjà été
+dit**. Il refaisait donc le même travail, avec les mêmes arguments, dans le même
+ordre : un prospect qui reçoit deux fois le même argumentaire ne lit pas une
+relance, il lit un publipostage, et il classe l'expéditeur.
+
+Trois leviers, et aucun ne suffit seul (`lib/agents/prompts/follow-up.ts`) :
+
+1. **le message déjà envoyé, en entier**, lu dans `email_sends` et jamais
+   reconstruit. Un résumé de ce qu'on croit avoir écrit laisserait passer
+   exactement les phrases qu'on veut éviter ;
+2. **des interdits dits comme des interdits** — jamais l'ouverture sur les
+   69 %, jamais le conseiller redécrit dans les mêmes termes, jamais la phrase
+   de démonstration mot pour mot, jamais une ouverture sur le temps écoulé.
+   C'est la construction du DM (jalon 48) et de l'angle de rôle (jalon 53) : une
+   omission se lit comme une absence d'information, une ligne qui dit « non » se
+   lit comme une règle ;
+3. **un but propre à chaque étape**, et une longueur qui décroît — 130 / 80 / 55
+   mots au plus. Une relance plus longue que le premier message est une faute de
+   raisonnement autant que de forme.
+
+| Étape | Ce qu'elle fait |
+|---|---|
+| 1 | le premier contact, l'argumentaire complet — le seul message où il se déroule en entier |
+| 2 | revient sur le premier **sans le répéter**, ajoute **un** angle neuf ou **un** détail concret, pose **une** question facile. Pas de second lien de réservation |
+| 3 | dit que c'est le dernier message, laisse la porte ouverte, **aucune question** — relancer une troisième fois avec une question, c'est reprendre la pression qu'on prétend relâcher |
+
+**La règle des relances, décidée à la relecture des références** :
+*« Tu observes leur site, tu ne prêtes rien à leurs visiteurs. »* Ce que la
+recherche a lu sur leurs pages est un fait qui s'écrit — « il y a plusieurs
+formats sur votre page de recharges » se vérifie en un clic. Ce qui se passe
+dans leur trafic ne l'est pas : « la question du format revient à chaque
+visite », « vos visiteurs hésitent » sont des affirmations sur des gens que
+nous n'avons jamais observés, **et le prospect sait que nous ne pouvons pas le
+savoir**. L'hésitation reste donc à l'état de possibilité : « c'est typiquement
+le genre de choix sur lequel on hésite ».
+
+**L'objet ne change pas d'une étape à l'autre, et ne prend pas « Re: ».** Les
+messageries regroupent par objet et par participants, donc la relance se range
+sous le premier message toute seule ; un « Re: » sur un message qui n'est pas
+une réponse est un faux signal de conversation.
+
+### La garde : une relance qui recopie se voit avant de partir
+
+`lib/domain/follow-up-echo.ts`, pur et testé. Même posture que la signature
+(jalon 33) et le tiret long (jalon 58) : on demande dans le prompt, **et** on
+vérifie au retour, parce qu'un prospect qui reçoit deux fois le même paragraphe
+ne s'en plaint pas — il cesse de lire, et on ne l'apprend jamais.
+
+Deux déclencheurs, qui ne disent pas la même chose : une **ouverture identique**
+(les douze premiers mots utiles) signale qu'Alex a refait le premier message ;
+une **suite de huit mots** partagée est une phrase recopiée, souvent celle de la
+démonstration. Salutation et bloc de signature sont retirés de la comparaison :
+identiques par construction, les compter ferait sonner la garde sur chaque
+relance sans rien apprendre.
+
+Elle **ne réécrit rien** — un remplacement automatique dans un texte commercial
+ferait plus de dégâts qu'il n'en répare — et elle est **recalculée à la
+lecture**, donc une retouche à la main est vérifiée elle aussi.
+
+### 1 · « Arrêter » pendant la composition
+
+`CompositionJob.stopRequestedAt` et `stopped`. La boucle relit le drapeau
+**avant de commencer le brouillon suivant** : elle n'interrompt pas celui en
+cours, qui est déjà payé — le tuer ne rendrait pas l'argent et perdrait le
+texte. Ce qui est écrit reste en file, rien n'est envoyé, et la bande annonce
+combien avait été fait : « 2 brouillons écrits avant l'arrêt, sur 12 prévus ».
+
+Le bouton n'existe **que pendant** : arrêter une composition finie n'a pas de
+sens, et un bouton inerte se lit comme une panne (jalon 26).
+
+### 2 · « Réécrire tous les départs », et le défaut de recherche qu'il a révélé
+
+Un brouillon en attente porte le discours du matin où il a été écrit. Quand le
+mail de référence, les notes d'angle, la recherche ou la signature changent, la
+file devient périmée **sans que rien ne le dise**. `lib/api/rewrite-queue.ts`
+la recompose, campagne par campagne, chacune avec son propre journal — donc sa
+propre barre et son propre bouton d'arrêt. **Rien n'est envoyé**, et la
+confirmation reprend celle du jalon 70 : le coût annoncé avant d'être dépensé,
+et le nombre de brouillons **retouchés à la main** qui seront remplacés.
+
+**Le défaut nommé, avec sa ligne.** `lib/agents/email-draft.ts:582` appelait
+`researchCompany(companyId)` : la déduction du domaine depuis l'adresse
+électronique (jalon 75) vivait **à l'intérieur** de cette fonction, donc n'était
+atteignable qu'à travers une société. Une fiche sans société rattachée — le cas
+de la moitié d'un vivier importé — n'avait **aucune recherche du tout**, malgré
+une adresse professionnelle qui portait le domaine. C'est exactement ce que la
+file affichait en « aucun site ».
+
+La recherche est désormais **clavetée sur une portée** (`ResearchScope`) :
+la société d'abord, la fiche à défaut. `CompanyResearch` gagne un second point
+d'ancrage (`contactId`, unique, migration `36_stop_and_contact_research`), et
+une fiche sans maison obtient sa propre recherche, visée sur le domaine déduit
+de son adresse.
+
+### 4 · Une campagne en pause ne compose ni n'envoie, et la file le dit
+
+La pause du jalon 71 coupait la composition (`sequence: { active: true }` dans
+la clause) mais **`sendDeparture` ne la vérifiait jamais** : un brouillon d'une
+campagne en pause partait encore d'un clic depuis la file. Le garde-fou est
+posé à l'envoi, avec son message : « La campagne « X » est en pause : rien ne
+part tant qu'elle ne redémarre pas. » **`postponeDeparture` ne l'a pas** —
+reporter n'est pas envoyer, et refuser de décaler une échéance sur une campagne
+gelée n'aurait protégé de rien.
+
+Et `/departs` porte une bande ambre qui **nomme** les campagnes gelées : sans
+elle, on relit des brouillons en se demandant pourquoi ils ne bougent pas.
+
+### Jalon 84 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `36_stop_and_contact_research`
+appliquée puis `migrate diff` **vide**), le serveur standalone de production,
+le substitut Anthropic et un navigateur piloté :
+
+- **1 · arrêter** : composition de 12 brouillons lancée en arrière-plan, clic
+  sur « Arrêter » après 12 secondes → journal `arrêtée: true`, **2 brouillons
+  écrits**, et **toujours 2** huit secondes plus tard — rien de plus n'a été
+  composé ; **0 envoi** ;
+- **2 · réécrire** : 6 brouillons en file écrits avant le correctif, sur des
+  fiches **sans société** portant une adresse professionnelle →
+  « **aucun site » avant : 6 sur 6**, « aucun site » **après : 0 sur 6**, chacune
+  visée sur `r84rwN.fr (déduit de l'adresse email)`. Le plan (`GET`) n'appelle
+  aucun modèle, et **0 envoi** ;
+- **3 · l'étape 2** : composition d'un départ d'étape 2 sur un contact ayant
+  déjà reçu l'étape 1 → le message exact parvient au modèle ; la garde reste
+  muette sur le brouillon d'Alex et, sur un brouillon qui recopie, rend
+  « Cette relance répète le premier message : elle ouvre comme le message
+  précédent, elle en reprend « 69 des visiteurs quittent un site apres une
+  question restee sans reponse j ai prepare une demonstration … » » ;
+- **4 · pause** : campagne en pause → **0 composé**, envoi **refusé** en la
+  nommant, et la file la signale (`campaignPaused: true`) ;
+- **au navigateur** : « Arrêter » **atteignable** (`reachable()`, jamais
+  `isVisible()`) au-dessus de « 3 sur 10 préparés », la bande de pause nomme la
+  campagne, « Réécrire tous les départs » ouvre son plan chiffré **sans rien
+  dépenser** (le départ en attente n'a pas bougé), **0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1404 tests**) et
+  `npm run e2e` (**65 tests**, douze fichiers) verts.
+
+`tests/follow-up-source.test.ts` fixe les invariants du discours de relance :
+le message précédent est **lu** et non reconstruit, les interdits sont dits
+comme des interdits, la longueur décroît, et la garde d'écho est câblée. La
+garde du tiret long (jalon 58) et celle du nom de contact (jalon 50) ont fait
+leur travail sur ce jalon : six tirets longs introduits dans les nouveaux
+fichiers, et un nom recomposé à la main dans `research.ts`, attrapés avant de
+partir.
+
+### Jalon 84 — ce qui n'est pas vérifié
+
+**« N sources lues » n'a pas pu être mesuré, et c'est la limite de
+l'environnement, pas du correctif.** Depuis les jalons 73 à 76 : il n'y a ni clé
+d'API ici, ni sortie réseau vers les sites des prospects. Le substitut ne rend
+donc aucun fait sourcé, et toute recherche y finit en « le site a été lu mais
+n'apprend rien d'exploitable ». Ce que la recette établit est **le défaut qui
+était nommé** : la recherche est désormais **lancée et visée** pour une fiche
+sans société, alors qu'elle ne l'était pas du tout. Le passage de « aucun site »
+à « N sources lues » se lira au premier vrai « Réécrire tous les départs » en
+production — et si le nombre reste bas **alors que les cibles sont renseignées**,
+c'est la lecture des pages qu'il faudra regarder, plus la déduction.
+
+**La garde d'écho ne compare qu'au message précédent de la même séquence.** Une
+relance qui recopierait un email écrit à la main sur la fiche ne serait pas
+signalée : c'est `email_sends` filtré sur la séquence qui sert d'ancre.
+
+**Le seuil de huit mots est un jugement**, comme les seuils d'ouverture du
+jalon 43. Assez long pour qu'une coïncidence soit improbable, assez court pour
+attraper une phrase recyclée ; il se calera sur ce que les vrais brouillons
+montreront.
+
+**L'arrêt ne remonte pas dans la boucle en cours.** Le drapeau est relu entre
+deux brouillons : sur un appel au modèle qui durerait une minute, l'arrêt
+prendrait effet à la fin de celui-là. C'est le compromis assumé — ce brouillon
+est déjà payé.
+
+**La réécriture est tout ou rien**, comme au jalon 70 : elle recompose tous les
+brouillons en attente de toutes les campagnes, ou aucun. On ne choisit pas
+d'épargner celui qu'on vient de corriger — la confirmation le dit, et ne pas
+cliquer reste le refuge.

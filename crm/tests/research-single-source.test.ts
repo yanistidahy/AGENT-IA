@@ -35,15 +35,19 @@ function sourceOf(relative: string): string {
 }
 
 describe("une seule recherche, appelée par les deux chemins", () => {
-  it("la rédaction est le seul appelant de `researchCompany`", () => {
+  it("la rédaction est le seul appelant de `researchFor`", () => {
     // Les deux surfaces passent par `draftEmail` : le tiroir de contact via
     // `/api/emails`, la campagne via `composeDepartures`. La recherche vit donc
     // dans la rédaction, et nulle part ailleurs.
     const draft = sourceOf("lib/agents/email-draft.ts");
-    expect(draft).toMatch(/await researchCompany\(companyId\)/);
+    // **Une portée, pas un identifiant de société** (jalon 84) : la société
+    // quand il y en a une, la fiche sinon. Prendre un `companyId` était
+    // exactement ce qui empêchait une fiche sans maison d'être documentée.
+    expect(draft).toMatch(/await researchFor\(scope\)/);
+    expect(draft).toMatch(/contact\.company === null \? \{ contactId \}/);
 
     for (const file of ["app/api/emails/route.ts", "lib/api/departures.ts"]) {
-      expect(sourceOf(file)).not.toMatch(/researchCompany/);
+      expect(sourceOf(file)).not.toMatch(/researchFor\(/);
     }
   });
 
