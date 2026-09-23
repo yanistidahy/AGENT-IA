@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { badRequest, invalidPayload, jsonOk, serverError } from "@/lib/api/errors";
 import { readJson } from "@/lib/api/request";
-import { composeForCampaign, planComposition } from "@/lib/api/compose-now";
+import { composeForCampaign, planComposition, stopComposition } from "@/lib/api/compose-now";
 import { listCampaigns } from "@/lib/api/campaigns";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,15 @@ export const maxDuration = 300;
  *
  * Privée par le middleware, comme tout `/api/*` depuis le jalon 9.
  */
-const schema = z.object({ campaignId: z.string().min(1) });
+const schema = z.object({
+  campaignId: z.string().min(1),
+  /**
+   * `"stop"` demande l'arrêt de la composition en cours. Un verbe distinct
+   * plutôt qu'une seconde route : c'est le même objet, et la charge utile
+   * porte déjà la campagne.
+   */
+  action: z.enum(["compose", "stop"]).optional(),
+});
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
@@ -46,6 +54,9 @@ export async function POST(request: Request) {
   if (!parsed.success) return invalidPayload(parsed.error);
 
   try {
+    if (parsed.data.action === "stop") {
+      return jsonOk({ ...(await stopComposition(parsed.data.campaignId)), campaigns: await listCampaigns() });
+    }
     const outcome = await composeForCampaign(parsed.data.campaignId);
     return jsonOk({ outcome, campaigns: await listCampaigns() });
   } catch (error) {

@@ -11,16 +11,23 @@
  * silence serait pire que pas de travail de fond — on attendrait des brouillons
  * qui ne viendront jamais.
  */
+import { StopComposition } from "./stop-composition";
+
 export interface CompositionProgress {
   readonly campaignId: string;
   readonly total: number;
   readonly done: number;
   readonly running: boolean;
   readonly error: string;
+  /** Arrêtée à la demande : ce qui était écrit est resté en file. */
+  readonly stopped: boolean;
 }
 
 export function CompositionBanner({ jobs }: { readonly jobs: readonly CompositionProgress[] }) {
-  const shown = jobs.filter((job) => job.running || job.error !== "");
+  // Une composition arrêtée se montre aussi, et elle dit **combien** avait été
+  // écrit avant l'arrêt : c'est la seule chose qu'on veut savoir après avoir
+  // cliqué.
+  const shown = jobs.filter((job) => job.running || job.error !== "" || job.stopped);
   if (shown.length === 0) return null;
 
   return (
@@ -32,7 +39,14 @@ export function CompositionBanner({ jobs }: { readonly jobs: readonly Compositio
             job.error === "" ? "border-brand-lift bg-brand-l" : "border-danger bg-pulse-l"
           }`}
         >
-          {job.error === "" ? (
+          {job.stopped ? (
+            <p>
+              <strong className="font-semibold">Composition arrêtée.</strong>{" "}
+              {job.done} brouillon{job.done > 1 ? "s" : ""} écrit{job.done > 1 ? "s" : ""} avant
+              l&apos;arrêt, sur {job.total} prévu{job.total > 1 ? "s" : ""}. Ils sont dans la file,
+              rien n&apos;a été envoyé.
+            </p>
+          ) : job.error === "" ? (
             <>
               <p>
                 <strong className="font-semibold">
@@ -61,6 +75,11 @@ export function CompositionBanner({ jobs }: { readonly jobs: readonly Compositio
                   className="fill-brand"
                 />
               </svg>
+              {/* Le bouton n'existe que pendant : arrêter une composition finie
+                  n'a pas de sens, et un bouton inerte se lit comme une panne. */}
+              <div className="mt-2">
+                <StopComposition campaignId={job.campaignId} />
+              </div>
             </>
           ) : (
             <p>

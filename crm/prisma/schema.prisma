@@ -173,13 +173,15 @@ model Contact {
   emailCount  Int       @default(0)
   lastEmailAt DateTime?
 
-  deals        Deal[]
-  activities   Activity[]
-  tasks        Task[]
-  emailSends   EmailSend[]
-  emailReplies EmailReply[]
-  enrollments  SequenceEnrollment[]
+  deals         Deal[]
+  activities    Activity[]
+  tasks         Task[]
+  emailSends    EmailSend[]
+  emailReplies  EmailReply[]
+  enrollments   SequenceEnrollment[]
   customFilters CustomFilterMember[]
+  /// La recherche d'une fiche **sans société** — voir `CompanyResearch`.
+  research      CompanyResearch?     @relation("ContactResearch")
 
   @@index([companyId])
   @@index([lifecycle])
@@ -1172,12 +1174,10 @@ model Mailbox {
 
 /**
  * Le logo de la signature HTML — **un seul, partagé par toutes les boîtes**.
- *
  * C'est la marque de l'entreprise, pas celle d'une personne : deux collègues
  * qui signeraient de deux logos différents se liraient comme deux sociétés. Ce
  * qui varie légitimement d'un signataire à l'autre — nom, titre, téléphone,
  * adresse — est déjà porté par `Mailbox`.
- *
  * En base et non sur disque, pour la raison du jalon 15 : le disque du
  * conteneur est effacé à chaque déploiement, PostgreSQL est le seul stockage
  * durable du projet. Table séparée des réglages parce que les octets n'ont
@@ -1252,9 +1252,22 @@ model MailLogo {
 /// deux lectures du même site pouvant retenir deux choses différentes.
 /// Persistée pour que recomposer un brouillon ne la repaie pas.
 model CompanyResearch {
-  id        String  @id @default(cuid())
-  companyId String  @unique
-  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id String @id @default(cuid())
+
+  /// La recherche appartient à une **société** quand il y en a une : trois
+  /// personnes d'une même maison la partagent, et c'est ce qui la rend
+  /// payable une fois pour toutes (jalon 73).
+  companyId String?  @unique
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  /// À défaut, à une **fiche sans société**. Sans cette seconde ancre, le
+  /// domaine déduit de l'adresse électronique (jalon 75) n'était jamais
+  /// consulté pour ces fiches : la recherche était appelée avec l'identifiant
+  /// de la société, donc pas appelée du tout. Le défaut se lisait « aucun
+  /// site » sur la carte, et il touchait toutes les fiches importées sans
+  /// maison.
+  contactId  String?  @unique
+  contactRef Contact? @relation("ContactResearch", fields: [contactId], references: [id], onDelete: Cascade)
 
   /// Vide = exploitable. Sinon la cause, telle que la carte l'affiche.
   gap     String @default("")
@@ -1290,8 +1303,8 @@ model ResearchFact {
   researchId String
   research   CompanyResearch @relation(fields: [researchId], references: [id], onDelete: Cascade)
 
-  label  String @default("")
-  detail String @default("")
+  label     String @default("")
+  detail    String @default("")
   /// Sans elle, le fait est écarté : voir lib/domain/research.ts.
   sourceUrl String @default("")
 
@@ -1352,13 +1365,11 @@ model Campaign {
 /**
  * Une composition en cours, pour que l'écran puisse dire « 47 départs en
  * préparation » au lieu de paraître ne rien faire.
- *
  * **Une table plutôt qu'un compteur en mémoire** : le travail dure plus qu'une
  * requête, l'écran qui l'observe est rendu par le serveur, et un état gardé
  * dans le processus disparaîtrait au redéploiement en laissant une bannière
  * éternelle. Ici, un travail interrompu se voit — sa date de fin manque, et son
  * avancement s'est arrêté.
- *
  * Elle ne porte **aucun brouillon** : les départs composés vont dans
  * `sequence_departures`, comme ceux du matin. Ce n'est pas une file parallèle,
  * c'est le compte rendu d'un remplissage.
@@ -1385,12 +1396,23 @@ model CompositionJob {
   /// `null` tant que ça tourne. Une composition sans fin ni erreur, très
   /// ancienne, est un conteneur qui a redémarré en route — et ça se lit.
   finishedAt DateTime?
+
+  /// L'instant où quelqu'un a demandé l'arrêt.
+  ///
+  /// **En base et non en mémoire** : la demande arrive sur une autre requête
+  /// que celle qui compose, et un drapeau gardé dans le processus serait perdu
+  /// au redéploiement — la même raison qui a fait choisir une table pour le
+  /// journal au jalon 56. La boucle le relit avant chaque brouillon.
+  stopRequestedAt DateTime?
+  /// Arrêtée à la demande, par opposition à terminée. Ce qui était écrit reste.
+  stopped         Boolean   @default(false)
   /// L'échec, en clair. Vide si tout s'est bien passé.
-  error      String    @default("")
+  error           String    @default("")
 
   @@index([campaignId])
   @@map("composition_jobs")
 }
+
 /// **Un filtre personnalisé : un groupe nommé, constitué à la main.**
 ///
 /// Ce n'est pas un filtre au sens des puces existantes — celles-ci posent une

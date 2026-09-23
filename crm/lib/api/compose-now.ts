@@ -249,14 +249,18 @@ export async function composeForCampaign(
   const sequenceId = await sequenceOf(campaignId);
   if (sequenceId === null) return { ...base, composed: 0, background: false };
 
-  if (mode === "auto" && !plan.estimate.background) {
-    const report = await composeDepartures(now, { sequenceId, rewritePending: true });
-    return { ...base, composed: report.composed, background: false };
-  }
+  void mode;
+  /*
+    **Toute composition passe désormais par un journal** (jalon 84), y compris
+    les petites. Le mode « dans la requête » rendait le compte tout de suite,
+    mais il n'offrait aucune prise : tant que la requête tenait, il n'existait
+    aucun moyen d'arrêter, et « Écrire les mails » allait au bout quoi qu'il
+    arrive. Un bouton d'arrêt qui n'existe qu'au-delà de dix brouillons est un
+    bouton dont on ne sait jamais s'il sera là.
 
-  // Au-delà du seuil : on ouvre le journal **avant** de rendre la main, sans
-  // quoi l'écran rechargé ne trouverait rien et croirait qu'il ne s'est rien
-  // passé.
+    Le journal est ouvert **avant** de rendre la main, sans quoi l'écran
+    rechargé ne trouverait rien et croirait qu'il ne s'est rien passé.
+  */
   const job = await prisma.compositionJob.create({
     data: {
       campaignId,
@@ -288,10 +292,14 @@ async function sequenceOf(campaignId: string): Promise<string | null> {
  */
 async function runInBackground(jobId: string, sequenceId: string, now: Date): Promise<void> {
   try {
-    const report = await composeDepartures(now, { sequenceId, rewritePending: true });
+    const report = await composeDepartures(now, { sequenceId, rewritePending: true, jobId });
     await prisma.compositionJob.update({
       where: { id: jobId },
-      data: { done: report.composed, finishedAt: new Date() },
+      data: {
+        done: report.composed,
+        finishedAt: new Date(),
+        stopped: report.stoppedByUser === true,
+      },
     });
   } catch (error) {
     await prisma.compositionJob
@@ -307,11 +315,30 @@ async function runInBackground(jobId: string, sequenceId: string, now: Date): Pr
 }
 
 export interface JobView {
+  readonly id: string;
   readonly campaignId: string;
   readonly total: number;
   readonly done: number;
   readonly running: boolean;
   readonly error: string;
+  /** Arrêtée à la demande : ce qui était écrit est resté en file. */
+  readonly stopped: boolean;
+}
+
+/**
+ * Demande l'arrêt d'une composition en cours.
+ *
+ * **On pose un drapeau, on n'interrompt rien de force.** Le brouillon en cours
+ * d'écriture est déjà payé : le tuer ne rendrait pas l'argent et perdrait le
+ * texte. La boucle lit ce drapeau avant de commencer le suivant, donc l'arrêt
+ * prend effet à la fin du brouillon courant, au plus tard.
+ */
+export async function stopComposition(campaignId: string): Promise<{ stopping: boolean }> {
+  const { count } = await prisma.compositionJob.updateMany({
+    where: { campaignId, finishedAt: null, stopRequestedAt: null },
+    data: { stopRequestedAt: new Date() },
+  });
+  return { stopping: count > 0 };
 }
 
 /**
@@ -328,10 +355,12 @@ export async function readCompositionJobs(now = new Date()): Promise<JobView[]> 
     where: { startedAt: { gte: since } },
     orderBy: { startedAt: "desc" },
     select: {
+      id: true,
       campaignId: true,
       total: true,
       done: true,
       finishedAt: true,
+      stopped: true,
       error: true,
       campaign: { select: { sequence: { select: { id: true } } } },
     },
@@ -348,11 +377,13 @@ export async function readCompositionJobs(now = new Date()): Promise<JobView[]> 
           });
 
     views.push({
+      id: job.id,
       campaignId: job.campaignId,
       total: job.total,
       done: Math.min(queued, job.total),
       running: job.finishedAt === null,
       error: job.error,
+      stopped: job.stopped,
     });
   }
   return views;

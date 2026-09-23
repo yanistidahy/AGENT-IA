@@ -42,6 +42,11 @@ export interface Departure {
   research: ResearchCard;
   /** Une affirmation produit qu'aucune page lue ne soutient. */
   ungrounded: string | null;
+  /** La relance répète le message précédent — vide quand elle ne le fait pas. */
+  echo: string;
+  campaignName: string;
+  /** Sa campagne est en pause : rien ne partira tant qu'elle l'est. */
+  campaignPaused: boolean;
 }
 
 function isPayload(value: unknown): value is { departures: Departure[]; message?: string } {
@@ -284,6 +289,18 @@ export function DeparturesView({ initial }: { readonly initial: readonly Departu
                       research={departure.research}
                       ungrounded={departure.ungrounded}
                     />
+                    {/*
+                      **La garde d'écho.** Une relance qui refait le premier
+                      message ne se voit pas à la relecture : on relit le
+                      brouillon du jour, pas celui d'il y a quatre jours. Elle
+                      est donc nommée ici, avec la suite de mots reprise, pour
+                      qu'on puisse la corriger avant d'envoyer.
+                    */}
+                    {departure.echo !== "" && (
+                      <span className="rounded-control border border-danger bg-pulse-l px-2 py-1 text-[11.5px] text-danger">
+                        {departure.echo}
+                      </span>
+                    )}
                   </div>
                 </>
               )}

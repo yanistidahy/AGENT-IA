@@ -74,7 +74,7 @@ describe("le garde-fou est posé, et sur ce qui partira vraiment", () => {
     const draft = sourceOf("lib/agents/email-draft.ts");
     expect(draft).toMatch(/ungroundedClaims\(result\.draft\.body, corpus\)/);
     // Le corpus, pas le résumé : un résumé aurait déjà perdu le mot cherché.
-    expect(draft).toMatch(/readCorpus\(companyId\)/);
+    expect(draft).toMatch(/readCorpus\(scope\)/);
   });
 
   it("la file recalcule l'alerte à la lecture, retouches comprises", () => {
@@ -94,12 +94,24 @@ describe("le garde-fou est posé, et sur ce qui partira vraiment", () => {
   });
 });
 
-describe("la recherche se paie une fois par société", () => {
-  it("elle est attachée à la société, pas au contact", () => {
+describe("la recherche se paie une fois par portée", () => {
+  it("la société quand il y en a une, la fiche seulement à défaut", () => {
+    /*
+      **Le sens a changé au jalon 84.** La règle d'origine — « attachée à la
+      société, pas au contact » — protégeait le cache : trois collègues d'une
+      même maison ne paient qu'une lecture. Elle avait un effet de bord que
+      personne n'avait vu : une fiche **sans** maison n'était pas documentée du
+      tout, parce que la recherche prenait un identifiant de société. Le cache
+      par société est conservé, et une seconde ancre est ajoutée pour ces
+      fiches-là. Les deux clés restent uniques : on ne paie jamais deux fois la
+      même portée.
+    */
     const schema = readFileSync(path.join(ROOT, "prisma/schema.prisma"), "utf8");
-    expect(schema).toMatch(/model CompanyResearch[\s\S]{0,400}companyId String\s+@unique/);
-    // Une recherche par contact serait trois lectures pour trois collègues.
-    expect(schema).not.toMatch(/model CompanyResearch[\s\S]{0,400}contactId/);
+    expect(schema).toMatch(/model CompanyResearch[\s\S]{0,600}companyId String\?\s+@unique/);
+    expect(schema).toMatch(/model CompanyResearch[\s\S]{0,900}contactId\s+String\?\s+@unique/);
+    // La société reste la portée par défaut : c'est elle qui fait le partage.
+    const draft = sourceOf("lib/agents/email-draft.ts");
+    expect(draft).toMatch(/contact\.company === null \? \{ contactId \} : \{ companyId/);
   });
 
   it("le cache est consulté avant tout appel", () => {

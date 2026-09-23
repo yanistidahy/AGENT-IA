@@ -11,7 +11,8 @@ import {
   type Research,
   type ResearchCard,
 } from "@/lib/domain/research";
-import { readCorpus, readResearch, researchCompany } from "@/lib/api/research";
+import { readCorpus, readResearch, researchFor, type ResearchScope } from "@/lib/api/research";
+import { FOLLOW_UP_EXAMPLES, followUpRules } from "./prompts/follow-up";
 import { anthropic, describeAnthropicError } from "./runtime/client";
 import { requestFor } from "./runtime/request";
 import { modelFor } from "@/lib/api/reference";
@@ -544,6 +545,14 @@ export async function draftEmail(
    * boîte se choisit par le propriétaire de la fiche (règle du jalon 35).
    */
   mailboxId?: string,
+  /**
+   * Le rang de l'étape et le message déjà envoyé à cette personne.
+   *
+   * **Sans cela, Alex ne sait pas qu'il écrit une relance**, et il refait le
+   * premier message : c'est le défaut que le jalon 84 corrige. Le texte
+   * précédent est lu dans `email_sends`, jamais reconstruit.
+   */
+  stepContext?: { readonly step: number; readonly previous: { sentOn: string; body: string } | null },
 ): Promise<DraftResult> {
   const contact = await prisma.contact.findUnique({
     where: { id: contactId },
@@ -573,14 +582,22 @@ export async function draftEmail(
   if (context === null) return { ok: false, message: "Contact introuvable." };
 
   /*
-    **La recherche est lue ici, une fois par société.** `researchCompany` rend
-    le cache quand il existe et n'est pas périmé : trois collègues d'une même
+    **La recherche est lue ici, une fois par portée.** `researchFor` rend le
+    cache quand il existe et n'est pas périmé : trois collègues d'une même
     maison ne déclenchent donc qu'une seule lecture, et recomposer un brouillon
-    n'en repaie aucune. Sans société rattachée, il n'y a rien à lire, et c'est
-    un manque nommé, pas un silence.
+    n'en repaie aucune.
+
+    **La portée est la société quand il y en a une, la fiche sinon** (jalon 84).
+    Jusque-là, une fiche sans maison n'appelait pas la recherche du tout :
+    `researchCompany` prenait un identifiant de société, et `null` court-circuitait
+    l'appel. Le domaine déduit de l'adresse électronique (jalon 75) vit à
+    l'intérieur de cette fonction, donc il n'était **jamais** consulté pour ces
+    fiches, et la carte disait « aucun site » sur des gens dont l'adresse
+    professionnelle portait le domaine.
   */
-  const companyId = contact.company?.id ?? null;
-  const research = companyId === null ? null : await researchCompany(companyId);
+  const scope: ResearchScope =
+    contact.company === null ? { contactId } : { companyId: contact.company.id };
+  const research = await researchFor(scope);
 
   const [config, signatories] = await Promise.all([readMailConfig(mailboxId), listSignatories()]);
   // La boîte imposée d'abord ; sinon le propriétaire de la fiche : si « Yanis »
@@ -597,7 +614,18 @@ export async function draftEmail(
 
   const result = await complete(
     system,
+    /*
+      **Les consignes d'étape viennent après le dossier et avant la consigne
+      libre.** L'ordre est celui de la décision : ce que je sais, puis quelle
+      sorte de message j'écris, puis ce que cette campagne veut dire de plus.
+    */
     `${context.dossier}\n\n---\n\n${draftInstruction(context, research)}${
+      stepContext === undefined
+        ? ""
+        : `\n\n${followUpRules(stepContext.step, stepContext.previous)}${
+            stepContext.step > 1 ? `\n\n${FOLLOW_UP_EXAMPLES}` : ""
+          }`
+    }${
       stepBrief === undefined || stepBrief.trim() === ""
         ? ""
         : `\n\nConsigne propre à ce message : ${stepBrief.trim()}`
@@ -622,7 +650,7 @@ export async function draftEmail(
     répare. Il signale, et c'est la carte de départ qui le montre, pour qu'une
     erreur se voie **avant** l'envoi, pas après.
   */
-  const corpus = companyId === null ? "" : await readCorpus(companyId);
+  const corpus = await readCorpus(scope);
   const ungrounded = describeUngrounded(ungroundedClaims(result.draft.body, corpus));
 
   return {
