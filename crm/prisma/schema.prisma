@@ -957,6 +957,23 @@ model SequenceEnrollment {
   lastStep   Int       @default(0)
   lastSentAt DateTime?
 
+  /// Le tour en cours. `1` = le premier passage de cette personne dans la
+  /// campagne ; une réinitialisation ouvre le tour suivant.
+  ///
+  /// **Le passé n'est pas réécrit, un chapitre s'ouvre.** Les départs déjà
+  /// composés gardent leur tour, donc leur trace reste lisible et la clé
+  /// `(inscription, étape)` ne fait plus obstacle à un nouveau premier
+  /// message.
+  round Int @default(1)
+
+  /// Quand cette inscription a été remise à l'étape 1, s'il y a lieu.
+  ///
+  /// C'est **l'ancre des réponses du tour courant** : une réponse antérieure
+  /// à la réinitialisation appartient au chapitre précédent. Sans elle,
+  /// inclure volontairement quelqu'un qui a répondu n'aurait produit aucun
+  /// brouillon, le garde-fou d'envoi l'arrêtant en silence.
+  resetAt DateTime?
+
   departures SequenceDeparture[]
 
   @@unique([sequenceId, contactId])
@@ -996,7 +1013,11 @@ model SequenceDeparture {
   /// faut dire combien de textes relus seront remplacés.
   editedAt DateTime?
 
-  @@unique([enrollmentId, step])
+  /// Le tour de l'inscription au moment de la composition. Voir
+  /// `SequenceEnrollment.round`.
+  round Int @default(1)
+
+  @@unique([enrollmentId, step, round])
   @@index([day, status])
   @@map("sequence_departures")
 }
