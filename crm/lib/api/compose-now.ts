@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "../db";
 import { composeDepartures, countComposable } from "./departures";
+import { stepReady } from "../domain/sequence-steps";
 import { modelFor } from "./reference";
 import { costMicros } from "../domain/model-pricing";
 import {
@@ -52,6 +53,22 @@ export interface ComposePlan {
   readonly edited: number;
   /** Sociétés à lire : une par maison, jamais une par contact. */
   readonly researches: number;
+  /**
+   * Brouillons produits par une étape **écrite à la main** (jalon 87).
+   *
+   * Instantanés et gratuits : ils ne comptent pas dans l'estimation, et l'écran
+   * le dit plutôt que de laisser croire qu'un coût nul est une panne.
+   */
+  readonly manual: number;
+  /**
+   * Tout ce qui sera écrit, modes confondus.
+   *
+   * **Distinct de `estimate.drafts`, qui ne compte que ce qui sera facturé.**
+   * Une campagne entièrement écrite à la main a zéro brouillon payant et
+   * pourtant du travail à faire : confondre les deux revient à refuser de
+   * composer au motif que ce serait gratuit.
+   */
+  readonly total: number;
 }
 
 /**
@@ -104,7 +121,11 @@ export async function planComposition(
     select: {
       archivedAt: true,
       sequence: {
-        select: { id: true, active: true, steps: { select: { id: true, brief: true } } },
+        select: {
+          id: true,
+          active: true,
+          steps: { select: { id: true, brief: true, mode: true, body: true } },
+        },
       },
     },
   });
@@ -121,6 +142,8 @@ export async function planComposition(
     fresh: 0,
     rewritten: 0,
     edited: 0,
+    manual: 0,
+    total: 0,
     researches: 0,
   });
 
@@ -142,9 +165,12 @@ export async function planComposition(
   if (campaign.sequence.steps.length === 0) {
     return nothing("Cette séquence n'a aucune étape : il n'y a rien à écrire.");
   }
-  if (campaign.sequence.steps.every((step) => step.brief.trim() === "")) {
+  // `stepReady` lit la consigne d'une étape d'Alex **et** le texte d'une étape
+  // écrite à la main : une campagne entièrement manuelle n'a aucune consigne, et
+  // ce n'était pas une raison de refuser de composer (jalon 87).
+  if (!campaign.sequence.steps.some((step) => stepReady(step))) {
     return nothing(
-      "Aucune étape ne porte de consigne : Alex écrirait sans savoir quoi dire. " +
+      "Aucune étape ne porte de consigne ni de texte : il n'y a rien à écrire. " +
         "Renseignez au moins la première.",
     );
   }
@@ -168,7 +194,10 @@ export async function planComposition(
   ]);
   return {
     estimate: estimateComposition({
-      drafts: eligible,
+      // **Les étapes écrites à la main sortent de l'estimation** : elles ne
+      // déclenchent aucun appel. Elles restent dans `fresh` et `rewritten`,
+      // qui comptent ce qui sera écrit, pas ce qui sera facturé.
+      drafts: Math.max(0, eligible - counted.manual),
       researches: counted.researches,
       model,
       sample,
@@ -185,6 +214,8 @@ export async function planComposition(
     fresh: counted.fresh + Math.max(0, pending),
     rewritten: counted.rewritten,
     edited: counted.edited,
+    manual: counted.manual,
+    total: eligible,
     researches: counted.researches,
     blocked:
       eligible === 0
@@ -242,7 +273,10 @@ export async function composeForCampaign(
     rewritten: plan.rewritten,
     edited: plan.edited,
   };
-  if (plan.blocked !== null || plan.estimate.drafts === 0) {
+  // Le garde-fou porte sur **ce qui sera écrit**, pas sur ce qui sera facturé :
+  // une campagne entièrement manuelle a `drafts === 0` et bien trois messages à
+  // composer.
+  if (plan.blocked !== null || plan.total === 0) {
     return { ...base, composed: 0, background: false };
   }
 
@@ -264,7 +298,7 @@ export async function composeForCampaign(
   const job = await prisma.compositionJob.create({
     data: {
       campaignId,
-      total: plan.estimate.drafts,
+      total: plan.total,
       estimateMicros: plan.estimate.micros,
     },
     select: { id: true },

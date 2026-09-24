@@ -27,6 +27,8 @@ import {
   stopsEnrollment,
 } from "../domain/sequence-rules";
 import { replyAnchor } from "../domain/campaign-reset";
+import { toStepMode } from "../domain/merge-tags";
+import { renderManualStep } from "./manual-step";
 import { contactTitle, repairGreeting } from "../domain/contact-identity";
 import { demoTarget, describeDemoSource } from "../domain/demo-target";
 import { listSignatories, pickSignatory } from "./signatories";
@@ -306,54 +308,79 @@ export async function composeDepartures(
 
     const step = enrollment.sequence.steps.find((entry) => entry.position === verdict.step);
 
-    // **L'accroche du collègue composée ce matin même.** La règle du jalon 53
-    // lit les envois, mais dans cette boucle, deux collègues d'une même maison
-    // sont composés avant que quiconque soit envoyé : le second ne verrait
-    // rien, et les deux brouillons partiraient avec la même entrée en matière.
-    // On relit donc les départs déjà composés aujourd'hui pour la même maison,
-    // et la phrase à ne pas reprendre entre dans la consigne de l'étape.
-    const colleagueOpening = await pendingColleagueOpening(enrollment.contactId, dayKey(now));
-    const brief =
-      colleagueOpening === null
-        ? step?.brief
-        : `${step?.brief ?? ""}\n\nUn collègue de la même maison (${colleagueOpening.name}) a un message composé ce matin dont la phrase d'ouverture est : « ${colleagueOpening.opening} ». N'écris ni cette phrase, ni une reformulation de cette phrase, trouve une autre entrée en matière, ancrée sur le rôle de ton destinataire.`;
-
     /*
-      **L'arrêt est relu juste avant de payer.** Le brouillon suivant est la
-      prochaine dépense ; s'arrêter après l'avoir écrit ne servirait à rien.
-      Ce qui est déjà en file y reste : c'est du travail fait, et relu.
+      **L'arrêt est relu juste avant d'écrire le brouillon suivant.** Il est
+      commun aux deux modes : une étape manuelle ne coûte rien, mais quelqu'un
+      qui arrête une composition veut qu'elle s'arrête. Ce qui est déjà en file
+      y reste : c'est du travail fait, et relu.
     */
     if (await stopRequested(scope.jobId)) {
       stoppedByUser = true;
       break;
     }
 
-    // Le message déjà parti à cette personne pour cette séquence : c'est ce
-    // qu'Alex ne doit pas refaire (jalon 84).
-    const previous =
-      verdict.step <= 1
-        ? null
-        : await previousMessage(enrollment.contactId, enrollment.sequenceId);
+    /*
+      **Une étape écrite à la main ne passe pas par Alex** (jalon 87) : le texte
+      existe déjà, la composition se réduit à remplacer trois balises. Aucun
+      appel au modèle, donc rien à facturer et rien à attendre.
 
-    const draft = await draftEmail(
-      enrollment.contactId,
-      undefined,
-      brief,
-      enrollment.sequence.campaign?.mailboxId,
-      { step: verdict.step, previous },
-    );
-    if (!draft.ok) {
-      await prisma.sequenceDeparture.create({
-        data: {
-          enrollmentId: enrollment.id,
-          step: verdict.step,
-          round: enrollment.round,
-          day: dayKey(now),
-          status: "failed",
-          detail: draft.message,
-        },
-      });
-      continue;
+      Ce qui suit est **commun aux deux modes**, et c'est le point : le départ
+      produit ici est un départ ordinaire. Il entre dans la même file, se relit
+      de la même façon, et l'envoi lui applique les mêmes garde-fous. Une étape
+      manuelle saute Alex pour l'écriture, jamais pour la sécurité.
+    */
+    let written: { readonly subject: string; readonly body: string } | null = null;
+
+    if (toStepMode(step?.mode ?? "") === "manual") {
+      written = await renderManualStep(
+        enrollment.contactId,
+        { subject: step?.subject ?? "", body: step?.body ?? "" },
+        enrollment.sequence.campaign?.mailboxId,
+      );
+      // La fiche a disparu entre la lecture de la file et la composition :
+      // rare, et rien à inventer.
+      if (written === null) continue;
+    } else {
+      // **L'accroche du collègue composée ce matin même.** La règle du jalon 53
+      // lit les envois, mais dans cette boucle, deux collègues d'une même maison
+      // sont composés avant que quiconque soit envoyé : le second ne verrait
+      // rien, et les deux brouillons partiraient avec la même entrée en matière.
+      // On relit donc les départs déjà composés aujourd'hui pour la même maison,
+      // et la phrase à ne pas reprendre entre dans la consigne de l'étape.
+      const colleagueOpening = await pendingColleagueOpening(enrollment.contactId, dayKey(now));
+      const brief =
+        colleagueOpening === null
+          ? step?.brief
+          : `${step?.brief ?? ""}\n\nUn collègue de la même maison (${colleagueOpening.name}) a un message composé ce matin dont la phrase d'ouverture est : « ${colleagueOpening.opening} ». N'écris ni cette phrase, ni une reformulation de cette phrase, trouve une autre entrée en matière, ancrée sur le rôle de ton destinataire.`;
+
+      // Le message déjà parti à cette personne pour cette séquence : c'est ce
+      // qu'Alex ne doit pas refaire (jalon 84).
+      const previous =
+        verdict.step <= 1
+          ? null
+          : await previousMessage(enrollment.contactId, enrollment.sequenceId);
+
+      const draft = await draftEmail(
+        enrollment.contactId,
+        undefined,
+        brief,
+        enrollment.sequence.campaign?.mailboxId,
+        { step: verdict.step, previous },
+      );
+      if (!draft.ok) {
+        await prisma.sequenceDeparture.create({
+          data: {
+            enrollmentId: enrollment.id,
+            step: verdict.step,
+            round: enrollment.round,
+            day: dayKey(now),
+            status: "failed",
+            detail: draft.message,
+          },
+        });
+        continue;
+      }
+      written = draft.draft;
     }
 
     const departure = await prisma.sequenceDeparture.create({
@@ -362,8 +389,8 @@ export async function composeDepartures(
         step: verdict.step,
         round: enrollment.round,
         day: dayKey(now),
-        subject: draft.draft.subject,
-        body: draft.draft.body,
+        subject: written.subject,
+        body: written.body,
       },
       select: { id: true },
     });
@@ -409,6 +436,13 @@ export interface ComposableCount {
    * dans la même maison.
    */
   readonly researches: number;
+  /**
+   * Parmi les éligibles, ceux qu'une étape **écrite à la main** produira.
+   *
+   * Gratuits et instantanés : ils sont retirés de l'estimation, jamais du
+   * compte de ce qui sera écrit.
+   */
+  readonly manual: number;
   readonly weekend: boolean;
 }
 
@@ -417,7 +451,7 @@ export async function countComposable(
   now = new Date(),
 ): Promise<ComposableCount> {
   if (isWeekend(now)) {
-    return { eligible: 0, fresh: 0, rewritten: 0, edited: 0, researches: 0, weekend: true };
+    return { eligible: 0, fresh: 0, rewritten: 0, edited: 0, manual: 0, researches: 0, weekend: true };
   }
 
   const enrollments = await prisma.sequenceEnrollment.findMany({
@@ -449,6 +483,15 @@ export async function countComposable(
   let edited = 0;
   /** Les sociétés à lire, dédoublonnées : une maison compte pour une. */
   const toResearch = new Set<string>();
+  /**
+   * Parmi les éligibles, ceux qui relèvent d'une étape **écrite à la main**.
+   *
+   * Ils sont composés par substitution : **ils ne coûtent rien**, et les
+   * compter dans l'estimation ferait annoncer un prix pour un travail qui n'a
+   * pas lieu. Ils comptent en revanche dans ce qui sera écrit : l'écran dit les
+   * deux.
+   */
+  let manual = 0;
 
   for (const enrollment of enrollments) {
     // Même ancre que la composition : le plan doit annoncer ce que l'écriture
@@ -486,7 +529,14 @@ export async function countComposable(
     });
 
     const composable = existing === null || (scope.rewritePending && existing.status === "pending");
-    if (composable) {
+    const step = enrollment.sequence.steps.find((entry) => entry.position === verdict.step);
+    const isManual = toStepMode(step?.mode ?? "") === "manual";
+    if (composable && isManual) manual += 1;
+
+    // **Une étape manuelle ne lit aucun site** : elle ne cite que ce que la
+    // fiche porte déjà, et la recherche n'a rien à lui apprendre. La compter
+    // ici ferait payer une lecture que la composition ne demandera pas.
+    if (composable && !isManual) {
       const companyId = enrollment.contact.companyId;
       const stored = enrollment.contact.company?.research ?? null;
       // Une recherche fraîche ne se repaie pas : c'est la moitié du cache. Une
@@ -511,7 +561,7 @@ export async function countComposable(
     }
   }
 
-  return { eligible, fresh, rewritten, edited, researches: toResearch.size, weekend: false };
+  return { eligible, fresh, rewritten, edited, manual, researches: toResearch.size, weekend: false };
 }
 
 async function unlockOf(sequenceId: string) {
@@ -1122,4 +1172,40 @@ export async function saveDeparture(
     data: { subject: cleanSubject, body, editedAt: new Date() },
   });
   return { ok: true };
+}
+
+/**
+ * **Vider la file des départs en attente** (jalon 87).
+ *
+ * Le geste existe pour repartir de zéro : on a changé le discours, les notes
+ * d'angle ou le texte d'une étape, et ce qui est en file décrit le monde
+ * d'avant. « Réécrire tous les départs » (jalon 84) recompose ; celui-ci
+ * **jette**, sans rien repayer.
+ *
+ * Trois choses qu'il ne touche jamais, et la confirmation les dit avant :
+ *
+ * - **les envois** : ils sont partis, c'est un fait, et /emails les compte ;
+ * - **les fiches et leur historique** : un brouillon jeté n'a jamais existé
+ *   pour la personne ;
+ * - **les inscriptions** : personne ne quitte la campagne. La composition
+ *   suivante réécrira ce qui manque, puisque la contrainte d'unicité ne voit
+ *   plus de départ pour ce couple.
+ *
+ * Seuls les départs `pending` et `failed` partent : un `sent` est un envoi, un
+ * `skipped` est une décision. La portée est **celle qu'on regarde** : arrivé
+ * depuis une campagne, on ne vide que la sienne, et le compte annoncé est
+ * exactement celui des lignes affichées.
+ */
+export async function clearDepartures(
+  scope: { readonly campaignId?: string } = {},
+): Promise<{ cleared: number }> {
+  const outcome = await prisma.sequenceDeparture.deleteMany({
+    where: {
+      status: { in: ["pending", "failed"] },
+      ...(scope.campaignId === undefined
+        ? {}
+        : { enrollment: { sequence: { campaignId: scope.campaignId } } }),
+    },
+  });
+  return { cleared: outcome.count };
 }

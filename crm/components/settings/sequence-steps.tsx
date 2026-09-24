@@ -9,6 +9,8 @@ import {
   stepPreview,
 } from "@/lib/domain/sequence-steps";
 import { MAX_STEPS } from "@/lib/domain/sequence-rules";
+import { toStepMode, type StepMode } from "@/lib/domain/merge-tags";
+import { ManualStepEditor, type SampleContact } from "./manual-step-editor";
 
 /**
  * Les étapes d'une séquence, en frise.
@@ -34,6 +36,10 @@ export interface StepDraft {
   position: number;
   delayDays: number;
   brief: string;
+  /** `alex` — Alex écrit ; `manual` — le texte est écrit à la main (jalon 87). */
+  mode?: StepMode;
+  subject?: string;
+  body?: string;
   /** Le dernier objet réellement composé pour cette étape, s'il y en a un. */
   lastSubject?: string;
 }
@@ -45,13 +51,17 @@ const ICON =
 
 export function SequenceSteps({
   steps,
+  samples = [],
   onChange,
 }: {
   readonly steps: readonly StepDraft[];
+  /** Quelques inscrits réels, pour l'aperçu d'une étape écrite à la main. */
+  readonly samples?: readonly SampleContact[];
   readonly onChange: (steps: StepDraft[]) => void;
 }) {
   // Repliées par défaut : l'état ne porte que les exceptions.
   const [open, setOpen] = useState<readonly number[]>([]);
+  const [sampleId, setSampleId] = useState("");
   const timings = stepDays(steps);
 
   const toggle = (index: number) =>
@@ -85,7 +95,9 @@ export function SequenceSteps({
       <ol className="space-y-0">
         {steps.map((step, index) => {
           const timing = timings[index] ?? { delayDays: 0, day: 0 };
-          const preview = stepPreview(step.brief);
+          const mode = toStepMode(step.mode ?? "");
+          const manual = mode === "manual";
+          const preview = stepPreview(manual ? (step.body ?? "") : step.brief, mode);
           const expanded = open.includes(index);
 
           return (
@@ -145,7 +157,13 @@ export function SequenceSteps({
                       </span>
                     )}
                     <span className="mt-1 inline-block rounded-control border border-line-2 px-1.5 py-0.5 text-[11px] text-muted">
-                      {preview.empty ? "Sans consigne" : "Rédigée par Alex"}
+                      {preview.empty
+                        ? manual
+                          ? "Sans texte"
+                          : "Sans consigne"
+                        : manual
+                          ? "Écrite à la main"
+                          : "Rédigée par Alex"}
                     </span>
                   </button>
 
@@ -207,17 +225,58 @@ export function SequenceSteps({
                         }
                       />
                     </label>
-                    <label>
-                      <span className="block text-[11.5px] font-semibold text-muted">
-                        Consigne donnée à Alex pour l&apos;étape {index + 1}
-                      </span>
-                      <input
-                        className={FIELD}
-                        value={step.brief}
-                        placeholder="ex. rappeler la démonstration sans répéter le premier message"
-                        onChange={(event) => patch(index, { brief: event.target.value })}
+                    <fieldset className="min-w-0">
+                      <legend className="block text-[11.5px] font-semibold text-muted">
+                        Qui écrit cette étape
+                      </legend>
+                      {/*
+                        Le choix est par étape, pas par campagne : on peut écrire
+                        le premier message à la main et laisser la relance à
+                        Alex, ou l'inverse. Rien n'est effacé en basculant — la
+                        consigne et le texte cohabitent en base, et revenir en
+                        arrière rend ce qu'on avait écrit.
+                      */}
+                      <div className="mt-1 flex gap-1.5">
+                        {(["alex", "manual"] as const).map((value) => (
+                          <button
+                            key={value}
+                            type="button"
+                            aria-pressed={mode === value}
+                            onClick={() => patch(index, { mode: value })}
+                            className={`min-h-[44px] flex-1 rounded-control border px-2 text-[12px] lg:min-h-0 lg:py-1.5 ${
+                              mode === value
+                                ? "border-brand bg-brand-l font-semibold text-brand-d"
+                                : "border-line bg-surface text-muted hover:border-brand"
+                            }`}
+                          >
+                            {value === "alex" ? "Rédigée par Alex" : "Écrite à la main"}
+                          </button>
+                        ))}
+                      </div>
+                    </fieldset>
+
+                    {manual ? (
+                      <ManualStepEditor
+                        subject={step.subject ?? ""}
+                        body={step.body ?? ""}
+                        samples={samples}
+                        sampleId={sampleId}
+                        onSample={setSampleId}
+                        onChange={(change) => patch(index, change)}
                       />
-                    </label>
+                    ) : (
+                      <label>
+                        <span className="block text-[11.5px] font-semibold text-muted">
+                          Consigne donnée à Alex pour l&apos;étape {index + 1}
+                        </span>
+                        <input
+                          className={FIELD}
+                          value={step.brief}
+                          placeholder="ex. rappeler la démonstration sans répéter le premier message"
+                          onChange={(event) => patch(index, { brief: event.target.value })}
+                        />
+                      </label>
+                    )}
                     <button
                       type="button"
                       className="justify-self-start text-[11.5px] font-semibold text-danger underline disabled:opacity-40 sm:col-span-2"
@@ -246,7 +305,7 @@ export function SequenceSteps({
           onClick={() =>
             onChange([
               ...steps,
-              { position: steps.length + 1, delayDays: 4, brief: "" },
+              { position: steps.length + 1, delayDays: 4, brief: "", mode: "alex" },
             ])
           }
         >

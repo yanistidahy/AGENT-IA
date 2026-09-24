@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 87 | **Une étape écrite à la main** : objet et message tapés soi-même, trois balises remplacées à la composition sans appel au modèle, aperçu en direct sur un contact réel ; plus « Vider les départs » | **livré, à valider** |
 | 86 | **Réinitialiser une campagne** : tout le monde revient à l'étape 1 avec les consignes d'aujourd'hui, les envois passés restent des faits, et la confirmation dit ce que le destinataire va lire | **livré, à valider** |
 | 85 | **Le panneau lisait un champ que le serveur n'a jamais envoyé** : « Retravailler avec Alex » sur un départ faisait tomber l'écran ; la recherche voyage désormais avec le brouillon rouvert, et le type cesse de promettre ce qu'il ne reçoit pas | **livré, à valider** |
 | 84 | **Une relance n'est pas un premier message renvoyé** : l'étape 2 reçoit le message déjà envoyé et des interdits explicites, une garde signale la copie ; plus « Arrêter » sur la composition, « Réécrire tous les départs », et la pause rendue visible | **livré, à valider** |
@@ -12106,3 +12107,139 @@ consignes, et se jugera sur les premiers vrais brouillons.
 **Les chiffres ci-dessus viennent d'un semis de vérification**, pas de votre
 base. Le compte réel — et surtout le nom des personnes qui ont répondu —
 s'affichera dans la confirmation, avant d'écrire quoi que ce soit.
+
+
+---
+
+## Jalon 87 — une étape écrite à la main, et la file qui se vide
+
+### Le mode est une propriété de l'étape, pas de la campagne
+
+`EmailSequenceStep.mode` — `alex` ou `manual` — avec `subject` et `body`
+(migration `38_manual_steps`). Le porter sur la **campagne** aurait interdit ce
+qui est précisément demandé : étape 1 à la main, étape 2 par Alex, dans
+n'importe quelle combinaison. Une campagne n'écrit pas, ses étapes écrivent.
+
+Le défaut est `alex` : les étapes existantes ne changent pas de comportement, et
+il n'y a rien à reprendre.
+
+### Trois balises, et ce qui arrive quand la valeur manque
+
+`lib/domain/merge-tags.ts`, pur — **la seule substitution du produit**, appelée
+par l'aperçu **et** par la composition. Deux rendus d'un même gabarit finissent
+par ne plus dire la même chose, et c'est toujours le second qu'on oublie de
+corriger (jalons 55, 64, 66, 74, 85). C'est aussi pourquoi la route d'aperçu
+rend **des valeurs de fusion, jamais du texte rendu**.
+
+| Balise | Valeur | Sans valeur |
+|---|---|---|
+| `{prenom}` | le prénom du contact | **la balise seule disparaît**, et `repairGreeting` rend « Bonjour, » — jamais « Bonjour , » |
+| `{societe}` | le nom de la société | **la phrase entière est retirée** |
+| `{site}` | site de la fiche, à défaut domaine de la société, à défaut déduit de l'adresse (`resolveResearchTarget`, jalon 75) | **la phrase entière est retirée** |
+
+**La différence de traitement est la décision de ce jalon.** Un appel privé de
+son prénom reste un appel ; une phrase construite autour d'un nom qu'on n'a pas
+ne survit pas à son retrait — « En regardant , j'ai préparé une démonstration
+sur . » est pire qu'une phrase en moins. Une balise littérale, elle, ne part
+jamais chez le destinataire : c'est la seule chose qu'on ne se permet pas.
+
+**L'ordre compte** : on retire d'abord les phrases orphelines, **puis** on
+substitue. L'inverse découperait une phrase sur une valeur déjà remplacée, donc
+au hasard de ce qu'elle contient (un nom de société avec un point).
+
+Le nettoyage final ne touche que la virgule et le point : en français, « ? »,
+« ! », « ; » et « : » prennent une espace **devant**, et la retirer abîmerait une
+phrase que personne n'a demandé de corriger. Trouvé à la recette, pas à la
+lecture.
+
+### Instantané et gratuit, mais soumis à tout le reste
+
+La branche manuelle ne touche ni `draftEmail`, ni la recherche, ni aucun appel
+au modèle : c'est une substitution. Elle rejoint ensuite **exactement** la même
+création de départ et la même queue d'envoi que le chemin d'Alex — signature
+imposée, appel réparé, et au moment de l'envoi les cycles de vie terminaux, les
+oppositions, les plafonds de débit et la pause de campagne. **Une étape manuelle
+saute la rédaction, jamais les garde-fous.**
+
+**Un défaut de conception trouvé à la recette, et il était bloquant** :
+`composeForCampaign` s'arrêtait sur `plan.estimate.drafts === 0`. Or les étapes
+manuelles sortent de l'estimation — elles ne coûtent rien — donc une campagne
+entièrement écrite à la main ne composait **rien du tout**, en refusant au motif
+que ce serait gratuit. Le garde-fou porte désormais sur `plan.total`, ce qui sera
+écrit, distinct de ce qui sera facturé.
+
+### L'aperçu est la moitié de la fonction
+
+Un gabarit ne se relit pas. Ce qu'on veut voir avant d'enregistrer, c'est ce que
+reçoit quelqu'un — **et surtout ce que reçoit une fiche incomplète**, parce que
+c'est le cas auquel on ne pense pas. Les contacts d'aperçu sont donc **réels**,
+pris parmi les inscrits, et `sampleContacts` **met le cas dégradé devant**. Une
+balise inconnue (`{prenoom}`) est signalée en rouge : elle partirait telle quelle.
+
+### « Vider les départs »
+
+Un bouton sur `/departs`, **dans la portée de l'écran** — une campagne quand on
+arrive de sa page, tout le CRM sinon : vider une file filtrée en emportant celle
+des autres campagnes serait la pire des surprises. Absent quand la file est
+vide, jamais grisé (jalon 26).
+
+La confirmation nomme le compte et dit ce qui ne bouge pas : **seuls les
+brouillons jamais partis disparaissent**. Les envois restent dans `/emails` et
+sur les fiches, aucune fiche n'est modifiée, et les inscriptions sont conservées
+— une prochaine composition pourra réécrire à ces personnes.
+
+### Jalon 87 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `38_manual_steps` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production et un navigateur
+piloté, sur une campagne **étape 1 manuelle + étape 2 par Alex** :
+
+- **les deux modes cohabitent** : `mode=manual` puis `mode=alex` en base ;
+- **instantané et gratuit** : 3 brouillons composés en **128 ms**, **0 appel
+  facturé** (`api_usage` inchangée) ;
+- **les balises, contact par contact** : objet « Une démonstration préparée pour
+  r87 Vertu », « Bonjour Anna, » et le site cité ; la fiche **sans site
+  résoluble** rend un corps propre, **sans `{site}` littéral** et sans la phrase
+  orpheline ; la fiche **sans prénom** rend « Bonjour, », **aucune virgule qui
+  pend** ;
+- **les garde-fous tiennent** : la fiche passée en `Perdu` fait refuser l'envoi
+  d'un départ **manuel** — « Fiche close, la relation est terminée » ;
+- **vider la file** : 2 départs retirés, 0 restant, **57 envois avant et après**,
+  **58 fiches avant et après**, 3 inscriptions conservées ;
+- **au navigateur** : la bascule « Écrite à la main » **atteignable**
+  (`reachable()`, jamais `isVisible()`) remplace la consigne d'Alex par
+  l'éditeur, l'aperçu se met à jour **à la frappe** sans balise littérale ni
+  virgule pendante, une balise inconnue est signalée ; « Vider les départs »
+  nomme son compte et sa promesse **avant** d'effacer quoi que ce soit, et
+  confirmer laisse envois, fiches et inscriptions intacts — **0 erreur
+  console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1451 tests**) et
+  `npm run e2e` (**72 tests**, seize fichiers) verts.
+
+`tests/manual-step-source.test.ts` ferme les trois rechutes : un appel au modèle
+sur le chemin manuel, une seconde définition du rendu, un vidage qui toucherait
+aux envois ou aux fiches.
+
+### Jalon 87 — ce qui n'est pas fait
+
+**Une étape manuelle ne lit rien du prospect.** Elle ne déclenche aucune
+recherche : elle ne cite que ce que la fiche porte déjà. C'est le prix de
+l'instantané, et c'est cohérent — un texte écrit à la main ne peut pas être
+personnalisé au-delà de ses balises.
+
+**Il n'y a que trois balises.** Ni rôle, ni ville, ni secteur : chacune demande
+sa résolution, son cas dégradé et son test. Les ajouter est mécanique, le jour
+où l'usage les réclame.
+
+**L'aperçu n'existe pas sans inscrits.** Une campagne dont personne n'est encore
+inscrit n'a aucun contact d'aperçu à montrer : l'éditeur rend alors le gabarit
+brut. C'est honnête — mieux vaut pas d'aperçu qu'un contact inventé — mais cela
+veut dire qu'on écrit à l'aveugle tant qu'on n'a pas inscrit quelqu'un.
+
+**Vider la file n'a pas d'annulation.** Les brouillons effacés sont perdus, y
+compris ceux retouchés à la main ; la confirmation est la seule barrière, et
+elle ne distingue pas les retouchés des autres — contrairement à « Écrire les
+mails » (jalon 70).
+
+**Les chiffres ci-dessus viennent d'un semis de vérification**, pas de votre
+base.
