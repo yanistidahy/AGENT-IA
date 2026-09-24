@@ -97,7 +97,7 @@ const AGENT_NAMES: readonly string[] = AGENTS.map((agent) => agent.name);
  * règle « jamais ton prénom, jamais celui de l'utilisateur », et il se lit là où
  * il est déjà réglé plutôt que d'être deviné.
  */
-function forbiddenSigners(
+export function forbiddenSigners(
   config: MailConfig,
   signatories: readonly Signatory[],
 ): readonly string[] {

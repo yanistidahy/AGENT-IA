@@ -86,8 +86,23 @@ const BUTTON =
 const FIELD =
   "w-full rounded-control border border-line bg-surface px-2.5 py-2 text-[13px] focus:border-brand focus:outline-none";
 
-export function DeparturesView({ initial }: { readonly initial: readonly Departure[] }) {
+export function DeparturesView({
+  initial,
+  campaignId,
+}: {
+  readonly initial: readonly Departure[];
+  /**
+   * La portée de l'écran, reprise telle quelle par « Vider les départs ».
+   *
+   * Le compte annoncé dans la confirmation est donc exactement celui des lignes
+   * qu'on a sous les yeux : vider une file filtrée en emportant celle des autres
+   * campagnes serait la pire des surprises.
+   */
+  readonly campaignId?: string;
+}) {
   const [departures, setDepartures] = useState<readonly Departure[]>(initial);
+  /** La confirmation de vidage est ouverte : on n'efface jamais au premier clic. */
+  const [clearing, setClearing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -147,6 +162,37 @@ export function DeparturesView({ initial }: { readonly initial: readonly Departu
     } else setError(result.message);
   };
 
+  /**
+   * Vide la file en attente, dans la portée de l'écran.
+   *
+   * **Ne touche ni aux envois, ni aux fiches** : la route ne supprime que des
+   * lignes de départ jamais parties (`clearDepartures`). Ce qui est envoyé est
+   * un fait, et /emails continue de le compter.
+   */
+  const clear = async () => {
+    setClearing(false);
+    setBusy("clear");
+    setError(null);
+    setNotice(null);
+    const result = await requestJson(
+      "/api/departures/clear",
+      { method: "POST", body: JSON.stringify(campaignId === undefined ? {} : { campaignId }) },
+      (value): value is { departures: Departure[]; cleared: number } =>
+        typeof value === "object" && value !== null && "departures" in value && "cleared" in value,
+    );
+    setBusy(null);
+    if (result.ok) {
+      setDepartures(result.data.departures);
+      setNotice(
+        result.data.cleared === 0
+          ? "Aucun départ à vider."
+          : `${result.data.cleared} départ${result.data.cleared > 1 ? "s" : ""} retiré${
+              result.data.cleared > 1 ? "s" : ""
+            } de la file. Les envois passés et les fiches n'ont pas bougé.`,
+      );
+    } else setError(result.message);
+  };
+
   return (
     <div className="px-6 py-6">
       <header className="mb-5">
@@ -155,6 +201,53 @@ export function DeparturesView({ initial }: { readonly initial: readonly Departu
           Composés ce matin, à partir de l'état de ce matin — jamais la veille au soir. Rien
           n'est composé ni envoyé le samedi ou le dimanche.
         </p>
+
+        {/*
+          **Absent quand la file est vide**, jamais grisé : un bouton inerte se
+          cherche, un bouton absent ne pose pas la question (jalon 26).
+        */}
+        {departures.length > 0 && !clearing && (
+          <button
+            type="button"
+            onClick={() => setClearing(true)}
+            disabled={busy !== null}
+            className="mt-3 min-h-[44px] rounded-control border border-line px-3 text-[12.5px] font-semibold text-ink hover:border-danger hover:text-danger disabled:opacity-50 lg:min-h-0 lg:py-1.5"
+          >
+            Vider les départs
+          </button>
+        )}
+
+        {clearing && (
+          <div className="mt-3 max-w-[70ch] rounded-card border border-danger bg-surface p-3">
+            <p className="text-[13px] font-semibold text-ink">
+              Vider {departures.length} départ{departures.length > 1 ? "s" : ""} en attente
+              {campaignId === undefined ? "" : " de cette campagne"} ?
+            </p>
+            <p className="mt-1 text-[12.5px] text-muted">
+              Seuls ces brouillons, jamais partis, disparaissent de la file. Les messages déjà
+              envoyés restent dans /emails et sur les fiches, et aucune fiche de contact n&apos;est
+              modifiée. Les personnes concernées restent inscrites : une prochaine composition
+              pourra leur réécrire.
+            </p>
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={clear}
+                disabled={busy !== null}
+                className="min-h-[44px] rounded-control bg-danger px-3 text-[12.5px] font-semibold text-white disabled:opacity-50 lg:min-h-0 lg:py-1.5"
+              >
+                Vider la file
+              </button>
+              <button
+                type="button"
+                onClick={() => setClearing(false)}
+                className="min-h-[44px] rounded-control border border-line px-3 text-[12.5px] font-semibold text-ink lg:min-h-0 lg:py-1.5"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        )}
       </header>
 
       {error !== null && (

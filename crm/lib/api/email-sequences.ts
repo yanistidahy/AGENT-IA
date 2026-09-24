@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { STEP_MODES, toStepMode, type StepMode } from "../domain/merge-tags";
 import { REMOVED } from "../domain/campaign-members";
 import { prisma } from "../db";
 import { autoUnlock, BLOCK_LABELS, MAX_STEPS, type AutoUnlock } from "../domain/sequence-rules";
@@ -28,6 +29,11 @@ export interface SequenceStepView {
   readonly position: number;
   readonly delayDays: number;
   readonly brief: string;
+  /** `alex` ou `manual` (jalon 87). */
+  readonly mode: StepMode;
+  /** Le gabarit d'une étape écrite à la main ; vides pour une étape d'Alex. */
+  readonly subject: string;
+  readonly body: string;
   /**
    * Le dernier objet **réellement composé** pour cette étape.
    *
@@ -120,6 +126,9 @@ export async function listSequences(): Promise<SequenceView[]> {
         position: step.position,
         delayDays: step.delayDays,
         brief: step.brief,
+        mode: toStepMode(step.mode),
+        subject: step.subject,
+        body: step.body,
         lastSubject: samples.get(step.position) ?? "",
       })),
       enrolled: row._count.enrollments,
@@ -270,6 +279,12 @@ export const sequenceSchema = z.object({
       z.object({
         delayDays: z.number().int().min(0, "Un délai ne peut être négatif").max(90),
         brief: z.string().trim().max(400),
+        // Le mode est **validé ici**, pas seulement à l'écran : une valeur
+        // inconnue retomberait sur `alex` à la lecture, donc sur un texte écrit
+        // à la main qui ne partirait jamais. Mieux vaut refuser la charge utile.
+        mode: z.enum(STEP_MODES).default("alex"),
+        subject: z.string().trim().max(200).default(""),
+        body: z.string().max(8000).default(""),
       }),
     )
     .min(1, "Une séquence a au moins une étape")
@@ -326,6 +341,9 @@ export async function saveSequence(
           position: index + 1,
           delayDays: step.delayDays,
           brief: step.brief,
+          mode: step.mode,
+          subject: step.subject,
+          body: step.body,
         },
       });
     }

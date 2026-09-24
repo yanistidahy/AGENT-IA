@@ -933,6 +933,15 @@ model EmailSequenceStep {
   /// Ce qu'Alex doit faire de cette étape, en une phrase.
   brief     String @default("")
 
+  /// `alex` — Alex écrit le message contact par contact ; `manual` — le texte
+  /// est écrit à la main une fois pour toutes, et la composition se réduit au
+  /// remplacement des balises. Le défaut est `alex` : c'est ce que portent
+  /// toutes les étapes existantes, et une valeur inconnue y retombe.
+  mode      String @default("alex")
+  /// Le gabarit d'une étape écrite à la main. Vides pour une étape d'Alex.
+  subject   String @default("")
+  body      String @default("")
+
   @@unique([sequenceId, position])
   @@map("email_sequence_steps")
 }

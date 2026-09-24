@@ -78,7 +78,7 @@ export default async function DepartsPage({
         </div>
       )}
       <RewriteQueueAction />
-      <DeparturesView initial={initial} />
+      <DeparturesView initial={initial} campaignId={campaignId} />
     </>
   );
 }

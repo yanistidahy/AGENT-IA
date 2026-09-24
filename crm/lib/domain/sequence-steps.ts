@@ -72,11 +72,14 @@ const PREVIEW_MAX = 90;
  * remettrait la structure sous le contenu — exactement ce qu'on vient de
  * défaire.
  */
-export function stepPreview(brief: string): StepPreview {
+export function stepPreview(brief: string, mode: string = "alex"): StepPreview {
+  const manual = mode === "manual";
   const first = brief.split("\n").find((line) => line.trim() !== "")?.trim() ?? "";
   if (first === "") {
     return {
-      text: "Aucune consigne : cette étape n'écrira rien tant qu'elle reste vide.",
+      text: manual
+        ? "Aucun texte : cette étape n'écrira rien tant qu'elle reste vide."
+        : "Aucune consigne : cette étape n'écrira rien tant qu'elle reste vide.",
       empty: true,
     };
   }
@@ -113,4 +116,21 @@ export function moveStep<T extends { readonly delayDays: number }>(
   next[index] = { ...b, delayDays: a.delayDays };
   next[target] = { ...a, delayDays: b.delayDays };
   return next;
+}
+
+/**
+ * Une étape peut-elle écrire quelque chose ?
+ *
+ * **La question est la même dans les deux modes, la colonne lue ne l'est pas** :
+ * une étape d'Alex a besoin de sa consigne, une étape manuelle de son texte.
+ * Avant le jalon 87, le garde-fou de composition ne regardait que `brief` — une
+ * campagne entièrement écrite à la main aurait donc été refusée au motif
+ * qu'« aucune étape ne porte de consigne », ce qui était vrai et hors sujet.
+ */
+export function stepReady(step: {
+  readonly mode?: string;
+  readonly brief: string;
+  readonly body?: string;
+}): boolean {
+  return step.mode === "manual" ? (step.body ?? "").trim() !== "" : step.brief.trim() !== "";
 }

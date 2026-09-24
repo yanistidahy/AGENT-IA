@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import { AUTO_MIN_VALIDATED } from "@/lib/domain/sequence-rules";
+import type { StepMode } from "@/lib/domain/merge-tags";
 import { SequenceSteps } from "./sequence-steps";
+import type { SampleContact } from "./manual-step-editor";
 
 /**
  * Les séquences d'emails, et l'interrupteur qui ne s'active pas tout seul.
@@ -23,6 +25,10 @@ export interface SequenceStepView {
   position: number;
   delayDays: number;
   brief: string;
+  /** « alex » (consigne) ou « manual » (texte écrit à la main) — jalon 87. */
+  mode?: StepMode;
+  subject?: string;
+  body?: string;
   /** Le dernier objet réellement composé pour cette étape, s'il y en a un. */
   lastSubject?: string;
 }
@@ -89,7 +95,38 @@ export function EmailSequencesPanel({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
-  const patch = (id: string, change: Partial<SequenceView>) =>
+  /**
+   * Les contacts d'aperçu, par séquence.
+   *
+   * Chargés **une fois**, et seulement ce que l'écran affiche : l'aperçu se
+   * calcule ensuite à la frappe par la fonction pure du domaine, donc sans
+   * aller-retour. La route ne rend que des valeurs de fusion, jamais du texte
+   * rendu — c'est ce qui garantit que l'aperçu et la composition ne divergent
+   * pas (`app/api/sequences-email/preview`).
+   */
+  const [samples, setSamples] = useState<Record<string, readonly SampleContact[]>>({});
+
+  useEffect(() => {
+    let alive = true;
+    const ids = sequences.map((entry) => entry.id).filter((id) => id !== "");
+    for (const id of ids) {
+      if (samples[id] !== undefined) continue;
+      void requestJson(
+        `/api/sequences-email/preview?sequenceId=${encodeURIComponent(id)}`,
+        { method: "GET" },
+        (value): value is { samples: SampleContact[] } =>
+          typeof value === "object" && value !== null && "samples" in value,
+      ).then((result) => {
+        if (!alive || !result.ok) return;
+        setSamples((current) => ({ ...current, [id]: result.data.samples }));
+      });
+    }
+    return () => {
+      alive = false;
+    };
+  }, [sequences, samples]);
+
+  const patch =(id: string, change: Partial<SequenceView>) =>
     setSequences((current) =>
       current.map((entry) => (entry.id === id ? { ...entry, ...change } : entry)),
     );
@@ -118,6 +155,9 @@ export function EmailSequencesPanel({
           steps: sequence.steps.map((step) => ({
             delayDays: step.delayDays,
             brief: step.brief,
+            mode: step.mode ?? "alex",
+            subject: step.subject ?? "",
+            body: step.body ?? "",
           })),
         }),
       },
@@ -323,6 +363,7 @@ export function EmailSequencesPanel({
           */}
           <SequenceSteps
             steps={sequence.steps}
+            samples={samples[sequence.id] ?? []}
             onChange={(steps) => patch(sequence.id, { steps })}
           />
 
