@@ -6,6 +6,7 @@ import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import type { CampaignView } from "@/lib/api/campaigns";
 import { EmailSequencesPanel, type SequenceView } from "@/components/settings/email-sequences-panel";
+import { describeCampaignMode } from "@/lib/domain/campaign-mode";
 import { FunnelRow } from "@/components/emails/funnel-row";
 import type { CampaignMember } from "@/lib/domain/campaign-members";
 import type { MailboxOption } from "@/lib/domain/signatory-choice";
@@ -262,7 +263,23 @@ export function CampaignDetail({
         Les étapes : l'éditeur du jalon 38, monté tel quel. Mêmes règles — trois
         étapes au plus, mode automatique à double verrou —, même route.
       */}
-      {sequence !== null && <EmailSequencesPanel initial={[sequence]} embedded />}
+      {sequence !== null && (
+        <>
+          {/*
+            **La voie, rappelée là où l'on écrit.** Choisie une fois à la
+            création, elle décide de ce qu'on tape ici — et sans cette ligne,
+            rien à l'écran ne dirait pourquoi une étape ouvre un champ de
+            consigne plutôt qu'un éditeur de texte.
+          */}
+          <p className="mt-5 rounded-control border border-line bg-surface-2 px-3 py-2 text-[12.5px] text-muted">
+            {describeCampaignMode(campaign.mode)}{" "}
+            <span className="text-closed">
+              Le mode se change ensuite étape par étape, dans l&apos;étape elle-même.
+            </span>
+          </p>
+          <EmailSequencesPanel initial={[sequence]} embedded campaignMode={campaign.mode} />
+        </>
+      )}
     </section>
   );
 }

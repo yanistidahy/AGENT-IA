@@ -628,7 +628,11 @@ export interface DepartureView {
   readonly ungrounded: string | null;
   /** La relance répète le message précédent. Vide quand elle ne le fait pas. */
   readonly echo: string;
+  /** La maison du contact, affichée sous son nom. Vide quand il n'en a pas. */
+  readonly companyName: string;
   readonly campaignName: string;
+  /** Combien d'étapes porte la séquence : « étape 2 sur 3 » plutôt que « 2 ». */
+  readonly stepsTotal: number;
   /** Sa campagne est en pause : rien ne sera composé ni envoyé pour elle. */
   readonly campaignPaused: boolean;
 }
@@ -710,7 +714,16 @@ export async function listDepartures(
           // `active` : une campagne en pause ne compose ni n'envoie, et la
           // file doit le dire plutôt que d'afficher des brouillons qui ne
           // partiront pas (jalon 84).
-          sequence: { select: { name: true, active: true, campaign: { select: { name: true } } } },
+          sequence: {
+            select: {
+              name: true,
+              active: true,
+              campaign: { select: { name: true } },
+              // Le nombre d'étapes, pour dire « étape 2 sur 3 » plutôt que
+              // « étape 2 » : la position seule ne dit pas s'il en reste.
+              _count: { select: { steps: true } },
+            },
+          },
           contact: {
             select: {
               id: true,
@@ -823,7 +836,9 @@ export async function listDepartures(
         premier message en le corrigeant doit se signaler comme les autres.
       */
       echo: echoText,
+      companyName: row.enrollment.contact.company?.name ?? "",
       campaignName: row.enrollment.sequence.campaign?.name ?? "",
+      stepsTotal: row.enrollment.sequence._count.steps,
       campaignPaused: !row.enrollment.sequence.active,
     });
   }

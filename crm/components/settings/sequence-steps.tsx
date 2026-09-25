@@ -10,6 +10,7 @@ import {
 } from "@/lib/domain/sequence-steps";
 import { MAX_STEPS } from "@/lib/domain/sequence-rules";
 import { toStepMode, type StepMode } from "@/lib/domain/merge-tags";
+import { stepModeFor, type CampaignMode } from "@/lib/domain/campaign-mode";
 import { ManualStepEditor, type SampleContact } from "./manual-step-editor";
 
 /**
@@ -52,15 +53,33 @@ const ICON =
 export function SequenceSteps({
   steps,
   samples = [],
+  campaignMode = "alex",
   onChange,
 }: {
   readonly steps: readonly StepDraft[];
   /** Quelques inscrits réels, pour l'aperçu d'une étape écrite à la main. */
   readonly samples?: readonly SampleContact[];
+  /**
+   * La voie de la campagne (jalon 88).
+   *
+   * Elle décide de deux choses, et de rien d'autre : **le mode d'une étape
+   * ajoutée**, et **ce qui s'ouvre en arrivant**. Une campagne manuelle doit
+   * mener droit au texte à taper ; laisser son unique étape repliée reviendrait
+   * à cacher la fonction derrière un clic de plus, ce qui est exactement le
+   * défaut corrigé par ce jalon.
+   */
+  readonly campaignMode?: CampaignMode;
   readonly onChange: (steps: StepDraft[]) => void;
 }) {
-  // Repliées par défaut : l'état ne porte que les exceptions.
-  const [open, setOpen] = useState<readonly number[]>([]);
+  // Repliées par défaut — sauf les étapes manuelles encore vides : sur une
+  // campagne écrite à la main, il n'y a rien à lire, tout à taper.
+  const [open, setOpen] = useState<readonly number[]>(() =>
+    steps.flatMap((step, index) =>
+      toStepMode(step.mode ?? "") === "manual" && (step.body ?? "").trim() === ""
+        ? [index]
+        : [],
+    ),
+  );
   const [sampleId, setSampleId] = useState("");
   const timings = stepDays(steps);
 
@@ -227,14 +246,19 @@ export function SequenceSteps({
                     </label>
                     <fieldset className="min-w-0">
                       <legend className="block text-[11.5px] font-semibold text-muted">
-                        Qui écrit cette étape
+                        Qui écrit cette étape{" "}
+                        <span className="font-normal text-closed">
+                          (secondaire : la voie de la campagne décide du reste)
+                        </span>
                       </legend>
                       {/*
-                        Le choix est par étape, pas par campagne : on peut écrire
-                        le premier message à la main et laisser la relance à
-                        Alex, ou l'inverse. Rien n'est effacé en basculant — la
-                        consigne et le texte cohabitent en base, et revenir en
-                        arrière rend ce qu'on avait écrit.
+                        **Action secondaire depuis le jalon 88.** La voie se
+                        choisit une fois, à la création de la campagne ; cette
+                        bascule ne sert qu'à mélanger les modes sur une campagne
+                        déjà créée — premier message à la main, relance par Alex,
+                        ou l'inverse. Rien n'est effacé en basculant : la consigne
+                        et le texte cohabitent en base, et revenir en arrière rend
+                        ce qu'on avait écrit.
                       */}
                       <div className="mt-1 flex gap-1.5">
                         {(["alex", "manual"] as const).map((value) => (
@@ -305,7 +329,15 @@ export function SequenceSteps({
           onClick={() =>
             onChange([
               ...steps,
-              { position: steps.length + 1, delayDays: 4, brief: "", mode: "alex" },
+              {
+                position: steps.length + 1,
+                delayDays: 4,
+                brief: "",
+                // Héritée de la voie de la campagne : sur une campagne
+                // manuelle, ajouter une étape ouvre un éditeur de texte, pas
+                // un champ de consigne qu'il faudrait ensuite basculer.
+                mode: stepModeFor(campaignMode),
+              },
             ])
           }
         >

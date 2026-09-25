@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 88 | **La voie avant le formulaire, la file en cartes** : « Automatique (Alex) » ou « Manuel » choisi à la création avant tout éditeur d'étape ; « Départs du jour » regroupé par campagne, une carte bornée par départ, les actions sous un filet | **livré, à valider** |
 | 87 | **Une étape écrite à la main** : objet et message tapés soi-même, trois balises remplacées à la composition sans appel au modèle, aperçu en direct sur un contact réel ; plus « Vider les départs » | **livré, à valider** |
 | 86 | **Réinitialiser une campagne** : tout le monde revient à l'étape 1 avec les consignes d'aujourd'hui, les envois passés restent des faits, et la confirmation dit ce que le destinataire va lire | **livré, à valider** |
 | 85 | **Le panneau lisait un champ que le serveur n'a jamais envoyé** : « Retravailler avec Alex » sur un départ faisait tomber l'écran ; la recherche voyage désormais avec le brouillon rouvert, et le type cesse de promettre ce qu'il ne reçoit pas | **livré, à valider** |
@@ -11957,6 +11958,148 @@ texte à la main dans le panneau ne le recalcule pas. La file, elle, le recalcul
 fermé, c'est le chemin par lequel le défaut est réellement arrivé — un champ
 promis obligatoire et jamais envoyé. Une revue systématique des charges utiles
 qui traversent la frontière serveur → client serait un jalon à elle seule.
+
+---
+
+## Jalon 88 — la voie avant le formulaire, et la file en cartes
+
+### 1 · Pourquoi le mode manuel était introuvable — le diagnostic, avec ses lignes
+
+Reproduit dans un vrai navigateur avant tout correctif, sur le commit fusionné
+du jalon 87. **Ce n'est pas une régression, et le composant n'est pas cassé** :
+
+| Question | Réponse mesurée |
+|---|---|
+| L'écran de création propose-t-il le mode ? | **Non — nulle part.** `components/campaigns/campaigns-view.tsx`, formulaire de création : deux contrôles, un nom et une boîte d'envoi. Le mot « manuel » n'y figurait pas |
+| La bascule est-elle rendue sur la page d'une campagne ? | **Seulement une fois l'étape dépliée.** `components/settings/sequence-steps.tsx:206` — `{expanded && (…)}` — gouverne le bloc d'édition, et le `<fieldset>` du mode vit dedans (~ligne 252). Replié, le bloc n'affiche qu'une pastille **en lecture seule** (~ligne 165) |
+| Régression depuis la fusion ? | **Non.** Le chemin de composition, l'aperçu et les balises fonctionnent ; c'est l'accès qui manquait |
+
+La cause est donc une **hiérarchie d'écran**, pas un défaut de code : les étapes
+sont repliées par défaut depuis le jalon 80 — le bon choix, on vient voir la
+structure avant d'écrire — et le jalon 87 a rangé la question « qui écrit ? »
+*derrière* ce repli, dans l'écran où l'on écrit, sur un objet qu'on ne déplie
+que quand on a déjà décidé. **Une fonctionnalité qu'on ne trouve pas n'existe
+pas**, quel que soit le nombre de tests qui la vérifient.
+
+### 2 · Une voie, choisie une fois, avant tout éditeur
+
+`lib/domain/campaign-mode.ts` (pur) porte la seconde notion, et l'écart entre
+les deux **est** la décision :
+
+| | Ce que ça décide | Quand ça se choisit |
+|---|---|---|
+| `Campaign.mode` | **la voie** : ce que l'écran ouvre, et le mode des étapes créées ensuite | une fois, à la création |
+| `EmailSequenceStep.mode` (jalon 87) | **ce qui compose réellement** ce message-là | hérité par défaut ; se change ensuite, étape par étape |
+
+Le second reste **la seule autorité à la composition** : dupliquer la décision
+dans la boucle aurait fait deux règles pour un même choix, et c'est toujours la
+seconde qui finit par mentir (jalons 55, 82). Une garde statique l'interdit.
+
+**Aucun défaut à la création, et c'est le cœur du correctif.**
+`createCampaignSchema` exige `mode` **sans `.default()`**, et « Créer » n'existe
+pas tant que rien n'est choisi — absent, jamais grisé (jalon 26). Une campagne
+qui naîtrait « en mode Alex » sans que personne l'ait choisi rendrait l'autre
+voie invisible : c'est littéralement ce qui vient d'arriver.
+
+Les deux voies sont décrites par **ce qu'elles font**, pas par le nom de leur
+réglage — « Alex lit le site du prospect et écrit chaque message. Un appel au
+modèle par contact, facturé » contre « Vous tapez l'objet et le message une
+fois. Les balises sont remplacées par contact, sans appel au modèle ». Chacune
+annonce ce qui suit. Le texte vit dans le domaine parce que la création **et** la
+page de la campagne le montrent : deux formulations décriraient deux produits.
+
+**Mélanger les modes reste possible, en second geste** — c'était la demande. La
+page d'une campagne rappelle sa voie, et la bascule par étape est conservée,
+avec sa légende qui dit sa portée (« secondaire : la voie de la campagne décide
+du reste »).
+
+### 3 · « Départs du jour » : une carte par départ, groupées par campagne
+
+Le reproche était juste : nom, objet et corps s'enchaînaient au même poids, et
+rien ne disait où un brouillon finissait. Cinq séparations, dans cet ordre :
+
+1. **la carte est bornée** — bordure, ombre, fond propre, espace entre elles.
+   Sans cela l'œil ne sait pas combien d'objets il regarde ;
+2. **le nom et la société en tête**, seul bloc en gros caractères ;
+3. **une ligne compacte de métadonnée** — « étape 1 sur 2 · campagne · email ·
+   dernière interaction » —, séparée du nom par le poids, jamais par une ligne
+   vide de plus ;
+4. **le message dans son propre encadré**, objet sur sa ligne (étiquette `Objet`
+   en petites capitales) et corps en `whitespace-pre-line` : les paragraphes du
+   brouillon sont séparés par des lignes vides, et c'est cette respiration qu'on
+   veut voir. Un corps rendu d'un bloc est illisible même quand il est correct ;
+5. **les actions sous un filet**, dans un pied groupé — décisions d'écriture à
+   gauche, décisions de file à droite. Des boutons intercalés dans le texte font
+   cliquer en lisant.
+
+**Groupé par campagne, pas par échéance** (`lib/domain/departure-groups.ts`,
+pur). Les deux étaient possibles ; la campagne gagne parce que c'est elle qui
+décide du discours, de la boîte d'envoi et du signataire — deux brouillons de la
+même campagne se relisent avec le même œil, deux brouillons dus le même jour
+n'ont rien en commun. Et parce que **la file est déjà celle du jour** (jalon 38) :
+grouper par échéance produirait presque toujours un seul groupe.
+
+L'en-tête est **collant** et porte son compte, les brouillons non composés
+comptés **à part** : ils ne se valident pas, ils se réparent, et les additionner
+ferait annoncer « 5 à valider » là où deux ne partiront pas.
+
+**Le groupement conserve l'ordre reçu.** Le service trie déjà la file ; re-trier
+ici inventerait un second ordre, et c'est toujours le second qui finit par
+contredire l'écran.
+
+**Rien n'est retiré** : la carte de recherche, l'avertissement d'écho, la
+retouche à la main, les trois décisions, la reprise avec Alex, « Vider les
+départs » et la bande de composition sont là, **rangés** plutôt que mêlés.
+
+### Jalon 88 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `39_campaign_mode` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production et un navigateur
+piloté :
+
+- **le diagnostic reproduit** avant correctif, avec les fichiers et les lignes
+  ci-dessus ;
+- **la création** : les deux voies rendues **avant tout champ** et toutes deux
+  **atteignables** (`reachable()`, jamais `isVisible()`), **aucun `<textarea>`**
+  sur l'écran, **aucun bouton « Créer »** tant que rien n'est choisi, et
+  `aria-pressed` qui suit le choix ;
+- **la file** : 3 départs, 2 groupes (« SAV septembre · 2 à valider »,
+  « Relance octobre · 1 à valider »), en-têtes `position: sticky`
+  **atteignables**, cartes bordées et **séparées** (la seconde commence après la
+  fin de la première, mesuré), objet sur sa propre ligne ;
+- **rien n'a disparu** : Envoyer, Modifier, Retravailler avec Alex, Retirer et
+  « Vider les départs » atteignables ; la retouche à la main s'ouvre sur place ;
+- **capture** de `/departs` avec trois départs visibles, envoyée avant la
+  fusion ;
+- **0 erreur console** sur les deux écrans ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1476 tests**) et
+  `npm run e2e` verts.
+
+`tests/campaign-mode-source.test.ts` ferme les trois rechutes : un défaut de
+voie à la création, la voie recopiée dans la composition, une étape neuve qui
+n'hérite de rien. Les gardes de recherche, d'écho et de discours (jalons 73, 84,
+57) ont dû être élargies au **couple vue + carte** : porter sur la seule vue les
+aurait rendues vertes le jour où ce qu'elles vérifient déménage — ce qui vient
+précisément d'arriver.
+
+### Jalon 88 — ce qui n'est pas fait
+
+**La file ne se regroupe pas par échéance**, et aucun contrôle ne permet de
+changer de groupement. C'est un choix argumenté ci-dessus, pas une option.
+
+**Les cartes ne se replient pas.** Le corps est tronqué à quatre lignes avec
+« Lire en entier » ; il n'y a pas de mode compact qui n'afficherait que les
+en-têtes. À vingt départs la page est longue, et c'est le prix de la lisibilité
+demandée.
+
+**La voie n'est pas modifiable après la création.** `Campaign.mode` est écrit une
+fois ; ce qui se change ensuite, c'est le mode de chaque étape — ce qui suffit,
+puisque c'est lui qui compose. Mais l'écran de la campagne affiche alors une voie
+qui peut ne plus décrire ses étapes.
+
+**Aucun écran ne liste « les campagnes dont les étapes contredisent la voie ».**
+
+**Les captures viennent d'un semis de vérification**, pas de votre base.
 
 ---
 

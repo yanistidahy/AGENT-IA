@@ -8,7 +8,9 @@ import {
   signatoryOptionLabel,
   type MailboxOption,
 } from "@/lib/domain/signatory-choice";
+import { CampaignPathChoice } from "./campaign-path-choice";
 import { CampaignTile } from "./campaign-tile";
+import type { CampaignMode } from "@/lib/domain/campaign-mode";
 import { SignatoryPreview } from "./signatory-preview";
 
 /**
@@ -44,6 +46,13 @@ export function CampaignsView({
 }) {
   const [campaigns, setCampaigns] = useState<CampaignView[]>([...initial]);
   const [name, setName] = useState("");
+  /**
+   * La voie, **sans valeur initiale**.
+   *
+   * Tant qu'elle est nulle, il n'y a ni nom à saisir ni bouton à cliquer :
+   * c'est la seule façon que le choix soit fait plutôt que subi.
+   */
+  const [mode, setMode] = useState<CampaignMode | null>(null);
   const [mailboxId, setMailboxId] = useState(mailboxes[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,13 +62,14 @@ export function CampaignsView({
     setError(null);
     const result = await requestJson(
       "/api/campaigns",
-      { method: "POST", body: JSON.stringify({ name, mailboxId }) },
+      { method: "POST", body: JSON.stringify({ name, mailboxId, mode }) },
       isCampaigns,
     );
     setBusy(false);
     if (result.ok) {
       setCampaigns(result.data.campaigns);
       setName("");
+      setMode(null);
     } else {
       setError(result.message);
     }
@@ -77,7 +87,23 @@ export function CampaignsView({
       </header>
 
       <section className="mb-5 rounded-card border border-line bg-surface p-4 shadow-card">
-        <div className="flex flex-wrap items-end gap-2">
+        <CampaignPathChoice value={mode} onChange={setMode} />
+
+        {/*
+          Le reste du formulaire n'apparaît qu'une fois la voie choisie. Le
+          révéler plutôt que le griser dit l'ordre des décisions : on choisit
+          comment on écrit, **puis** à qui et depuis quelle boîte.
+        */}
+        {mode === null ? (
+          <p className="mt-3 text-[12.5px] text-muted">
+            Choisissez une voie pour nommer la campagne. Elle décidera de ce que vous
+            écrivez ensuite : une consigne par étape, ou le texte lui-même.
+          </p>
+        ) : (
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <span className="mb-1 w-full font-mono text-[10px] tracking-[0.1em] text-muted uppercase">
+            2 · Nom, boîte d&apos;envoi et signataire
+          </span>
           <label className="block min-w-[220px] flex-1">
             <span className="mb-1 block font-mono text-[10px] tracking-[0.1em] text-muted uppercase">
               Nouvelle campagne
@@ -118,8 +144,11 @@ export function CampaignsView({
           >
             Créer
           </button>
+          <div className="w-full">
+            <SignatoryPreview signatory={chosenSignatory(mailboxes, mailboxId)} />
+          </div>
         </div>
-        <SignatoryPreview signatory={chosenSignatory(mailboxes, mailboxId)} />
+        )}
         {error !== null && <p className="mt-2 text-[12px] text-danger">{error}</p>}
       </section>
 
