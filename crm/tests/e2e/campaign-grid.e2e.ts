@@ -92,6 +92,15 @@ describe.skipIf(skip)("les campagnes, en grille puis en détail", () => {
 
   it("une vignette porte le nécessaire, et rien du détail", async () => {
     const tile = session.page.locator(`a[href="/campagnes/${ids[0]}"]`).first();
+    /*
+      **Le choix de la voie (jalon 88) a rallongé le bloc de création**, donc
+      une vignette donnée peut naître sous le pli. `reachable()` interroge le
+      document à un point de l'écran : il faut amener l'élément dans le champ
+      avant de lui demander s'il est atteignable. Ce que la grille doit tenir —
+      plusieurs vignettes par rangée, quatre lisibles sans défiler — est mesuré
+      par le test précédent, et il tient toujours.
+    */
+    await tile.scrollIntoViewIfNeeded();
     expect(await reachable(tile)).toBe(true);
 
     const text = await tile.innerText();

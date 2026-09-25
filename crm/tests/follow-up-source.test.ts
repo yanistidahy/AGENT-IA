@@ -91,6 +91,14 @@ describe("la garde d'écho est lue là où on relit", () => {
   });
 
   it("et la carte la montre", () => {
-    expect(sourceOf("components/sequences/departures-view.tsx")).toMatch(/departure\.echo !== ""/);
+  /*
+    **La file est rendue par deux fichiers depuis le jalon 88** : la vue porte
+    l'état et les groupes, la carte porte une ligne. La garde lit donc les deux
+    ensemble — porter sur la seule vue la rendrait verte le jour où ce qu'elle
+    vérifie déménagerait dans la carte.
+  */
+    const surface = sourceOf("components/sequences/departures-view.tsx") +
+      sourceOf("components/sequences/departure-card.tsx");
+    expect(surface).toMatch(/departure\.echo !== ""/);
   });
 });

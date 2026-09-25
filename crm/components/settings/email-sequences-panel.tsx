@@ -6,6 +6,7 @@ import { AUTO_MIN_VALIDATED } from "@/lib/domain/sequence-rules";
 import type { StepMode } from "@/lib/domain/merge-tags";
 import { SequenceSteps } from "./sequence-steps";
 import type { SampleContact } from "./manual-step-editor";
+import type { CampaignMode } from "@/lib/domain/campaign-mode";
 
 /**
  * Les séquences d'emails, et l'interrupteur qui ne s'active pas tout seul.
@@ -74,8 +75,11 @@ const BUTTON =
 export function EmailSequencesPanel({
   initial,
   embedded = false,
+  campaignMode = "alex",
 }: {
   readonly initial: readonly SequenceView[];
+  /** La voie de la campagne qui monte ce panneau — voir `SequenceSteps`. */
+  readonly campaignMode?: CampaignMode;
   /**
    * Monté dans une carte de campagne : la séquence appartient alors à la
    * campagne, donc ni paragraphe d'introduction, ni bouton de création — une
@@ -364,6 +368,7 @@ export function EmailSequencesPanel({
           <SequenceSteps
             steps={sequence.steps}
             samples={samples[sequence.id] ?? []}
+            campaignMode={campaignMode}
             onChange={(steps) => patch(sequence.id, { steps })}
           />
 

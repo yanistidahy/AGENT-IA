@@ -81,7 +81,14 @@ describe("la consigne est émise dans les deux sens", () => {
 
 describe("une seule surface de rédaction", () => {
   it("la file rouvre le panneau existant plutôt qu'un second", () => {
-    const view = sourceOf("components/sequences/departures-view.tsx");
+  /*
+    **La file est rendue par deux fichiers depuis le jalon 88** : la vue porte
+    l'état et les groupes, la carte porte une ligne. La garde lit donc les deux
+    ensemble — porter sur la seule vue la rendrait verte le jour où ce qu'elle
+    vérifie déménagerait dans la carte.
+  */
+    const view = sourceOf("components/sequences/departures-view.tsx") +
+      sourceOf("components/sequences/departure-card.tsx");
     expect(view).toContain("ComposePanel");
     expect(view).toContain("departureId");
     // Un second éditeur **assisté par le modèle** dans la file serait un second

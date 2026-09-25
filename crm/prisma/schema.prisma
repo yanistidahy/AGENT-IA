@@ -1367,6 +1367,16 @@ model Campaign {
   /// sélection décrit une intention, l'inscription fige les personnes.
   selection String @default("")
 
+  /// Le chemin choisi à la création : `alex` (consignes, recherche, rédaction
+  /// par le modèle) ou `manual` (texte tapé à la main, balises de fusion).
+  ///
+  /// **Une décision par campagne, prise une fois** (jalon 88) : elle décide du
+  /// mode des étapes créées ensuite, et de ce que l'écran ouvre en premier. Le
+  /// mode qui gouverne réellement la composition reste celui de **l'étape** —
+  /// mélanger les deux sur une campagne existante reste possible, comme action
+  /// secondaire à l'intérieur d'une étape.
+  mode String @default("alex")
+
   /// Clé de tri alphabétique : le **nom seul**, plié (minuscules, sans accents).
   /// Distincte de searchText, qui concatène tous les champs cherchables et ne
   /// peut donc pas ordonner. `null` quand il n'y a pas de nom — c'est ce qui

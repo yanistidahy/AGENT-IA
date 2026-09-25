@@ -16,6 +16,12 @@ import {
   REMOVED,
 } from "../domain/campaign-members";
 import { nameConfirms } from "../domain/campaign-deletion";
+import {
+  CAMPAIGN_MODES,
+  stepModeFor,
+  toCampaignMode,
+  type CampaignMode,
+} from "../domain/campaign-mode";
 
 /**
  * **Une campagne : une boîte, une sélection, une séquence.**
@@ -68,6 +74,8 @@ export interface CampaignView {
   readonly mailboxLabel: string;
   readonly signName: string;
   readonly selection: string;
+  /** La voie choisie à la création — voir `lib/domain/campaign-mode.ts`. */
+  readonly mode: CampaignMode;
   readonly sequenceId: string;
   readonly archivedAt: Date | null;
   /**
@@ -193,6 +201,7 @@ export async function listCampaigns(): Promise<CampaignView[]> {
       mailboxLabel: row.mailbox.label,
       signName: row.mailbox.signName,
       selection: row.selection,
+      mode: toCampaignMode(row.mode),
       sequenceId: row.sequence?.id ?? "",
       archivedAt: row.archivedAt,
       deletable: funnel.messages === 0,
@@ -205,6 +214,14 @@ export async function listCampaigns(): Promise<CampaignView[]> {
 export const createCampaignSchema = z.object({
   name: z.string().trim().min(1, "Le nom ne peut pas être vide").max(80),
   mailboxId: z.string().min(1, "Choisissez la boîte d'envoi"),
+  /**
+   * **Sans défaut, délibérément** (jalon 88). Une campagne créée « en Alex »
+   * parce que personne n'a choisi est exactement ce qui a rendu le mode manuel
+   * introuvable : la voie doit être une décision, à l'écran comme à l'API.
+   */
+  mode: z.enum(CAMPAIGN_MODES, {
+    message: "Choisissez la voie : Automatique (Alex) ou Manuel",
+  }),
 });
 
 /**
@@ -230,6 +247,7 @@ export async function createCampaign(
         name: input.name,
         mailboxId: input.mailboxId,
         nameKey: campaignNameKey(input.name),
+        mode: input.mode,
       },
       select: { id: true },
     });
@@ -251,7 +269,13 @@ export async function createCampaign(
         // quoi, et elle est vérifiée à chaque composition.
         active: true,
         campaignId: campaign.id,
-        steps: { create: [{ position: 1, delayDays: 0, brief: "" }] },
+        // La première étape naît dans la voie choisie : « Manuel » doit mener
+        // droit à l'éditeur de texte, sans second réglage à trouver.
+        steps: {
+          create: [
+            { position: 1, delayDays: 0, brief: "", mode: stepModeFor(input.mode) },
+          ],
+        },
       },
     });
     return campaign.id;

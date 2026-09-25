@@ -73,11 +73,18 @@ describe("une seule carte, rendue par les deux surfaces", () => {
   });
 
   it("le tiroir de contact monte la note, comme la file", () => {
-    for (const file of [
-      "components/emails/compose-panel.tsx",
-      "components/sequences/departures-view.tsx",
+  /*
+    **La file est rendue par deux fichiers depuis le jalon 88** : la vue porte
+    l'état et les groupes, la carte porte une ligne. La garde lit donc les deux
+    ensemble — porter sur la seule vue la rendrait verte le jour où ce qu'elle
+    vérifie déménagerait dans la carte.
+  */
+    for (const surface of [
+      sourceOf("components/emails/compose-panel.tsx"),
+      sourceOf("components/sequences/departures-view.tsx") +
+      sourceOf("components/sequences/departure-card.tsx"),
     ]) {
-      expect(sourceOf(file)).toMatch(/<ResearchNote/);
+      expect(surface).toMatch(/<ResearchNote/);
     }
   });
 
