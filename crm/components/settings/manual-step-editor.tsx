@@ -69,7 +69,15 @@ export function ManualStepEditor({
   };
 
   const sample = samples.find((entry) => entry.id === sampleId) ?? samples[0] ?? null;
-  const values: MergeValues = sample?.values ?? { prenom: "", societe: "", site: "" };
+  // Le repli décrit une fiche dont on ne sait rien : **toutes les valeurs
+  // vides**, y compris la vidéo. Y mettre un libellé par défaut ferait annoncer
+  // une phrase que l'envoi retirerait faute de vidéo réglée.
+  const values: MergeValues = sample?.values ?? {
+    prenom: "",
+    societe: "",
+    site: "",
+    video: "",
+  };
 
   const missing = sample === null ? [] : unresolvedTags(`${subject}\n${body}`, values);
   const unknown = unknownTags(`${subject}\n${body}`);

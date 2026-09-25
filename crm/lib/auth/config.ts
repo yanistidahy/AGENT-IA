@@ -79,6 +79,22 @@ const PUBLIC_PREFIXES: readonly string[] = [
    * d'ouverture par une porte dérobée. Voir `app/api/logo/[version]/route.ts`.
    */
   "/api/logo/",
+  /**
+   * La vignette de la vidéo de démonstration, **et le fichier vidéo lui-même**
+   * quand c'est nous qui l'hébergeons (jalon 89).
+   *
+   * La vignette est publique pour la raison du logo : c'est le client de
+   * messagerie du destinataire qui la charge, sans session. Le fichier l'est
+   * pour une raison de plus — **c'est la destination du clic**, et un
+   * destinataire qui n'a pas de compte chez nous tomberait sur un écran de
+   * connexion, soit exactement le lien mort qu'on s'interdit.
+   *
+   * Ni l'une ni l'autre ne compte quoi que ce soit : un compteur de vues serait
+   * un pistage de clic, c'est-à-dire précisément ce que ce jalon écarte en
+   * refusant qu'un traceur externe voyage avec la vignette. Voir
+   * `app/api/video/[version]/route.ts` et `…/fichier/route.ts`.
+   */
+  "/api/video/",
 ];
 
 export function isPublicPath(pathname: string): boolean {

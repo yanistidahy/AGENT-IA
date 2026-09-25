@@ -6,7 +6,7 @@ import { contactTitle, repairGreeting } from "../domain/contact-identity";
 import { enforceSignature, sanitizeSubject } from "../domain/email-format";
 import { signatureBlock } from "../agents/prompts/company";
 import { forbiddenSigners } from "../agents/email-draft";
-import { readMailConfig, signatureOf } from "./mail";
+import { readMailConfig, signatureOf, signatureVideo } from "./mail";
 import { listSignatories, pickSignatory } from "./signatories";
 
 /**
@@ -53,7 +53,10 @@ async function readMergeContact(contactId: string) {
  * (jalon 75). Une seconde règle de résolution aurait fini par citer un site que
  * la carte de recherche dit ne pas connaître.
  */
-export function mergeValuesOf(contact: NonNullable<MergeContact>): MergeValues {
+export function mergeValuesOf(
+  contact: NonNullable<MergeContact>,
+  videoLabel = "",
+): MergeValues {
   const target = resolveResearchTarget({
     website: contact.website,
     companyDomain: contact.company?.domain ?? "",
@@ -63,7 +66,28 @@ export function mergeValuesOf(contact: NonNullable<MergeContact>): MergeValues {
     prenom: contact.firstName,
     societe: contact.company?.name ?? "",
     site: target?.host ?? "",
+    // **Le libellé, pas l'adresse** : `{video}` se substitue comme le lien de
+    // démonstration depuis le jalon 34, et c'est la couche d'envoi qui en fait
+    // une vignette cliquable côté HTML et « Libellé : https://… » côté texte.
+    // Ce n'est pas une valeur du contact — la vidéo est la même pour tout le
+    // monde — mais elle passe par ici parce que c'est la seule chose que le
+    // gabarit sait substituer, et qu'une seconde voie ferait diverger l'aperçu
+    // de l'envoi. Vide = aucune vidéo réglée, donc la phrase disparaît.
+    video: videoLabel,
   };
+}
+
+/**
+ * Le libellé de la vidéo, ou `""`.
+ *
+ * Lu **par la même fonction que l'envoi** (`signatureVideo`) : un aperçu qui
+ * annoncerait une vidéo que l'envoi ne composerait pas — faute d'adresse
+ * publique, par exemple — montrerait une phrase qui ne partira pas. C'est le
+ * défaut que ce projet a payé plusieurs fois, et la règle du jalon 87 : une
+ * seule définition du rendu, pour l'aperçu comme pour la composition.
+ */
+async function videoLabel(): Promise<string> {
+  return (await signatureVideo())?.label ?? "";
 }
 
 export interface ManualDraft {
@@ -85,7 +109,7 @@ export async function renderManualStep(
   const contact = await readMergeContact(contactId);
   if (contact === null) return null;
 
-  const values = mergeValuesOf(contact);
+  const values = mergeValuesOf(contact, await videoLabel());
   const [config, signatories] = await Promise.all([readMailConfig(mailboxId), listSignatories()]);
   const signatory =
     (mailboxId === undefined
@@ -123,6 +147,7 @@ export interface SampleContact {
  * incomplètes. Les fiches **sans prénom** et **sans site** passent donc devant.
  */
 export async function sampleContacts(sequenceId: string): Promise<SampleContact[]> {
+  const label = await videoLabel();
   const rows = await prisma.sequenceEnrollment.findMany({
     where: { sequenceId },
     select: { contact: { select: CONTACT_SELECT } },
@@ -135,7 +160,7 @@ export async function sampleContacts(sequenceId: string): Promise<SampleContact[
     .map((contact) => ({
       id: contact.id,
       name: contactTitle(contact),
-      values: mergeValuesOf(contact),
+      values: mergeValuesOf(contact, label),
     }));
 
   // Le cas dégradé d'abord : c'est celui qu'on ne pense pas à vérifier.
