@@ -20,11 +20,19 @@ import {
   toPlainText,
   withSignatureLogo,
   withTrackingPixel,
+  withVideoThumbnail,
   type DemoLink,
   type SignatureLogo,
 } from "../domain/email-format";
 import { logoUrl } from "../domain/signature-logo";
+import {
+  isUsableVideo,
+  posterUrl,
+  videoDestination,
+  type VideoLink,
+} from "../domain/signature-video";
 import { readLogoSummary } from "./mail-logo";
+import { readVideoSummary } from "./mail-video";
 import { publicBaseUrl } from "./email-sends";
 import { DEFAULT_DEMO, DEFAULT_SIGNATURE, type Signature } from "../agents/prompts/company";
 
@@ -184,6 +192,39 @@ export async function signatureLogo(): Promise<SignatureLogo | undefined> {
   if (url === "") return undefined;
 
   return { url, width: summary.width };
+}
+
+/**
+ * La vidéo à poser sur la partie HTML, ou `undefined`.
+ *
+ * Trois façons de n'en poser aucune, et les trois sont volontaires : aucune
+ * vidéo réglée, **aucune adresse publique connue** (une URL devinée produirait
+ * une image cassée dans chaque message — règle du pixel du jalon 37 et du logo
+ * du jalon 62), ou une destination qu'on ne sait pas composer.
+ *
+ * Les trois morceaux sont **solidaires** : `isUsableVideo` refuse un lien dont
+ * la vignette ou la destination manque. Sans vignette on n'aurait qu'un lien nu,
+ * sans destination qu'une image inerte — et dans les deux cas la phrase qui
+ * portait `{video}` a déjà disparu du gabarit, puisque `mergeValuesOf` n'a alors
+ * rien à substituer. Les deux décisions viennent de la même lecture, donc elles
+ * ne peuvent pas se contredire.
+ */
+export async function signatureVideo(): Promise<VideoLink | undefined> {
+  const summary = await readVideoSummary();
+  if (summary === null) return undefined;
+
+  const base = publicBaseUrl();
+  const link: VideoLink = {
+    label: summary.label,
+    url: videoDestination(
+      { kind: summary.kind, url: summary.url, version: summary.version },
+      base,
+    ),
+    posterUrl: posterUrl(base, summary.version),
+    posterWidth: summary.posterWidth,
+  };
+
+  return isUsableVideo(link) ? link : undefined;
 }
 
 /** Le lien de démonstration tel que le formateur l'attend. */
@@ -417,10 +458,18 @@ export async function sendMail(input: SendInput): Promise<SendResult> {
   const id = messageId(config.from, new Date(), Math.random().toString(36).slice(2, 10));
   const sentAt = new Date();
   const demo = demoLinkOf(config);
-  // **Le logo d'abord, le pixel ensuite.** Le pixel doit rester la toute
-  // dernière chose du corps (jalon 43 : un client qui tronque coupe par la
-  // fin), et le logo appartient à la signature, donc au message.
-  const html = withSignatureLogo(toHtml(input.body, demo), await signatureLogo());
+  const video = await signatureVideo();
+  // **Logo, puis vignette, puis pixel — et l'ordre est une contrainte.** Le
+  // pixel doit rester la toute dernière chose du corps (jalon 43 : un client qui
+  // tronque coupe par la fin). Le logo prend le dernier paragraphe pour en faire
+  // la cellule droite d'un tableau (jalon 65), il doit donc voir un corps encore
+  // intact. La vignette, elle, remplace un libellé au milieu du texte : posée
+  // avant le logo, son balisage pourrait se retrouver dans la cellule de
+  // signature si le libellé était écrit dans le dernier paragraphe.
+  const html = withVideoThumbnail(
+    withSignatureLogo(toHtml(input.body, demo), await signatureLogo()),
+    video,
+  );
 
   const message = {
     from: formatSender(config.fromName, config.from),
@@ -434,7 +483,7 @@ export async function sendMail(input: SendInput): Promise<SendResult> {
     // Le lien passe ici, pas dans le brouillon : le corps stocké reste du
     // texte lisible, et c'est au moment de l'envoi que « Réserver un appel »
     // devient une ancre en HTML et une adresse visible en texte.
-    text: toPlainText(input.body, demo),
+    text: toPlainText(input.body, demo, video),
     html: withTrackingPixel(html, input.trackingUrl ?? ""),
     // `format=fixed` : sans cela, un client peut recoller deux lignes
     // consécutives et détruire une adresse ou une liste tapée à la main.

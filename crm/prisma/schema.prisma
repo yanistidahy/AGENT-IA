@@ -1268,6 +1268,59 @@ model MailLogo {
   @@map("mail_logo")
 }
 
+/// La vidéo de démonstration, posée **une fois** dans les réglages.
+///
+/// **Jamais une pièce jointe.** Une vidéo attachée à un message froid est l'un
+/// des signaux de spam les plus forts qui soient, beaucoup de serveurs la
+/// mettent en quarantaine sans un mot, et IONOS applique de toute façon sa
+/// propre limite de taille par message. Ce que font les outils de prospection
+/// sérieux est ce qu'on fait ici : la vidéo est **hébergée**, le message ne
+/// porte qu'une vignette cliquable.
+///
+/// Singleton comme le logo, et table séparée pour la même raison : les octets
+/// n'ont aucune raison de voyager à chaque lecture de configuration d'envoi.
+model MailVideo {
+  id String @id @default("singleton")
+
+  /// `file` : le fichier est chez nous, servi depuis notre domaine — l'ancre
+  /// comme l'image pointent alors sur le CRM. `hosted` : une adresse collée
+  /// (YouTube non répertorié, Vimeo, un lien direct), et la destination du clic
+  /// n'est **pas** notre domaine — l'écran le dit plutôt que de le taire.
+  kind String @default("hosted")
+
+  /// L'adresse d'hébergement, quand `kind = hosted`. Vide sinon.
+  url String @default("")
+
+  /// Le fichier téléversé, quand `kind = file`. Servi tel quel, avec son type.
+  file      Bytes?
+  fileMime  String @default("")
+  fileBytes Int    @default(0)
+
+  /// La vignette, **toujours la nôtre** : réencodée, redimensionnée, et le
+  /// triangle de lecture **incrusté dans l'image**. Une surcouche CSS serait
+  /// ignorée par la moitié des clients de messagerie (la leçon du tableau de
+  /// signature au jalon 65) : ce qui doit se voir doit être dans les pixels.
+  poster      Bytes
+  posterMime  String @default("image/jpeg")
+  posterWidth Int
+  posterBytes Int
+
+  /// Vrai quand la vignette a été **engendrée** faute d'image fournie : aucun
+  /// extracteur de trame n'est installé, donc on ne prétend pas montrer une
+  /// image du film. L'écran l'annonce au lieu de laisser croire à une capture.
+  posterGenerated Boolean @default(false)
+
+  /// Le libellé cliquable, et ce que `{video}` remplace dans un gabarit.
+  label String @default("Voir la démonstration en vidéo")
+
+  /// Empreinte servant d'ETag **et** de segment d'URL, comme pour le logo :
+  /// remplacer la vidéo change l'adresse, donc un an de cache reste sûr.
+  version   String
+  updatedAt DateTime @updatedAt
+
+  @@map("mail_video")
+}
+
 /// Une campagne : une boîte d'envoi, une sélection de contacts, une séquence.
 ///
 /// La séquence appartient à la campagne (relation portée par

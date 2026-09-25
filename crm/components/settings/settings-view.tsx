@@ -16,6 +16,7 @@ import { MaintenancePanel } from "./maintenance-panel";
 import { ApiDiagnostic } from "./api-diagnostic";
 import { MailPanel, type MailStatus, type Signatory } from "./mail-panel";
 import { LogoPanel, type LogoState } from "./logo-panel";
+import { VideoPanel, type VideoState } from "./video-panel";
 import { MailboxesPanel } from "./mailboxes-panel";
 import type { MailboxDraft } from "./mailbox-fields";
 import { ImapPanel, type ImapStatus, type TrackingStatus, type SendLimits } from "./imap-panel";
@@ -36,6 +37,7 @@ interface SettingsViewProps {
   readonly tokenBudget: number;
   readonly mail: MailStatus;
   readonly logo: LogoState;
+  readonly video: VideoState;
   /** Les boîtes, avec la variable d'environnement de chacune. */
   readonly mailboxes: readonly MailboxDraft[];
   readonly passwordEnv: string;
@@ -89,6 +91,7 @@ export function SettingsView({
   tokenBudget,
   mail,
   logo,
+  video,
   mailboxes,
   passwordEnv,
   signatories,
@@ -154,6 +157,7 @@ export function SettingsView({
           <MailboxesPanel initial={mailboxes} />
           <MailPanel initial={mail} />
           <LogoPanel initial={logo} />
+          <VideoPanel initial={video} />
           <ImapPanel initial={imap} initialTracking={tracking} initialLimits={limits} />
           <InboxPanel initial={inbox} />
           {opens}

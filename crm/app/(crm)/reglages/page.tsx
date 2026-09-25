@@ -29,6 +29,7 @@ import { readOpenAudit } from "@/lib/api/open-audit";
 import { DEFAULT_MODELS } from "@/lib/domain/model-pricing";
 import { DeployCard } from "@/components/settings/deploy-card";
 import { readLogoPanelState } from "@/lib/api/logo-panel";
+import { readVideoPanelState } from "@/lib/api/video-panel";
 import { publicBaseUrl } from "@/lib/api/email-sends";
 import { readDeployInfo } from "@/lib/deploy-info";
 
@@ -81,6 +82,8 @@ export default async function ReglagesPage() {
   // Le logo, par la composition partagée avec la route de téléversement :
   // deux compositions finiraient par afficher deux écrans différents.
   const logo = await readLogoPanelState();
+  // La vidéo, même motif : une seule composition, partagée avec sa route.
+  const video = await readVideoPanelState();
   const roleAngles = await readRoleCoverage();
   const tracking = await readTrackingConfig();
   const limits = await readLimits();
@@ -127,6 +130,7 @@ export default async function ReglagesPage() {
       roleAngles={roleAngles}
       mail={mail}
       logo={logo}
+      video={video}
       passwordEnv={PASSWORD_ENV}
       mailboxes={await listMailboxViews()}
       signatories={signatories}

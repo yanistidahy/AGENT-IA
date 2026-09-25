@@ -98,13 +98,29 @@ beforeEach(() => {
  * c'est la même image, déjà partie dans chaque courriel — ne compte rien, et
  * rend 404 sur une version inconnue.
  *
- * Le **téléversement**, lui, reste privé : c'est `/api/mail/logo`, un geste
- * d'administration, et il n'a rien à faire dans cette liste.
+ * `/api/video/[version]` — la vignette de la vidéo de démonstration (jalon 89).
+ * Même raison que le logo, mot pour mot : c'est le client de messagerie du
+ * destinataire qui la charge, sans session. Elle sert un seul fichier, ne compte
+ * rien — une vignette comptée serait un second pixel de suivi non déclaré — et
+ * rend 404 sur une version inconnue.
+ *
+ * `/api/video/[version]/fichier` — le fichier vidéo, quand il est hébergé chez
+ * nous. Publique pour une raison qui lui est propre et plus forte encore :
+ * **c'est la destination du clic**. Le destinataire n'a pas de compte ici, et une
+ * route privée le renverrait vers `/login` — le lien mort que ce jalon
+ * s'interdit. Elle ne compte aucune lecture : ce serait du pistage de clic,
+ * exactement ce qu'on refuse en écartant un traceur externe sur la vignette.
+ *
+ * Le **téléversement**, lui, reste privé : c'est `/api/mail/logo` et
+ * `/api/mail/video`, deux gestes d'administration, et ils n'ont rien à faire
+ * dans cette liste.
  */
 const PUBLIC_API_EXCEPTIONS: readonly string[] = [
   "/api/t/[token]",
   "/api/logo/[version]",
   "/api/logo/[version]/app",
+  "/api/video/[version]",
+  "/api/video/[version]/fichier",
 ];
 
 function isPublicApi(route: string): boolean {

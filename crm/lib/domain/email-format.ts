@@ -23,6 +23,8 @@
  *    seul est hors spécification et se fait recoller par certains relais.
  */
 
+import type { VideoLink } from "./signature-video";
+
 /** Une ligne vide sépare deux paragraphes ; une simple fin de ligne les garde ensemble. */
 const PARAGRAPH_BREAK = /\n[ \t]*\n/;
 
@@ -48,8 +50,13 @@ export function splitParagraphs(body: string): string[] {
  * format, et la réduction des blancs multiples à une seule ligne vide, qui rend
  * la version texte et la version HTML identiques à la lecture.
  */
-export function toPlainText(body: string, link?: DemoLink): string {
-  return expandLink(splitParagraphs(body).join("\n\n"), link);
+export function toPlainText(body: string, link?: DemoLink, video?: VideoLink): string {
+  // Deux développements, dans l'ordre où ils ont été écrits, et chacun sur une
+  // seule occurrence : le lien de démonstration puis la vidéo. Les faire dans
+  // l'autre sens ne changerait rien — les deux libellés sont distincts — mais
+  // les écrire l'un après l'autre garde une seule règle de rendu par lien.
+  const withDemo = expandLink(splitParagraphs(body).join("\n\n"), link);
+  return expandLink(withDemo, video === undefined ? undefined : { label: video.label, url: video.url });
 }
 
 const ESCAPES: Record<string, string> = {
@@ -207,6 +214,62 @@ export function withSignatureLogo(html: string, logo?: SignatureLogo): string {
     `</tr></table>`;
 
   return `${signature.before}${table}${signature.after}`;
+}
+
+/**
+ * Remplace le libellé de la vidéo par une **vignette cliquable**.
+ *
+ * **Hors de `toHtml()`, pour la troisième fois et la même raison** que le pixel
+ * de suivi (jalon 37) et le logo de signature (jalon 62) : la règle du jalon 32
+ * interdit toute image dans la mise en forme du corps, et le test qui la
+ * vérifie continue de porter sur `toHtml()`. Une vignette est une décision
+ * d'envoi, prise à l'envoi.
+ *
+ * **La vidéo n'est jamais attachée.** Une pièce jointe vidéo est l'un des
+ * signaux de spam les plus forts, beaucoup de serveurs la mettent en
+ * quarantaine, et IONOS applique sa propre limite de taille par message. Ce qui
+ * part est donc une image de quelques dizaines de kilo-octets et un lien.
+ *
+ * **Le triangle de lecture est déjà dans les pixels** de la vignette, incrusté
+ * au téléversement : une surcouche positionnée par-dessus une image est ignorée
+ * par la moitié des clients de messagerie, comme `display:flex` ne survit pas
+ * au moteur de Word (leçon du tableau de signature, jalon 65). Il n'y a donc ni
+ * `position:absolute`, ni second élément par-dessus l'image.
+ *
+ * L'ancre ne porte **aucun paramètre** : ni jeton, ni compteur, ni `utm_`. Un
+ * clic pisté sur une démonstration qu'on présente comme privée dit exactement
+ * le contraire de ce que le message affirme (jalon 34).
+ *
+ * Une seule occurrence, comme `linkify` : le libellé peut revenir dans une
+ * phrase, et transformer chaque mention en vignette produirait un message
+ * truffé d'images.
+ */
+export function withVideoThumbnail(html: string, video?: VideoLink): string {
+  if (video === undefined) return html;
+  const label = video.label.trim();
+  const url = video.url.trim();
+  const poster = video.posterUrl.trim();
+  if (label === "" || url === "" || poster === "") return html;
+
+  const needle = escapeHtmlText(label);
+  const index = html.indexOf(needle);
+  if (index === -1) return html;
+
+  // `width` en attribut **et** en style : un client qui ignore le CSS doit
+  // quand même réserver la bonne place, sinon la mise en page saute au
+  // chargement. `alt` porte le libellé, parce qu'une image non chargée doit
+  // rester un lien qu'on comprend — c'est le cas le plus fréquent, la plupart
+  // des clients ne chargeant pas les images par défaut.
+  const size = video.posterWidth > 0 ? ` width="${video.posterWidth}"` : "";
+  const img =
+    `<img src="${escapeHtmlText(poster)}" alt="${needle}"${size}` +
+    ` style="display:block;border:0;max-width:100%" />`;
+
+  return (
+    html.slice(0, index) +
+    `<a href="${escapeHtmlText(url)}">${img}</a>` +
+    html.slice(index + needle.length)
+  );
 }
 
 /** Le logo servi : son adresse chez nous, et sa largeur normalisée. */

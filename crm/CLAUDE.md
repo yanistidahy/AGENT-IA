@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 89 | **La vidéo entre dans les étapes manuelles, hébergée** : une balise `{video}` qui rend une vignette cliquable en HTML et l'adresse en entier en texte, servie depuis notre domaine, sans pièce jointe et sans traceur | **livré, à valider** |
 | 88 | **La voie avant le formulaire, la file en cartes** : « Automatique (Alex) » ou « Manuel » choisi à la création avant tout éditeur d'étape ; « Départs du jour » regroupé par campagne, une carte bornée par départ, les actions sous un filet | **livré, à valider** |
 | 87 | **Une étape écrite à la main** : objet et message tapés soi-même, trois balises remplacées à la composition sans appel au modèle, aperçu en direct sur un contact réel ; plus « Vider les départs » | **livré, à valider** |
 | 86 | **Réinitialiser une campagne** : tout le monde revient à l'étape 1 avec les consignes d'aujourd'hui, les envois passés restent des faits, et la confirmation dit ce que le destinataire va lire | **livré, à valider** |
@@ -12386,3 +12387,192 @@ mails » (jalon 70).
 
 **Les chiffres ci-dessus viennent d'un semis de vérification**, pas de votre
 base.
+
+---
+
+## Jalon 89 — la vidéo, hébergée et jamais attachée
+
+### La décision, et elle vient de la demande
+
+**Aucune pièce jointe.** La demande était explicite et elle a raison : une vidéo
+attachée à un courriel froid est l'un des signaux de spam les plus forts qui
+soient, beaucoup de serveurs la mettent en quarantaine sans un mot, et IONOS
+applique de toute façon sa propre limite de taille par message — qu'un fichier de
+motion design dépasse presque toujours. Ce qui part est donc **une vignette de
+quelques kilo-octets et un lien**, comme le fait tout outil de prospection
+sérieux.
+
+### Les deux moitiés, et pourquoi elles ne se traitent pas pareil
+
+| | D'où ça vient | Où ça pointe |
+|---|---|---|
+| **la vignette** | toujours de nous, réencodée comme le logo | `/api/video/<version>` |
+| **la destination** | le fichier téléversé, ou une adresse collée | notre domaine, ou l'hébergeur |
+
+L'image est **toujours la nôtre**, pour les raisons du jalon 62 : une image
+chargée depuis un hébergeur tiers est un signal de démarchage en masse, et elle
+confie à ce tiers la liste des gens qui ouvrent nos messages. Elle ne porte donc
+ni paramètre, ni jeton, ni compteur — **ce n'est pas un pixel de suivi déguisé**,
+et la route qui la sert ne compte rien.
+
+La destination du clic, elle, **ne peut pas mentir** : coller un lien Vimeo veut
+dire que le clic va chez Vimeo. Faire passer ce clic par une redirection de notre
+domaine serait précisément le pistage qu'on s'interdit, en plus de masquer où l'on
+va. L'écran le dit donc en toutes lettres — « Le clic va chez l'hébergeur, qui
+verra qui ouvre la vidéo » — et téléverser le fichier reste la voie qui garde tout
+chez nous. **Les deux sont offertes**, comme la demande le laissait au choix.
+
+### Le triangle de lecture est dans les pixels
+
+Une surcouche positionnée par-dessus une image est ignorée par la moitié des
+clients de messagerie — c'est la leçon du tableau de signature du jalon 65, où
+`display:flex` ne survit pas au moteur de Word. Ce qui doit se voir doit être
+incrusté : le badge est donc **composité dans la vignette au téléversement**, une
+fois, et le message ne rend qu'une seule balise `<img>`. Un test le fige.
+
+### La vignette est parfois engendrée, et l'écran l'avoue
+
+Extraire une trame demande un décodeur vidéo, et **il n'y en a aucun dans cet
+environnement** : `ffmpeg` et `ffprobe` sont absents, `sharp` ne décode pas la
+vidéo. Plutôt que de prétendre montrer une image du film, une plaque sobre portant
+le triangle est composée, et `posterGenerated` le dit à l'écran (« engendrée, pas
+une image du film »). Inventer une capture aurait été le pire des deux mondes.
+Fournir sa propre image reste possible, et c'est le cas recommandé.
+
+### `{video}` se substitue au **libellé**, jamais à l'adresse
+
+Le motif du lien de démonstration depuis le jalon 34 : le gabarit reçoit un texte,
+et c'est la couche d'envoi qui en fait une vignette cliquable côté HTML et
+« Libellé : https://… » côté texte. Écrire l'adresse dans le gabarit la rendrait
+nue dans les deux parties, et la vignette n'aurait plus de mot sur lequel
+s'accrocher.
+
+**Sans vidéo configurée, la phrase qui porte la balise disparaît** — même règle que
+`{site}` au jalon 87, et pour la même raison : « Voici une courte vidéo :  »
+laisserait un deux-points suspendu, et le destinataire lirait une fusion ratée.
+Jamais un lien mort, jamais du texte `{video}` littéral.
+
+**Une seule lecture décide des deux.** `signatureVideo()` dit à la fois si la
+vignette part et quel libellé le gabarit reçoit : l'aperçu en direct et la
+composition ne peuvent donc pas se contredire. Une seconde lecture dans l'aperçu
+annoncerait une phrase que l'envoi retirerait — faute d'adresse publique, par
+exemple — et personne ne s'en apercevrait avant la réception. C'est le défaut que
+ce projet a payé aux jalons 55, 64, 66, 74 et 85.
+
+### L'ordre à l'envoi est une contrainte, pas un goût
+
+**Logo, puis vignette, puis pixel.** Le pixel doit rester la toute dernière chose
+du corps (jalon 43 : un client qui tronque coupe par la fin). Le logo prend le
+dernier paragraphe pour en faire la cellule droite d'un tableau (jalon 65), il
+doit donc voir un corps encore intact. La vignette, elle, remplace un libellé au
+milieu du texte : posée avant le logo, son balisage pourrait se retrouver dans la
+cellule de signature. `withVideoThumbnail` vit **hors de `toHtml()`**, comme le
+pixel et le logo : la règle du jalon 32 — aucune image dans la mise en forme du
+corps — tient toujours, et le test qui la vérifie n'a pas bougé.
+
+### Le seuil d'avertissement est plus haut que celui du logo, délibérément
+
+120 Ko contre 20 Ko. Une vignette est une **image photographique**, pas un aplat de
+marque : la comparer au même seuil ferait sonner l'alerte sur chaque vidéo
+légitime — l'erreur que le jalon 62 a explicitement refusé de commettre. On
+avertit, on ne refuse pas : le poids acceptable dépend d'un jugement qui
+n'appartient pas au code, mais rien ne part plus en silence.
+
+### `Range` sur le fichier, et pourquoi
+
+Un navigateur qui lit une vidéo ne la télécharge pas d'un bloc, et **Safari refuse
+de jouer un fichier servi sans `Accept-Ranges`** : sans cela, le lien
+téléchargerait le film au lieu de le jouer. Une seule plage est gérée — c'est ce
+que les navigateurs envoient — et une plage hors bornes rend 416 avec
+`Content-Range`, sans quoi chaque saut dans la barre de progression relancerait la
+lecture au début.
+
+### Jalon 89 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `40_mail_video` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production, un puits SMTP réel
+et un navigateur piloté :
+
+- **1 · la vidéo réglée** : fichier accepté, vignette **engendrée** et annoncée
+  comme telle, 2,5 Ko — sous le seuil ; vignette **et** clic sur notre domaine ;
+- **2 · le gabarit** : le libellé est écrit, **aucune balise littérale**, et
+  **aucune adresse nue** dans le corps stocké ;
+- **2 bis · l'aperçu en direct** lit la même vidéo que l'envoi : `sampleContacts`
+  rend le libellé sur un contact réel ;
+- **3 · sur le fil**, source MIME brute du message reçu :
+  - `text/plain` — `Voir la démonstration en vidéo : http://…/api/video/<v>/fichier`,
+    **aucune balise HTML** ;
+  - `text/html` — `<a href="…/fichier"><img src="…/api/video/<v>" alt="Voir la
+    démonstration en vidéo" width="480" …></a>`, **une seule image de vignette**,
+    **aucune surcouche** (`position:absolute` et `display:flex` absents), **aucun
+    paramètre** accroché à l'adresse, **aucune image d'un hôte tiers** ;
+  - l'ordre relu sur le fil : vignette dans son paragraphe, tableau du logo pour
+    la signature, **pixel en dernier avant `</body>`** ;
+- **4 · aucune pièce jointe** : ni `Content-Disposition: attachment`, ni
+  `Content-Type: video/` dans le message ;
+- **5 · sans vidéo configurée** : la phrase qui portait la balise est retirée, la
+  phrase voisine survit, **aucun deux-points suspendu**, aucune balise littérale,
+  et `signatureVideo()` ne compose rien — donc aucun lien mort ;
+- **routes publiques, par HTTP réel sans session** : vignette **200** `image/jpeg`
+  avec `public, max-age=31536000, immutable` ; version inconnue **404** ; fichier
+  **200** `video/mp4` avec `Accept-Ranges: bytes` ; `Range: bytes=0-9` → **206**
+  de 10 octets ; plage hors bornes → **416** ; **téléversement `/api/mail/video`
+  → 401** ;
+- **au navigateur** : le panneau dit « jamais en pièce jointe » et la règle du
+  repli avant qu'on écrive quoi que ce soit ; une adresse collée fait annoncer que
+  le clic quitte notre domaine ; l'aperçu de la vignette est **atteignable**
+  (`reachable()`, jamais `isVisible()`) par un chemin relatif ; le retrait ramène
+  l'écran à son état vide ; **0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1516 tests**) et
+  `npm run e2e` (**77 tests**, dix-neuf fichiers) verts.
+
+`tests/video-link-source.test.ts` ferme les quatre façons de défaire ce jalon sans
+qu'aucun test ne rougisse : une pièce jointe, une vignette servie par l'hébergeur,
+un compteur sur les routes publiques, un second rendu. **Éprouvée en
+réintroduisant deux défauts exacts** — `attachments: []` dans le composeur, et un
+`mailVideo.update()` dans la route de la vignette : deux tests tombent, chacun
+nommant le fichier.
+
+### Jalon 89 — ce qui n'est pas vérifié
+
+**Aucun message n'est parti vers IONOS, et aucune vidéo réelle n'a été lue.** Le
+puits SMTP parle le protocole et écrit la source reçue ; il ne dit rien de ce que
+`smtp.ionos.fr` acceptera, ni du rendu dans un client de messagerie. Ce qui reste
+à établir au premier envoi réel : **que Gmail et Outlook affichent la vignette
+plutôt que de la bloquer derrière « afficher les images »**. C'est une question de
+client et de réputation de domaine, pas de code — et c'est pourquoi l'alternative
+textuelle porte le libellé : une image non chargée doit rester un lien qu'on
+comprend, et c'est le cas le plus fréquent.
+
+**Le fichier vidéo de la recette est un faux MP4 de quarante-quatre octets.** Il
+n'y a aucun décodeur ici : ce qui est vérifié, c'est qu'il est accepté, stocké et
+servi avec `Range` — pas qu'un vrai fichier de motion design se lise dans un
+navigateur. À regarder au premier téléversement réel.
+
+**La vignette engendrée n'a pas été jugée à l'œil.** Ce qui est mesuré, ce sont ses
+dimensions, son poids et la présence du badge dans les pixels ; qu'elle donne envie
+de cliquer relève du dessin. Fournir sa propre image reste la bonne voie.
+
+**Le poids d'un fichier de 200 Mo n'a pas été exercé de bout en bout.** La limite
+est vérifiée sur l'en-tête avant lecture en mémoire, et le refus est testé sur un
+fichier fabriqué ; téléverser réellement 200 Mo à travers le proxy de Railway est
+une autre affaire, et au-delà de quelques dizaines de mégaoctets la voie honnête
+reste l'hébergement externe — ce que le panneau dit.
+
+**La vidéo n'est pas sauvegardée.** `MailVideo` ne fait pas partie des modèles de
+`BACKED_UP` : ce sont des octets binaires, jusqu'à 200 Mo, dans un instantané JSON
+quotidien. Même décision que le logo aux jalons 62 et 63, avec la même conséquence
+assumée et connue — **après une restauration, la vidéo est à reposer**, et d'ici
+là la phrase qui porte `{video}` disparaît proprement plutôt que de rendre un lien
+mort.
+
+**Il n'existe qu'une vidéo, partagée par toutes les boîtes**, comme le logo : c'est
+la démonstration du produit, pas celle d'une personne. Une vidéo par campagne
+serait un autre objet.
+
+**Aucun compteur de clics, et ce n'est pas un oubli.** Savoir qui a regardé la
+vidéo serait utile ; le mesurer demanderait un jeton par destinataire, c'est-à-dire
+exactement le pistage que la demande écarte en refusant qu'un traceur externe
+voyage avec la vignette. Le remplacer par le nôtre ne vaudrait pas mieux, et il
+faudrait le dire — ce serait un jalon à part, avec sa décision.
+

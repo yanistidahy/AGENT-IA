@@ -7,7 +7,11 @@ import {
   splitParagraphs,
   toHtml,
   toPlainText,
+  withSignatureLogo,
+  withTrackingPixel,
+  withVideoThumbnail,
 } from "../email-format";
+import type { VideoLink } from "../signature-video";
 
 /**
  * La mise en forme est la partie qui trahit tout le reste.
@@ -205,5 +209,106 @@ describe("lien de démonstration", () => {
     const plain = toPlainText(AVEC_LIEN, DEMO).split("\n\n").filter((b) => b.trim() !== "");
     const html = toHtml(AVEC_LIEN, DEMO).match(/<p>/g) ?? [];
     expect(html.length).toBe(plain.length);
+  });
+});
+
+describe("la vidéo : une vignette en HTML, l'adresse en entier en texte", () => {
+  const VIDEO: VideoLink = {
+    label: "Voir la démonstration en vidéo",
+    url: "https://crm.test/api/video/v1/fichier",
+    posterUrl: "https://crm.test/api/video/v1",
+    posterWidth: 480,
+  };
+  const BODY =
+    "Bonjour Roxana,\n\nVoici une courte vidéo : Voir la démonstration en vidéo.\n\nYanis Tidahy";
+
+  it("rend une vignette cliquable, servie depuis notre domaine", () => {
+    const html = withVideoThumbnail(toHtml(BODY), VIDEO);
+    expect(html).toContain('<a href="https://crm.test/api/video/v1/fichier">');
+    expect(html).toContain('src="https://crm.test/api/video/v1"');
+    expect(html).toContain('width="480"');
+    // Le libellé devient l'alternative textuelle : la plupart des clients ne
+    // chargent pas les images par défaut, et le lien doit rester compréhensible.
+    expect(html).toContain('alt="Voir la démonstration en vidéo"');
+    // Le libellé n'apparaît plus comme texte : il a été remplacé par l'image.
+    expect(html).not.toContain(">Voir la démonstration en vidéo<");
+  });
+
+  it("ne porte aucun paramètre de suivi, aucun hôte tiers", () => {
+    const html = withVideoThumbnail(toHtml(BODY), VIDEO);
+    expect(html).not.toMatch(/[?&]utm_/);
+    expect(html).not.toMatch(/src="https?:\/\/(?!crm\.test)/);
+  });
+
+  it("n'incruste aucune surcouche : le triangle est dans les pixels", () => {
+    /*
+      Une surcouche positionnée par-dessus une image est ignorée par la moitié
+      des clients de messagerie — c'est la leçon du tableau de signature du
+      jalon 65, où `display:flex` ne survit pas au moteur de Word. Le badge est
+      donc composité dans la vignette au téléversement, et le message ne rend
+      qu'une seule balise.
+    */
+    const html = withVideoThumbnail(toHtml(BODY), VIDEO);
+    expect(html).not.toContain("position:absolute");
+    expect(html).not.toContain("display:flex");
+    expect((html.match(/<img/g) ?? []).length).toBe(1);
+  });
+
+  it("écrit l'adresse en entier dans la partie texte", () => {
+    const text = toPlainText(BODY, undefined, VIDEO);
+    expect(text).toContain(
+      "Voir la démonstration en vidéo : https://crm.test/api/video/v1/fichier",
+    );
+    expect(text).not.toContain("<img");
+    expect(text).not.toContain("<a ");
+  });
+
+  it("développe le lien de démonstration ET la vidéo, sans confondre les deux", () => {
+    const body = "Réserver un appel, ou bien Voir la démonstration en vidéo.";
+    const text = toPlainText(body, { label: "Réserver un appel", url: "https://cal.test/x" }, VIDEO);
+    expect(text).toContain("Réserver un appel : https://cal.test/x");
+    expect(text).toContain(
+      "Voir la démonstration en vidéo : https://crm.test/api/video/v1/fichier",
+    );
+  });
+
+  it("ne touche à rien sans vidéo réglée", () => {
+    const nu = toHtml(BODY);
+    expect(withVideoThumbnail(nu, undefined)).toBe(nu);
+    expect(toPlainText(BODY, undefined, undefined)).toBe(toPlainText(BODY));
+  });
+
+  it("ne rend rien d'à moitié : un lien incomplet laisse le texte tel quel", () => {
+    const nu = toHtml(BODY);
+    expect(withVideoThumbnail(nu, { ...VIDEO, posterUrl: "" })).toBe(nu);
+    expect(withVideoThumbnail(nu, { ...VIDEO, url: "" })).toBe(nu);
+  });
+
+  it("une seule occurrence, même si le libellé revient", () => {
+    const body = "Voir la démonstration en vidéo. Puis Voir la démonstration en vidéo.";
+    const html = withVideoThumbnail(toHtml(body), VIDEO);
+    expect((html.match(/<img/g) ?? []).length).toBe(1);
+  });
+
+  it("`toHtml` seul ne porte toujours aucune image — la règle du jalon 32", () => {
+    // La vignette est une décision d'envoi, posée à l'envoi, comme le logo et
+    // le pixel. Ce que le modèle écrit et ce qu'on relit reste du texte.
+    expect(toHtml(BODY)).not.toContain("<img");
+  });
+
+  it("le pixel reste la dernière chose du corps, après la vignette", () => {
+    /*
+      L'ordre à l'envoi est logo, vignette, pixel. Un client qui tronque un
+      message long coupe par la fin : le pixel en tête serait chargé sur un
+      message jamais déroulé (jalon 43).
+    */
+    const html = withTrackingPixel(
+      withVideoThumbnail(withSignatureLogo(toHtml(BODY), undefined), VIDEO),
+      "https://crm.test/api/t/abc",
+    );
+    const pixel = html.indexOf("/api/t/abc");
+    expect(pixel).toBeGreaterThan(html.indexOf("/api/video/v1"));
+    expect(html.slice(pixel)).toContain("</body>");
+    expect(html.endsWith("</body></html>")).toBe(true);
   });
 });

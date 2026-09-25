@@ -26,6 +26,7 @@
  * | `{prenom}` | retirée, et l'appel réparé par `repairGreeting` — « Bonjour, » |
  * | `{societe}` | **la phrase qui la porte est retirée** |
  * | `{site}` | idem |
+ * | `{video}` | idem — sans vidéo configurée, la phrase qui l'annonce disparaît |
  *
  * Retirer la phrase plutôt que la seule balise est le seul choix honnête pour
  * les deux dernières : une phrase construite autour d'un nom qu'on n'a pas ne
@@ -71,6 +72,12 @@ export const MERGE_TAGS: readonly MergeTag[] = [
     fallback:
       "site de la fiche, à défaut celui de la société, à défaut le domaine de l'adresse email ; sans rien, la phrase qui le cite est retirée",
   },
+  {
+    tag: "{video}",
+    label: "Vidéo",
+    fallback:
+      "libellé cliquable de la vidéo réglée dans /reglages → Messagerie ; sans vidéo configurée, la phrase qui l'annonce est retirée",
+  },
 ];
 
 export interface MergeValues {
@@ -78,6 +85,16 @@ export interface MergeValues {
   readonly societe: string;
   /** L'hôte seul : `dermoplant.com`. Résolu comme la cible de recherche. */
   readonly site: string;
+  /**
+   * **Le libellé de la vidéo, pas son adresse.**
+   *
+   * `{video}` se substitue comme `DemoLink` depuis le jalon 34 : le gabarit
+   * reçoit un texte, et la couche d'envoi en fait une vignette cliquable côté
+   * HTML et « Libellé : https://… » côté texte. Écrire l'adresse ici la
+   * rendrait nue dans les deux parties, et la vignette n'aurait plus de mot
+   * sur lequel s'accrocher. Vide = aucune vidéo réglée.
+   */
+  readonly video: string;
 }
 
 /** Les balises **du gabarit** qui n'auront pas de valeur pour ce contact. */
@@ -86,6 +103,7 @@ export function unresolvedTags(template: string, values: MergeValues): readonly 
   if (template.includes("{prenom}") && values.prenom.trim() === "") missing.push("{prenom}");
   if (template.includes("{societe}") && values.societe.trim() === "") missing.push("{societe}");
   if (template.includes("{site}") && values.site.trim() === "") missing.push("{site}");
+  if (template.includes("{video}") && values.video.trim() === "") missing.push("{video}");
   return missing;
 }
 
@@ -170,11 +188,16 @@ export function renderTemplate(template: string, values: MergeValues): string {
 
   if (values.societe.trim() === "") text = dropSentencesWith(text, "{societe}");
   if (values.site.trim() === "") text = dropSentencesWith(text, "{site}");
+  // Sans vidéo réglée, la phrase qui l'annonce part entièrement : « Voici une
+  // courte vidéo :  » laisserait un deux-points suspendu, et un lien mort
+  // coûterait plus que la phrase qu'il portait.
+  if (values.video.trim() === "") text = dropSentencesWith(text, "{video}");
 
   text = text
     .replaceAll("{prenom}", values.prenom.trim())
     .replaceAll("{societe}", values.societe.trim())
-    .replaceAll("{site}", values.site.trim());
+    .replaceAll("{site}", values.site.trim())
+    .replaceAll("{video}", values.video.trim());
 
   return tidy(text);
 }
@@ -191,7 +214,8 @@ export function renderSubject(template: string, values: MergeValues): string {
     template
       .replaceAll("{prenom}", values.prenom.trim())
       .replaceAll("{societe}", values.societe.trim())
-      .replaceAll("{site}", values.site.trim()),
+      .replaceAll("{site}", values.site.trim())
+      .replaceAll("{video}", values.video.trim()),
   )
     .split("\n")
     .join(" ")
