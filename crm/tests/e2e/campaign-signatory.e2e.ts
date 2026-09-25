@@ -58,6 +58,16 @@ describe.skipIf(skip)("le signataire d'une campagne, à l'écran", () => {
     session = await signIn(browser, PASSWORD ?? "");
     await session.page.goto(`${BASE_URL}/campagnes`, { waitUntil: "domcontentloaded" });
     await session.page.waitForTimeout(1000);
+
+    /*
+      **Depuis le jalon 88, la création commence par la voie.** Le nom et la
+      boîte d'envoi ne sont montés qu'une fois « Automatique » ou « Manuel »
+      choisi : demander la question du signataire avant celle de qui écrit
+      ferait deux premières questions. Ce test porte sur le second bloc, il
+      doit donc d'abord répondre à la première.
+    */
+    await session.page.getByRole("button", { name: /Automatique \(Alex\)/ }).first().click();
+    await session.page.waitForTimeout(300);
   }, 60_000);
 
   afterAll(async () => {
