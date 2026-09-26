@@ -4,6 +4,8 @@ import sharp from "sharp";
 import { prisma } from "../db";
 import {
   MAX_VIDEO_UPLOAD,
+  describeOversize,
+  describeVideoFormat,
   VIDEO_POSTER_HEIGHT,
   VIDEO_POSTER_WIDTH,
   posterWeight,
@@ -184,18 +186,12 @@ export async function storeMailVideo(input: StoreVideoInput): Promise<StoreVideo
   if (input.file !== undefined) {
     const mime = input.file.mime.toLowerCase().trim();
     if (!ACCEPTED_VIDEO.some((accepted) => accepted === mime)) {
-      return {
-        ok: false,
-        message: `Format vidéo non accepté (${input.file.mime}). Envoyez un MP4, un WebM ou un OGG — ce sont les seuls que tous les navigateurs lisent.`,
-      };
+      // La phrase vient du domaine : elle nomme la conversion pour un `.mov`,
+      // qui est l'export par défaut de la plupart des outils de motion design.
+      return { ok: false, message: describeVideoFormat(input.file.mime) };
     }
     if (input.file.bytes.byteLength > MAX_VIDEO_UPLOAD) {
-      const mo = (input.file.bytes.byteLength / (1024 * 1024)).toFixed(0);
-      const limite = (MAX_VIDEO_UPLOAD / (1024 * 1024)).toFixed(0);
-      return {
-        ok: false,
-        message: `Vidéo trop lourde (${mo} Mo). La limite est de ${limite} Mo : au-delà, hébergez-la et collez son adresse.`,
-      };
+      return { ok: false, message: describeOversize(input.file.bytes.byteLength) };
     }
   }
 
@@ -245,7 +241,13 @@ export async function storeMailVideo(input: StoreVideoInput): Promise<StoreVideo
     // laisserait deux destinations en base, et c'est toujours la seconde qui
     // finit par être lue.
     url: kind === "file" ? "" : url,
-    file: input.file === undefined ? null : Uint8Array.from(input.file.bytes),
+    /*
+      `new Uint8Array(buffer)` et non `Uint8Array.from(buffer)` : le second passe
+      par l'itérateur, donc élément par élément — acceptable pour les deux
+      kilo-octets d'un logo, absurde pour des dizaines de mégaoctets de vidéo.
+      Le constructeur, lui, recopie le bloc d'un coup.
+    */
+    file: input.file === undefined ? null : new Uint8Array(input.file.bytes),
     fileMime: input.file?.mime.toLowerCase().trim() ?? "",
     fileBytes: input.file?.bytes.byteLength ?? 0,
     poster: Uint8Array.from(poster),

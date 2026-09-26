@@ -126,8 +126,17 @@ describe.skipIf(skip)("la file du matin, jalon 84", () => {
     await session.page.waitForTimeout(1500);
 
     const panel = await session.page.innerText("body");
-    // Soit le plan chiffré, soit son empêchement nommé : jamais un silence.
-    expect(panel).toMatch(/seront réécrits sur .* campagne|La file est vide|week-end/i);
+    /*
+      Soit le plan chiffré, soit son empêchement nommé : jamais un silence.
+
+      « Samedi ou dimanche » fait partie des empêchements, et il manquait ici :
+      la recette du jalon 84 avait tourné un jour de semaine, si bien que ce test
+      tombait tous les week-ends sur un produit parfaitement correct. Une garde
+      qui dépend du jour où on la lance ne garde rien.
+    */
+    expect(panel).toMatch(
+      /seront réécrits sur .* campagne|La file est vide|week-end|Samedi ou dimanche/i,
+    );
 
     // Le plan ne dépense rien : aucun départ n'a bougé au simple affichage.
     const pending = await prisma.sequenceDeparture.count({

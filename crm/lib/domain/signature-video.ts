@@ -65,8 +65,114 @@ export const VIDEO_POSTER_HEIGHT = Math.round((VIDEO_POSTER_WIDTH * 9) / 16);
  */
 export const POSTER_WARN_BYTES = 120 * 1024;
 
-/** 200 Mo à l'entrée pour un fichier vidéo. Au-delà, l'héberger ailleurs. */
-export const MAX_VIDEO_UPLOAD = 200 * 1024 * 1024;
+/**
+ * Ce que le téléversement accepte, en octets.
+ *
+ * **24 Mo, et les 200 Mo annoncés au jalon 89 étaient une fiction.** Deux
+ * plafonds les rendaient inatteignables, et aucun des deux n'était le nôtre :
+ *
+ * 1. **Next tronque le corps de la requête à 10 Mo** dès qu'un middleware tourne
+ *    — et le nôtre tourne sur chaque requête, c'est le verrou d'espace de
+ *    travail du jalon 9. Le corps arrivait coupé, `request.formData()` ne
+ *    trouvait plus sa frontière de fin et levait ; notre propre contrôle de
+ *    poids n'était jamais atteint. `middlewareClientMaxBodySize` relève ce
+ *    plafond (voir `next.config.ts`), et il est réglé **au-dessus** de celui-ci
+ *    pour que le refus vienne toujours de nous, avec sa phrase, et jamais d'une
+ *    troncature muette ;
+ * 2. **tout est en mémoire, plusieurs fois.** Next met le corps en tampon pour
+ *    le middleware, `formData()` le matérialise, on en fait un `Buffer`, puis un
+ *    `Uint8Array` pour Prisma, qui le sérialise à son tour pour le fil. Un
+ *    fichier de 200 Mo demanderait près d'un gigaoctet de mémoire résidente sur
+ *    un conteneur qui n'en a pas.
+ *
+ * Et une troisième raison, qui n'est pas une limite mais une conséquence :
+ * `readVideoFile()` charge la ligne entière **à chaque requête**, y compris pour
+ * une plage d'octets. Héberger chez nous n'est raisonnable que pour un fichier
+ * modeste — ce que couvre largement une démonstration compressée en H.264, qui
+ * pèse de 5 à 20 Mo pour une minute en 1080p. Au-delà, l'adresse collée est la
+ * bonne voie, et l'écran le dit.
+ */
+export const MAX_VIDEO_UPLOAD = 24 * 1024 * 1024;
+
+/**
+ * Le plafond que le cadre applique au corps d'une requête, en octets.
+ *
+ * Il doit rester **strictement au-dessus** de `MAX_VIDEO_UPLOAD` : c'est ce qui
+ * garantit qu'un fichier trop lourd est refusé par une phrase à nous plutôt que
+ * par une troncature qui lève une erreur de parseur. La marge couvre l'enveloppe
+ * multipart — frontières, en-têtes de parties, la vignette éventuelle — qui
+ * s'ajoute au fichier lui-même. Un test fige l'ordre des deux valeurs.
+ */
+export const REQUEST_BODY_LIMIT = 32 * 1024 * 1024;
+
+/** « 24 Mo », « 1,5 Mo » — un poids dit comme on le lit. */
+export function describeSize(bytes: number): string {
+  const mo = bytes / (1024 * 1024);
+  return `${mo >= 10 ? mo.toFixed(0) : mo.toFixed(1).replace(".", ",")} Mo`;
+}
+
+/**
+ * Le refus d'un fichier trop lourd, **et ce qu'il faut faire à la place**.
+ *
+ * Un refus qui se contente de nommer la limite laisse devant un mur : celui-ci
+ * nomme les deux issues réelles, dans l'ordre de ce qui coûte le moins à la
+ * personne. C'est la discipline du bouton d'essai SMTP (jalon 32) et de la carte
+ * de recherche (jalon 74) — nommer la cause, dire le geste.
+ */
+export function describeOversize(bytes: number): string {
+  return (
+    `Vidéo trop lourde : ${describeSize(bytes)} pour une limite de ` +
+    `${describeSize(MAX_VIDEO_UPLOAD)}. Deux façons d'avancer : ` +
+    "héberger la vidéo (YouTube en non répertorié, Vimeo) et coller son adresse ici — " +
+    "c'est immédiat et sans limite de taille ; ou réexporter le fichier en MP4 H.264, " +
+    "1080p, autour de 4 Mbit/s, ce qui ramène une minute de motion design à quelques " +
+    "mégaoctets sans perte visible."
+  );
+}
+
+/**
+ * Le refus d'un format que les navigateurs ne liront pas, **avec la conversion**.
+ *
+ * `.mov` mérite sa propre phrase : c'est le format d'export par défaut de la
+ * plupart des outils de motion design, souvent en ProRes — donc à la fois le plus
+ * fréquent, le plus lourd et le moins lisible en ligne. Dire « format non
+ * accepté » à quelqu'un qui vient d'exporter depuis After Effects ne lui apprend
+ * rien ; dire « réexportez en MP4 » lui donne le geste.
+ */
+export function describeVideoFormat(mime: string): string {
+  const clean = mime.trim() === "" ? "inconnu" : mime.trim();
+  if (/quicktime|x-msvideo|x-matroska|mpeg|avi|prores/i.test(clean)) {
+    return (
+      `Format vidéo non lisible par les navigateurs (${clean}). Réexportez en MP4 ` +
+      "(H.264 + AAC) : c'est le seul format que tous les clients et tous les " +
+      "navigateurs jouent, et il divise le poids d'un ProRes par dix ou plus."
+    );
+  }
+  return (
+    `Format vidéo non accepté (${clean}). Envoyez un MP4 (H.264, recommandé), ` +
+    "un WebM ou un OGG — ce sont les seuls que tous les navigateurs lisent."
+  );
+}
+
+/**
+ * Le refus d'un corps de requête illisible, **avec la cause probable nommée**.
+ *
+ * C'est le message que le jalon 89 ne disait pas. `request.formData()` lève sur
+ * un corps tronqué, et la seule chose qu'on en voyait était
+ * « Le serveur n'a pas pu traiter la demande. » — un mur qui ne distingue pas un
+ * fichier trop gros d'une panne de base. Comme le contrôle de poids a désormais
+ * lieu **avant** sur l'en-tête `Content-Length`, arriver ici veut dire qu'un
+ * intermédiaire a coupé le corps : c'est ce qu'on dit, plutôt que rien.
+ */
+export function describeBodyFailure(declared: number | null): string {
+  const taille = declared === null ? "" : ` (${describeSize(declared)} annoncés)`;
+  return (
+    `Le fichier envoyé${taille} n'est pas arrivé en entier : le corps de la requête ` +
+    "a été coupé en route, et il ne peut plus être relu. Si le fichier approche la " +
+    `limite de ${describeSize(MAX_VIDEO_UPLOAD)}, réexportez-le plus léger ; sinon ` +
+    "réessayez, et si le refus persiste, hébergez la vidéo et collez son adresse."
+  );
+}
 
 export const VIDEO_KINDS = ["hosted", "file"] as const;
 export type VideoKind = (typeof VIDEO_KINDS)[number];

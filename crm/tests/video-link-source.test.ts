@@ -1,6 +1,12 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  MAX_VIDEO_UPLOAD,
+  REQUEST_BODY_LIMIT,
+  describeOversize,
+  describeSize,
+} from "../lib/domain/signature-video";
 
 /**
  * **La vidéo est hébergée, et la vignette est la nôtre.**
@@ -164,5 +170,55 @@ describe("un seul rendu, une seule substitution", () => {
     expect(html, "la vignette doit envelopper le logo, pas l'inverse").toBe(true);
     // Le pixel reste la toute dernière chose du corps (jalon 43).
     expect(mail).toMatch(/html: withTrackingPixel\(html/);
+  });
+});
+
+describe("le refus vient de nous, avec sa phrase", () => {
+  /*
+    Le défaut mesuré : `MAX_VIDEO_UPLOAD` valait 200 Mo, une valeur que Next
+    rendait inatteignable en tronquant le corps à 10 Mo — parce que notre propre
+    middleware existe et que Next doit pouvoir lui passer le corps. Au-delà,
+    `request.formData()` levait `TypeError: Failed to parse body as FormData`,
+    `serverError` aplatissait le tout en « Le serveur n'a pas pu traiter la
+    demande. », et le contrôle de poids de la route n'était jamais atteint : il
+    lisait `file.size`, qui n'existe qu'**après** l'analyse qui venait d'échouer.
+
+    Trois invariants ferment ce chemin, et aucun des trois ne se voit à la
+    relecture : deux nombres dans le bon ordre, un contrôle avant un autre, et
+    une valeur de configuration lue plutôt que recopiée.
+  */
+
+  it("le plafond du cadre reste au-dessus de ce que nous acceptons", () => {
+    expect(REQUEST_BODY_LIMIT).toBeGreaterThan(MAX_VIDEO_UPLOAD);
+  });
+
+  it("`next.config.ts` lit la limite du domaine plutôt que de la recopier", () => {
+    const config = codeOf("next.config.ts");
+    expect(config).toMatch(/import \{ REQUEST_BODY_LIMIT \} from "\.\/lib\/domain\/signature-video"/);
+    expect(config).toMatch(/middlewareClientMaxBodySize: REQUEST_BODY_LIMIT/);
+  });
+
+  it("le poids est contrôlé sur l'en-tête, avant de toucher au corps", () => {
+    const route = codeOf("app/api/mail/video/route.ts");
+    const contentLength = route.indexOf('headers.get("content-length")');
+    const formData = route.indexOf("request.formData()");
+    expect(contentLength, "le contrôle sur `Content-Length` doit exister").toBeGreaterThan(-1);
+    expect(
+      contentLength < formData,
+      "lire `file.size` après `formData()` place le contrôle après la panne qu'il doit expliquer",
+    ).toBe(true);
+  });
+
+  it("un corps illisible rend une cause, jamais un 500 muet", () => {
+    const route = codeOf("app/api/mail/video/route.ts");
+    expect(route).toMatch(/catch[\s\S]{0,200}describeBodyFailure/);
+  });
+
+  it("le refus dit le poids, la limite et le geste à faire", () => {
+    const message = describeOversize(30 * 1024 * 1024);
+    expect(message).toContain("30 Mo");
+    expect(message).toContain(describeSize(MAX_VIDEO_UPLOAD));
+    // Actionnable : on ne laisse pas devant un mur.
+    expect(message).toMatch(/MP4|H\.264/);
   });
 });

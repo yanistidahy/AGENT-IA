@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 90 | **Le téléversement de vidéo échouait en 500 muet** : Next tronquait le corps à 10 Mo à cause de notre propre middleware ; limite honnête de 24 Mo, contrôle avant lecture, et un refus qui dit le poids, la limite et le geste | **livré, à valider** |
 | 89 | **La vidéo entre dans les étapes manuelles, hébergée** : une balise `{video}` qui rend une vignette cliquable en HTML et l'adresse en entier en texte, servie depuis notre domaine, sans pièce jointe et sans traceur | **livré, à valider** |
 | 88 | **La voie avant le formulaire, la file en cartes** : « Automatique (Alex) » ou « Manuel » choisi à la création avant tout éditeur d'étape ; « Départs du jour » regroupé par campagne, une carte bornée par départ, les actions sous un filet | **livré, à valider** |
 | 87 | **Une étape écrite à la main** : objet et message tapés soi-même, trois balises remplacées à la composition sans appel au modèle, aperçu en direct sur un contact réel ; plus « Vider les départs » | **livré, à valider** |
@@ -12387,6 +12388,138 @@ mails » (jalon 70).
 
 **Les chiffres ci-dessus viennent d'un semis de vérification**, pas de votre
 base.
+
+---
+
+## Jalon 90 — « Le serveur n'a pas pu traiter la demande. » avait une cause
+
+### La cause, nommée par reproduction
+
+Le modèle de la demande arrivait sans le message de console ni la taille du
+fichier : je l'ai donc reproduit plutôt que deviné, par la route réelle, contre
+le serveur standalone de production.
+
+| Fichier téléversé | Avant |
+|---|---|
+| 1 Mo | 200 |
+| **20 Mo** | **500 en 0,35 s** |
+| 60 Mo | 500 |
+
+Le journal du serveur, lui, disait tout :
+
+```
+Request body exceeded 10MB for /api/mail/video
+TypeError: Failed to parse body as FormData
+```
+
+**`experimental.middlewareClientMaxBodySize` vaut 10 Mo par défaut, et c'est
+notre propre middleware qui l'impose.** Dès qu'un middleware existe, Next doit
+pouvoir lui passer le corps de la requête : il le met donc en tampon, avec un
+plafond (`node_modules/next/dist/server/next-server.js:1320`,
+`getCloneableBody(req.originalRequest, bodySizeLimit)`). Le nôtre tourne sur
+chaque requête — c'est le verrou d'espace de travail du jalon 9, et « tout est
+privé par défaut » n'est pas négociable. Au-delà de 10 Mo le corps arrivait donc
+**coupé**, `request.formData()` ne trouvait plus sa frontière de fin, levait, et
+`serverError` aplatissait le tout en une phrase générique.
+
+**Deux défauts de notre côté, et ils se cumulaient :**
+
+1. **`MAX_VIDEO_UPLOAD` valait 200 Mo — une fiction.** La valeur était
+   inatteignable de 190 Mo, et rien ne le disait : ni le panneau, ni le code, ni
+   un test ;
+2. **le contrôle de poids arrivait après la panne qu'il devait expliquer.** Il
+   lisait `file.size`, qui n'existe qu'**après** `request.formData()` — c'est-à-dire
+   après l'analyse qui échoue précisément quand le fichier est trop gros.
+
+### Ce qui change
+
+| | Avant | Après |
+|---|---|---|
+| limite annoncée | 200 Mo, inatteignable | **24 Mo**, tenue |
+| plafond du cadre | 10 Mo par défaut, muet | `REQUEST_BODY_LIMIT` = **32 Mo**, lu depuis le domaine |
+| où le poids est lu | `file.size`, après `formData()` | **`Content-Length`, avant de toucher au corps** |
+| corps illisible | 500 générique | 400 qui nomme la troncature probable |
+| format refusé | « format non lisible » | + « Réexportez en MP4 (H.264 + AAC) […] divise le poids d'un ProRes par dix » |
+| le panneau | « 200 Mo au plus » | la limite réelle, et les deux issues |
+
+**Les 24 Mo ne sont pas un chiffre rond choisi au hasard**, et le code dit
+pourquoi : le corps est en mémoire **cinq fois** sur le chemin d'un téléversement
+(tampon du middleware, `formData`, `Buffer`, `Uint8Array`, sérialisation Prisma),
+et `readVideoFile()` charge la ligne entière **à chaque requête**, y compris pour
+une plage d'octets. Héberger chez nous n'est raisonnable que pour un fichier
+modeste — ce que couvre largement une minute de motion design en H.264 1080p,
+soit 5 à 20 Mo. Au-delà, l'adresse collée est la bonne voie, et l'écran le dit
+au lieu de laisser essayer.
+
+**`REQUEST_BODY_LIMIT` doit rester strictement au-dessus de `MAX_VIDEO_UPLOAD`,
+et un test le fige.** C'est ce qui garantit que le refus vient **de nous**, avec
+sa phrase et son geste, plutôt que d'une troncature silencieuse. La marge couvre
+l'enveloppe multipart, qui s'ajoute au fichier. Le plafond porte sur **toutes**
+les routes — c'est le prix d'un tampon partagé, et la raison de ne pas le pousser
+plus haut que nécessaire : chaque requête peut désormais coûter cette mémoire.
+
+### Le refus dit le geste, pas seulement la limite
+
+> **Vidéo trop lourde : 30 Mo pour une limite de 24 Mo.** Deux façons d'avancer :
+> héberger la vidéo (YouTube en non répertorié, Vimeo) et coller son adresse ici
+> — c'est immédiat et sans limite de taille ; ou réexporter le fichier en MP4
+> H.264, 1080p, autour de 4 Mbit/s, ce qui ramène une minute de motion design à
+> quelques mégaoctets sans perte visible.
+
+C'est la discipline du bouton d'essai SMTP (jalon 32) et de la carte de recherche
+(jalon 74) : nommer la cause, dire le geste. Les deux issues sont données dans
+l'ordre de ce qui coûte le moins à la personne.
+
+### Jalon 90 — ce qui est vérifié
+
+Contre un vrai PostgreSQL 16 (`migrate diff` **vide** — aucune migration) et le
+serveur standalone de production **rebâti** (`next.config.ts` a changé), par la
+route réelle avec une session :
+
+| Fichier | Résultat |
+|---|---|
+| **20 Mo, `video/mp4`** | **200 en 2,9 s** — vignette engendrée de 2,5 Ko, `fileBytes: 20971520` |
+| **30 Mo, `video/mp4`** | **400** — « Vidéo trop lourde : 30 Mo pour une limite de 24 Mo… » |
+| **2 Mo, `video/quicktime`** | **400** — « Réexportez en MP4 (H.264 + AAC)… » |
+
+- **zéro** occurrence de `Failed to parse body as FormData` ou de
+  `Request body exceeded` dans le journal du serveur après les trois essais ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1521 tests**) et
+  `npm run e2e` (**77 tests**) verts.
+
+`tests/video-link-source.test.ts` gagne cinq invariants : les deux nombres dans
+le bon ordre, `next.config.ts` qui **lit** la limite du domaine plutôt que de la
+recopier, le contrôle sur `Content-Length` **avant** `formData()`, le corps
+illisible rendu avec sa cause, et le refus qui contient le poids, la limite et le
+geste. **Éprouvés en réintroduisant les deux défauts exacts** — plafond du cadre
+ramené sous la limite, et valeur recopiée en dur dans la configuration : deux
+tests tombent, chacun nommant le défaut.
+
+**Une fragilité de test corrigée au passage, et elle n'était pas un défaut
+produit** : la recette e2e du jalon 84 exigeait le mot « week-end » dans
+l'empêchement de « Réécrire tous les départs », alors que le produit écrit
+« Samedi ou dimanche : rien n'est composé ». Écrite un jour de semaine, elle
+tombait **tous les week-ends** sur un produit correct — et ce jalon est livré un
+samedi. Une garde qui dépend du jour où on la lance ne garde rien.
+
+### Jalon 90 — ce qui n'est pas vérifié
+
+**Le proxy de Railway applique ses propres limites, que ce code ne connaît
+pas.** Un intermédiaire peut couper un corps avant même que Next le voie : c'est
+exactement le cas que `describeBodyFailure` couvre — il nomme la troncature
+probable au lieu de laisser remonter un 500. Si un téléversement de 20 Mo échoue
+en production avec cette phrase alors qu'il passe ici, c'est le proxy qu'il faut
+regarder, et la réponse le dira.
+
+**Les 24 Mo n'ont pas été éprouvés sur un vrai fichier de motion design.** Le
+fichier de 20 Mo de la recette est de l'aléatoire portant le type `video/mp4` :
+ce qui est vérifié, c'est qu'il traverse le cadre, qu'il est stocké et qu'une
+vignette est composée — pas qu'un vrai export se lise dans un navigateur (dette
+du jalon 89, et il n'y a toujours aucun décodeur ici).
+
+**Rien n'a changé pour la vidéo déjà réglée.** Aucune migration, aucune reprise :
+une vidéo posée avant ce correctif reste servie à l'identique.
+
 
 ---
 
