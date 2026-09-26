@@ -1,7 +1,11 @@
 import { badRequest, jsonOk, serverError } from "@/lib/api/errors";
 import { deleteMailVideo, storeMailVideo } from "@/lib/api/mail-video";
 import { readVideoPanelState } from "@/lib/api/video-panel";
-import { MAX_VIDEO_UPLOAD } from "@/lib/domain/signature-video";
+import {
+  MAX_VIDEO_UPLOAD,
+  describeBodyFailure,
+  describeOversize,
+} from "@/lib/domain/signature-video";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -31,7 +35,40 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const form = await request.formData();
+    /*
+      **Le poids se lit sur l'en-tête, avant de toucher au corps.**
+
+      C'était le défaut de la première version : elle lisait `file.size`, qui
+      n'existe qu'**après** `request.formData()`. Or c'est précisément cette
+      analyse qui échoue quand le fichier est trop gros — le cadre a tronqué le
+      corps, la frontière de fin manque, et le parseur lève. Le contrôle arrivait
+      donc après la panne qu'il devait expliquer, et l'écran ne montrait qu'un
+      500 muet.
+
+      `Content-Length` est disponible avant toute lecture, il porte l'enveloppe
+      multipart entière, et il suffit à rendre un refus qui nomme le poids réel et
+      le geste à faire.
+    */
+    const declared = Number(request.headers.get("content-length") ?? "");
+    const length = Number.isFinite(declared) ? declared : null;
+    if (length !== null && length > MAX_VIDEO_UPLOAD) {
+      return badRequest(describeOversize(length));
+    }
+
+    /*
+      Le corps peut encore être illisible : requête sans `Content-Length`
+      (transfert par morceaux), ou coupée par un intermédiaire — le proxy d'un
+      hébergeur applique ses propres limites, que ce code ne connaît pas. On dit
+      alors la cause probable plutôt que de laisser remonter un 500 générique.
+    */
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch (error) {
+      console.error("[api] POST /api/mail/video — corps illisible", error);
+      return badRequest(describeBodyFailure(length));
+    }
+
     const kind = String(form.get("kind") ?? "hosted");
     const url = String(form.get("url") ?? "");
     const label = String(form.get("label") ?? "");
@@ -39,15 +76,11 @@ export async function POST(request: Request) {
     const file = form.get("fichier");
     const poster = form.get("vignette");
 
-    // Le poids est vérifié sur l'en-tête **avant** lecture en mémoire : accepter
-    // un fichier de deux gigaoctets pour le refuser ensuite saturerait le
-    // conteneur, dont le disque est une allocation fixe.
+    // Second filet, sur la taille réelle du fichier : une requête sans
+    // `Content-Length` a traversé le contrôle précédent, et un multipart peut
+    // porter plusieurs parties. Même phrase, une seule définition.
     if (file instanceof File && file.size > MAX_VIDEO_UPLOAD) {
-      const mo = (file.size / (1024 * 1024)).toFixed(0);
-      const limite = (MAX_VIDEO_UPLOAD / (1024 * 1024)).toFixed(0);
-      return badRequest(
-        `Vidéo trop lourde (${mo} Mo). La limite est de ${limite} Mo : au-delà, hébergez-la et collez son adresse.`,
-      );
+      return badRequest(describeOversize(file.size));
     }
 
     const stored = await storeMailVideo({

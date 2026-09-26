@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import {
-  MAX_VIDEO_UPLOAD,
   VIDEO_POSTER_WIDTH,
+  describeSize,
+  MAX_VIDEO_UPLOAD,
   type VideoKind,
 } from "@/lib/domain/signature-video";
 
@@ -102,7 +103,7 @@ export function VideoPanel({ initial }: { readonly initial: VideoState }) {
     await call({ method: "POST", body: form });
   };
 
-  const mo = (MAX_VIDEO_UPLOAD / (1024 * 1024)).toFixed(0);
+  const limite = describeSize(MAX_VIDEO_UPLOAD);
 
   return (
     <section className="rounded-card border border-line bg-surface p-4 shadow-card">
@@ -127,7 +128,7 @@ export function VideoPanel({ initial }: { readonly initial: VideoState }) {
               {
                 value: "file" as VideoKind,
                 title: "Chez nous",
-                body: `Vous téléversez le fichier (${mo} Mo au plus). Le clic reste sur notre domaine, rien ne part chez un tiers.`,
+                body: `Vous téléversez le fichier, ${limite} au plus. Le clic reste sur notre domaine, rien ne part chez un tiers. Un export MP4 H.264 en 1080p tient largement dans cette limite ; un ProRes ou un .mov d'export brut la dépasse toujours.`,
               },
               {
                 value: "hosted" as VideoKind,
@@ -182,6 +183,14 @@ export function VideoPanel({ initial }: { readonly initial: VideoState }) {
             onChange={(event) => setFile(event.target.files?.[0] ?? null)}
             className="min-h-[44px] w-full text-[12.5px] lg:min-h-0"
           />
+          <span className="mt-1 block text-[12px] text-muted">
+            MP4 (H.264), WebM ou OGG, <strong>{limite} au plus</strong>. Un{" "}
+            <code className="font-mono text-[11.5px]">.mov</code> d'export — le défaut de la
+            plupart des outils de motion design — n'est ni accepté ni lisible par les
+            navigateurs : réexportez-le en MP4, ce qui divise aussi son poids par dix ou plus.
+            Au-delà de la limite, hébergez la vidéo et collez son adresse : c'est immédiat et
+            sans limite de taille.
+          </span>
         </label>
       )}
 
