@@ -88,11 +88,21 @@ describe.skipIf(skip)("l'écran Tâches se pilote au clic", () => {
       await page.waitForTimeout(300);
 
       const shown = await page.locator("main article").count();
+      if (Number.isNaN(badge)) continue;
+      /*
+        **La plage de pagination ne se lit que s'il y a des lignes.** Un onglet
+        vide ne rend aucune barre de pagination — c'est correct — et lire son
+        libellé d'abord faisait échouer ce test sur un onglet légitimement vide,
+        selon l'état de la base du jour. Une garde qui dépend du contenu de la
+        base ne garde rien.
+      */
+      if (badge === 0) {
+        expect(shown).toBe(0);
+        continue;
+      }
       const range = (await page.locator("main nav span.font-mono").first().textContent()) ?? "";
       const total = Number.parseInt(range.split("de").pop()?.trim() ?? "0", 10);
-      if (Number.isNaN(badge)) continue;
-      if (badge === 0) expect(shown).toBe(0);
-      else expect(total, `onglet ${label} : pastille ${badge}`).toBe(badge);
+      expect(total, `onglet ${label} : pastille ${badge}`).toBe(badge);
     }
     expect(current.errors).toEqual([]);
   }, 90_000);

@@ -5,6 +5,7 @@ import { purgeOpens } from "@/lib/api/email-sends";
 import { composeDepartures } from "@/lib/api/departures";
 import { prisma } from "@/lib/db";
 import { jsonOk, serverError } from "@/lib/api/errors";
+import { ensureAutoSendLoop } from "@/lib/api/auto-send-loop";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -26,6 +27,11 @@ export async function POST(request: Request) {
   if (!cronAuthorised(request)) return cronDenied();
 
   try {
+    // **Le filet de l'ordonnanceur.** Si personne n'a ouvert le CRM depuis le
+    // dernier démarrage, la boucle d'envoi automatique n'est pas armée : ce
+    // passage la relance chaque matin, avant la fenêtre d'envoi.
+    ensureAutoSendLoop();
+
     const snapshot = await takeSnapshot();
 
     // **La purge des ouvertures est une obligation, pas une commodité** : une

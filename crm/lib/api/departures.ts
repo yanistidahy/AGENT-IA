@@ -1,6 +1,7 @@
 import "server-only";
 import { describeEcho, echoOf } from "../domain/follow-up-echo";
 import { storedTarget } from "../domain/research-target";
+import type { SendMode } from "../domain/auto-send";
 import {
   describeUngrounded,
   isStaleAt,
@@ -403,7 +404,7 @@ export async function composeDepartures(
     // d'être vrai après qu'on a coché la case.
     const unlock = await unlockOf(enrollment.sequenceId);
     if (canSendAutomatically(verdict.step, enrollment.sequence.autoMode, unlock)) {
-      const outcome = await sendDeparture(departure.id, true, now);
+      const outcome = await sendDeparture(departure.id, "compose", now);
       if (outcome.ok) sentAutomatically += 1;
     }
   }
@@ -863,9 +864,13 @@ export type DepartureOutcome =
  */
 export async function sendDeparture(
   id: string,
-  auto: boolean,
+  mode: SendMode,
   now = new Date(),
 ): Promise<DepartureOutcome> {
+  // `auto` en base garde son sens : « ce départ n'a pas été validé à la main ».
+  // C'est lui que compte le double verrou du jalon 38, et le gonfler avec les
+  // envois de l'ordonnanceur ferait qu'une séquence se déverrouille toute seule.
+  const auto = mode !== "human";
   const departure = await prisma.sequenceDeparture.findUnique({
     where: { id },
     include: {
@@ -930,7 +935,7 @@ export async function sendDeparture(
     // week-end protège l'automate d'un brouillon périmé et d'une réponse non
     // relevée ; appliquée à une personne qui regarde la carte, elle refusait
     // l'envoi en silence. Tous les autres garde-fous valent dans les deux cas.
-    auto ? "machine" : "human",
+    mode === "human" ? "human" : "machine",
   );
 
   if (!verdict.ok || verdict.step !== departure.step) {
@@ -965,7 +970,7 @@ export async function sendDeparture(
     return { ok: false, message: reason };
   }
 
-  if (auto && !canSendAutomatically(verdict.step, enrollment.sequence.autoMode, await unlockOf(enrollment.sequenceId))) {
+  if (mode === "compose" && !canSendAutomatically(verdict.step, enrollment.sequence.autoMode, await unlockOf(enrollment.sequenceId))) {
     return { ok: false, message: "Ce départ demande une validation à la main." };
   }
 

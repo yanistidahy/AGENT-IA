@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 93 | **L'envoi automatique tient la cadence** : une boucle en processus qui bat toutes les 5 s, un créneau réclamé par un `updateMany` conditionné — donc un verrou que deux instances ne peuvent pas partager —, une fenêtre 9 h – 17 h à Paris en jours ouvrés, une gigue de ±30 %, et trois échecs d'affilée qui coupent l'interrupteur en nommant la cause | **livré, à valider** |
 | 92 | **L'écran Tâches rangé en onglets** : six prédicats calculés à la lecture, une pastille qui ne peut pas contredire sa liste, un onglet enregistré par « + », un mode focus qui envoie par la route des départs, et le clic sur nos liens enfin compté parce que l'ouverture du pixel ne qualifie personne | **livré, à valider** |
 | 91 | **« Envoyer » refusait en silence** : la règle du week-end s'appliquait au clic d'un humain, la lecture de messagerie jugeait la mauvaise boîte, et le refus s'affichait hors du champ de vision ; le verdict se rend désormais sur la carte cliquée, le départ y reste, et l'envoi manuel n'appelle jamais le modèle | **livré, à valider** |
 | 90 | **Le téléversement de vidéo échouait en 500 muet** : Next tronquait le corps à 10 Mo à cause de notre propre middleware ; limite honnête de 24 Mo, contrôle avant lecture, et un refus qui dit le poids, la limite et le geste | **livré, à valider** |
@@ -13037,3 +13038,216 @@ c'est une étiquette humaine, pas une clé (même choix qu'au jalon 79).
 première pastille « Prospects chauds » en production ne comptera que des clics
 postérieurs à ce déploiement : rien ne rattrape les clics qui n'ont jamais été
 mesurés.
+
+---
+
+## Jalon 93 — l'envoi automatique, et l'ordonnanceur qui le porte
+
+### 1 · L'inventaire de l'envoi automatique demandé « toutes les 5 min »
+
+Ce qui existait, fichier par fichier, avant ce jalon :
+
+| Ce qui existe | Où | Est-ce que ça tourne ? |
+|---|---|---|
+| mode automatique par séquence, à double verrou (20 départs validés à la main **et** une réponse obtenue, jamais la première étape) | `lib/domain/sequence-rules.ts` — `autoAllowedForStep`, `autoUnlock`, `canSendAutomatically` | **non** : CLAUDE.md le dit depuis le jalon 38, « le mode automatique n'a jamais tourné » |
+| l'envoi automatique lui-même, **déjà par `sendDeparture`** | `lib/api/departures.ts:406`, appelé depuis `composeDepartures` | oui, mais **enchaîné à la composition**, sans aucun espacement |
+| l'espacement entre deux envois | `lib/domain/send-rate.ts` — `spacingSeconds`, 120–300 s | **écrit, testé, jamais appelé** — dette reconnue au jalon 38 |
+| les seuls planificateurs | `.github/workflows/auraflow-daily.yml` (`0 5 * * *`), `auraflow-inbox.yml` (`*/15 * * * *`) | oui, mais quotidien et quart-horaire |
+
+**Conclusion : le « toutes les 5 min entre 9 h et 17 h » n'a jamais été
+construit.** Il n'existe dans le dépôt ni fenêtre d'envoi, ni intervalle, ni
+boucle, ni réglage, ni table. Ce qui existait, c'est la moitié qui compte : **le
+chemin d'envoi**, et il est repris tel quel plutôt que doublé — `sendDeparture`
+reste la seule fonction qui envoie, avec ses refus nommés (jalon 91), sa
+résolution de boîte et ses zéro appel au modèle. Le double verrou par séquence,
+les plafonds de débit et la règle du week-end sont conservés ; seul
+l'**instant** est nouveau.
+
+### 2 · Ce qui porte la cadence, et pourquoi ce n'est pas GitHub Actions
+
+`cron` de GitHub ne descend pas sous cinq minutes et arrive souvent en retard :
+il ne peut pas porter 3 min 30. La cadence est donc tenue par une **boucle en
+processus** (`lib/api/auto-send-loop.ts`), et les trois conséquences sont
+écrites plutôt que découvertes :
+
+1. **elle meurt avec le processus** — sans conséquence, parce que l'échéance vit
+   en base : le successeur reprend exactement où elle en était ;
+2. **deux instances la lancent toutes les deux** — le verrou est **la ligne**,
+   pas la boucle (voir ci-dessous) ;
+3. **ce n'est pas un planificateur de précision** — elle bat toutes les cinq
+   secondes, donc un envoi part au plus tard une période après son échéance.
+   Mesuré, pas supposé : voir la recette.
+
+**Elle ne démarre pas depuis `instrumentation.ts`, et c'est un fait mesuré, pas
+une préférence.** Next compile `instrumentation.ts` pour le runtime **Edge**
+aussi ; un garde sur `NEXT_RUNTIME` est une condition d'exécution, pas de
+compilation. La chaîne `auto-send → departures → email-send` y fait entrer
+`imapflow`, `nodemailer` et `sharp`, qui appellent `stream`, `net` et
+`child_process` — absents du bundle Edge, et le build échoue.
+`serverExternalPackages` ne les en sort pas : il ne porte que sur le bundle
+serveur (vérifié en l'essayant).
+
+La boucle est donc armée par `ensureAutoSendLoop()`, idempotent, appelé par
+trois modules qui tournent forcément en Node : la page « Départs du jour », la
+route de réglage, et le passage quotidien. **Conséquence assumée : elle démarre
+à la première requête serveur qui suit un démarrage.** En pratique c'est le
+geste même d'armer l'interrupteur qui la lance, et le passage quotidien la
+relance chaque matin si personne n'a rien ouvert.
+
+### 3 · Le verrou est la ligne, pas une vérification
+
+Réclamer un créneau est un `updateMany` conditionné sur l'échéance :
+
+```ts
+await prisma.autoSend.updateMany({
+  where: { id: "singleton", enabled: true, dueAt: { lte: now } },
+  data: { dueAt: nextSlot(now, settings, random), lastSendAt: now },
+});
+// count === 1 : c'est nous qui l'avons pris.
+```
+
+C'est atomique : deux instances, ou une instance et sa remplaçante pendant un
+redéploiement, **ne peuvent pas obtenir toutes les deux `count: 1`**. Une
+vérification applicative — lire puis écrire — serait contournable par la course
+qu'elle prétend empêcher (jalon 8). Et c'est ce qui donne la reprise après
+redémarrage sans rien de plus.
+
+`AutoSend` est une **ligne unique** qui porte les réglages *et* l'état, et ce
+mélange est délibéré : c'est parce que la ligne est l'état qu'elle peut être le
+verrou.
+
+### 4 · Ce que le panneau dit, et ce qu'il refuse de taire
+
+La phrase est composée par le domaine (`describePlan`), jamais par l'écran :
+quatre situations, et elles n'appellent pas le même geste — arrêté (corriger la
+cause), éteint, en retard (l'ordonnanceur ne tourne pas), hors fenêtre
+(attendre).
+
+- **actif** : « Envoi automatique actif : prochain mail vers 10 h 42 à Marie
+  Dupont (Maison Lune), 11 restants, fin estimée vers 11 h 20. » ;
+- **hors fenêtre** : « Reprendra lundi à 09 h 00, 4 départs en attente. » ;
+- **en retard** au-delà de **deux fois l'intervalle** : il le dit platement
+  plutôt que d'annoncer une heure déjà dépassée ;
+- **arrêté** : la cause passe devant tout le reste.
+
+**Un départ retiré de la file par l'ordonnanceur est nommé sous la phrase**, avec
+son motif — « Nina R933 — retiré de la file : Le contact a répondu ». Il quitte
+la file, c'est la règle du jalon 91 et elle est juste ; mais un envoi qui n'a pas
+eu lieu ne doit se lire nulle part ailleurs que sur cet écran.
+
+**La fin estimée compte l'intervalle nominal, sans gigue** : la gigue est
+symétrique, donc sa moyenne est l'intervalle, et l'ajouter ne rendrait pas
+l'estimation plus juste. Les fermetures de fenêtre, elles, comptent — une file
+de deux cents départs finit demain, et le dire est tout l'intérêt du chiffre.
+
+### 5 · Trois décisions de domaine
+
+**L'heure de Paris est lue par `Intl`, jamais calculée.** Le serveur tourne en
+UTC : `getDay()` et `getHours()` y décrivent une autre journée, et un décalage
+saisonnier codé en dur serait faux la moitié de l'année.
+
+**La règle du week-end s'applique à l'ordonnanceur, pas au clic.**
+`sendDeparture` prend désormais un mode à **trois valeurs** — `"human"`,
+`"compose"`, `"scheduler"` — là où un booléen n'en portait que deux. `"human"`
+échappe au week-end (jalon 91) ; `"scheduler"` non. Et le **double verrou par
+séquence ne vaut que pour `"compose"`** : l'exiger de l'ordonnanceur rendrait la
+fonctionnalité morte-née sur toute campagne manuelle, qui n'atteindra jamais ses
+vingt départs validés à la main. `auto` en base garde son sens — « pas validé à
+la main » — donc le compteur du double verrou ne peut pas être gonflé par la
+machine.
+
+**Un intervalle sous la minute est refusé, jamais relevé en silence** : une
+cadence qu'on croit avoir et qu'on n'a pas est pire qu'un refus.
+
+**Trois échecs d'affilée coupent l'interrupteur** — trois plutôt qu'un, parce
+qu'une coupure réseau d'une seconde n'est pas une panne. Et **un refus qui
+retire légitimement le départ de la file ne compte pas comme un échec** : une
+file saine (fiches closes, réponses arrivées) couperait sinon l'envoi
+automatique au troisième départ écarté à bon droit.
+
+### Jalon 93 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `42_auto_send` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production, un **puits SMTP
+réel** et un navigateur piloté. La recette tourne un dimanche : les envois sont
+donc pilotés avec une **horloge simulée un mardi qui avance en temps réel**, si
+bien que les écarts mesurés sont de vraies secondes.
+
+- **1 · l'inventaire** ci-dessus, avec ses fichiers ;
+- **2 · quatre départs, intervalle d'une minute** : **4 messages** dans le puits,
+  instants `16:38:34`, `16:39:37`, `16:40:37`, `16:41:38` → **écarts 62 s, 61 s,
+  60 s**, dans la gigue configurée ;
+- **3 · une réponse consignée entre deux envois** : le départ de Nina passe à
+  `skipped` avec « Le contact a répondu », son inscription est arrêtée avec le
+  même motif, **0 envoi vers ce contact**, et le panneau le nomme ;
+- **4 · campagne mise en pause en cours de route** → `7 → 7` messages ;
+  **interrupteur éteint** → l'échéance est effacée en base et `7 → 7` de nouveau,
+  campagne relancée comprise ;
+- **5 · redémarrage en cours de file** : trois processus successifs — le premier
+  envoie et meurt, le deuxième (avant l'échéance) n'envoie rien, le troisième
+  reprend l'échéance lue en base et envoie le suivant. **Aucun doublon** ;
+- **5 bis · deux instances en même temps sur le même créneau** : **un seul**
+  message part, `count === 1` n'étant gagné que par une ;
+- **6 · hors fenêtre et week-end** : « Reprendra lundi à 09 h 00 » un dimanche,
+  « Reprendra mercredi à 09 h 00 » un mardi 18 h 10, **0 message** dans les deux
+  cas — et la phrase est rendue **côté serveur** sur `/departs` ;
+- **7 · mot de passe SMTP retiré** : trois échecs nommés, puis
+  `enabled: false`, `failures: 3`, et le panneau affiche « Envoi automatique
+  arrêté : Boîte « Recette 93 » incomplète : il manque le mot de passe — ajoutez
+  la variable `SMTP_PASSWORD_R93` … » ;
+- **8 · zéro appel au modèle** : `api_usage` **246 avant, 246 après** toute la
+  recette ;
+- **9 · e2e** : l'interrupteur et l'intervalle cliqués avec **`reachable()`,
+  jamais `isVisible()`**, la base relue après chaque clic ; la garde statique
+  `auto-send-source` **éprouvée en réintroduisant le défaut exact** — l'envoi
+  remplacé par un appel direct à `sendEmailToContact` : deux tests tombent en le
+  nommant ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1580 tests**) et
+  `npm run e2e` (**85 tests**, vingt-deux fichiers) verts.
+
+### Jalon 93 — la précision réelle, mesurée
+
+Contre le serveur standalone, en lisant `lastTickAt` en base :
+
+| Écart entre deux battements | Occurrences |
+|---|---|
+| 5,002 s | 1 |
+| 5,003 s | 1 |
+| 5,005 s | 3 |
+| 5,006 s | 3 |
+
+**La boucle bat toutes les 5,00 s, avec une dérive mesurée d'au plus 6 ms par
+tour.** La précision réelle d'un envoi est donc : **au plus 5 s après son
+échéance**, plus la durée de l'envoi SMTP lui-même. C'est ce qui permet un
+intervalle de 3 min 30 : l'erreur relative est de 2,4 %, là où GitHub Actions ne
+descend pas sous cinq minutes et arrive régulièrement avec plusieurs minutes de
+retard.
+
+### Jalon 93 — ce qui n'est pas fait
+
+**Au plancher d'une minute, la gigue est à sens unique.** `jitteredGap` ne
+descend jamais sous 60 s : sur un intervalle réglé à 60 s, elle ne peut donc
+qu'allonger. C'est visible dans la recette (écarts de 60 à 62 s). Sur
+l'intervalle par défaut de 3 min 30, elle joue dans les deux sens.
+
+**Les réglages de l'envoi automatique ne sont pas sauvegardés.** `AutoSend` ne
+fait pas partie des modèles de `BACKED_UP` : la ligne mêle réglages et état de
+course, et restaurer une échéance vieille de trois jours pendant que la boucle
+tourne serait pire que de retaper quatre valeurs. La conséquence est assumée :
+après une restauration, l'envoi automatique est **éteint** — le défaut de la
+table — et son intervalle revient à 3 min 30.
+
+**La boucle ne démarre pas toute seule après un démarrage sans trafic** — voir
+plus haut. Le passage quotidien la relance chaque matin ; entre un redéploiement
+de nuit et 05 h 00, rien ne tourne, et rien ne devrait tourner (la fenêtre ouvre
+à 9 h).
+
+**L'ordonnanceur n'envoie jamais un brouillon « non composé »** et refuse les
+campagnes en pause — mais il ne compose rien non plus : la file se remplit par
+« Écrire les mails » ou par le passage quotidien, comme avant.
+
+**Rien n'a touché IONOS**, comme depuis le jalon 32 : le puits SMTP parle le
+protocole et écrit la source reçue. Ce que la recette établit, c'est la cadence,
+le verrou, la reprise et les refus ; que `smtp.ionos.fr` tienne quatre messages
+par quart d'heure reste à voir — et c'est le plafond de débit du jalon 38, déjà
+en place, qui l'arrêtera le cas échéant.
