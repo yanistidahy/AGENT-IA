@@ -51,6 +51,7 @@ export default async function DepartsPage({
   const initial: Departure[] = departures.map((departure) => ({
     ...departure,
     lastActivityAt: departure.lastActivityAt?.toISOString() ?? null,
+    dropped: departure.dropped.map((entry) => ({ ...entry })),
   }));
 
   return (

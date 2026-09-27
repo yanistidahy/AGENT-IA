@@ -5,9 +5,11 @@ import {
   listCampaigns,
   removeMember,
   setCampaignGroupFilter,
+  setCampaignOtherRouting,
   setCampaignRunning,
 } from "@/lib/api/campaigns";
 import { CONTACT_GROUPS } from "@/lib/domain/contact-group";
+import { OTHER_ROUTINGS } from "@/lib/domain/step-variants";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +56,16 @@ const actionSchema = z.discriminatedUnion("action", [
     campaignId: z.string().min(1),
     groups: z.array(z.enum(CONTACT_GROUPS)).max(CONTACT_GROUPS.length),
   }),
+  /*
+    **Le routage d'« Autre » et des fiches non classées.** Il choisit *quelle
+    variante ces contacts reçoivent*, et rien d'autre : `setCampaignOtherRouting`
+    n'écrit qu'une colonne de la campagne, jamais le groupe d'une fiche.
+  */
+  z.object({
+    action: z.literal("other-routing"),
+    campaignId: z.string().min(1),
+    routing: z.enum(OTHER_ROUTINGS),
+  }),
 ]);
 
 export async function POST(request: Request) {
@@ -66,6 +78,11 @@ export async function POST(request: Request) {
   try {
     if (parsed.data.action === "group-filter") {
       await setCampaignGroupFilter(parsed.data.campaignId, parsed.data.groups);
+      return jsonOk({ campaigns: await listCampaigns() });
+    }
+
+    if (parsed.data.action === "other-routing") {
+      await setCampaignOtherRouting(parsed.data.campaignId, parsed.data.routing);
       return jsonOk({ campaigns: await listCampaigns() });
     }
 

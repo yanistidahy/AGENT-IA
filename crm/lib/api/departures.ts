@@ -29,8 +29,15 @@ import {
   stopsEnrollment,
 } from "../domain/sequence-rules";
 import { replyAnchor } from "../domain/campaign-reset";
-import { toStepMode } from "../domain/merge-tags";
-import { renderManualStep } from "./manual-step";
+import { droppedSentences, toStepMode, type DroppedSentence } from "../domain/merge-tags";
+import {
+  routedGroup,
+  templateFor,
+  toOtherRouting,
+} from "../domain/step-variants";
+import { isContactGroup, type ContactGroup } from "../domain/contact-group";
+import { signatureVideo } from "./mail";
+import { mergeValuesOf, renderManualStep } from "./manual-step";
 import { readStepVariants } from "./step-variants";
 import { contactTitle, repairGreeting } from "../domain/contact-identity";
 import { demoTarget, describeDemoSource } from "../domain/demo-target";
@@ -235,7 +242,7 @@ export async function composeDepartures(
           steps: { orderBy: { position: "asc" } },
           // La boîte de la campagne : chaque message de la séquence part de la
           // même adresse, avec la même signature (jalon 54).
-          campaign: { select: { mailboxId: true } },
+          campaign: { select: { mailboxId: true, otherRouting: true } },
         },
       },
       contact: { select: { id: true, lifecycle: true, lostReason: true, email: true } },
@@ -343,6 +350,10 @@ export async function composeDepartures(
         // `renderManualStep`, avec le groupe lu sur la fiche, et un groupe sans
         // variante reçoit le message par défaut de l'étape.
         step === undefined ? [] : await readStepVariants(step.id),
+        // Le routage d'« Autre » et des fiches non classées, lu sur la
+        // campagne. Absent (campagne d'avant ce réglage) = `default`, donc le
+        // message par défaut de l'étape, donc le contenu d'avant à l'octet près.
+        enrollment.sequence.campaign?.otherRouting ?? "default",
       );
       // La fiche a disparu entre la lecture de la file et la composition :
       // rare, et rien à inventer.
@@ -635,6 +646,13 @@ export interface DepartureView {
   readonly ungrounded: string | null;
   /** La relance répète le message précédent. Vide quand elle ne le fait pas. */
   readonly echo: string;
+  /**
+   * Les phrases que le rendu a retirées pour ce contact, avec leur raison.
+   *
+   * Vide pour une étape rédigée par Alex : il n'y a pas de gabarit, donc rien
+   * qui puisse disparaître sans qu'on l'ait écrit.
+   */
+  readonly dropped: readonly DroppedSentence[];
   /** La maison du contact, affichée sous son nom. Vide quand il n'en a pas. */
   readonly companyName: string;
   readonly campaignName: string;
@@ -727,7 +745,22 @@ export async function listDepartures(
             select: {
               name: true,
               active: true,
-              campaign: { select: { name: true } },
+              campaign: { select: { name: true, otherRouting: true } },
+              /*
+                Les étapes écrites à la main, variantes comprises : c'est le
+                **gabarit** qu'il faut pour savoir quelle phrase le rendu a
+                retirée. Le corps composé, lui, ne la porte plus, et c'est bien
+                le problème : c'est pour cela qu'on relit la source.
+              */
+              steps: {
+                select: {
+                  position: true,
+                  mode: true,
+                  subject: true,
+                  body: true,
+                  variants: { select: { group: true, subject: true, body: true } },
+                },
+              },
               // Le nombre d'étapes, pour dire « étape 2 sur 3 » plutôt que
               // « étape 2 » : la position seule ne dit pas s'il en reste.
               _count: { select: { steps: true } },
@@ -738,6 +771,11 @@ export async function listDepartures(
               id: true,
               firstName: true,
               lastName: true,
+              title: true,
+              instagram: true,
+              owner: true,
+              contactGroup: true,
+              groupSetBy: true,
               email: true,
               website: true,
               // La recherche de la fiche elle-même, quand elle n'a pas de
@@ -779,8 +817,41 @@ export async function listDepartures(
     },
   });
 
+  // Lu une fois : la vidéo est la même pour tout le monde.
+  const label = (await signatureVideo())?.label ?? "";
+
   const views: DepartureView[] = [];
   for (const row of rows) {
+    /*
+      **Les phrases retirées pour ce contact, recalculées à la lecture.**
+
+      Comme la virgule de l'appel et la garde d'écho : ce qu'on relit le matin
+      doit dire ce que le destinataire va lire. Le gabarit vient de l'étape, le
+      choix de variante de `templateFor`, la même fonction que la composition,
+      et le routage de la campagne.
+    */
+    const template = row.enrollment.sequence.steps.find(
+      (entry) => entry.position === row.step,
+    );
+    const dropped =
+      template === undefined || toStepMode(template.mode) !== "manual"
+        ? []
+        : droppedSentences(
+            templateFor(
+              { subject: template.subject, body: template.body },
+              template.variants.filter(
+                (variant): variant is typeof variant & { group: ContactGroup } =>
+                  isContactGroup(variant.group),
+              ),
+              routedGroup(
+                row.enrollment.contact.contactGroup,
+                row.enrollment.contact.groupSetBy,
+                toOtherRouting(row.enrollment.sequence.campaign?.otherRouting ?? "default"),
+              ),
+            ).body,
+            mergeValuesOf(row.enrollment.contact, label),
+          );
+
     const last = await prisma.activity.findFirst({
       where: { ...REAL_ACTIVITY, contactId: row.enrollment.contactId },
       orderBy: { date: "desc" },
@@ -849,6 +920,7 @@ export async function listDepartures(
       campaignName: row.enrollment.sequence.campaign?.name ?? "",
       stepsTotal: row.enrollment.sequence._count.steps,
       campaignPaused: !row.enrollment.sequence.active,
+      dropped: [...dropped],
       createdAt: row.createdAt,
     });
   }

@@ -29,6 +29,7 @@ describe("le texte qui partira, et d'où il vient", () => {
       subject: "Pour la direction",
       body: "ROI.",
       variantOf: "direction",
+      subjectFromStep: false,
     });
   });
 
@@ -50,6 +51,7 @@ describe("le texte qui partira, et d'où il vient", () => {
     expect(templateFor(DEFAULT_STEP, [], "direction")).toEqual({
       ...DEFAULT_STEP,
       variantOf: null,
+      subjectFromStep: false,
     });
   });
 

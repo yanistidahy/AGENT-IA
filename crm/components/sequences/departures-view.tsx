@@ -51,6 +51,13 @@ export interface Departure {
   stepsTotal: number;
   /** Sa campagne est en pause : rien ne partira tant qu'elle l'est. */
   campaignPaused: boolean;
+  /**
+   * Les phrases que le rendu a retirées pour ce contact, avec leur raison.
+   *
+   * Recalculées à la lecture depuis le gabarit de l'étape : le corps composé ne
+   * les porte plus, et c'est précisément pourquoi il faut le dire ici.
+   */
+  dropped: { tag: string; label: string; sentence: string }[];
 }
 
 function isPayload(value: unknown): value is {

@@ -126,6 +126,16 @@ describe("un seul choix de variante", () => {
   });
 
   it("une fiche jamais classée reçoit le défaut, pas la variante « Autre »", () => {
-    expect(sourceOf("lib/api/manual-step.ts")).toContain('contact.groupSetBy === "none" ? null');
+    /*
+      La règle a déménagé dans `routedGroup` (jalon 95) : une fiche jamais
+      classée est routée comme « Autre », et c'est le réglage de la campagne qui
+      décide alors de la variante — `default` rendant exactement le défaut de
+      l'étape, donc le comportement d'avant. Ce que la garde vérifie reste le
+      même : la composition ne lit pas `contactGroup` toute seule.
+    */
+    expect(sourceOf("lib/api/manual-step.ts")).toContain("routedGroup(");
+    expect(sourceOf("lib/domain/step-variants.ts")).toContain(
+      'if (source === "none") return routing === "default" ? null : routing;',
+    );
   });
 });

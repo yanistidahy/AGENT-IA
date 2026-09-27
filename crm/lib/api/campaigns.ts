@@ -4,7 +4,12 @@ import { z } from "zod";
 
 import { prisma } from "../db";
 import { resolveSelectionIds } from "./contact-selection";
-import { filterKeeps, serializeGroupFilter } from "../domain/step-variants";
+import {
+  filterKeeps,
+  serializeGroupFilter,
+  toOtherRouting,
+  type OtherRouting,
+} from "../domain/step-variants";
 import type { ContactGroup } from "../domain/contact-group";
 import { countGroups } from "./contact-groups";
 import { enroll } from "./email-sequences";
@@ -84,6 +89,12 @@ export interface CampaignView {
    * est ce que portent toutes les campagnes d'avant les groupes.
    */
   readonly groupFilter: string;
+  /**
+   * Quelle variante reçoivent les contacts « Autre » et « Non classé ».
+   * `default` = le message par défaut de l'étape, ce que portent toutes les
+   * campagnes d'avant ce réglage.
+   */
+  readonly otherRouting: OtherRouting;
   readonly sequenceId: string;
   readonly archivedAt: Date | null;
   /**
@@ -211,6 +222,7 @@ export async function listCampaigns(): Promise<CampaignView[]> {
       selection: row.selection,
       mode: toCampaignMode(row.mode),
       groupFilter: row.groupFilter,
+      otherRouting: toOtherRouting(row.otherRouting),
       sequenceId: row.sequence?.id ?? "",
       archivedAt: row.archivedAt,
       deletable: funnel.messages === 0,
@@ -257,6 +269,17 @@ export async function createCampaign(
         mailboxId: input.mailboxId,
         nameKey: campaignNameKey(input.name),
         mode: input.mode,
+        /*
+          **`direction` est écrit ici, jamais posé en défaut de colonne.**
+
+          Une campagne neuve route « Autre » et les fiches non classées vers la
+          variante Direction : c'est l'angle le plus souvent juste pour une
+          fonction qu'on n'a pas su lire, et surtout c'est un choix explicite.
+          Le défaut du schéma reste `default` — c'est ce que portent les
+          campagnes existantes, et c'est ce qui garantit qu'elles envoient le
+          même contenu qu'avant ce réglage, à l'octet près.
+        */
+        otherRouting: "direction",
       },
       select: { id: true },
     });
@@ -936,6 +959,23 @@ export async function readCampaignGroups(sequenceId: string): Promise<CampaignGr
       .map((row) => row.contact)
       .filter((contact): contact is NonNullable<typeof contact> => contact !== null),
   );
+}
+
+/**
+ * Écrit le routage d'« Autre » et des fiches non classées.
+ *
+ * **Ne touche jamais une fiche** : c'est une colonne de la campagne, et une
+ * garde statique vérifie qu'aucun `contact.update` ne traîne ici. Router, c'est
+ * choisir un texte ; classer, c'est décrire une personne.
+ */
+export async function setCampaignOtherRouting(
+  campaignId: string,
+  routing: string,
+): Promise<void> {
+  await prisma.campaign.update({
+    where: { id: campaignId },
+    data: { otherRouting: toOtherRouting(routing) },
+  });
 }
 
 /** Écrit le filtre de groupes d'une campagne. Vide = tous. */

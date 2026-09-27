@@ -1,8 +1,13 @@
 import "server-only";
 import { z } from "zod";
 import { STEP_MODES, toStepMode, type StepMode } from "../domain/merge-tags";
-import { CONTACT_GROUPS, isContactGroup, type ContactGroup } from "../domain/contact-group";
-import type { StepVariant } from "../domain/step-variants";
+import {
+  CONTACT_GROUPS,
+  GROUP_LABELS,
+  isContactGroup,
+  type ContactGroup,
+} from "../domain/contact-group";
+import { effectiveSubject, type StepVariant } from "../domain/step-variants";
 import { REMOVED } from "../domain/campaign-members";
 import { prisma } from "../db";
 import { autoUnlock, BLOCK_LABELS, MAX_STEPS, type AutoUnlock } from "../domain/sequence-rules";
@@ -357,6 +362,39 @@ export async function saveSequence(
       message:
         "Une séquence qui vient d'être créée ne peut pas démarrer en automatique : elle n'a encore rien prouvé.",
     };
+  }
+
+  /*
+    **Jamais d'objet vide, refusé avant d'écrire.**
+
+    Une variante sans objet retombe explicitement sur celui de l'étape
+    (`templateFor`), et c'est le cas fréquent : l'objet est souvent le même pour
+    les quatre groupes. Mais si l'étape n'en porte pas non plus, plus rien ne
+    rattrape, et un `Subject:` vide part — un message qui ne se lit pas, quand
+    les filtres le laissent passer. Le refus nomme l'étape et le geste plutôt
+    que de laisser l'écran deviner.
+  */
+  for (const [index, step] of input.steps.entries()) {
+    if (toStepMode(step.mode) !== "manual") continue;
+    for (const variant of step.variants) {
+      if (variant.subject.trim() !== "" || variant.body.trim() !== "") {
+        if (effectiveSubject(step, variant) === null) {
+          return {
+            ok: false,
+            message:
+              `Étape ${index + 1}, variante « ${GROUP_LABELS[variant.group]} » : aucun objet. ` +
+              "Écrivez-en un sur la variante, ou sur le message par défaut de l'étape — " +
+              "un message sans objet n'arrive pas.",
+          };
+        }
+      }
+    }
+    if (step.body.trim() !== "" && effectiveSubject(step, undefined) === null) {
+      return {
+        ok: false,
+        message: `Étape ${index + 1} : le message par défaut n'a pas d'objet. Un message sans objet n'arrive pas.`,
+      };
+    }
   }
 
   const data = { name: input.name, active: input.active, autoMode: input.autoMode };

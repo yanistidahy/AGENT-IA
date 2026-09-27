@@ -11,7 +11,8 @@ import {
 import { MAX_STEPS } from "@/lib/domain/sequence-rules";
 import { toStepMode, type StepMode } from "@/lib/domain/merge-tags";
 import { stepModeFor, type CampaignMode } from "@/lib/domain/campaign-mode";
-import type { SampleContact } from "./manual-step-editor";
+import type { OtherRouting } from "@/lib/domain/step-variants";
+import { EMPTY_SAMPLES, type SampleSet } from "./manual-step-editor";
 import { StepMessage } from "./step-message";
 import type { StepVariant } from "@/lib/domain/step-variants";
 
@@ -56,13 +57,16 @@ const ICON =
 
 export function SequenceSteps({
   steps,
-  samples = [],
+  samples = EMPTY_SAMPLES,
   campaignMode = "alex",
+  otherRouting = "default",
   onChange,
 }: {
   readonly steps: readonly StepDraft[];
   /** Quelques inscrits réels, pour l'aperçu d'une étape écrite à la main. */
-  readonly samples?: readonly SampleContact[];
+  readonly samples?: SampleSet;
+  /** Le routage d'« Autre » et des non classés, lu sur la campagne. */
+  readonly otherRouting?: OtherRouting;
   /**
    * La voie de la campagne (jalon 88).
    *
@@ -288,6 +292,7 @@ export function SequenceSteps({
                         body={step.body ?? ""}
                         variants={step.variants ?? []}
                         samples={samples}
+                        otherRouting={otherRouting}
                         position={index + 1}
                         onChange={(change) => patch(index, change)}
                       />

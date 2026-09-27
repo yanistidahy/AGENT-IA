@@ -240,6 +240,31 @@ export function DepartureCard({
             )}
           </div>
         )}
+
+        {/*
+          **Ce que le rendu a retiré, et il faut le lire avant d'envoyer.** Un
+          message dont la première phrase disparaît s'ouvre sur « Mais il y a une
+          partie… », et l'incohérence ne se découvrait qu'à la réception. La règle
+          ne change pas ; ce qui change, c'est qu'elle est annoncée sur la carte.
+        */}
+        {!failed && editing === null && departure.dropped.length > 0 && (
+          <div
+            data-dropped={departure.dropped.length}
+            className="mt-2 rounded-control border border-gold bg-gold-l p-2 text-[11.5px] text-ink"
+          >
+            {departure.dropped.map((entry, index) => (
+              <p key={`${entry.tag}-${index}`}>
+                <b className="font-semibold">
+                  Phrase retirée pour ce contact : {entry.label}
+                </b>{" "}
+                — «&nbsp;{entry.sentence}&nbsp;»
+              </p>
+            ))}
+            <p className="mt-1 text-muted">
+              Relisez l&apos;ouverture du message : c&apos;est là que le retrait se voit.
+            </p>
+          </div>
+        )}
       </div>
 
       {/*

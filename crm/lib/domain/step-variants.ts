@@ -32,6 +32,17 @@ export function isWrittenVariant(variant: StepTemplate): boolean {
 export interface ChosenTemplate extends StepTemplate {
   /** Le groupe dont la variante a servi, ou `null` quand c'est le défaut. */
   readonly variantOf: ContactGroup | null;
+  /**
+   * **L'objet vient-il du défaut de l'étape alors que le corps vient d'une
+   * variante ?**
+   *
+   * Une variante peut porter un message sans objet — c'est même le cas le plus
+   * fréquent, puisque l'objet est souvent le même pour les quatre groupes. Elle
+   * retombe alors **explicitement** sur l'objet de l'étape, et l'aperçu le dit :
+   * un en-tête `Subject:` vide part sans avertissement et se lit comme un
+   * message cassé, ou ne se lit pas du tout.
+   */
+  readonly subjectFromStep: boolean;
 }
 
 /**
@@ -54,10 +65,122 @@ export function templateFor(
   if (group !== null && isContactGroup(group)) {
     const match = variants.find((variant) => variant.group === group);
     if (match !== undefined && isWrittenVariant(match)) {
-      return { subject: match.subject, body: match.body, variantOf: match.group };
+      const blank = match.subject.trim() === "";
+      return {
+        subject: blank ? step.subject : match.subject,
+        body: match.body.trim() === "" ? step.body : match.body,
+        variantOf: match.group,
+        subjectFromStep: blank,
+      };
     }
   }
-  return { subject: step.subject, body: step.body, variantOf: null };
+  return { subject: step.subject, body: step.body, variantOf: null, subjectFromStep: false };
+}
+
+/**
+ * **L'objet qui partira réellement, ou la raison de refuser l'enregistrement.**
+ *
+ * `null` veut dire « aucun objet nulle part » : ni la variante, ni le défaut de
+ * l'étape n'en portent. C'est le seul cas où l'enregistrement est refusé, parce
+ * que c'est le seul qui produirait un `Subject:` vide — et un message sans objet
+ * n'est pas un message maladroit, c'est un message que les filtres écartent et
+ * que le destinataire ne voit pas.
+ */
+export function effectiveSubject(
+  step: StepTemplate,
+  variant: StepTemplate | undefined,
+): string | null {
+  const own = variant?.subject.trim() ?? "";
+  if (own !== "") return own;
+  const fallback = step.subject.trim();
+  return fallback === "" ? null : fallback;
+}
+
+/** Ce que l'aperçu écrit au-dessus de l'objet, pour qu'on sache d'où il vient. */
+export function describeSubjectSource(chosen: ChosenTemplate): string {
+  if (chosen.variantOf === null) return "objet du message par défaut";
+  return chosen.subjectFromStep
+    ? `objet du message par défaut (la variante « ${GROUP_LABELS[chosen.variantOf]} » n'en porte pas)`
+    : `objet de la variante « ${GROUP_LABELS[chosen.variantOf]} »`;
+}
+
+/* ------------------------- le routage d'« Autre » et des fiches non classées */
+
+/**
+ * **Quelle variante reçoivent les contacts « Autre » et « Non classé ».**
+ *
+ * C'est du **routage, jamais un classement** : le groupe de la fiche n'est pas
+ * touché, et une garde statique l'impose. Un contact dont on n'a pas su lire la
+ * fonction reste un contact dont on n'a pas su lire la fonction — mais il doit
+ * bien recevoir *un* texte, et « le message par défaut de l'étape » n'est pas
+ * toujours celui qu'on veut lui envoyer.
+ *
+ * `default` reproduit exactement le comportement d'avant ce réglage, et c'est ce
+ * que portent les campagnes existantes : elles ne changent pas d'un octet.
+ */
+export const OTHER_ROUTINGS = ["default", "direction", "marketing", "commercial"] as const;
+export type OtherRouting = (typeof OTHER_ROUTINGS)[number];
+
+export function isOtherRouting(value: string): value is OtherRouting {
+  return (OTHER_ROUTINGS as readonly string[]).includes(value);
+}
+
+export function toOtherRouting(raw: string): OtherRouting {
+  return isOtherRouting(raw) ? raw : "default";
+}
+
+export const ROUTING_LABELS: Record<OtherRouting, string> = {
+  default: "Message par défaut",
+  direction: GROUP_LABELS.direction,
+  marketing: GROUP_LABELS.marketing,
+  commercial: GROUP_LABELS.commercial,
+};
+
+/**
+ * Le groupe **dont la variante servira** à ce contact — `null` pour le défaut.
+ *
+ * Une fiche jamais classée (`none`) et une fiche « Autre » sont routées
+ * ensemble : dans les deux cas, personne n'a d'angle à leur servir, et c'est le
+ * réglage de la campagne qui tranche. Tout autre groupe passe droit.
+ */
+export function routedGroup(
+  group: string,
+  source: string,
+  routing: OtherRouting,
+): ContactGroup | null {
+  /*
+    **`default` reproduit le comportement d'avant ce réglage à l'octet près**, et
+    les deux branches diffèrent — c'est ce qui l'oblige à les distinguer :
+
+    - une fiche jamais classée recevait le **défaut de l'étape**, jamais la
+      variante « Autre » : elle n'est pas « Autre », c'est une fonction que
+      personne n'a lue (jalon 94) ;
+    - une fiche « Autre » recevait la **variante « Autre »** quand elle existait,
+      et le défaut sinon — le repli ordinaire de `templateFor`.
+
+    Les fondre en un seul `null` aurait privé de sa variante toute campagne
+    existante qui en a écrit une pour « Autre ». Le routage ne change que ce
+    qu'on lui demande de changer.
+  */
+  if (source === "none") return routing === "default" ? null : routing;
+  if (group !== "autre") return isContactGroup(group) ? group : null;
+  return routing === "default" ? "autre" : routing;
+}
+
+/** « Autre 6 → reçoivent Direction » — vide quand personne n'est concerné. */
+export function describeRouting(
+  counts: { readonly autre: number; readonly unclassified: number },
+  routing: OtherRouting,
+): string {
+  const total = counts.autre + counts.unclassified;
+  if (total === 0) return "";
+  const parts: string[] = [];
+  if (counts.autre > 0) parts.push(`Autre ${counts.autre}`);
+  if (counts.unclassified > 0) parts.push(`Non classé ${counts.unclassified}`);
+  const who = parts.join(" · ");
+  return routing === "default"
+    ? `${who} → reçoivent le message par défaut de l'étape`
+    : `${who} → reçoivent ${ROUTING_LABELS[routing]}`;
 }
 
 /**

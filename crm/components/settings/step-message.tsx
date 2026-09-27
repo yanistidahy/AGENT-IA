@@ -2,9 +2,13 @@
 
 import { useState } from "react";
 import { GROUP_LABELS, type ContactGroup } from "@/lib/domain/contact-group";
-import { editedVariant, type StepVariant } from "@/lib/domain/step-variants";
+import {
+  editedVariant,
+  type OtherRouting,
+  type StepVariant,
+} from "@/lib/domain/step-variants";
 import { STEP_ONE_SEEDS } from "@/lib/domain/step-variant-seeds";
-import { ManualStepEditor, type SampleContact } from "./manual-step-editor";
+import { ManualStepEditor, type SampleSet } from "./manual-step-editor";
 import { GroupPreviews, VariantTabRow, type VariantTab } from "./variant-tabs";
 
 /**
@@ -20,13 +24,16 @@ export function StepMessage({
   body,
   variants,
   samples,
+  otherRouting = "default",
   position,
   onChange,
 }: {
   readonly subject: string;
   readonly body: string;
   readonly variants: readonly StepVariant[];
-  readonly samples: readonly SampleContact[];
+  readonly samples: SampleSet;
+  /** Le routage d'« Autre » et des non classés, lu sur la campagne. */
+  readonly otherRouting?: OtherRouting;
   /** 1, 2 ou 3 — le pré-remplissage n'est proposé que sur la première étape. */
   readonly position: number;
   readonly onChange: (change: {
@@ -90,7 +97,12 @@ export function StepMessage({
             : `la variante « ${GROUP_LABELS[tab]} »`
         }
       />
-      <GroupPreviews step={{ subject, body }} variants={variants} samples={samples} />
+      <GroupPreviews
+        step={{ subject, body }}
+        variants={variants}
+        samples={samples}
+        otherRouting={otherRouting}
+      />
     </>
   );
 }

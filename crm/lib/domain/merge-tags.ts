@@ -201,6 +201,83 @@ function dropSentencesWith(text: string, tag: string): string {
 }
 
 /**
+ * **Les balises dont l'absence retire une phrase entière**, et le mot qui le dit.
+ *
+ * Le libellé est au singulier et sans article : il s'insère tel quel dans
+ * « Phrase retirée pour ce contact : société absente » comme dans « 7
+ * destinataires sans société ».
+ */
+const SENTENCE_TAGS: readonly { tag: string; label: string; missing: string }[] = [
+  { tag: "{societe}", label: "société absente", missing: "société" },
+  { tag: "{fonction}", label: "fonction absente", missing: "fonction" },
+  { tag: "{site}", label: "site absent", missing: "site" },
+  { tag: "{video}", label: "vidéo non réglée", missing: "vidéo" },
+];
+
+/** Les valeurs du contact que le texte utilise et qui lui manquent. */
+export function missingSentenceValues(
+  template: string,
+  values: MergeValues,
+): readonly string[] {
+  const text = canonicalTags(template);
+  return SENTENCE_TAGS.filter(
+    (entry) => text.includes(entry.tag) && valueFor(entry.tag, values).trim() === "",
+  ).map((entry) => entry.missing);
+}
+
+export interface DroppedSentence {
+  /** La balise responsable, canonique : `{marque}` est ramené à `{societe}`. */
+  readonly tag: string;
+  /** « société absente » — la raison, prête à être affichée. */
+  readonly label: string;
+  /** La phrase retirée, telle qu'elle est écrite dans le gabarit. */
+  readonly sentence: string;
+}
+
+/**
+ * **Les phrases que le rendu va retirer pour ce contact, et pourquoi.**
+ *
+ * Le retrait date du jalon 87 et il est juste : une phrase construite autour
+ * d'un nom qu'on n'a pas ne survit pas à son retrait. Ce qui manquait, c'est
+ * qu'il soit **visible** — un message dont la première phrase disparaît s'ouvre
+ * sur « Mais il y a une partie… », et l'incohérence ne se découvre qu'à la
+ * réception. Cette fonction ne change pas la règle, elle la rend lisible : même
+ * découpage que `dropSentencesWith`, donc ce qu'elle annonce est exactement ce
+ * qui partira.
+ */
+export function droppedSentences(
+  template: string,
+  values: MergeValues,
+): readonly DroppedSentence[] {
+  const text = canonicalTags(template);
+  const dropped: DroppedSentence[] = [];
+
+  for (const entry of SENTENCE_TAGS) {
+    if (valueFor(entry.tag, values).trim() !== "") continue;
+    for (const paragraph of text.split(/\n{2,}/)) {
+      for (const line of paragraph.split("\n")) {
+        for (const sentence of line.split(/(?<=[.!?…])\s+/)) {
+          if (!sentence.includes(entry.tag)) continue;
+          const trimmed = sentence.trim();
+          if (trimmed !== "") {
+            dropped.push({ tag: entry.tag, label: entry.label, sentence: trimmed });
+          }
+        }
+      }
+    }
+  }
+
+  return dropped;
+}
+
+function valueFor(tag: string, values: MergeValues): string {
+  if (tag === "{societe}") return values.societe;
+  if (tag === "{fonction}") return values.fonction;
+  if (tag === "{site}") return values.site;
+  return values.video;
+}
+
+/**
  * Nettoie ce qu'un retrait laisse derrière lui.
  *
  * Deux espaces, une espace avant une virgule, une ligne devenue vide : rien de

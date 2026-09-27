@@ -11,7 +11,7 @@ import type { CampaignMember } from "@/lib/domain/campaign-members";
 import type { MailboxOption } from "@/lib/domain/signatory-choice";
 import { sequenceProgress } from "@/lib/domain/campaign-status";
 import { CampaignMembers } from "./campaign-members";
-import { GroupTargeting } from "./group-targeting";
+import { GroupTargeting, type MissingValueRow } from "./group-targeting";
 import { CampaignProgress } from "./campaign-progress";
 import type { CampaignGroups } from "@/lib/api/campaigns";
 import { ComposeAction } from "./compose-action";
@@ -46,6 +46,7 @@ export function CampaignDetail({
   sequence,
   members,
   groups,
+  missing,
   mailboxes,
 }: {
   readonly campaign: CampaignView;
@@ -53,6 +54,8 @@ export function CampaignDetail({
   readonly members: readonly CampaignMember[];
   /** Les compteurs par groupe des inscrits, comptés comme le tableau les liste. */
   readonly groups: CampaignGroups;
+  /** Les destinataires dont une valeur utilisée par le texte manque. */
+  readonly missing: readonly MissingValueRow[];
   readonly mailboxes: readonly MailboxOption[];
 }) {
   const router = useRouter();
@@ -243,7 +246,9 @@ export function CampaignDetail({
         <GroupTargeting
           campaignId={campaign.id}
           groupFilter={campaign.groupFilter}
+          otherRouting={campaign.otherRouting}
           counts={groups}
+          missing={missing}
         />
         <CampaignMembers members={members} onChanged={() => router.refresh()} />
       </div>
@@ -266,7 +271,12 @@ export function CampaignDetail({
               Le mode se change ensuite étape par étape, dans l&apos;étape elle-même.
             </span>
           </p>
-          <EmailSequencesPanel initial={[sequence]} embedded campaignMode={campaign.mode} />
+          <EmailSequencesPanel
+            initial={[sequence]}
+            embedded
+            campaignMode={campaign.mode}
+            otherRouting={campaign.otherRouting}
+          />
         </>
       )}
     </section>
