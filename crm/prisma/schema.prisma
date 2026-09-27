@@ -1572,6 +1572,18 @@ model Campaign {
   /// table de jointure : quatre valeurs closes, lues et écrites d'un bloc.
   groupFilter String @default("")
 
+  /// **Quelle variante reçoivent les contacts « Autre » et « Non classé »** :
+  /// `default` (le message par défaut de l'étape), `direction`, `marketing` ou
+  /// `commercial`.
+  ///
+  /// C'est du **routage, pas un classement** : rien ici n'écrit jamais
+  /// `Contact.contactGroup` ni `Contact.groupSetBy`, et une garde statique
+  /// l'impose. Le défaut du schéma est `default` **exprès** : c'est ce que
+  /// portent les campagnes existantes, donc elles continuent d'envoyer
+  /// exactement le même contenu. Une campagne neuve, elle, naît en `direction`
+  /// — écrit explicitement par `createCampaign`, jamais par ce défaut.
+  otherRouting String @default("default")
+
   /// Clé de tri alphabétique : le **nom seul**, plié (minuscules, sans accents).
   /// Distincte de searchText, qui concatène tous les champs cherchables et ne
   /// peut donc pas ordonner. `null` quand il n'y a pas de nom — c'est ce qui

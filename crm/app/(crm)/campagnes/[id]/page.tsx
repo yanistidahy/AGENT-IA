@@ -9,6 +9,7 @@ import {
 import { listSequences } from "@/lib/api/email-sequences";
 import { listMailboxes } from "@/lib/api/mailboxes";
 import { mailboxOptions } from "@/lib/api/mailbox-options";
+import { missingValueReports } from "@/lib/api/manual-step";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,28 @@ export default async function CampagnePage({
   ]);
   const sequence = sequences.find((entry) => entry.id === campaign.sequenceId) ?? null;
 
+  /*
+    **Les destinataires dont une valeur manque, avant tout envoi.**
+
+    Le retrait de phrase (jalon 87) reste la règle ; ce qui change, c'est qu'il
+    s'annonce. On lit ici **tous** les gabarits écrits à la main de la séquence,
+    variantes comprises : une balise qui ne vit que dans la variante Direction
+    concerne les seuls contacts de ce groupe, mais elle retirera bien une phrase.
+  */
+  const templates =
+    sequence === null
+      ? []
+      : sequence.steps
+          .filter((step) => step.mode === "manual")
+          .flatMap((step) => [
+            step.subject,
+            step.body,
+            ...step.variants.flatMap((variant) => [variant.subject, variant.body]),
+          ])
+          .filter((text) => text.trim() !== "");
+  const missing =
+    templates.length === 0 ? [] : await missingValueReports(campaign.sequenceId, templates);
+
   return (
     <div className="px-6 py-6">
       <Link href="/campagnes" className="text-[12.5px] text-brand-d hover:underline">
@@ -56,6 +79,7 @@ export default async function CampagnePage({
         }
         members={members}
         groups={groups}
+        missing={missing}
         mailboxes={mailboxOptions(mailboxes)}
       />
     </div>

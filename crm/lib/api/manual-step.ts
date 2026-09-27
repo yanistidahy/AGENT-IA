@@ -8,7 +8,15 @@ import { signatureBlock } from "../agents/prompts/company";
 import { forbiddenSigners } from "../agents/email-draft";
 import { readMailConfig, signatureOf, signatureVideo } from "./mail";
 import { listSignatories, pickSignatory } from "./signatories";
-import { templateFor, type StepVariant } from "../domain/step-variants";
+import {
+  routedGroup,
+  templateFor,
+  toOtherRouting,
+  type StepVariant,
+} from "../domain/step-variants";
+import { missingSentenceValues } from "../domain/merge-tags";
+import { CONTACT_GROUPS } from "../domain/contact-group";
+import { TERMINAL_LIFECYCLES } from "../domain/lost";
 
 /**
  * **Composer une étape écrite à la main : une substitution, rien d'autre.**
@@ -118,6 +126,12 @@ export async function renderManualStep(
    * toujours la troisième qui oublie le repli vers le défaut.
    */
   variants: readonly StepVariant[] = [],
+  /**
+   * Le routage d'« Autre » et des fiches non classées, lu sur la campagne.
+   * `"default"` reproduit le comportement d'avant ce réglage, et c'est ce que
+   * portent les campagnes existantes.
+   */
+  routing = "default",
 ): Promise<ManualDraft | null> {
   const contact = await readMergeContact(contactId);
   if (contact === null) return null;
@@ -125,8 +139,10 @@ export async function renderManualStep(
   const template = templateFor(
     step,
     variants,
-    // Une fiche jamais classée prend le défaut : elle n'est pas « Autre ».
-    contact.groupSetBy === "none" ? null : contact.contactGroup,
+    // **Routage, pas classement** : la fiche n'est pas réécrite. Une fiche
+    // jamais classée est routée comme « Autre » — dans les deux cas personne
+    // n'a d'angle à lui servir, et c'est la campagne qui tranche.
+    routedGroup(contact.contactGroup, contact.groupSetBy, toOtherRouting(routing)),
   );
 
   const values = mergeValuesOf(contact, await videoLabel());
@@ -161,47 +177,130 @@ export interface SampleContact {
   readonly groupSetBy: string;
 }
 
-/**
- * Jusqu'à trois contacts réels, pour l'aperçu en direct.
- *
- * **Pris parmi les inscrits de la campagne**, et non fabriqués : un aperçu sur
- * un contact inventé montrerait toujours le cas heureux, alors que ce qu'on
- * veut voir avant d'enregistrer est précisément ce que donnent les fiches
- * incomplètes. Les fiches **sans prénom** et **sans site** passent donc devant.
- */
-export async function sampleContacts(sequenceId: string): Promise<SampleContact[]> {
-  const label = await videoLabel();
-  const rows = await prisma.sequenceEnrollment.findMany({
-    where: { sequenceId },
-    select: { contact: { select: CONTACT_SELECT } },
-    take: 40,
-  });
+export interface SampleSet {
+  /** Les fiches, triées par nom, tous groupes confondus. */
+  readonly contacts: readonly SampleContact[];
+  /**
+   * Le nombre **réel** par clé de groupe (`direction` … `autre`, plus `none`),
+   * même quand la liste est bornée : c'est lui qu'affiche « 23 contacts dans ce
+   * groupe ». Le déduire de `contacts` mentirait dès le 501ᵉ destinataire.
+   */
+  readonly totals: Readonly<Record<string, number>>;
+  /** `false` = personne n'est encore inscrit, l'aperçu porte sur tout le CRM. */
+  readonly enrolled: boolean;
+}
 
-  const samples = rows
-    .map((row) => row.contact)
-    .filter((contact): contact is NonNullable<typeof contact> => contact !== null)
-    .map((contact) => ({
+/** Au-delà, on borne la liste — les compteurs restent exacts. */
+const SAMPLE_LIMIT = 500;
+
+/**
+ * **Les contacts réels de la campagne, pour l'aperçu en direct.**
+ *
+ * ### Ce que le jalon précédent avait cassé
+ *
+ * La version d'avant gardait **une fiche par groupe** dans une `Map` : le menu
+ * ne pouvait donc jamais porter plus de cinq entrées, et il en portait
+ * exactement une quand un seul groupe était inscrit. L'intention — garantir que
+ * chaque variante apparaisse dans l'aperçu — était juste ; elle était tenue en
+ * plafonnant à un, ce qui rendait le menu inutile pour vérifier une fiche
+ * précise. Deux limites secondaires s'y ajoutaient : `take: 40`, et la
+ * restriction aux seuls inscrits, qui rendait une liste vide sur une campagne
+ * dont personne n'est encore inscrit — c'est-à-dire au moment où l'on écrit.
+ *
+ * Désormais : **tous** les destinataires, triés par nom (`nameKey`, la clé pliée
+ * du jalon 72 — accents et casse absorbés, valeurs vides en fin), et le compte
+ * réel par groupe. L'écran filtre par groupe et affiche son compteur.
+ *
+ * **Le repli sur tout le CRM est nommé, pas silencieux** : `enrolled: false` dit
+ * à l'écran d'écrire « aucun inscrit : aperçu sur tous les contacts », pour
+ * qu'on ne croie pas relire la campagne.
+ */
+export async function sampleContacts(sequenceId: string): Promise<SampleSet> {
+  const label = await videoLabel();
+
+  const enrolled = await prisma.sequenceEnrollment.count({ where: { sequenceId } });
+  /*
+    **Les fiches closes sortent du repli, jamais des inscrits.** Un aperçu sur
+    tout le CRM est une liste de travail, et une fiche « Perdu » n'en fait pas
+    partie (jalon 30) ; un inscrit, lui, est montré tel qu'il est — la campagne
+    le porte, et le masquer ferait diverger le menu du tableau des inscrits.
+  */
+  const where =
+    enrolled > 0
+      ? { enrollments: { some: { sequenceId } } }
+      : { lifecycle: { notIn: [...TERMINAL_LIFECYCLES] } };
+
+  const [rows, grouped] = await Promise.all([
+    prisma.contact.findMany({
+      where,
+      select: CONTACT_SELECT,
+      orderBy: [{ nameKey: { sort: "asc", nulls: "last" } }, { id: "asc" }],
+      take: SAMPLE_LIMIT,
+    }),
+    prisma.contact.groupBy({
+      by: ["contactGroup", "groupSetBy"],
+      where,
+      _count: { _all: true },
+    }),
+  ]);
+
+  const totals: Record<string, number> = { none: 0 };
+  for (const group of CONTACT_GROUPS) totals[group] = 0;
+  for (const row of grouped) {
+    const key = row.groupSetBy === "none" ? "none" : row.contactGroup;
+    totals[key] = (totals[key] ?? 0) + row._count._all;
+  }
+
+  return {
+    contacts: rows.map((contact) => ({
       id: contact.id,
       name: contactTitle(contact),
       values: mergeValuesOf(contact, label),
       group: contact.contactGroup,
       groupSetBy: contact.groupSetBy,
-    }));
+    })),
+    totals,
+    enrolled: enrolled > 0,
+  };
+}
 
-  // Le cas dégradé d'abord : c'est celui qu'on ne pense pas à vérifier.
-  /*
-    **Un contact par groupe d'abord, le cas dégradé ensuite.** L'aperçu doit
-    montrer chaque variante qui partira : ne garder que les trois fiches les
-    plus incomplètes masquerait un groupe entier. À l'intérieur d'un groupe, la
-    fiche la plus pauvre gagne — c'est celle qu'on ne pense pas à vérifier.
-  */
-  const rank = (entry: SampleContact) =>
-    (entry.values.prenom.trim() === "" ? 0 : 1) + (entry.values.site.trim() === "" ? 0 : 1);
+/**
+ * Les destinataires dont une valeur utilisée par le texte manque, **avant tout
+ * envoi**.
+ *
+ * Le retrait de phrase (jalon 87) est conservé — c'est le seul choix honnête —
+ * mais il devient annonçable : « 7 destinataires sans société : une phrase sera
+ * retirée de leur mail », avec le lien vers chaque fiche. Le compte se lit sur
+ * les fiches réellement visées, jamais sur un échantillon.
+ */
+export interface MissingValueReport {
+  readonly value: string;
+  readonly contacts: readonly { readonly id: string; readonly name: string }[];
+}
 
-  const best = new Map<string, SampleContact>();
-  for (const sample of [...samples].sort((a, b) => rank(a) - rank(b))) {
-    const key = sample.groupSetBy === "none" ? "none" : sample.group;
-    if (!best.has(key)) best.set(key, sample);
+export async function missingValueReports(
+  sequenceId: string,
+  templates: readonly string[],
+): Promise<readonly MissingValueReport[]> {
+  const label = await videoLabel();
+  const rows = await prisma.contact.findMany({
+    where: { enrollments: { some: { sequenceId } } },
+    select: CONTACT_SELECT,
+    orderBy: [{ nameKey: { sort: "asc", nulls: "last" } }, { id: "asc" }],
+  });
+
+  const byValue = new Map<string, { id: string; name: string }[]>();
+  for (const contact of rows) {
+    const values = mergeValuesOf(contact, label);
+    const missing = new Set(
+      templates.flatMap((template) => missingSentenceValues(template, values)),
+    );
+    for (const value of missing) {
+      const list = byValue.get(value) ?? [];
+      list.push({ id: contact.id, name: contactTitle(contact) });
+      byValue.set(value, list);
+    }
   }
-  return [...best.values()];
+
+  return [...byValue.entries()].map(([value, contacts]) => ({ value, contacts }));
 }

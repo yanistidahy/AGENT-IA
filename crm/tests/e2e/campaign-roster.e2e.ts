@@ -112,6 +112,10 @@ describe.skipIf(skip)("le tableau des inscrits se filtre, se trie et sépare les
   it("« A reçu un premier message » est atteignable et rend le bon compte", async () => {
     const { page } = session;
     const chip = page.getByRole("button", { name: `A reçu un premier message (${WRITTEN})` });
+    // La page de campagne fait plusieurs hauteurs d'écran : on amène la puce
+    // dans le champ de vision comme le ferait un doigt, **puis** on vérifie
+    // qu'elle est réellement atteignable — ce qu'`isVisible()` ne dit pas.
+    await chip.scrollIntoViewIfNeeded();
     expect(await reachable(chip)).toBe(true);
     await chip.click();
     // Les lignes du tableau : autant que la puce annonce.

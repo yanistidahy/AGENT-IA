@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 95 | **L'éditeur de variantes, quatre défauts** : le menu « Aperçu pour » plafonné à **une** fiche par groupe par une `Map` que j'avais écrite au jalon précédent, le routage d'« Autre » et des non classés vers une variante, la phrase retirée rendue visible aux trois endroits où on la décide, et plus jamais d'objet vide | **livré, à valider** |
 | 94 | **Un groupe de fonction par contact, et un message par groupe** : quatre groupes déduits de la Fonction sur des **mots entiers** (« coordinatrice » ne contient pas « coo »), le spécifique qui bat la séniorité, une variante d'étape par groupe avec repli sur le message par défaut, et « jamais classé » distinct d'« Autre » | **livré, à valider** |
 | 93 | **L'envoi automatique tient la cadence** : une boucle en processus qui bat toutes les 5 s, un créneau réclamé par un `updateMany` conditionné — donc un verrou que deux instances ne peuvent pas partager —, une fenêtre 9 h – 17 h à Paris en jours ouvrés, une gigue de ±30 %, et trois échecs d'affilée qui coupent l'interrupteur en nommant la cause | **livré, à valider** |
 | 92 | **L'écran Tâches rangé en onglets** : six prédicats calculés à la lecture, une pastille qui ne peut pas contredire sa liste, un onglet enregistré par « + », un mode focus qui envoie par la route des départs, et le clic sur nos liens enfin compté parce que l'ouverture du pixel ne qualifie personne | **livré, à valider** |
@@ -13512,3 +13513,205 @@ Le nombre réel de fiches non classées, et la répartition entre les quatre
 groupes, s'afficheront dans `/reglages` → « Groupes de fonction » avant tout
 recalcul.
 
+
+---
+
+## Jalon 95 — l'éditeur de variantes, quatre défauts
+
+### 1 · Le menu « Aperçu pour » ne portait qu'un contact — la cause, avec sa ligne
+
+Mesuré avant tout correctif, contre la base réelle : **21 inscrits, 2 entrées
+rendues**.
+
+**`lib/api/manual-step.ts:201-206` (jalon 94)** — `sampleContacts` réduisait la
+liste dans une `Map` clavetée par groupe :
+
+```ts
+const best = new Map<string, SampleContact>();
+for (const sample of [...samples].sort((a, b) => rank(a) - rank(b))) {
+  const key = sample.groupSetBy === "none" ? "none" : sample.group;
+  if (!best.has(key)) best.set(key, sample);   // une seule fiche par groupe
+}
+```
+
+**C'est moi qui l'ai écrite au jalon précédent**, avec une intention juste —
+garantir que chaque variante apparaisse dans l'aperçu — et elle la tenait en
+**plafonnant à une fiche par groupe** : le menu ne pouvait donc jamais porter
+plus de cinq entrées, et il en portait exactement une quand un seul groupe était
+inscrit. Deux limites secondaires dans la même fonction : `take: 40` (ligne 177),
+et `where: { sequenceId }` (ligne 175), qui rendait une liste **vide** sur une
+campagne dont personne n'est encore inscrit — c'est-à-dire au moment où l'on
+écrit.
+
+Ni le typage, ni un test, ni le rendu ne pouvaient le signaler : la fonction
+rendait un tableau parfaitement valide, simplement court.
+
+**Désormais** : tous les destinataires, triés par `nameKey` (la clé pliée du
+jalon 72 — accents et casse absorbés, valeurs vides en fin), bornés à 500, et le
+**compte réel par groupe lu par un `groupBy`**. Le déduire de la liste bornée
+mentirait dès le 501ᵉ destinataire. L'écran filtre sur l'onglet édité et affiche
+« 20 contacts dans ce groupe » ; l'onglet « défaut » ne filtre rien, puisque ce
+texte part à tous les groupes sans variante.
+
+**Le repli est nommé, pas silencieux** : sans aucun inscrit, l'aperçu porte sur
+tous les contacts du CRM et le dit, pour qu'on ne croie pas relire la campagne.
+Les fiches closes sortent de ce repli — c'est une liste de travail (jalon 30) —
+mais jamais des inscrits, que la campagne porte de toute façon.
+
+### 2 · Le routage d'« Autre », et ce qu'il ne fait jamais
+
+`Campaign.otherRouting` (migration `44_campaign_other_routing`) : `default`,
+`direction`, `marketing` ou `commercial`.
+
+**C'est du routage, pas un classement**, et la distinction est le sujet : la
+colonne vit sur la **campagne**, rien de ce chemin n'écrit `Contact.contactGroup`
+ni `Contact.groupSetBy`, et une garde statique l'impose. Un contact dont on n'a
+pas su lire la fonction reste un contact dont on n'a pas su lire la fonction —
+mais il doit bien recevoir *un* texte, et « le message par défaut de l'étape »
+n'est pas toujours celui qu'on veut lui envoyer.
+
+**Le défaut de la colonne est `default`, et celui d'une campagne neuve est
+`direction`.** Les deux valeurs sont écrites à deux endroits différents, et c'est
+volontaire : le défaut du schéma est ce que portent les campagnes existantes,
+donc ce qui garantit qu'elles n'envoient pas un octet de différence ;
+`createCampaign` écrit `direction` **explicitement**, parce qu'un choix par
+défaut de colonne n'est pas un choix.
+
+**`routedGroup` distingue deux branches là où une seule aurait suffi à l'écran**,
+et c'est ce qui préserve réellement le passé :
+
+| Fiche | `default` | un groupe |
+|---|---|---|
+| groupe lu (`direction`, …) | son groupe | son groupe — **jamais routée** |
+| « Autre » (`groupSetBy` ≠ `none`) | **la variante « Autre »** si elle existe | le groupe choisi |
+| jamais classée (`none`) | le **défaut de l'étape** | le groupe choisi |
+
+Les fondre en un seul `null` aurait privé de sa variante toute campagne
+existante qui en a écrit une pour « Autre ». Trouvé en écrivant la parité MIME,
+pas à la relecture.
+
+Les compteurs le disent — « Autre 6 · Non classé 2 → reçoivent Direction » —
+et la ligne suivante rappelle que le groupe de la fiche n'est pas modifié.
+
+### 3 · La phrase retirée se voit aux trois endroits où on la décide
+
+Le retrait (jalon 87) reste la règle, et il est juste : une phrase construite
+autour d'un nom qu'on n'a pas ne survit pas à son retrait. Ce qui manquait, c'est
+qu'il soit **visible** — sans société, le message s'ouvrait sur « Mais il y a une
+partie… » et l'incohérence ne se découvrait qu'à la réception.
+
+`droppedSentences()` (domaine, pur) rend les phrases **et leur raison**, avec
+**le même découpage que `dropSentencesWith`** : ce qu'elle annonce est donc
+exactement ce qui partira, et un test le vérifie en comparant au rendu réel.
+
+| Où | Ce qui s'affiche |
+|---|---|
+| l'aperçu de l'éditeur | « Phrase retirée pour ce contact : société absente » + la phrase |
+| le panneau de la campagne, **avant tout envoi** | « 7 destinataires sans société : une phrase sera retirée de leur mail », avec le lien vers chaque fiche |
+| la carte de « Départs du jour » | le même avertissement, **recalculé à la lecture** |
+
+Le troisième est recalculé depuis le **gabarit de l'étape**, jamais depuis le
+corps composé — celui-ci ne porte plus la phrase, et c'est précisément le
+problème. Même discipline que la virgule de l'appel (jalon 68) et la garde
+d'écho (jalon 84) : ce qu'on relit le matin dit ce que le destinataire va lire,
+donc une retouche à la main est vérifiée elle aussi.
+
+### 4 · Jamais d'objet vide
+
+Une variante sans objet retombe **explicitement** sur celui de l'étape
+(`subjectFromStep`), et c'est le cas fréquent — l'objet est souvent le même pour
+les quatre groupes. L'aperçu écrit alors d'où il vient : « objet du message par
+défaut (la variante « Direction » n'en porte pas) ». Sans cette mention, un
+aperçu du défaut et un aperçu d'une variante se ressemblent.
+
+Quand **rien** ne porte d'objet, l'enregistrement est **refusé avant d'écrire**,
+en nommant l'étape, la variante et le geste : « Étape 1, variante « Direction » :
+aucun objet. Écrivez-en un sur la variante, ou sur le message par défaut de
+l'étape — un message sans objet n'arrive pas. » C'est le seul cas refusé, parce
+que c'est le seul qui produirait un `Subject:` vide.
+
+### Un défaut trouvé dans un navigateur, et il n'était pas le mien
+
+**`components/campaigns/campaign-detail.tsx:62` recopie la campagne dans son
+propre `useState` au montage.** `router.refresh()` réécrit bien la prop, et ce
+`useState` l'ignore : **tous** les champs de la campagne sont donc figés à
+l'ouverture de la page. Mesuré au clic : le réglage de routage écrivait
+`commercial` en base et **la phrase ne bougeait pas**. Les boutons de filtre de
+groupes du jalon 94 partagent ce défaut.
+
+`GroupTargeting` tient donc ses deux réglages en état local **optimiste** :
+l'écran change au clic et revient en arrière si le serveur refuse (le motif du
+relevé au jalon 41). Un contrôle qui répond sans que l'écran change se lit comme
+une panne, et l'on reclique.
+
+### Jalon 95 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `44_campaign_other_routing`
+appliquée puis `migrate diff` **vide**), le serveur standalone de production, un
+**puits SMTP réel** et un navigateur piloté :
+
+- **1 · la cause nommée** avec son fichier et ses lignes, **reproduite avant le
+  correctif** : 21 inscrits → 2 entrées ;
+- **2 · le menu** : 23 inscrits tous listés, **21 fiches Direction dans la liste
+  et 21 au compteur**, « Non classé » compté à part (1) et jamais sous « Autre »
+  (1), triées par nom ;
+- **3 · la campagne existante n'envoie pas un octet de différence** : pour
+  « Autre » comme pour la fiche jamais classée, objet et corps **identiques** au
+  choix d'avant ce jalon ; et deux envois réels comparés sur la **source MIME
+  brute** reçue par le puits — **1244 octets contre 1244, identiques** hors
+  `Message-ID`, `Date` et frontière multipart (tirés au hasard à chaque message).
+  Une campagne neuve naît en `direction`, et « Autre 1 · Non classé 1 →
+  reçoivent Direction » s'affiche dans les compteurs ;
+- **4 · un contact sans société** : la phrase est bien retirée, le message
+  s'ouvre donc sur « Mais il y a une partie… » (le défaut signalé, reproduit), le
+  panneau de campagne rend « 1 destinataire sans société : une phrase sera
+  retirée de leur mail » avec le lien vers Clement, et la carte de « Départs du
+  jour » porte « Phrase retirée pour ce contact : société absente » ;
+- **5 · jamais d'objet vide** : l'enregistrement est refusé avec sa raison
+  exacte ; avec un objet sur l'étape il passe ; l'objet composé pour une fiche
+  Direction dont la variante n'en porte pas vaut « Objet PRB95 Maison », et le
+  message réellement reçu par le puits porte `Subject: Objet PRB95 Maison` —
+  **aucun `Subject:` vide** ;
+- **6 · e2e avec `reachable()`** (jamais `isVisible()`) : le menu rend **20
+  options**, le compteur dit « 20 contacts dans ce groupe », le clic sur
+  « Direction » écrit `direction` **en base**, la phrase de comptage suit, et
+  **le groupe des deux fiches n'a pas bougé** (`autre/auto` et `autre/none`) ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1704 tests**) et
+  `npm run e2e` (**90 tests**, vingt-quatre fichiers) verts.
+
+`tests/variant-routing-source.test.ts` ferme les rechutes, et a été **éprouvée
+sur les trois défauts exacts** : un `contact.updateMany` dans le chemin de
+routage, la composition qui retranche `routedGroup`, et le refus d'objet vide
+déplacé après la transaction. Chaque fois un test tombe en nommant le défaut.
+L'e2e a été **éprouvé en réintroduisant la `Map` d'origine** : « les 20 fiches
+Direction sont dans le menu: expected 1 to be 20 » — c'est exactement le
+symptôme signalé.
+
+### Jalon 95 — ce qui n'est pas fait
+
+**La liste du menu est bornée à 500 fiches.** Le compteur, lui, est exact, et
+l'écran dit « les 500 premiers sont listés » quand il borne. Au-delà, choisir une
+fiche précise demanderait une recherche dans le menu — à faire si le portefeuille
+l'impose.
+
+**Le `useState` de `campaign-detail.tsx` n'est pas corrigé à la source.** Les
+deux réglages de `GroupTargeting` ne dépendent plus de lui, mais tout autre champ
+de la campagne rendu sur cette page reste figé au montage : renommer la campagne
+puis lire son entonnoir, par exemple, montre les nombres d'avant. C'est une dette
+reconnue, pas un oubli — la corriger demande de décider, champ par champ, ce qui
+est de l'état d'écran et ce qui est de la donnée.
+
+**Le panneau ne liste que les douze premiers destinataires** d'une valeur
+manquante, puis « et N autres ». À sept fiches c'est complet ; à cent, il
+faudrait une vue à part.
+
+**Le routage ne s'applique qu'aux étapes écrites à la main.** Une étape rédigée
+par Alex n'a pas de variantes : son angle continue de venir des notes de rôle du
+jalon 53, et le réglage ne la concerne pas — rien à l'écran ne le dit.
+
+**L'avertissement de phrase retirée ne bloque jamais.** Il se lit avant l'envoi ;
+on peut passer outre, et c'est voulu — parfois la phrase en moins est acceptable.
+
+**Les chiffres ci-dessus viennent d'un jeu de recette**, pas de votre base. Le
+nombre réel de destinataires sans société s'affichera sur la page de la campagne,
+avant tout envoi.

@@ -1,15 +1,18 @@
 "use client";
 
 import { CONTACT_GROUPS, GROUP_LABELS, type ContactGroup } from "@/lib/domain/contact-group";
-import { renderSubject, renderTemplate } from "@/lib/domain/merge-tags";
+import { droppedSentences, renderSubject, renderTemplate } from "@/lib/domain/merge-tags";
 import {
   describeChoice,
   isWrittenVariant,
+  describeSubjectSource,
+  routedGroup,
   templateFor,
+  type OtherRouting,
   type StepVariant,
 } from "@/lib/domain/step-variants";
 import { STEP_ONE_SEEDS } from "@/lib/domain/step-variant-seeds";
-import type { SampleContact } from "./manual-step-editor";
+import { groupKeyOf, type SampleContact, type SampleSet } from "./manual-step-editor";
 
 /**
  * **La rangée des variantes, et l'aperçu par groupe.**
@@ -54,11 +57,16 @@ export function VariantTabRow({
     <div className="sm:col-span-2">
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="text-[11.5px] font-semibold text-muted">Message pour</span>
-        <TabButton active={tab === "default"} onClick={() => onTab("default")}>
+        <TabButton value="default" active={tab === "default"} onClick={() => onTab("default")}>
           Défaut{defaultWritten ? "" : " (vide)"}
         </TabButton>
         {CONTACT_GROUPS.map((group) => (
-          <TabButton key={group} active={tab === group} onClick={() => onTab(group)}>
+          <TabButton
+            key={group}
+            value={group}
+            active={tab === group}
+            onClick={() => onTab(group)}
+          >
             {GROUP_LABELS[group]}
             {written.has(group) ? "" : " ·"}
           </TabButton>
@@ -103,10 +111,19 @@ export function VariantTabRow({
 }
 
 function TabButton({
+  value,
   active,
   onClick,
   children,
 }: {
+  /**
+   * Le groupe édité, posé sur le bouton.
+   *
+   * Pas décoratif : le libellé « Direction » sert aussi le réglage de routage
+   * quelques blocs plus haut, et un test qui viserait le texte cliquerait un
+   * jour l'un pour l'autre sans que rien ne le dise.
+   */
+  readonly value: string;
   readonly active: boolean;
   readonly onClick: () => void;
   readonly children: React.ReactNode;
@@ -114,6 +131,7 @@ function TabButton({
   return (
     <button
       type="button"
+      data-variant-tab={value}
       aria-pressed={active}
       onClick={onClick}
       className={`min-h-[44px] rounded-control border px-2.5 text-[12px] lg:min-h-0 lg:py-1 ${
@@ -138,14 +156,17 @@ export function GroupPreviews({
   step,
   variants,
   samples,
+  otherRouting = "default",
 }: {
   readonly step: { readonly subject: string; readonly body: string };
   readonly variants: readonly StepVariant[];
-  readonly samples: readonly SampleContact[];
+  readonly samples: SampleSet;
+  /** Le routage d'« Autre » et des fiches non classées, lu sur la campagne. */
+  readonly otherRouting?: OtherRouting;
 }) {
   const byGroup = new Map<string, SampleContact>();
-  for (const sample of samples) {
-    const key = sample.groupSetBy === "none" ? "none" : sample.group;
+  for (const sample of samples.contacts) {
+    const key = groupKeyOf(sample);
     if (!byGroup.has(key)) byGroup.set(key, sample);
   }
 
@@ -154,14 +175,35 @@ export function GroupPreviews({
   return (
     <div className="mt-2 grid gap-2 sm:col-span-2">
       {[...byGroup.entries()].map(([key, sample]) => {
-        const chosen = templateFor(step, variants, key === "none" ? null : key);
+        /*
+          **Le routage est appliqué ici comme à la composition.** L'aperçu et
+          l'envoi appellent `routedGroup` puis `templateFor` : une seconde règle
+          montrerait une variante que l'envoi ne choisirait pas.
+        */
+        const chosen = templateFor(
+          step,
+          variants,
+          routedGroup(sample.group, sample.groupSetBy, otherRouting),
+        );
+        const dropped = droppedSentences(chosen.body, sample.values);
         return (
           <div key={key} className="rounded-card border border-line bg-surface-2 p-2.5">
             <p className="text-[11.5px] font-semibold text-muted">
               {key === "none" ? "Non classé" : GROUP_LABELS[key as ContactGroup]} ·{" "}
               {sample.name} · {describeChoice(chosen)}
             </p>
-            <p className="mt-1.5 text-[11.5px] font-semibold text-muted">Objet</p>
+            {dropped.map((entry, index) => (
+              <p
+                key={`${entry.tag}-${index}`}
+                className="mt-1 rounded-control border border-gold bg-gold-l p-1.5 text-[11.5px] text-ink"
+              >
+                <b className="font-semibold">Phrase retirée pour ce contact : {entry.label}</b> —
+                «&nbsp;{entry.sentence}&nbsp;»
+              </p>
+            ))}
+            <p className="mt-1.5 text-[11.5px] font-semibold text-muted">
+              Objet — {describeSubjectSource(chosen)}
+            </p>
             <p className="text-[12.5px] text-ink">
               {renderSubject(chosen.subject, sample.values)}
             </p>

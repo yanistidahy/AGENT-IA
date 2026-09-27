@@ -18,7 +18,12 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const sequenceId = new URL(request.url).searchParams.get("sequenceId") ?? "";
   try {
-    return jsonOk({ samples: sequenceId === "" ? [] : await sampleContacts(sequenceId) });
+    return jsonOk({
+      samples:
+        sequenceId === ""
+          ? { contacts: [], totals: {}, enrolled: true }
+          : await sampleContacts(sequenceId),
+    });
   } catch (error) {
     return serverError("GET /api/sequences-email/preview", error);
   }

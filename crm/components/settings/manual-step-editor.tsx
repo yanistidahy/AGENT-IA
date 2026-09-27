@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import {
+  droppedSentences,
   MERGE_TAGS,
   renderSubject,
   renderTemplate,
@@ -9,6 +10,7 @@ import {
   unresolvedTags,
   type MergeValues,
 } from "@/lib/domain/merge-tags";
+import { GROUP_LABELS, isContactGroup } from "@/lib/domain/contact-group";
 
 /**
  * L'éditeur d'une étape écrite à la main.
@@ -34,6 +36,27 @@ export interface SampleContact {
   readonly groupSetBy: string;
 }
 
+/**
+ * **Tous les destinataires, plus le compte réel par groupe.**
+ *
+ * `totals` n'est pas déduit de `contacts` : la liste est bornée côté serveur
+ * (500 fiches), le compte ne l'est pas. Les confondre ferait annoncer « 500
+ * contacts dans ce groupe » sur un portefeuille qui en porte mille.
+ */
+export interface SampleSet {
+  readonly contacts: readonly SampleContact[];
+  readonly totals: Readonly<Record<string, number>>;
+  /** `false` = personne n'est inscrit, l'aperçu porte sur tout le CRM. */
+  readonly enrolled: boolean;
+}
+
+export const EMPTY_SAMPLES: SampleSet = { contacts: [], totals: {}, enrolled: true };
+
+/** La clé de groupe d'une fiche : `none` pour une fiche jamais classée. */
+export function groupKeyOf(sample: SampleContact): string {
+  return sample.groupSetBy === "none" ? "none" : sample.group;
+}
+
 const FIELD =
   "w-full rounded-control border border-line bg-surface px-2.5 py-1.5 text-[13px] focus:border-brand focus:outline-none";
 
@@ -49,7 +72,7 @@ export function ManualStepEditor({
 }: {
   readonly subject: string;
   readonly body: string;
-  readonly samples: readonly SampleContact[];
+  readonly samples: SampleSet;
   readonly sampleId: string;
   readonly onSample: (id: string) => void;
   readonly onChange: (change: { subject?: string; body?: string }) => void;
@@ -78,7 +101,27 @@ export function ManualStepEditor({
     });
   };
 
-  const sample = samples.find((entry) => entry.id === sampleId) ?? samples[0] ?? null;
+  /*
+    **Le menu porte tout le groupe édité, pas un échantillon.**
+
+    C'est la correction du défaut : la version d'avant ne gardait qu'une fiche
+    par groupe, donc le menu ne pouvait jamais en offrir plus de cinq — et en
+    offrait exactement une quand un seul groupe était inscrit. Ici la liste est
+    celle du groupe qu'on est en train d'écrire, triée par nom côté serveur, et
+    le compteur donne le **vrai** total du groupe même si la liste est bornée.
+
+    L'onglet « défaut » ne filtre rien : le message par défaut part à tous les
+    groupes qui n'ont pas de variante, il se relit donc sur n'importe quelle
+    fiche.
+  */
+  const scopeKey = isContactGroup(tab) ? tab : null;
+  const shown =
+    scopeKey === null
+      ? samples.contacts
+      : samples.contacts.filter((entry) => groupKeyOf(entry) === scopeKey);
+  const total = scopeKey === null ? samples.contacts.length : (samples.totals[scopeKey] ?? 0);
+
+  const sample = shown.find((entry) => entry.id === sampleId) ?? shown[0] ?? null;
   // Le repli décrit une fiche dont on ne sait rien : **toutes les valeurs
   // vides**, y compris la vidéo. Y mettre un libellé par défaut ferait annoncer
   // une phrase que l'envoi retirerait faute de vidéo réglée.
@@ -93,6 +136,8 @@ export function ManualStepEditor({
 
   const missing = sample === null ? [] : unresolvedTags(`${subject}\n${body}`, values);
   const unknown = unknownTags(`${subject}\n${body}`);
+  // Les phrases que le rendu va retirer pour **cette** fiche, avec leur raison.
+  const dropped = sample === null ? [] : droppedSentences(body, values);
 
   return (
     <div className="sm:col-span-2">
@@ -151,7 +196,15 @@ export function ManualStepEditor({
         </p>
       )}
 
-      {samples.length > 0 && sample !== null && (
+      {samples.contacts.length > 0 && sample === null && (
+        <p className="mt-2 rounded-control border border-line bg-surface-2 p-2 text-[11.5px] text-muted">
+          Aucun contact {scopeKey === null ? "" : `dans le groupe « ${GROUP_LABELS[scopeKey]} »`}{" "}
+          parmi les destinataires de cette campagne : rien à prévisualiser pour cette
+          variante. Inscrivez-en, ou relisez le message par défaut.
+        </p>
+      )}
+
+      {shown.length > 0 && sample !== null && (
         <div className="mt-2 rounded-card border border-line bg-surface-2 p-2.5">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11.5px] font-semibold text-muted">Aperçu pour</span>
@@ -160,7 +213,7 @@ export function ManualStepEditor({
               value={sample.id}
               onChange={(event) => onSample(event.target.value)}
             >
-              {samples.map((entry) => (
+              {shown.map((entry) => (
                 <option key={entry.id} value={entry.id}>
                   {entry.name}
                   {entry.values.prenom.trim() === "" ? " — sans prénom" : ""}
@@ -168,12 +221,39 @@ export function ManualStepEditor({
                 </option>
               ))}
             </select>
+            <span className="text-[11.5px] text-muted" data-sample-count={total}>
+              {scopeKey === null
+                ? `${total} contact${total > 1 ? "s" : ""} dans cette campagne`
+                : `${total} contact${total > 1 ? "s" : ""} dans ce groupe`}
+              {shown.length < total ? ` — les ${shown.length} premiers sont listés` : ""}
+            </span>
+            {!samples.enrolled && (
+              <span className="text-[11.5px] text-muted">
+                Aucun inscrit : aperçu sur tous les contacts du CRM.
+              </span>
+            )}
           </div>
 
           {missing.length > 0 && (
             <p className="mt-1.5 text-[11.5px] text-muted">
               Pour cette fiche : {missing.join(", ")} sans valeur — voir le rendu ci-dessous.
             </p>
+          )}
+
+          {dropped.length > 0 && (
+            <div className="mt-1.5 rounded-control border border-gold bg-gold-l p-2 text-[11.5px]">
+              {dropped.map((entry, index) => (
+                <p key={`${entry.tag}-${index}`} className="text-ink">
+                  <b className="font-semibold">Phrase retirée pour ce contact : {entry.label}</b>{" "}
+                  — «&nbsp;{entry.sentence}&nbsp;»
+                </p>
+              ))}
+              <p className="mt-1 text-muted">
+                La phrase entière part plutôt que la seule balise : une phrase construite
+                autour d&apos;un nom qu&apos;on n&apos;a pas ne survit pas à son retrait.
+                Vérifiez que ce qui reste s&apos;ouvre correctement.
+              </p>
+            </div>
           )}
 
           <p className="mt-2 text-[11.5px] font-semibold text-muted">Objet</p>
