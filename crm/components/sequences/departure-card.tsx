@@ -72,6 +72,15 @@ export interface DepartureCardProps {
   readonly onEditSave: () => void;
   readonly onRework: () => void;
   readonly onDecide: (action: "send" | "postpone" | "remove") => void;
+  /**
+   * Le verdict du dernier geste tenté **sur cette carte**.
+   *
+   * Un échec d'envoi doit se lire là où l'on vient de cliquer : la page fait
+   * plusieurs écrans de haut, et un bandeau en tête n'est pas dans le champ de
+   * vision quand on valide une carte du bas. C'est la cause exacte du « rien ne
+   * se passe » signalé.
+   */
+  readonly feedback: { readonly ok: boolean; readonly message: string } | null;
 }
 
 export function DepartureCard({
@@ -86,6 +95,7 @@ export function DepartureCard({
   onEditSave,
   onRework,
   onDecide,
+  feedback,
 }: DepartureCardProps) {
   const failed = departure.status === "failed";
   const working = busy === departure.id;
@@ -232,7 +242,20 @@ export function DepartureCard({
         )}
       </div>
 
-      {/* 5 · ALORS QUOI — sous un filet, jamais dans le texte. */}
+      {/*
+        5 · ALORS QUOI — sous un filet, jamais dans le texte.
+
+        Le verdict vient **au-dessus** des boutons : il répond au clic qu'on
+        vient de faire, et le lire suppose de le voir sans chercher.
+      */}
+      {feedback !== null && !feedback.ok && (
+        <p
+          role="status"
+          className="border-t border-danger bg-pulse-l px-4 py-2.5 text-[12.5px] font-semibold text-danger"
+        >
+          Rien n'est parti. {feedback.message}
+        </p>
+      )}
       <footer className="flex flex-wrap items-center gap-2 border-t border-line-2 bg-surface-2/60 px-4 py-3">
         <button
           type="button"

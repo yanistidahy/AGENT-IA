@@ -259,7 +259,11 @@ export function missingFields(config: MailConfig, hasPassword: boolean): string[
   if (!hasPassword) {
     // La variable de **cette** boîte, pas la variable historique : trois boîtes,
     // trois secrets, et un message qui nomme le mauvais coûte un aller-retour.
-    missing.push(`le mot de passe (variable ${passwordEnvFor(config.slug)})`);
+    // **Nommer la variable ne suffit pas : il faut dire où la poser.** Le refus
+    // se lit dans la file des départs, à des écrans de l'endroit où l'on agit.
+    missing.push(
+      `le mot de passe — ajoutez la variable ${passwordEnvFor(config.slug)} dans les variables du service (Railway), puis redéployez`,
+    );
   }
   return missing;
 }
