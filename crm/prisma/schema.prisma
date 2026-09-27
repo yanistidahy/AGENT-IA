@@ -877,6 +877,8 @@ model EmailSend {
 
   /// Les réponses détectées comme rattachées à ce message.
   replies EmailReply[]
+  /// Les clics sur nos propres liens (démonstration, vidéo).
+  clicks  EmailLinkClick[]
 
   /// copied | failed | disabled | unconfigured — l'état de la copie « Envoyés ».
   copyStatus String @default("disabled")
@@ -1092,6 +1094,61 @@ model EmailOpenHit {
 
   @@index([emailSendId])
   @@map("email_open_hits")
+}
+
+/// Un clic sur l'un de nos liens, horodaté.
+///
+/// **Pourquoi cette table existe, alors que les jalons 34 et 89 avaient refusé
+/// de compter les clics.** Le refus portait sur un traceur : un `utm_` accroché
+/// à une démonstration qu'on présente comme privée dit le contraire de ce que
+/// la phrase affirme, et un compteur de vidéo n'aurait servi qu'à mesurer. Le
+/// jalon 92 lui donne une raison : c'est le **seul signal fiable d'intérêt**
+/// que le produit sache lire, avec la réponse et la qualification. Le pixel, à
+/// l'inverse, surestime par construction (jalons 37 et 43) et ne peut donc
+/// jamais qualifier quelqu'un.
+///
+/// Elle ne porte que l'envoi, la nature du lien et l'instant — **ni adresse IP,
+/// ni agent utilisateur**, comme `EmailOpenHit`. La redirection passe par notre
+/// domaine et par lui seul : aucun tiers n'apprend qui ouvre nos messages.
+///
+/// Le suivi coupé (réglage global ou case du message) n'émet aucun jeton : le
+/// lien part alors **nu**, vers sa destination réelle, et aucun clic n'est
+/// mesurable. C'est un interrupteur, pas un masquage d'affichage.
+model EmailLinkClick {
+  id          String    @id @default(cuid())
+  emailSendId String
+  emailSend   EmailSend @relation(fields: [emailSendId], references: [id], onDelete: Cascade)
+
+  /// `demo` | `video` — quel lien a été suivi.
+  kind String
+  at   DateTime @default(now())
+
+  @@index([emailSendId])
+  @@index([at])
+  @@map("email_link_clicks")
+}
+
+/// Un onglet enregistré de l'écran Tâches.
+///
+/// Il ne porte **que la recherche et les filtres**, jamais une liste de tâches :
+/// c'est une question qu'on repose, pas un groupe qu'on constitue. La
+/// distinction est celle du jalon 79 entre un filtre et un filtre personnalisé,
+/// prise ici dans l'autre sens — les tâches naissent et meurent chaque jour, et
+/// une appartenance figée décrirait un état d'hier.
+///
+/// Sauvegardé et restauré : c'est de la configuration écrite à la main, donc
+/// exactement ce que le jalon 42 s'est juré de ne plus perdre.
+model TaskTab {
+  id        String   @id @default(cuid())
+  name      String
+  /// Clé de tri alphabétique pliée — voir lib/domain/sort-key.ts et le jalon 72.
+  nameKey   String?
+  /// La requête enregistrée, sous sa forme d'URL (`onglet=appels&q=…`).
+  query     String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([nameKey])
+  @@map("task_tabs")
 }
 
 /// Un rôle destinataire, et ce qui compte pour lui.

@@ -73,6 +73,13 @@ describe("toute écriture d'un nom écrit aussi sa clé de tri", () => {
     // de modèle recréerait la divergence que `name-keys.ts` existe pour fermer.
     const offenders = serviceFiles()
       .filter((file) => !file.endsWith("name-keys.ts"))
+      /*
+        `task-tabs.ts` compose la clé d'un onglet enregistré (jalon 92). Ce n'est
+        pas un nom de modèle du CRM — ni société, ni contact, ni campagne, ni
+        filtre — donc aucune autre écriture ne peut en diverger : la table n'a
+        qu'un seul écrivain, juste là.
+      */
+      .filter((file) => !file.endsWith("api/task-tabs.ts"))
       .filter((file) => /nameKey:\s*sortKey\(/.test(sourceOf(file)));
     expect(offenders).toEqual([]);
   });

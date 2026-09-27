@@ -161,7 +161,22 @@ describe("un seul rendu, une seule substitution", () => {
       personne ne s'en apercevrait avant la réception.
     */
     expect(codeOf("lib/api/manual-step.ts")).toMatch(/signatureVideo\(\)/);
-    expect(codeOf("lib/api/mail.ts")).toMatch(/const video = await signatureVideo\(\)/);
+    /*
+      Une seule lecture dans `mail.ts` : depuis le jalon 92 elle est nommée
+      `plainVideo`, parce que l'adresse passe ensuite par notre redirection de
+      clic. Ce qui compte n'est pas le nom de la variable mais qu'il n'y ait
+      **qu'un** appel — deux lectures pourraient rendre deux verdicts.
+    */
+    const mailSource = codeOf("lib/api/mail.ts");
+    /*
+      La portée est **le chemin de composition**, pas le fichier : la
+      redirection de clic (jalon 92) lit la même fonction pour résoudre la
+      destination, et elle doit le faire au moment du clic, des semaines plus
+      tard. Ce qu'on interdit, c'est deux lectures qui décideraient du **même
+      message**.
+    */
+    const compose = mailSource.slice(mailSource.indexOf("export async function sendMail"));
+    expect(compose.match(/await signatureVideo\(\)/g)?.length ?? 0).toBe(1);
   });
 
   it("la vignette est posée après le logo et avant le pixel", () => {

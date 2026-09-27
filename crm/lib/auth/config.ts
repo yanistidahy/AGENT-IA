@@ -70,6 +70,16 @@ const PUBLIC_PREFIXES: readonly string[] = [
    */
   "/api/t/",
   /**
+   * La redirection qui enregistre un clic sur un de nos liens (jalon 92).
+   *
+   * **Publique pour la raison du pixel, et une de plus** : c'est le navigateur
+   * d'un prospect qui la suit, sans cookie, et **c'est la destination du clic**
+   * — un écran de connexion y serait exactement le lien mort qu'on s'interdit.
+   * Elle ne divulgue rien : la même redirection est servie qu'un jeton soit
+   * connu, inconnu ou purgé. Voir `app/api/l/[token]/[kind]/route.ts`.
+   */
+  "/api/l/",
+  /**
    * Le logo de la signature des courriels.
    *
    * **Publique pour la même raison que le pixel** : c'est le client de

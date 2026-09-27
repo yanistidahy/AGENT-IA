@@ -636,6 +636,8 @@ export interface DepartureView {
   readonly stepsTotal: number;
   /** Sa campagne est en pause : rien ne sera composé ni envoyé pour elle. */
   readonly campaignPaused: boolean;
+  /** Quand le brouillon a été composé : l'écran Tâches date ses lignes avec. */
+  readonly createdAt: Date;
 }
 
 /**
@@ -841,6 +843,7 @@ export async function listDepartures(
       campaignName: row.enrollment.sequence.campaign?.name ?? "",
       stepsTotal: row.enrollment.sequence._count.steps,
       campaignPaused: !row.enrollment.sequence.active,
+      createdAt: row.createdAt,
     });
   }
   return views;

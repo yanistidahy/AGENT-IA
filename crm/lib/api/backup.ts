@@ -32,6 +32,7 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     mailboxes,
     customFilters,
     customFilterMembers,
+    taskTabs,
   ] = await Promise.all([
     prisma.stage.findMany({ orderBy: { position: "asc" } }),
     prisma.company.findMany(),
@@ -48,6 +49,7 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     prisma.mailbox.findMany({ orderBy: { position: "asc" } }),
     prisma.customFilter.findMany(),
     prisma.customFilterMember.findMany(),
+    prisma.taskTab.findMany(),
   ]);
 
   return {
@@ -68,6 +70,7 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     mailboxes,
     customFilters,
     customFilterMembers,
+    taskTabs,
   };
 }
 
@@ -386,6 +389,20 @@ const customFilterRow = z.object({
   createdAt: day,
 });
 
+/**
+ * Un onglet personnalisé de l'écran Tâches (jalon 92).
+ *
+ * Sauvegardé pour la raison des filtres personnalisés : c'est une requête que
+ * quelqu'un a composée puis nommée, et **rien ne sait la reconstituer**.
+ */
+const taskTabRow = z.object({
+  id: z.string(),
+  name: text,
+  nameKey: z.string().nullable().optional(),
+  query: z.string(),
+  createdAt: day,
+});
+
 const customFilterMemberRow = z.object({
   id: z.string(),
   filterId: z.string(),
@@ -412,6 +429,7 @@ export const backupSchema = z.object({
   mailboxes: z.array(mailboxRow).optional(),
   customFilters: z.array(customFilterRow).optional(),
   customFilterMembers: z.array(customFilterMemberRow).optional(),
+  taskTabs: z.array(taskTabRow).optional(),
 });
 
 export type BackupPayload = z.infer<typeof backupSchema>;
@@ -501,6 +519,10 @@ export async function restoreBackup(payload: BackupPayload): Promise<RestoreResu
               data: payload.customFilterMembers.filter((member) => known.has(member.contactId)),
             });
           }
+        }
+        if (payload.taskTabs !== undefined) {
+          await tx.taskTab.deleteMany();
+          await tx.taskTab.createMany({ data: payload.taskTabs });
         }
         if (payload.settings != null) {
           await tx.settings.create({ data: payload.settings });
