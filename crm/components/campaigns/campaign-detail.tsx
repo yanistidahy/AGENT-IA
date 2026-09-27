@@ -7,11 +7,13 @@ import { requestJson } from "@/lib/client/http";
 import type { CampaignView } from "@/lib/api/campaigns";
 import { EmailSequencesPanel, type SequenceView } from "@/components/settings/email-sequences-panel";
 import { describeCampaignMode } from "@/lib/domain/campaign-mode";
-import { FunnelRow } from "@/components/emails/funnel-row";
 import type { CampaignMember } from "@/lib/domain/campaign-members";
 import type { MailboxOption } from "@/lib/domain/signatory-choice";
 import { sequenceProgress } from "@/lib/domain/campaign-status";
 import { CampaignMembers } from "./campaign-members";
+import { GroupTargeting } from "./group-targeting";
+import { CampaignProgress } from "./campaign-progress";
+import type { CampaignGroups } from "@/lib/api/campaigns";
 import { ComposeAction } from "./compose-action";
 import { CampaignDelete } from "./campaign-delete";
 import { CampaignHeader } from "./campaign-header";
@@ -43,11 +45,14 @@ export function CampaignDetail({
   campaign: initial,
   sequence,
   members,
+  groups,
   mailboxes,
 }: {
   readonly campaign: CampaignView;
   readonly sequence: SequenceView | null;
   readonly members: readonly CampaignMember[];
+  /** Les compteurs par groupe des inscrits, comptés comme le tableau les liste. */
+  readonly groups: CampaignGroups;
   readonly mailboxes: readonly MailboxOption[];
 }) {
   const router = useRouter();
@@ -196,28 +201,7 @@ export function CampaignDetail({
 
       {error !== null && <p className="mb-3 text-[12px] text-danger">{error}</p>}
 
-      <div className="mb-4 rounded-card border border-line bg-surface p-4 shadow-card">
-        <FunnelRow steps={funnel.steps} />
-        <div className="mt-3">
-          <div
-            className="h-1.5 overflow-hidden rounded-full bg-line-2"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(progress.ratio * 100)}
-            aria-label={`Avancement de la séquence : ${progress.label}`}
-          >
-            <div
-              className="h-full rounded-full bg-brand"
-              style={{ width: `${Math.round(progress.ratio * 100)}%` }}
-            />
-          </div>
-          <p className="mt-1 text-[12px] text-muted">
-            {progress.label} · {funnel.running} inscription
-            {funnel.running > 1 ? "s" : ""} active{funnel.running > 1 ? "s" : ""}
-          </p>
-        </div>
-      </div>
+      <CampaignProgress funnel={funnel} progress={progress} />
 
       <div className="mb-4 rounded-control border border-line-2 px-3 py-2 text-[12.5px]">
         <span className="font-mono text-[10px] tracking-[0.08em] text-muted uppercase">
@@ -256,6 +240,11 @@ export function CampaignDetail({
         <h2 className="mb-2 font-mono text-[10px] tracking-[0.1em] text-muted uppercase">
           Inscrits ({funnel.enrolled})
         </h2>
+        <GroupTargeting
+          campaignId={campaign.id}
+          groupFilter={campaign.groupFilter}
+          counts={groups}
+        />
         <CampaignMembers members={members} onChanged={() => router.refresh()} />
       </div>
 

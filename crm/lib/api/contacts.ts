@@ -85,6 +85,9 @@ export interface ContactRecord {
   readonly notes: string;
   /** Le fait précis qu'Alex doit connaître sur cette personne. Voir le schéma. */
   readonly alexNote: string;
+  /** Le groupe de fonction et sa provenance — voir lib/domain/contact-group.ts. */
+  readonly contactGroup: string;
+  readonly groupSetBy: string;
   readonly createdAt: Date;
   readonly lastContact: Date | null;
   readonly nextReminder: Date | null;
@@ -300,6 +303,8 @@ function toRecord(
     ageDays: daysSince(row.createdAt, now),
     notes: row.notes,
     alexNote: row.alexNote,
+    contactGroup: row.contactGroup,
+    groupSetBy: row.groupSetBy,
     createdAt: row.createdAt,
     lastContact: row.lastContact,
     nextReminder: row.nextReminder,

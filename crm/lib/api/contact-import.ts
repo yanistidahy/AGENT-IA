@@ -3,6 +3,7 @@ import { contactNameKey } from "./name-keys";
 import { prisma } from "../db";
 import { searchText } from "../domain/text";
 import { contactTitle } from "../domain/contact-identity";
+import { groupOfTitle } from "../domain/contact-group";
 import {
   cell,
   looksLikeHeader,
@@ -46,9 +47,28 @@ export interface ImportUpdate {
   readonly changes: readonly ImportFieldChange[];
 }
 
+/**
+ * Une valeur du fichier **non appliquée** parce que le champ était déjà rempli
+ * avec autre chose.
+ *
+ * L'import ne remplit que ce qui est vide (voir `diffFields`) : il ne peut donc
+ * pas écraser une correction faite à la main. Mais se taire ferait disparaître
+ * l'information — une nouvelle Fonction dans le fichier est peut-être la bonne.
+ * Elle est donc **listée**, avec les deux valeurs, pour qu'on tranche soi-même.
+ */
+export interface ImportConflict {
+  readonly line: number;
+  readonly name: string;
+  readonly field: string;
+  readonly current: string;
+  readonly incoming: string;
+}
+
 export interface ImportReport {
   readonly created: number;
   readonly updated: number;
+  /** Les valeurs différentes que l'import a refusé d'appliquer. */
+  readonly conflicts: readonly ImportConflict[];
   /** Détail de chaque mise à jour : sans lui, « 12 mis à jour » n'apprend rien. */
   readonly updates: readonly ImportUpdate[];
   readonly duplicates: number;
@@ -139,6 +159,9 @@ const EXISTING_FIELDS = {
   source: true,
   owner: true,
   notes: true,
+  website: true,
+  contactGroup: true,
+  groupSetBy: true,
   lastContact: true,
   nextReminder: true,
   companyId: true,
@@ -183,6 +206,7 @@ const UPDATABLE = [
   ["source", "Source"],
   ["owner", "Propriétaire"],
   ["notes", "Notes"],
+  ["website", "Site"],
   ["lastContact", "Dernier contact"],
   ["nextReminder", "Prochaine relance"],
 ] as const;
@@ -204,15 +228,25 @@ function show(value: unknown): string {
  *    aucune intention ;
  * 2. **une cellule vide ne vide pas le champ** — un tableur exporté avec des
  *    colonnes partiellement remplies effacerait sinon des données qu'il ne
- *    prétendait pas modifier. Rien n'est jamais supprimé par un import.
+ *    prétendait pas modifier. Rien n'est jamais supprimé par un import ;
+ * 3. **un champ déjà rempli n'est jamais réécrit** — l'import *remplit les
+ *    trous*, il ne corrige pas. C'est ce qui rend le réimport d'un fichier sans
+ *    danger : une Fonction corrigée à la main il y a trois mois survit à un
+ *    fichier qui porte encore l'ancienne. La valeur du fichier n'est pas perdue
+ *    pour autant : elle sort en `conflicts`, avec les deux versions.
  */
 function diffFields(
   existing: ExistingContact,
   incoming: Record<string, unknown>,
   present: ReadonlySet<string>,
-): { data: Record<string, unknown>; changes: ImportFieldChange[] } {
+): {
+  data: Record<string, unknown>;
+  changes: ImportFieldChange[];
+  conflicts: Array<{ field: string; current: string; incoming: string }>;
+} {
   const data: Record<string, unknown> = {};
   const changes: ImportFieldChange[] = [];
+  const conflicts: Array<{ field: string; current: string; incoming: string }> = [];
 
   for (const [field, label] of UPDATABLE) {
     if (!present.has(field)) continue;
@@ -225,11 +259,17 @@ function diffFields(
     const after = show(next);
     if (before === after) continue;
 
+    // Déjà rempli, et avec autre chose : on ne touche pas, on le dit.
+    if (before !== "—") {
+      conflicts.push({ field: label, current: before, incoming: after });
+      continue;
+    }
+
     data[field] = next;
     changes.push({ field: label, from: before, to: after });
   }
 
-  return { data, changes };
+  return { data, changes, conflicts };
 }
 
 export async function importContacts(
@@ -265,6 +305,7 @@ export async function importContacts(
   const companiesCreated: string[] = [];
   const companyCache = new Map<string, string>();
   const updates: ImportUpdate[] = [];
+  const conflicts: ImportConflict[] = [];
   let created = 0;
   let duplicates = 0;
 
@@ -297,6 +338,7 @@ export async function importContacts(
       source: cell(row, mapping, "source"),
       owner: cell(row, mapping, "owner"),
       notes: cell(row, mapping, "notes"),
+      website: cell(row, mapping, "website"),
     });
 
     if (!parsed.success) {
@@ -330,7 +372,26 @@ export async function importContacts(
           continue;
         }
 
-        const { data, changes } = diffFields(existing, parsed.data, present);
+        const { data, changes, conflicts: refused } = diffFields(existing, parsed.data, present);
+
+        const shownName = contactTitle({ ...existing, company: existing.company });
+        for (const refusedField of refused) {
+          conflicts.push({ line, name: shownName, ...refusedField });
+        }
+
+        /*
+          La Fonction vient d'être remplie : la fiche se classe, et **en
+          automatique**. Une correction faite à la main garde la priorité —
+          `groupSetBy === "manual"` n'est jamais touché, même quand l'import
+          apporte un intitulé. C'est la même règle que le recalcul, et elle
+          passe par le même classificateur : trois classements légèrement
+          différents mettraient la même personne dans trois groupes selon la
+          porte d'entrée.
+        */
+        if (typeof data.title === "string" && existing.groupSetBy !== "manual") {
+          data.contactGroup = groupOfTitle(data.title);
+          data.groupSetBy = "auto";
+        }
 
         // Rattacher une société absente est une mise à jour, pas un écrasement :
         // on ne détache jamais une fiche déjà rattachée.
@@ -397,6 +458,9 @@ export async function importContacts(
             parsed.data.dep ?? "",
           ]),
           nameKey: contactNameKey(parsed.data),
+          // Classée dès la création, par le classificateur unique du produit.
+          contactGroup: groupOfTitle(parsed.data.title ?? ""),
+          groupSetBy: "auto",
         },
       });
       created += 1;
@@ -412,6 +476,7 @@ export async function importContacts(
       created,
       updated: updates.length,
       updates,
+      conflicts,
       duplicates,
       companiesCreated,
       ignoredColumns: mapping.ignored,

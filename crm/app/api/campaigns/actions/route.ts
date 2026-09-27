@@ -4,8 +4,10 @@ import {
   archiveCampaign,
   listCampaigns,
   removeMember,
+  setCampaignGroupFilter,
   setCampaignRunning,
 } from "@/lib/api/campaigns";
+import { CONTACT_GROUPS } from "@/lib/domain/contact-group";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +43,17 @@ const actionSchema = z.discriminatedUnion("action", [
     campaignId: z.string().min(1),
     running: z.boolean(),
   }),
+  /*
+    **Le public visé, par groupe de fonction.** Une liste vide vaut « tous », et
+    c'est ce que portent les campagnes d'avant les groupes : le filtre ne peut
+    donc pas rétrécir un public par accident de migration. Le filtre est
+    ré-appliqué **à l'inscription**, côté serveur, pas seulement à l'écran.
+  */
+  z.object({
+    action: z.literal("group-filter"),
+    campaignId: z.string().min(1),
+    groups: z.array(z.enum(CONTACT_GROUPS)).max(CONTACT_GROUPS.length),
+  }),
 ]);
 
 export async function POST(request: Request) {
@@ -51,6 +64,11 @@ export async function POST(request: Request) {
   if (!parsed.success) return invalidPayload(parsed.error);
 
   try {
+    if (parsed.data.action === "group-filter") {
+      await setCampaignGroupFilter(parsed.data.campaignId, parsed.data.groups);
+      return jsonOk({ campaigns: await listCampaigns() });
+    }
+
     const result =
       parsed.data.action === "archive"
         ? await archiveCampaign(parsed.data.campaignId, parsed.data.archived)

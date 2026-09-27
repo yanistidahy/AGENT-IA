@@ -1,6 +1,8 @@
 import "server-only";
 import { z } from "zod";
 import { STEP_MODES, toStepMode, type StepMode } from "../domain/merge-tags";
+import { CONTACT_GROUPS, isContactGroup, type ContactGroup } from "../domain/contact-group";
+import type { StepVariant } from "../domain/step-variants";
 import { REMOVED } from "../domain/campaign-members";
 import { prisma } from "../db";
 import { autoUnlock, BLOCK_LABELS, MAX_STEPS, type AutoUnlock } from "../domain/sequence-rules";
@@ -43,6 +45,14 @@ export interface SequenceStepView {
    * n'a été écrit, jamais un exemple inventé.
    */
   readonly lastSubject: string;
+  /**
+   * Les variantes par groupe de fonction, celles qui sont écrites seulement.
+   *
+   * Elles voyagent avec l'étape dans les deux sens : l'écran les reçoit, les
+   * modifie et les renvoie. Un groupe absent de cette liste reçoit le message
+   * par défaut de l'étape.
+   */
+  readonly variants: readonly StepVariant[];
 }
 
 export interface SequenceView {
@@ -105,7 +115,7 @@ export async function listSequences(): Promise<SequenceView[]> {
   const rows = await prisma.emailSequence.findMany({
     orderBy: { createdAt: "asc" },
     include: {
-      steps: { orderBy: { position: "asc" } },
+      steps: { orderBy: { position: "asc" }, include: { variants: true } },
       _count: { select: { enrollments: true } },
     },
   });
@@ -130,6 +140,13 @@ export async function listSequences(): Promise<SequenceView[]> {
         subject: step.subject,
         body: step.body,
         lastSubject: samples.get(step.position) ?? "",
+        variants: step.variants
+          .filter((variant) => isContactGroup(variant.group))
+          .map((variant) => ({
+            group: variant.group as ContactGroup,
+            subject: variant.subject,
+            body: variant.body,
+          })),
       })),
       enrolled: row._count.enrollments,
       running,
@@ -285,6 +302,25 @@ export const sequenceSchema = z.object({
         mode: z.enum(STEP_MODES).default("alex"),
         subject: z.string().trim().max(200).default(""),
         body: z.string().max(8000).default(""),
+        /**
+         * Les variantes par groupe de fonction.
+         *
+         * **Envoyées avec l'étape, et remplacées avec elle.** Les étapes sont
+         * réécrites d'un bloc à chaque enregistrement : une variante attachée à
+         * l'ancienne ligne partirait en cascade. L'écran manipule donc l'état
+         * complet, variantes comprises, et une variante absente de l'envoi est
+         * une variante retirée — exactement le contrat des étapes.
+         */
+        variants: z
+          .array(
+            z.object({
+              group: z.enum(CONTACT_GROUPS),
+              subject: z.string().trim().max(200).default(""),
+              body: z.string().max(8000).default(""),
+            }),
+          )
+          .max(CONTACT_GROUPS.length)
+          .default([]),
       }),
     )
     .min(1, "Une séquence a au moins une étape")
@@ -335,7 +371,7 @@ export async function saveSequence(
     // et décrire des suppressions étape par étape n'apporterait rien.
     await tx.emailSequenceStep.deleteMany({ where: { sequenceId: sequence.id } });
     for (const [index, step] of input.steps.entries()) {
-      await tx.emailSequenceStep.create({
+      const created = await tx.emailSequenceStep.create({
         data: {
           sequenceId: sequence.id,
           position: index + 1,
@@ -346,6 +382,23 @@ export async function saveSequence(
           body: step.body,
         },
       });
+
+      // Une variante vide n'est pas enregistrée : « aucune variante » et « une
+      // variante vide » doivent se comporter pareil, et le second état ferait
+      // partir un message sans objet.
+      const written = step.variants.filter(
+        (variant) => variant.subject.trim() !== "" || variant.body.trim() !== "",
+      );
+      if (written.length > 0) {
+        await tx.emailStepVariant.createMany({
+          data: written.map((variant) => ({
+            stepId: created.id,
+            group: variant.group,
+            subject: variant.subject,
+            body: variant.body,
+          })),
+        });
+      }
     }
     return sequence.id;
   });

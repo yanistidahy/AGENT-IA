@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 94 | **Un groupe de fonction par contact, et un message par groupe** : quatre groupes déduits de la Fonction sur des **mots entiers** (« coordinatrice » ne contient pas « coo »), le spécifique qui bat la séniorité, une variante d'étape par groupe avec repli sur le message par défaut, et « jamais classé » distinct d'« Autre » | **livré, à valider** |
 | 93 | **L'envoi automatique tient la cadence** : une boucle en processus qui bat toutes les 5 s, un créneau réclamé par un `updateMany` conditionné — donc un verrou que deux instances ne peuvent pas partager —, une fenêtre 9 h – 17 h à Paris en jours ouvrés, une gigue de ±30 %, et trois échecs d'affilée qui coupent l'interrupteur en nommant la cause | **livré, à valider** |
 | 92 | **L'écran Tâches rangé en onglets** : six prédicats calculés à la lecture, une pastille qui ne peut pas contredire sa liste, un onglet enregistré par « + », un mode focus qui envoie par la route des départs, et le clic sur nos liens enfin compté parce que l'ouverture du pixel ne qualifie personne | **livré, à valider** |
 | 91 | **« Envoyer » refusait en silence** : la règle du week-end s'appliquait au clic d'un humain, la lecture de messagerie jugeait la mauvaise boîte, et le refus s'affichait hors du champ de vision ; le verdict se rend désormais sur la carte cliquée, le départ y reste, et l'envoi manuel n'appelle jamais le modèle | **livré, à valider** |
@@ -13251,3 +13252,263 @@ protocole et écrit la source reçue. Ce que la recette établit, c'est la caden
 le verrou, la reprise et les refus ; que `smtp.ionos.fr` tienne quatre messages
 par quart d'heure reste à voir — et c'est le plafond de débit du jalon 38, déjà
 en place, qui l'arrêtera le cas échéant.
+
+---
+
+## Jalon 94 — un groupe de fonction par contact, et un message par groupe
+
+### La règle qui décide de tout : on ne range personne par ressemblance
+
+Quatre groupes — **Direction**, **Marketing & digital**, **Commercial**,
+**Autre** — déduits de `Contact.title` par `lib/domain/contact-group.ts`, le
+**seul** classificateur du produit. L'appariement se fait **sur des mots
+entiers** (`lib/domain/words.ts`, extrait de `role-angles.ts` du jalon 53 pour
+qu'un seul pli serve les deux lecteurs d'intitulés) : « coo » ne se reconnaît pas
+dans « coordinatrice », ni « adv » dans « advertising ».
+
+**Deux étages, et le spécifique l'emporte toujours.**
+
+| Étage | Ce qu'il porte | Exemple |
+|---|---|---|
+| **spécifique** | le métier | `marketing`, `sales`, `CMO`, `directeur général` |
+| **séniorité** | le rang | `fondateur`, `CEO`, `dirigeant` |
+
+« Directeur marketing » est donc un poste de marketing, « Directrice
+commerciale » un poste commercial, et seuls « directeur général » / « directrice
+générale » — une expression spécifique **à deux mots**, pas le mot « directeur » —
+rejoignent Direction. Conséquence validée : **« Co-fondatrice & CMO » va en
+Marketing & digital**, parce que `CMO` décrit ce qu'elle fait quand
+`co-fondatrice` décrit son rang.
+
+À précision égale entre deux groupes, l'ordre documenté est **Commercial >
+Marketing & digital > Direction**, et `ambiguousTitles()` **liste** les intitulés
+qui l'ont emprunté — c'est le seul endroit où la classification fait un choix
+qu'elle ne peut pas justifier autrement, et il est relu dans `/reglages`.
+
+**« Advertising manager » va en Autre, et c'est le cas qui prouve la règle.** La
+liste de mots-clés validée ne porte ni « advertising » ni « publicité » : le
+classer en Marketing demanderait de le deviner, et le seul mot-clé qui pourrait
+l'attraper est « adv » — c'est-à-dire par sous-chaîne, précisément ce qui est
+interdit. Il reste non reconnu plutôt que mal rangé, et « advertising » est un
+mot-clé à ajouter si l'usage le réclame.
+
+### « Jamais classé » n'est pas « Autre », et le défaut du schéma le dit
+
+`Contact.groupSetBy` vaut **`none`** par défaut, pas `auto`. Une fiche jamais
+classée — les 64 de la base de vérification, et toutes celles de production tant
+que le recalcul n'a pas tourné — n'est pas « une fonction qu'aucun mot-clé ne
+couvre » : c'est une fonction que **personne n'a encore lue**. Les confondre
+ferait d'un filtre « Autre » une liste silencieusement fausse, et d'un compteur
+« Autre 150 » un chiffre qui décrit notre retard plutôt que le portefeuille.
+
+Conséquences, et elles tiennent toutes à ce seul défaut :
+
+- l'écran écrit **« Non classé »** (`groupLabel`), sur la fiche comme dans les
+  compteurs ;
+- **aucun filtre de groupe ne retient une fiche `none`** (`filterKeeps`) : la
+  retenir sous « Autre » l'enverrait sous un angle décidé par notre retard de
+  classement plutôt que par sa fonction ;
+- une fiche `none` reçoit **le message par défaut** de l'étape, jamais la
+  variante « Autre » ;
+- la page d'une campagne dont les inscrits en portent affiche **« N contacts
+  jamais classés : recalculez les groupes »** avec le bouton là, plutôt qu'un
+  renvoi vers un autre écran.
+
+### Le recalcul ne touche jamais une correction faite à la main
+
+`manual` met la fiche hors de portée du recalcul, et le rapport dit les deux
+nombres : **« N contacts reclassés, M corrections manuelles conservées »**. Sans
+le second, on ne saurait pas si le bouton a respecté ce qu'on avait rectifié, et
+on cesserait de le cliquer. La fiche porte aussi « Rendre au calcul
+automatique », parce qu'une correction devenue fausse — la fonction a changé —
+doit pouvoir être défaite.
+
+### L'import : `Marque`, `Site`, la marque d'octets, et le remplissage seul
+
+Le fichier réel porte `Marque ; Site ; Prénom ; Nom ; Fonction ; Email ;
+LinkedIn`. `marque` rejoint donc les alias de la société — une maison de
+e-commerce se nomme par sa marque, et c'est bien la société du CRM — et `Site`
+devient une **colonne** (`website`) au lieu du déversoir des Notes des jalons 24
+et 25. `stripBom()` retire `\uFEFF` explicitement : `normalizeHeader` l'absorbait
+par accident, et un accident n'est pas une règle.
+
+**Le mode mise à jour devient un remplissage.** Trois règles, la troisième étant
+nouvelle :
+
+1. une colonne absente du collage n'est pas touchée ;
+2. une cellule vide ne vide pas le champ ;
+3. **un champ déjà rempli n'est jamais réécrit** — l'import remplit les trous, il
+   ne corrige pas. Une Fonction rectifiée à la main il y a trois mois survit à un
+   fichier qui porte encore l'ancienne.
+
+La valeur du fichier n'est pas perdue pour autant : elle sort en `conflicts`, et
+l'écran écrit **« 3 valeur(s) différente(s) non appliquée(s) »** avec, pour
+chacune, le contact, le champ, la valeur conservée et celle du fichier. Se taire
+ferait disparaître l'information, alors que c'est peut-être le fichier qui a
+raison — on tranche donc soi-même.
+
+**L'export gagne la colonne « Site »**, et ce n'était pas cosmétique : la garde
+du jalon 3 exige que chaque colonne exportée soit relue par l'import, et elle est
+tombée à la seconde où `website` est entré dans le vocabulaire.
+
+### Les balises : trois de plus, une seule syntaxe
+
+`{nom}`, `{fonction}` et `{marque}` rejoignent `{prenom}`, `{societe}`, `{site}`
+et `{video}`. **`{marque}` est un alias de `{societe}`, pas une seconde valeur** :
+`canonicalTags()` le ramène à une seule balise avant toute substitution, donc le
+retrait de phrase et le nettoyage n'ont qu'un cas à traiter.
+
+| Balise | Sans valeur |
+|---|---|
+| `{prenom}`, `{nom}` | retirées — l'appel est réparé par `repairGreeting` |
+| `{societe}`, `{marque}`, `{fonction}`, `{site}`, `{video}` | **la phrase qui les porte est retirée** |
+
+**« {{prenom}} » est signalée avant l'enregistrement**, et c'était un trou réel :
+la recherche de balises simples y trouvait `{prenom}` — une balise connue — et
+laissait donc partir des accolades chez le destinataire, qui se lisent comme une
+fusion ratée. Le produit n'a **qu'une** syntaxe.
+
+### Les variantes : une par groupe, et un défaut qui rattrape le reste
+
+`email_step_variants`, unique sur `(étape, groupe)`. `templateFor()` est la
+**seule** fonction qui choisit un texte, appelée par la composition et par
+l'aperçu : un second choix montrerait un aperçu que l'envoi ne produit pas.
+
+**Un groupe sans variante reçoit le message par défaut de l'étape**, et c'est ce
+qui fait qu'une campagne d'avant ce jalon se comporte exactement comme avant —
+aucune variante, donc le défaut partout, mesuré à l'octet près.
+
+Trois décisions de conception :
+
+- **une variante vide est supprimée, pas enregistrée à blanc** : « aucune
+  variante » et « une variante vide » doivent se comporter pareil, et le second
+  état ferait partir un message sans objet ;
+- **les variantes voyagent avec l'étape**, dans les deux sens. Les étapes sont
+  réécrites d'un bloc à chaque enregistrement (jalon 38) : une variante attachée
+  à l'ancienne ligne partirait en cascade. Même contrat que les étapes ;
+- **modifier n'est pas envoyer.** `editedVariant()` rend un texte vide pour un
+  groupe sans variante, là où `templateFor()` rend le défaut : les confondre
+  ferait écrire dans le défaut en croyant écrire une variante.
+
+**Pas de variante pour « Autre », et c'est une décision.** Ce groupe n'est pas un
+métier : c'est ce qu'aucun mot-clé ne couvre, donc des fonctions qui n'ont rien en
+commun. Leur écrire un angle commun serait deviner ; ils reçoivent le défaut.
+
+Les trois variantes pré-remplies d'étape 1 suivent les règles du discours des
+jalons 57, 58 et 84 — « un conseiller de vente », aucun prix, aucun chiffre
+inventé, **aucune affirmation sur leur trafic** (l'hésitation reste une
+possibilité : « c'est typiquement le genre de choix sur lequel on hésite »),
+aucune présomption d'équipe, aucun tiret long. La phrase Shopify du groupe
+Marketing est **marquée comme supprimable** dans l'éditeur plutôt que retirée
+d'office : un argument utile à une partie des destinataires est du bruit pour les
+autres.
+
+### L'aperçu montre un contact par groupe, avec le nom de la variante
+
+`sampleContacts` rend désormais **une fiche par groupe** — la plus pauvre de
+chaque groupe, parce que c'est celle qu'on ne pense pas à vérifier — et l'aperçu
+nomme, pour chacune, `variante « Direction »` ou `message par défaut de l'étape`.
+Sans cette mention, un aperçu du défaut et un aperçu d'une variante se
+ressemblent, et l'on croit avoir écrit une variante qu'on n'a pas enregistrée.
+
+### Le filtre de groupes s'applique au serveur, à l'inscription
+
+`Campaign.groupFilter` (vide = tous, donc les campagnes existantes ne perdent
+personne) est ré-évalué **à l'inscription**, avec `filterKeeps` : une campagne qui
+ne parle qu'aux fondateurs doit écarter le marketing même quand la sélection
+vient d'un lien mis en favori ou d'un appel programmatique. Le rapport
+d'inscription porte `outOfGroup`, et les compteurs sont comptés sur **exactement
+ce que le tableau des inscrits liste** — l'écart payé une fois au jalon 49 entre
+une puce et sa liste, une autre au jalon 78 entre une carte et son tableau.
+
+### Jalon 94 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `43_contact_groups` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production, un **puits SMTP
+réel** et un navigateur piloté :
+
+- **1 · la classification** : 48 intitulés réels dans une table qui est la
+  spécification, dont « Directeur marketing » → marketing, « Directrice
+  commerciale » → commercial, « Head of Sales » → commercial, « Co-fondatrice &
+  CMO » → marketing, « Coordinatrice logistique » → autre, « Advertising
+  manager » → autre, « Directeur général » → direction, Fonction vide → autre ;
+  plus les mots entiers, le départage et « jamais classé n'est pas Autre » —
+  **79 tests** ;
+- **2 · une migration neuve** : les 64 fiches existantes lisent
+  `groupSetBy = "none"`, donc **« Non classé »**, jamais « Autre » ;
+- **3 · le recalcul** : 65 fiches classées au premier passage ; une correction à
+  la main posée ensuite est **conservée** aux deux passages suivants
+  (« 0 contacts reclassés, 1 corrections manuelles conservées »), et « Rendre au
+  calcul automatique » la rend au calcul ;
+- **4 · l'import** : CSV `Marque ; Site ; Prénom ; Nom ; Fonction ; Email ;
+  LinkedIn` avec **BOM**, point-virgule → 3 fiches, accents intacts
+  (« Hélène », « Directrice générale »), `Marque` → société, `Site` → `website`,
+  classement à la création (direction / marketing / autre) ; **second import
+  identique → 0 créé, 3 doublons, 2 sociétés** ; une Fonction différente sur un
+  champ rempli → **non appliquée et listée** avec les deux valeurs ;
+- **5 · l'aperçu et les variantes** : les trois variantes pré-remplies rendent
+  **trois angles différents** pour la fondatrice, la responsable e-commerce et la
+  directrice commerciale ; « Office Manager » (autre) et la fiche **non classée**
+  reçoivent le message par défaut ; l'aperçu rend une fiche par groupe ;
+- **6 · une campagne d'avant ce jalon** : étape manuelle sans variante → le corps
+  rendu est **identique à l'octet près** entre l'appel d'avant ce jalon (trois
+  arguments) et celui d'aujourd'hui (variantes lues, aucune), et le MIME du
+  message réellement reçu par le puits SMTP porte le texte par défaut, `{marque}`
+  résolu et la signature à trois lignes ;
+- **7 · `{{prenom}}`** est signalée comme balise inconnue, `{prenom}` et
+  `{marque}` ne le sont pas ;
+- **8 · filtre et compteurs** : filtre `direction,commercial` sur 5 fiches → **2
+  inscrites, 3 écartées** (dont la non classée), compteurs « Direction 1 ·
+  Commercial 1 » égaux aux lignes du tableau ;
+- **9 · au navigateur** : le bloc « Groupe de fonction » de la fiche est
+  **atteignable** (`reachable()`, jamais `isVisible()`) et lit « Non classé » ;
+  un clic sur « Commercial » écrit `commercial/manual` **en base** ; « Recalculer
+  les groupes » de `/reglages` rend son rapport et conserve la correction ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1674 tests**) et
+  `npm run e2e` (**88 tests**, vingt-trois fichiers) verts.
+
+`tests/contact-group-source.test.ts` ferme les trois rechutes : un second
+classement d'intitulé, un second pli de normalisation, un second choix de
+variante. **Éprouvée en réintroduisant le défaut exact** — `templateFor`
+remplacé par un `variants.find(...) ?? step` dans la composition : trois tests
+tombent, dont celui qui nomme le fichier. Les gardes existantes ont fait leur
+travail au passage : `backup-columns` a exigé `contactGroup` et `groupSetBy` dans
+la sauvegarde, `csv-export` a exigé la colonne « Site » à l'export, et
+`em-dash-source` a relu les variantes pré-remplies.
+
+### Jalon 94 — ce qui n'est pas fait
+
+**La comparaison de l'item 6 n'est pas faite contre le binaire précédemment
+déployé.** Ce qui est comparé, c'est la forme d'appel d'avant ce jalon contre
+celle d'aujourd'hui, sur la même base et dans le même processus, plus le MIME
+réellement reçu. Rejouer `origin/main` dans un second arbre de travail aurait
+demandé une seconde installation de dépendances ; ce qui est établi, c'est qu'une
+campagne sans variante ne passe par aucun chemin nouveau.
+
+**Le filtre de groupes ne retire personne.** Il décide de qui s'**inscrit** ;
+les inscrits d'avant un changement de filtre restent inscrits, et l'écran le dit.
+Les retirer serait décider à la place de l'utilisateur.
+
+**Une fiche jamais classée n'entre dans aucune campagne filtrée**, ce qui est le
+comportement voulu — mais cela veut dire qu'un filtre posé avant le premier
+recalcul n'inscrit personne. L'avertissement et son bouton sont là pour ça.
+
+**Le pré-remplissage ne couvre que l'étape 1.** Les relances (étapes 2 et 3)
+n'ont pas de variantes pré-écrites : leur discours dépend de ce qui a déjà été
+envoyé (jalon 84), et un gabarit générique s'y lirait comme un publipostage.
+
+**`components/campaigns/campaign-detail.tsx` reste à 274 lignes**, au-dessus de
+la limite de 250. Il en faisait 285 avant ce jalon : l'extraction de
+`campaign-progress.tsx` l'a réduit sans le ramener sous la barre. Dette
+reconnue, pas aggravée.
+
+**Aucun appel Anthropic réel**, comme depuis le jalon 73 : les variantes sont un
+chemin manuel, qui n'appelle aucun modèle — c'est vérifié, `api_usage` ne bouge
+pas — mais les étapes d'Alex ne portent pas de variantes, et leur angle continue
+de venir des notes de rôle du jalon 53.
+
+**Les chiffres ci-dessus viennent d'une base de vérification**, pas de la vôtre.
+Le nombre réel de fiches non classées, et la répartition entre les quatre
+groupes, s'afficheront dans `/reglages` → « Groupes de fonction » avant tout
+recalcul.
+

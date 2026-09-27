@@ -4,6 +4,9 @@ import { z } from "zod";
 
 import { prisma } from "../db";
 import { resolveSelectionIds } from "./contact-selection";
+import { filterKeeps, serializeGroupFilter } from "../domain/step-variants";
+import type { ContactGroup } from "../domain/contact-group";
+import { countGroups } from "./contact-groups";
 import { enroll } from "./email-sequences";
 import { readFunnelFacts } from "./email-stats";
 import { readReplyFacts } from "./email-replies";
@@ -76,6 +79,11 @@ export interface CampaignView {
   readonly selection: string;
   /** La voie choisie à la création — voir `lib/domain/campaign-mode.ts`. */
   readonly mode: CampaignMode;
+  /**
+   * Les groupes de fonction visés, séparés par des virgules. Vide = tous, ce qui
+   * est ce que portent toutes les campagnes d'avant les groupes.
+   */
+  readonly groupFilter: string;
   readonly sequenceId: string;
   readonly archivedAt: Date | null;
   /**
@@ -202,6 +210,7 @@ export async function listCampaigns(): Promise<CampaignView[]> {
       signName: row.mailbox.signName,
       selection: row.selection,
       mode: toCampaignMode(row.mode),
+      groupFilter: row.groupFilter,
       sequenceId: row.sequence?.id ?? "",
       archivedAt: row.archivedAt,
       deletable: funnel.messages === 0,
@@ -350,6 +359,8 @@ export async function campaignOfSequence(
 
 export interface EnrollSelectionOutcome {
   readonly matched: number;
+  /** Écartées par le filtre de groupes de la campagne, ou jamais classées. */
+  readonly outOfGroup: number;
   readonly enrolled: number;
   readonly already: number;
   readonly refused: number;
@@ -368,6 +379,31 @@ export interface EnrollSelectionOutcome {
  * des garde-fous se vérifie **à l'envoi**, comme toujours. Idempotente par la
  * contrainte d'unicité — relancer l'inscription n'inscrit personne deux fois.
  */
+/**
+ * Ne garde que les fiches que le filtre de groupes retient.
+ *
+ * Vide = tous, et c'est ce qui laisse les campagnes d'avant ce jalon
+ * inchangées : elles ne perdent personne. La décision elle-même vit dans le
+ * domaine (`filterKeeps`), pour que l'inscription, les compteurs et l'écran
+ * répondent à la même question de la même façon.
+ */
+async function filterByGroups(
+  groupFilter: string,
+  ids: readonly string[],
+): Promise<string[]> {
+  if (groupFilter.trim() === "" || ids.length === 0) return [...ids];
+  const rows = await prisma.contact.findMany({
+    where: { id: { in: [...ids] } },
+    select: { id: true, contactGroup: true, groupSetBy: true },
+  });
+  const kept = new Set(
+    rows
+      .filter((row) => filterKeeps(groupFilter, row.contactGroup, row.groupSetBy))
+      .map((row) => row.id),
+  );
+  return ids.filter((id) => kept.has(id));
+}
+
 export async function enrollSelection(
   campaignId: string,
   selection: string,
@@ -402,7 +438,20 @@ export async function enrollSelection(
   */
   const resolved = await resolveSelectionIds(selection, contactIds);
   if (!resolved.ok) return { ok: false, message: resolved.message };
-  const ids = resolved.ids;
+
+  /*
+    **Le filtre de groupes de la campagne s'applique ici, au serveur.**
+    Il est ré-évalué à l'inscription plutôt que porté par la sélection : une
+    campagne qui ne parle qu'aux fondateurs doit écarter le marketing même quand
+    la sélection vient d'un lien mis en favori ou d'un appel programmatique.
+
+    Les fiches **jamais classées** sont écartées elles aussi, et comptées à
+    part : les inscrire sous « Autre » les enverrait sous un angle décidé par
+    notre retard de classement plutôt que par leur fonction. L'écran dit combien
+    elles sont, avec le bouton pour les classer.
+  */
+  const ids = await filterByGroups(campaign.groupFilter, resolved.ids);
+  const setAside = resolved.ids.length - ids.length;
 
   // La sélection est mémorisée sur la campagne : c'est elle que « Réinscrire »
   // ré-évaluera, et elle que l'écran affiche comme définition du public.
@@ -428,6 +477,8 @@ export async function enrollSelection(
     ok: true,
     outcome: {
       matched: ids.length,
+      /** Écartées par le filtre de groupes de la campagne, ou non classées. */
+      outOfGroup: setAside,
       enrolled,
       already,
       refused: refusedReasons.length,
@@ -856,4 +907,44 @@ export async function enrolledContactIds(sequenceId: string): Promise<Set<string
     select: { contactId: true },
   });
   return new Set(rows.map((row) => row.contactId));
+}
+
+/* ------------------------------------------- les groupes d'une campagne ---- */
+
+export interface CampaignGroups {
+  readonly byGroup: Readonly<Record<ContactGroup, number>>;
+  readonly unclassified: number;
+  readonly total: number;
+}
+
+/**
+ * Les compteurs par groupe **des inscrits de la campagne**.
+ *
+ * Comptés sur exactement ce que `listCampaignMembers` liste (`status != removed`)
+ * : le chiffre affiché au-dessus du tableau est donc celui de ses lignes, et non
+ * un second comptage qui pourrait en différer — l'écart payé une fois au
+ * jalon 49 entre une puce et sa liste, une autre au jalon 78 entre une carte et
+ * son tableau.
+ */
+export async function readCampaignGroups(sequenceId: string): Promise<CampaignGroups> {
+  const rows = await prisma.sequenceEnrollment.findMany({
+    where: { sequenceId, status: { not: REMOVED } },
+    select: { contact: { select: { contactGroup: true, groupSetBy: true } } },
+  });
+  return countGroups(
+    rows
+      .map((row) => row.contact)
+      .filter((contact): contact is NonNullable<typeof contact> => contact !== null),
+  );
+}
+
+/** Écrit le filtre de groupes d'une campagne. Vide = tous. */
+export async function setCampaignGroupFilter(
+  campaignId: string,
+  groups: readonly string[],
+): Promise<void> {
+  await prisma.campaign.update({
+    where: { id: campaignId },
+    data: { groupFilter: serializeGroupFilter(groups) },
+  });
 }

@@ -28,6 +28,10 @@ export interface SampleContact {
   readonly id: string;
   readonly name: string;
   readonly values: MergeValues;
+  /** Le groupe de fonction de la fiche : c'est lui qui choisit la variante. */
+  readonly group: string;
+  /** `none` = jamais classée, donc message par défaut (jamais « Autre »). */
+  readonly groupSetBy: string;
 }
 
 const FIELD =
@@ -40,6 +44,8 @@ export function ManualStepEditor({
   sampleId,
   onSample,
   onChange,
+  tab = "default",
+  scope = "le message par défaut",
 }: {
   readonly subject: string;
   readonly body: string;
@@ -47,6 +53,10 @@ export function ManualStepEditor({
   readonly sampleId: string;
   readonly onSample: (id: string) => void;
   readonly onChange: (change: { subject?: string; body?: string }) => void;
+  /** Quel texte est édité — la rangée de variantes vit au-dessus. */
+  readonly tab?: string;
+  /** Ce que l'écran est en train d'écrire, dit en clair au-dessus des champs. */
+  readonly scope?: string;
 }) {
   const area = useRef<HTMLTextAreaElement | null>(null);
 
@@ -74,6 +84,8 @@ export function ManualStepEditor({
   // une phrase que l'envoi retirerait faute de vidéo réglée.
   const values: MergeValues = sample?.values ?? {
     prenom: "",
+    nom: "",
+    fonction: "",
     societe: "",
     site: "",
     video: "",
@@ -84,6 +96,10 @@ export function ManualStepEditor({
 
   return (
     <div className="sm:col-span-2">
+      <p className="mb-1.5 text-[11.5px] text-muted" data-variant-scope={tab}>
+        Vous écrivez <b className="font-semibold text-ink">{scope}</b>.
+      </p>
+
       <label className="block">
         <span className="block text-[11.5px] font-semibold text-muted">Objet</span>
         <input

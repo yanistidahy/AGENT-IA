@@ -11,7 +11,9 @@ import {
 import { MAX_STEPS } from "@/lib/domain/sequence-rules";
 import { toStepMode, type StepMode } from "@/lib/domain/merge-tags";
 import { stepModeFor, type CampaignMode } from "@/lib/domain/campaign-mode";
-import { ManualStepEditor, type SampleContact } from "./manual-step-editor";
+import type { SampleContact } from "./manual-step-editor";
+import { StepMessage } from "./step-message";
+import type { StepVariant } from "@/lib/domain/step-variants";
 
 /**
  * Les étapes d'une séquence, en frise.
@@ -43,6 +45,8 @@ export interface StepDraft {
   body?: string;
   /** Le dernier objet réellement composé pour cette étape, s'il y en a un. */
   lastSubject?: string;
+  /** Les variantes par groupe de fonction. Voyagent avec l'étape. */
+  variants?: readonly StepVariant[];
 }
 
 const FIELD =
@@ -80,7 +84,6 @@ export function SequenceSteps({
         : [],
     ),
   );
-  const [sampleId, setSampleId] = useState("");
   const timings = stepDays(steps);
 
   const toggle = (index: number) =>
@@ -280,12 +283,12 @@ export function SequenceSteps({
                     </fieldset>
 
                     {manual ? (
-                      <ManualStepEditor
+                      <StepMessage
                         subject={step.subject ?? ""}
                         body={step.body ?? ""}
+                        variants={step.variants ?? []}
                         samples={samples}
-                        sampleId={sampleId}
-                        onSample={setSampleId}
+                        position={index + 1}
                         onChange={(change) => patch(index, change)}
                       />
                     ) : (

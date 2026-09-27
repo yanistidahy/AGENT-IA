@@ -31,6 +31,8 @@ function contact(overrides: Partial<ContactRecord> = {}): ContactRecord {
     website: "nutrivia.fr",
     instagram: "",
     alexNote: "",
+    contactGroup: "autre",
+    groupSetBy: "none",
     dmAt: null,
     lifecycle: "Prospect",
     source: "Salon",

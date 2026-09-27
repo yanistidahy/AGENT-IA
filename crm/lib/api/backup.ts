@@ -168,6 +168,13 @@ const contactRow = z.object({
   searchText: optionalText,
   /** Clé de tri — voir companyRow.nameKey. */
   nameKey: optionalText,
+  /**
+   * Le groupe de fonction et sa provenance. `groupSetBy` porte les corrections
+   * faites à la main : les perdre à une restauration rendrait au recalcul le
+   * droit d'écraser un choix humain, en silence.
+   */
+  contactGroup: optionalText,
+  groupSetBy: optionalText,
   emailCount: z.number().int().optional(),
   lastEmailAt: optionalDay,
 });

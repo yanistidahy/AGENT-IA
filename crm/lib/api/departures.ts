@@ -31,6 +31,7 @@ import {
 import { replyAnchor } from "../domain/campaign-reset";
 import { toStepMode } from "../domain/merge-tags";
 import { renderManualStep } from "./manual-step";
+import { readStepVariants } from "./step-variants";
 import { contactTitle, repairGreeting } from "../domain/contact-identity";
 import { demoTarget, describeDemoSource } from "../domain/demo-target";
 import { listSignatories, pickSignatory } from "./signatories";
@@ -338,6 +339,10 @@ export async function composeDepartures(
         enrollment.contactId,
         { subject: step?.subject ?? "", body: step?.body ?? "" },
         enrollment.sequence.campaign?.mailboxId,
+        // Les variantes par groupe de fonction : le choix se fait dans
+        // `renderManualStep`, avec le groupe lu sur la fiche, et un groupe sans
+        // variante reçoit le message par défaut de l'étape.
+        step === undefined ? [] : await readStepVariants(step.id),
       );
       // La fiche a disparu entre la lecture de la file et la composition :
       // rare, et rien à inventer.

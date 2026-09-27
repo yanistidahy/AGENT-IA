@@ -130,6 +130,10 @@ describe.skipIf(skip)("le tableau des inscrits se filtre, se trie et sépare les
       (await page.locator("table tbody tr").first().locator("td").first().innerText()).trim();
 
     const header = page.getByRole("button", { name: "Dernier message", exact: false });
+    // Le bloc des groupes de fonction a poussé le tableau plus bas : on amène
+    // l'en-tête dans le champ de vision comme le ferait un doigt, et on vérifie
+    // ensuite qu'il est réellement **atteignable** — rien ne le rogne.
+    await header.scrollIntoViewIfNeeded();
     expect(await reachable(header)).toBe(true);
     const newest = await first();
     await header.click();

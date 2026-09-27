@@ -13,6 +13,7 @@ import type { Alert } from "@/lib/domain/types";
 import { ContactForm, type ContactFormOptions } from "./contact-form";
 import { ContactFields } from "./contact-fields";
 import { AccountLink, AlexNote, Colleagues } from "./account-block";
+import { GroupField } from "./group-field";
 import type { Colleague } from "@/lib/api/account";
 import { ContactHeader } from "./contact-header";
 import { ComposePanel } from "@/components/emails/compose-panel";
@@ -222,6 +223,12 @@ export function ContactDrawer({
 
           <TabPanel tabKey="fiche" active={tab} idPrefix="contact">
             <ContactFields contact={contact} />
+            <GroupField
+              contactId={contact.id}
+              group={contact.contactGroup}
+              source={contact.groupSetBy}
+              onSaved={onChanged}
+            />
             <AlexNote
               contactId={contact.id}
               value={contact.alexNote}

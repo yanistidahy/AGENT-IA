@@ -150,6 +150,23 @@ model Contact {
   /// un modèle sans lui faire prendre un titre de page pour un fait.
   alexNote String @default("")
 
+  /// Le **groupe de fonction** : `direction`, `marketing`, `commercial` ou
+  /// `autre`. Déduit de `title` par l'unique classificateur du produit
+  /// (lib/domain/contact-group.ts), que l'import, le recalcul et la fiche
+  /// appellent tous les trois.
+  contactGroup String @default("autre")
+
+  /// D'où vient `contactGroup` : `none`, `auto` ou `manual`.
+  ///
+  /// **`none` n'est pas `autre`, et le défaut est `none`.** Une fiche jamais
+  /// classée — toutes celles d'avant ce jalon, tant que le recalcul n'a pas
+  /// tourné — n'est pas « une fonction qu'aucun mot-clé ne couvre » : c'est une
+  /// fonction que personne n'a encore lue. Les confondre ferait d'un filtre
+  /// « Autre » une liste silencieusement fausse, et d'un compteur « Autre 150 »
+  /// un chiffre qui décrit notre retard plutôt que le portefeuille. `manual`
+  /// est une correction à la main, que le recalcul ne touche jamais.
+  groupSetBy String @default("none")
+
   /// Miroir normalisé des champs cherchables — voir Company.searchText.
   searchText String @default("")
 
@@ -187,6 +204,7 @@ model Contact {
   @@index([lifecycle])
   @@index([tag])
   @@index([nameKey])
+  @@index([contactGroup])
   @@map("contacts")
 }
 
@@ -944,8 +962,33 @@ model EmailSequenceStep {
   subject   String @default("")
   body      String @default("")
 
+  variants EmailStepVariant[]
+
   @@unique([sequenceId, position])
   @@map("email_sequence_steps")
+}
+
+/**
+ * Une **variante d'étape par groupe de fonction** : le même message ne parle pas
+ * au fondateur et à la responsable e-commerce.
+ * Une seule variante par couple (étape, groupe) — la contrainte est en base, pas
+ * une vérification applicative (règle du jalon 8). **Un groupe sans variante
+ * reçoit le message par défaut de l'étape** : c'est ce qui fait qu'une campagne
+ * d'avant ce jalon se comporte exactement comme avant, sans rien à reprendre.
+ */
+model EmailStepVariant {
+  id     String            @id @default(cuid())
+  stepId String
+  step   EmailSequenceStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  /// `direction` | `marketing` | `commercial` | `autre`.
+  group String
+
+  subject String @default("")
+  body    String @default("")
+
+  @@unique([stepId, group])
+  @@map("email_step_variants")
 }
 
 /// L'inscription d'un contact à une séquence.
@@ -1522,6 +1565,12 @@ model Campaign {
   /// mélanger les deux sur une campagne existante reste possible, comme action
   /// secondaire à l'intérieur d'une étape.
   mode String @default("alex")
+
+  /// Les **groupes de fonction** visés, séparés par des virgules
+  /// (`direction,commercial`). Vide = tous, ce qui est le comportement des
+  /// campagnes d'avant ce jalon. Ni tableau scalaire (règle du schéma), ni
+  /// table de jointure : quatre valeurs closes, lues et écrites d'un bloc.
+  groupFilter String @default("")
 
   /// Clé de tri alphabétique : le **nom seul**, plié (minuscules, sans accents).
   /// Distincte de searchText, qui concatène tous les champs cherchables et ne

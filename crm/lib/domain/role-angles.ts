@@ -25,6 +25,8 @@
  * rattaché au rôle le plus proche.
  */
 
+import { containsWords, foldLabel, labelWords } from "./words";
+
 /** Un rôle réglé par l'utilisateur, avec ses étiquettes et sa note d'angle. */
 export interface RoleAngleLike {
   readonly id: string;
@@ -43,12 +45,7 @@ export interface RoleAngleLike {
  * vit en un seul endroit, et elle est vérifiable sans base.
  */
 export function normalizeRoleLabel(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+  return foldLabel(value);
 }
 
 /** Le résultat de l'appariement, jamais une supposition. */
@@ -59,23 +56,7 @@ export type RoleMatch =
 
 /** Les mots de l'intitulé, une fois normalisé. */
 function words(value: string): readonly string[] {
-  const normalized = normalizeRoleLabel(value);
-  return normalized === "" ? [] : normalized.split(" ");
-}
-
-/**
- * L'étiquette apparaît-elle comme une **suite de mots entiers** de l'intitulé ?
- *
- * Sur les mots et non sur les caractères : « ops » ne doit pas se reconnaître
- * dans « opsourcing ». C'est ce qui permet à l'étiquette « responsable sav » de
- * couvrir « Responsable SAV France » sans ouvrir la porte aux ressemblances.
- */
-function containsWords(haystack: readonly string[], needle: readonly string[]): boolean {
-  if (needle.length === 0 || needle.length > haystack.length) return false;
-  for (let start = 0; start + needle.length <= haystack.length; start += 1) {
-    if (needle.every((word, offset) => haystack[start + offset] === word)) return true;
-  }
-  return false;
+  return labelWords(value);
 }
 
 /**

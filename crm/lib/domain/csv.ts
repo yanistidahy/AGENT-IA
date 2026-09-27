@@ -20,8 +20,21 @@ export type Delimiter = (typeof DELIMITERS)[number];
  * que produit un collage depuis un tableur, et une cellule peut légitimement
  * contenir une virgule.
  */
+/**
+ * Retire la marque d'ordre des octets d'un fichier UTF-8.
+ *
+ * Un `.csv` exporté par Excel commence par `﻿`, qui se colle à la première
+ * cellule de l'en-tête. `normalizeHeader` l'absorbe par accident — il ne garde
+ * que `a-z0-9` — mais l'accident n'est pas une règle : une seule ligne ici, et
+ * la première colonne cesse de dépendre de la façon dont le fichier a été
+ * enregistré. À appeler avant toute lecture.
+ */
+export function stripBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
 export function detectDelimiter(text: string): Delimiter {
-  const firstLine = text.split(/\r?\n/, 1)[0] ?? "";
+  const firstLine = stripBom(text).split(/\r?\n/, 1)[0] ?? "";
   let best: Delimiter = DELIMITERS[0];
   let bestCount = 0;
 
@@ -72,7 +85,11 @@ function splitLine(line: string, delimiter: Delimiter): string[] {
  * Les lignes entièrement vides sont écartées : un collage se termine presque
  * toujours par un saut de ligne, et une ligne vide n'est pas un contact.
  */
-export function parseGrid(text: string, delimiter: Delimiter = detectDelimiter(text)): string[][] {
+export function parseGrid(
+  input: string,
+  delimiter: Delimiter = detectDelimiter(input),
+): string[][] {
+  const text = stripBom(input);
   const rows: string[][] = [];
   let row: string[] = [];
   let current = "";
@@ -127,6 +144,7 @@ export const CONTACT_COLUMNS = [
   "owner",
   "notes",
   "company",
+  "website",
   "lastContact",
   "nextReminder",
 ] as const;
@@ -148,7 +166,16 @@ const ALIASES: Record<ContactColumn, readonly string[]> = {
   source: ["source", "origine", "canal", "provenance"],
   owner: ["proprietaire", "owner", "responsable", "commercial", "assignea"],
   notes: ["notes", "note", "commentaire", "commentaires", "remarques"],
-  company: ["societe", "entreprise", "company", "organisation", "compte", "client"],
+  /**
+   * `marque` est l'en-tête réel des fichiers de prospection : une maison de
+   * e-commerce se nomme par sa marque, et c'est bien la société du CRM.
+   */
+  company: ["societe", "entreprise", "company", "organisation", "compte", "client", "marque"],
+  /**
+   * Le site du contact. Il vivait jusqu'ici dans le déversoir des Notes (la
+   * ligne `SITE :` des jalons 24 et 25), faute de colonne pour l'accueillir.
+   */
+  website: ["site", "siteweb", "website", "url", "urlsite", "boutique", "sitemarchand"],
   lastContact: ["derniercontact", "dernierecho", "lastcontact", "dernierechange"],
   nextReminder: ["prochainerelance", "relance", "nextreminder", "prochainerelanceprevue"],
 };
