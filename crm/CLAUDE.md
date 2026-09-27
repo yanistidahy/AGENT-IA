@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 92 | **L'écran Tâches rangé en onglets** : six prédicats calculés à la lecture, une pastille qui ne peut pas contredire sa liste, un onglet enregistré par « + », un mode focus qui envoie par la route des départs, et le clic sur nos liens enfin compté parce que l'ouverture du pixel ne qualifie personne | **livré, à valider** |
 | 91 | **« Envoyer » refusait en silence** : la règle du week-end s'appliquait au clic d'un humain, la lecture de messagerie jugeait la mauvaise boîte, et le refus s'affichait hors du champ de vision ; le verdict se rend désormais sur la carte cliquée, le départ y reste, et l'envoi manuel n'appelle jamais le modèle | **livré, à valider** |
 | 90 | **Le téléversement de vidéo échouait en 500 muet** : Next tronquait le corps à 10 Mo à cause de notre propre middleware ; limite honnête de 24 Mo, contrôle avant lecture, et un refus qui dit le poids, la limite et le geste | **livré, à valider** |
 | 89 | **La vidéo entre dans les étapes manuelles, hébergée** : une balise `{video}` qui rend une vignette cliquable en HTML et l'adresse en entier en texte, servie depuis notre domaine, sans pièce jointe et sans traceur | **livré, à valider** |
@@ -12848,3 +12849,191 @@ c'est ce qui manquait.
 **Aucune reprise des départs déjà marqués `failed`** par l'ancien code : ils
 restent lus comme « brouillon non composé » et leurs boutons restent désactivés.
 Les recomposer depuis la campagne les remet en file.
+
+
+---
+
+## Jalon 92 — l'écran Tâches rangé en onglets
+
+### 1 · L'inventaire, avant de construire
+
+Ce que l'écran listait avant ce jalon : **`Task` seule**, groupée par urgence
+(`taskBucket`). Les départs en attente vivaient sur `/departs`, les réponses
+relevées dans `/emails`, et aucun écran ne montrait les signaux d'intérêt.
+
+Quatre origines, et la table de correspondance retenue :
+
+| Origine | Lue dans | Onglets |
+|---|---|---|
+| `Task` non terminée (jalon 4), tâches miroir de relance comprises (jalon 8) | `lib/api/task-feed.ts` → `taskRows()` | Vos tâches, Appels, Toutes |
+| `SequenceDeparture` en attente (jalon 38) | `lib/api/departures.ts` → `listDepartures()`, **la lecture de « Départs du jour »** | À envoyer, Toutes |
+| `EmailReply` relevée par IMAP (jalon 41), sans suite donnée | `task-feed.ts` → `replyRows()` + `replyHandled()` | Réponses des prospects, Toutes |
+| Signaux fiables : réponse, **clic** sur un de nos liens (ce jalon), passage en `Qualifié` (`Deal.createdAt`, jalon 22) | `task-feed.ts` → `hotRows()` | Prospects chauds |
+
+**Les DM Instagram n'entrent pas comme origine**, et ce n'est pas un oubli : un
+DM est une interaction consignée (jalon 48), donc du travail **fait**. Ce qui
+reste à faire après un DM est une tâche, et elle est déjà là.
+
+**Rien n'est écrit en base pour alimenter un onglet** : ni colonne d'onglet, ni
+statut « traité », ni ligne dupliquée. « Réponse non traitée » et « prospect
+chaud » sont **dérivés à la lecture** — une réponse est traitée dès qu'une
+interaction sortante postérieure existe sur la fiche (`CORRECTION_OWNER` exclu,
+jalon 27). Un état à tenir finit toujours par contredire ce qu'il décrit, et une
+garde statique interdit toute écriture dans `task-feed.ts`.
+
+### 2 · Un prédicat par onglet, et c'est lui qui compte la pastille
+
+`lib/domain/task-tabs.ts` (pur) porte `TAB_PREDICATES`. `countTab()` et
+`rowsForTab()` l'appellent tous les deux, sur **le même** tableau de lignes et
+avec **la même** horloge : une pastille ne peut pas annoncer 7 au-dessus d'une
+liste de 5. Le jalon 49 a payé cet écart une fois entre une puce et sa liste, le
+jalon 78 une seconde entre une carte et son tableau, et dans les deux cas on
+cessait de croire les deux nombres.
+
+| Onglet | Retient |
+|---|---|
+| Vos tâches | une tâche non terminée **due aujourd'hui ou en retard** |
+| Appels | une tâche non terminée reconnue à son intitulé (`isCallTitle`) |
+| À envoyer | un départ composé en attente de validation |
+| Prospects chauds | une réponse, un clic, ou un passage en Qualifié de moins de 14 jours, jamais une fiche close |
+| Réponses des prospects | une réponse relevée sans suite donnée |
+| Toutes les tâches | tout ce qui n'est pas terminé |
+
+**« Vos tâches » ne filtre par personne, et ce n'est pas un manque d'ambition** :
+l'espace a **un seul mot de passe partagé** (jalon 9), donc le produit ne sait
+pas qui est « vous », et inventer des comptes utilisateurs serait une autre
+décision. Ce qu'il sait, c'est ce qui est dû. `Task.owner` reste un filtre de la
+barre d'outils — il existe déjà.
+
+**Il n'existe aucune colonne de canal sur `Task`, et ce jalon n'en ajoute pas.**
+« Appels » reconnaît donc des formes, et la liste est **étroite** (`appel`,
+`appeler`, `rappeler`, `téléphon`) : un mot vague ferait entrer des tâches qui
+n'ont rien à voir, et un onglet qui ne tient pas sa promesse ne se rouvre pas.
+
+### 3 · Le clic devient mesurable, l'ouverture ne qualifie toujours personne
+
+**Les jalons 34 et 89 refusaient de compter les clics, et ce jalon revient sur ce
+refus** — en le disant, parce que la raison du refus tenait : un compteur posé
+sur une vignette aurait été un pistage non annoncé. Ce qui a changé, c'est
+l'usage : « Prospects chauds » n'accepte que des signaux fiables, et **l'ouverture
+du pixel n'en est pas un** — Apple Mail charge les images à la réception, Gmail
+les met en cache (jalons 37 et 43). Sans le clic, il ne restait que deux signaux,
+dont l'un arrive trop tard.
+
+Les garanties du pixel s'appliquent mot pour mot : **ni adresse IP, ni agent
+utilisateur**, jeton opaque (le même que celui du pixel — un clic et une
+ouverture appartiennent au même envoi), redirection servie **depuis notre
+domaine** (`/api/l/<jeton>/<demo|video>`), purgée avec le reste du suivi. Suivi
+coupé ⇒ pas de jeton ⇒ **lien nu**, donc rien de mesurable : c'est un
+interrupteur, pas un masquage.
+
+**La route est publique par nécessité, et c'est la destination du clic** : un
+écran de connexion y serait le lien mort qu'on s'interdit. Elle redirige de la
+même façon qu'un jeton soit connu, inconnu ou purgé, donc elle n'énumère rien —
+et elle résout la destination **avant** d'enregistrer, pour qu'un échec
+d'écriture ne coûte jamais un lien mort.
+
+**Une seule substitution, au moment de l'envoi** (`sendMail`) : les deux adresses
+traversent ensuite le formateur texte comme le formateur HTML. Réécrire l'une des
+deux plus loin ferait qu'un clic soit compté ou non selon le client de
+messagerie. Et **aucune déduplication**, contrairement aux ouvertures : un clic
+est un geste humain, aucun relais ne clique à la livraison — c'est exactement ce
+qui en fait un signal fiable.
+
+### 4 · L'état vide nomme sa cause, l'URL porte tout
+
+Deux situations produisent zéro ligne et appellent deux gestes opposés :
+« Aucune tâche dans cet onglet » (et l'onglet dit ce qu'il retient), ou
+« 2 filtres actifs masquent 7 tâches » avec **« Retirer les filtres »**. La
+recherche compte pour un filtre. Un écran vide qui ne dit pas pourquoi est un
+écran qui ment.
+
+Onglet, recherche, filtres et page vivent **dans l'URL** : la vue se met en
+favori et survit à un rechargement (jalon 1). C'est aussi ce qui permet à un
+onglet enregistré par « + » de n'être **qu'une requête nommée** — `task_tabs`
+porte un nom et une chaîne de requête, **aucune tâche rangée**, donc rien qui
+puisse contredire la liste. Les onglets enregistrés sont **sauvegardés** (jalon
+42) : comme les filtres personnalisés du jalon 79, c'est un choix qu'aucune
+lecture ne sait reconstituer.
+
+### 5 · Le mode focus envoie par la route des départs
+
+« Démarrer » ouvre la première ligne de l'onglet courant ; terminer, envoyer ou
+passer fait avancer ; « Quitter » revient à la liste. **L'envoi passe par
+`POST /api/departures` en `action: "send"`** — la route de « Départs du jour »,
+avec ses garde-fous et son verdict nommé (jalon 91). Un second chemin d'envoi
+aurait deux jeux de règles, et c'est toujours le second qui oublie la fiche
+passée en « Perdu » depuis l'inscription. **Zéro appel au modèle sur ce chemin** :
+le texte est déjà écrit et déjà payé, et une garde statique le fige.
+
+### Jalon 92 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `41_task_tabs_and_clicks` appliquée
+puis `migrate diff` **vide**), le serveur standalone de production, un **puits
+SMTP réel** et un navigateur piloté :
+
+- **1 · l'inventaire** ci-dessus, avec ses fichiers ;
+- **2 · pastille = liste, sur les six onglets**, à l'écran comme en base :
+  `vos 2/2`, `appels 2/2`, `envoyer 5/5`, `chauds 2/2`, `reponses 2/2`,
+  `toutes 12/12` sur un jeu couvrant chaque origine ;
+- **3 · le pixel ne qualifie personne** : un contact à **5 ouvertures comptées et
+  rien d'autre** est **absent** de « Prospects chauds » ; après un clic réel sur
+  `/api/l/<jeton>/demo` (302 → Calendly), **il y apparaît** — « a cliqué sur le
+  lien de réservation ». Un jeton inconnu rend **la même** redirection et n'écrit
+  **aucune** ligne ;
+- **4 · une fiche `Perdu` qui a répondu** est dans « Réponses des prospects » et
+  **jamais** dans « Prospects chauds » ;
+- **5 · deux filtres qui masquent tout** : « 2 filtres actifs masquent N tâches »
+  **atteignable**, et « Retirer les filtres » rend les 14 lignes ;
+- **6 · un onglet enregistré par « + »** survit à un rechargement et rend
+  **exactement** la même liste, sa requête étant de retour dans l'URL ;
+- **7 · « Démarrer » sur « À envoyer »** : 5 lignes parcourues, un envoi
+  **livré au puits SMTP** (message relu, départ `sent`, les autres `pending`),
+  puis deux refus nommés **sur la ligne cliquée** — « Connexion au serveur
+  impossible … self-signed certificate (code ESOCKET) » et « La campagne
+  « R92 campagne » est en pause » —, le départ restant en file dans les deux cas ;
+- **8 · e2e** : onglets, filtres, « + » et « Démarrer » cliqués avec
+  **`reachable()`, jamais `isVisible()`** ;
+- **mobile (390×844)** : onglets qui défilent horizontalement, cibles à 44 px,
+  **0 débordement horizontal**, **0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1546 tests**) et
+  `npm run e2e` (**83 tests**, vingt-et-un fichiers) verts.
+
+`tests/task-tabs-source.test.ts` ferme les rechutes : un cas particulier glissé
+dans le comptage ou dans la liste, un écran qui recompose la règle d'un onglet,
+un champ d'ouverture lu par « Prospects chauds », une écriture dans la lecture,
+une seconde lecture de la file des départs, un second chemin d'envoi.
+**Éprouvée en réintroduisant le défaut exact** — une branche `tab === "envoyer"`
+dans `rowsForTab` : la garde tombe en la nommant. Sa première version ne
+l'attrapait pas (les deux appels restaient en place) ; **un test qui passe ne
+prouve rien tant qu'on ne l'a pas vu échouer sur le défaut qu'il vise** — leçon
+des jalons 49 et 81, resservie.
+
+### Jalon 92 — ce qui n'est pas fait
+
+**Le clic n'a jamais été exercé depuis un vrai client de messagerie.** Ce qui est
+vérifié, c'est la redirection, l'écriture, le jeton inconnu et l'effet sur
+l'onglet ; que Gmail ne préfetche pas le lien reste à voir. Si c'était le cas, un
+clic « automatique » entrerait dans « Prospects chauds » — le risque est bien
+plus faible que pour une image, mais il n'est pas nul, et c'est la première chose
+à regarder sur les premiers signaux réels.
+
+**La barre d'outils ne porte que trois filtres** — propriétaire, priorité, type
+de ligne. Ni étiquette, ni société : chacun demande sa résolution et son cas
+vide.
+
+**« Appels » reconnaît des formes, pas un canal.** Une tâche intitulée « Joindre
+Sophie » n'y entrera pas. La liste s'allongera avec ce que l'usage montrera ;
+ajouter une colonne de canal serait un autre jalon.
+
+**Le mode focus ne retouche pas un brouillon.** Il envoie, ou il passe : corriger
+un texte se fait sur la carte de « Départs du jour » (jalon 68). Et l'avancement
+ne se mémorise pas — quitter puis redémarrer repart de la première ligne.
+
+**Un onglet enregistré ne se renomme pas**, et deux peuvent porter le même nom :
+c'est une étiquette humaine, pas une clé (même choix qu'au jalon 79).
+
+**Les chiffres ci-dessus viennent d'un jeu de recette**, pas de votre base. La
+première pastille « Prospects chauds » en production ne comptera que des clics
+postérieurs à ce déploiement : rien ne rattrape les clics qui n'ont jamais été
+mesurés.

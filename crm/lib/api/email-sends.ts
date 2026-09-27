@@ -83,6 +83,69 @@ export function pixelUrl(baseUrl: string, token: string): string {
   return `${baseUrl}/api/t/${token}`;
 }
 
+/**
+ * Les deux liens dont un clic est un signal d'intérêt fiable.
+ *
+ * `demo` est le lien de prise de rendez-vous, `video` la démonstration.
+ */
+export type ClickKind = "demo" | "video";
+
+export function isClickKind(value: string): value is ClickKind {
+  return value === "demo" || value === "video";
+}
+
+/**
+ * L'adresse de redirection qui enregistre un clic, sur notre domaine.
+ *
+ * **Les jalons 34 et 89 refusaient de compter les clics, et ce jalon revient
+ * sur ce refus.** La raison du refus tenait : un compteur de vues posé sur une
+ * vignette aurait été un pistage qu'on n'avait pas annoncé. Ce qui a changé,
+ * c'est l'usage : « Prospects chauds » n'accepte que des signaux fiables — une
+ * réponse, une qualification, un clic — et **l'ouverture du pixel n'en est pas
+ * un**, elle surestime par construction (jalons 37 et 43). Sans le clic, il ne
+ * reste que deux signaux, dont l'un arrive trop tard.
+ *
+ * Les garanties du pixel s'appliquent telles quelles : **ni adresse IP, ni
+ * agent utilisateur**, jeton opaque, redirection servie depuis notre propre
+ * domaine — aucun tiers ne voit qui clique. Et le suivi coupé, il n'y a pas de
+ * jeton : le lien reste nu, donc rien n'est mesurable.
+ */
+export function clickUrl(baseUrl: string, token: string, kind: ClickKind): string {
+  return `${baseUrl}/api/l/${token}/${kind}`;
+}
+
+/**
+ * Enregistre un clic. Ne lève jamais, ne renvoie rien d'exploitable.
+ *
+ * Même régime que `recordOpen` : un jeton inconnu est un non-évènement, et la
+ * route redirige de la même façon dans tous les cas — répondre différemment en
+ * ferait un oracle permettant d'énumérer les envois.
+ *
+ * **Aucune déduplication, contrairement aux ouvertures.** Un clic est un geste
+ * humain : personne ne clique par accident quinze fois, et aucun relais ne
+ * clique à la livraison. C'est précisément ce qui en fait un signal fiable là
+ * où l'ouverture n'en est pas un.
+ */
+export async function recordClick(
+  token: string,
+  kind: ClickKind,
+  now = new Date(),
+): Promise<void> {
+  try {
+    const send = await prisma.emailSend.findUnique({
+      where: { trackToken: token },
+      select: { id: true },
+    });
+    if (send === null) return;
+
+    await prisma.emailLinkClick.create({
+      data: { emailSendId: send.id, kind, at: now },
+    });
+  } catch (error) {
+    console.error("[suivi] clic non consigné", error);
+  }
+}
+
 export interface RecordSendInput {
   readonly contactId: string;
   readonly toAddress: string;
@@ -233,8 +296,11 @@ export async function purgeOpens(now = new Date()): Promise<number> {
   // **Les chargements partent avec le reste.** Ils portent des horodatages de
   // comportement — c'est même tout ce qu'ils portent — et les laisser derrière
   // reconstituerait exactement ce que la purge efface.
-  const [, result] = await prisma.$transaction([
+  const [, , result] = await prisma.$transaction([
     prisma.emailOpenHit.deleteMany({ where: { emailSendId: { in: ids } } }),
+    // Les clics aussi : c'est la même nature de donnée, et la promesse de purge
+    // ne souffre pas d'exception pour la mesure qui nous arrange le plus.
+    prisma.emailLinkClick.deleteMany({ where: { emailSendId: { in: ids } } }),
     prisma.emailSend.updateMany({
       where: { id: { in: ids } },
       data: {

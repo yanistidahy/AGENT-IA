@@ -33,7 +33,7 @@ import {
 } from "../domain/signature-video";
 import { readLogoSummary } from "./mail-logo";
 import { readVideoSummary } from "./mail-video";
-import { publicBaseUrl } from "./email-sends";
+import { clickUrl, publicBaseUrl, type ClickKind } from "./email-sends";
 import { DEFAULT_DEMO, DEFAULT_SIGNATURE, type Signature } from "../agents/prompts/company";
 
 /**
@@ -233,6 +233,19 @@ export function demoLinkOf(config: MailConfig): DemoLink {
 }
 
 /**
+ * Où mène un clic, une fois le passage enregistré.
+ *
+ * **Une seule lecture décide de la destination**, appelée par la redirection
+ * comme par la composition du message : deux résolutions finiraient par ne plus
+ * pointer au même endroit, et le prospect atterrirait ailleurs que là où la
+ * vignette le promettait.
+ */
+export async function clickDestination(kind: ClickKind): Promise<string> {
+  if (kind === "video") return (await signatureVideo())?.url ?? "";
+  return (await readMailConfig()).demoUrl;
+}
+
+/**
  * La signature d'une boîte, ses quatre champs réunis.
  *
  * **L'adresse vient de `from`**, jamais d'une saisie séparée : c'est celle de
@@ -357,6 +370,14 @@ export interface SendInput {
    * délivrabilité sans rien rapporter.
    */
   readonly trackingUrl?: string;
+  /**
+   * Jeton de suivi, quand il y en a un. Absent = **liens nus**.
+   *
+   * C'est le même jeton que celui du pixel : un clic et une ouverture
+   * appartiennent au même envoi, et en émettre deux ne servirait qu'à croire
+   * qu'on mesure deux choses indépendantes.
+   */
+  readonly trackToken?: string;
 }
 
 export type SendResult =
@@ -461,8 +482,32 @@ export async function sendMail(input: SendInput): Promise<SendResult> {
 
   const id = messageId(config.from, new Date(), Math.random().toString(36).slice(2, 10));
   const sentAt = new Date();
-  const demo = demoLinkOf(config);
-  const video = await signatureVideo();
+  /*
+    **Les deux adresses passent par notre redirection, ou pas du tout.**
+
+    Un seul point de substitution, ici : `demo` et `video` sont résolus une fois
+    et traversent ensuite le formateur texte comme le formateur HTML. Réécrire
+    l'adresse plus loin, dans l'un des deux rendus, ferait que le lien de la
+    version texte et celui de la version HTML ne mènent pas au même endroit —
+    donc qu'un clic soit compté ou non selon le client de messagerie.
+
+    Sans jeton — suivi coupé pour ce message ou globalement, ou aucune adresse
+    publique connue — **le lien reste celui de l'hébergeur** : rien n'est
+    mesurable, et c'est un interrupteur, pas un masquage d'affichage (jalon 37).
+  */
+  const base = publicBaseUrl();
+  const token = input.trackToken ?? "";
+  const measurable = token !== "" && base !== "";
+  const through = (kind: ClickKind, url: string): string =>
+    measurable && url !== "" ? clickUrl(base, token, kind) : url;
+
+  const plainDemo = demoLinkOf(config);
+  const demo: DemoLink = { ...plainDemo, url: through("demo", plainDemo.url) };
+  const plainVideo = await signatureVideo();
+  const video =
+    plainVideo === undefined
+      ? undefined
+      : { ...plainVideo, url: through("video", plainVideo.url) };
   // **Logo, puis vignette, puis pixel — et l'ordre est une contrainte.** Le
   // pixel doit rester la toute dernière chose du corps (jalon 43 : un client qui
   // tronque coupe par la fin). Le logo prend le dernier paragraphe pour en faire

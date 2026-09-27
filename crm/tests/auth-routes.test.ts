@@ -111,6 +111,13 @@ beforeEach(() => {
  * s'interdit. Elle ne compte aucune lecture : ce serait du pistage de clic,
  * exactement ce qu'on refuse en écartant un traceur externe sur la vignette.
  *
+ * `/api/l/[token]/[kind]` — la redirection qui enregistre un clic sur un de nos
+ * liens (jalon 92). Publique pour la raison du fichier vidéo, et c'est la plus
+ * forte : **c'est la destination du clic**, suivie par le navigateur d'un
+ * prospect qui n'a pas de compte ici. Elle redirige de la même façon qu'un jeton
+ * soit connu, inconnu ou purgé, ne lit ni adresse IP ni agent utilisateur, et ne
+ * rend aucune donnée métier.
+ *
  * Le **téléversement**, lui, reste privé : c'est `/api/mail/logo` et
  * `/api/mail/video`, deux gestes d'administration, et ils n'ont rien à faire
  * dans cette liste.
@@ -121,6 +128,7 @@ const PUBLIC_API_EXCEPTIONS: readonly string[] = [
   "/api/logo/[version]/app",
   "/api/video/[version]",
   "/api/video/[version]/fichier",
+  "/api/l/[token]/[kind]",
 ];
 
 function isPublicApi(route: string): boolean {

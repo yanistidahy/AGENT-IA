@@ -162,6 +162,7 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
     subject,
     body: input.body,
     trackingUrl: trackToken === null ? "" : pixelUrl(tracking.baseUrl, trackToken),
+    trackToken: trackToken ?? "",
   });
   if (!sent.ok) return { ok: false, message: sent.message };
 
