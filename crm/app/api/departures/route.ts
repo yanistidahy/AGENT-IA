@@ -73,13 +73,13 @@ export async function POST(request: Request) {
 
   try {
     const { id, action } = parsed.data;
-    // `auto: false` en dur : cette route est celle de l'humain. Un envoi
+    // `"human"` en dur : cette route est celle de l'humain. Un envoi
     // automatique ne passe jamais par HTTP, il part du passage quotidien — et
     // c'est ce qui fait que le compteur de départs « validés à la main » ne peut
     // pas être gonflé par la machine.
     const result =
       action === "send"
-        ? await sendDeparture(id, false)
+        ? await sendDeparture(id, "human")
         : action === "postpone"
           ? await postponeDeparture(id)
           : await removeFromSequence(id);

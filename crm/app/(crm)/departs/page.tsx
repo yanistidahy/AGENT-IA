@@ -6,6 +6,9 @@ import { DeparturesView, type Departure } from "@/components/sequences/departure
 import { CompositionBanner } from "@/components/sequences/composition-banner";
 import { CompositionRefresh } from "@/components/sequences/composition-refresh";
 import { RewriteQueueAction } from "@/components/sequences/rewrite-queue-action";
+import { AutoSendPanel } from "@/components/sequences/auto-send-panel";
+import { readAutoSendStatus } from "@/lib/api/auto-send";
+import { ensureAutoSendLoop } from "@/lib/api/auto-send-loop";
 
 export const dynamic = "force-dynamic";
 
@@ -14,14 +17,21 @@ export default async function DepartsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  // **La boucle est armée ici, et c'est délibéré.** Voir `auto-send-loop.ts` :
+  // `instrumentation.ts` ne peut pas la porter, et cette page est celle où l'on
+  // arme l'interrupteur — donc celle qu'on ouvre forcément avant d'attendre un
+  // envoi. L'appel est idempotent.
+  ensureAutoSendLoop();
+
   const raw = await searchParams;
   const asked = raw["campagne"];
   const campaignId = Array.isArray(asked) ? asked[0] : asked;
 
-  const [departures, jobs, campaigns] = await Promise.all([
+  const [departures, jobs, campaigns, auto] = await Promise.all([
     listDepartures(new Date(), { campaignId }),
     readCompositionJobs(),
     campaignId === undefined ? Promise.resolve([]) : listCampaigns(),
+    readAutoSendStatus(),
   ]);
   const campaign = campaigns.find((entry) => entry.id === campaignId);
 
@@ -46,6 +56,13 @@ export default async function DepartsPage({
   return (
     <>
       <CompositionRefresh running={jobs.some((job) => job.running)} />
+      {/*
+        **L'envoi automatique est en tête, et il porte tout le CRM.** Le panneau
+        n'est pas borné à la campagne affichée : l'ordonnanceur envoie la file
+        entière, et un interrupteur rendu au-dessus d'une file filtrée laisserait
+        croire qu'il ne concerne qu'elle.
+      */}
+      <AutoSendPanel initial={{ settings: auto.settings, sentence: auto.sentence, plan: auto.plan, dropped: auto.dropped }} />
       <CompositionBanner jobs={jobs} />
       {/*
         Un filtre actif se **nomme**, avec de quoi l'annuler : une file bornée à

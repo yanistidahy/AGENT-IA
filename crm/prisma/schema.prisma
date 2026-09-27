@@ -1151,6 +1151,42 @@ model TaskTab {
   @@map("task_tabs")
 }
 
+/// L'envoi automatique des départs en attente : ses réglages **et** son état.
+///
+/// Une seule ligne (`singleton`), et les deux ensemble délibérément : c'est la
+/// ligne qui sert de **verrou**. Réclamer un créneau est un `updateMany`
+/// conditionné sur `dueAt`, donc une écriture atomique — deux instances, ou une
+/// instance et son remplaçant pendant un redéploiement, ne peuvent pas envoyer
+/// le même départ deux fois. Une vérification applicative, elle, se contourne
+/// toujours (leçon du jalon 8).
+model AutoSend {
+  id String @id @default("singleton")
+
+  enabled Boolean @default(false)
+  /// L'intervalle nominal, en secondes. Plancher applicatif : 60.
+  intervalSeconds Int @default(210)
+  /// Fenêtre d'envoi, en minutes depuis minuit, **heure de Paris**.
+  startMinute Int     @default(540)
+  endMinute   Int     @default(1020)
+  /// Tirer chaque écart au hasard dans ±30 % de l'intervalle.
+  vary        Boolean @default(true)
+
+  /// Quand le prochain envoi est dû. Nul = rien de programmé.
+  dueAt    DateTime?
+  /// Le dernier envoi réellement parti, et le dernier passage de la boucle.
+  lastSendAt DateTime?
+  lastTickAt DateTime?
+
+  /// Échecs consécutifs ; remis à zéro par un envoi réussi.
+  failures Int @default(0)
+  /// Pourquoi le produit a coupé l'envoi tout seul. Vide = il ne l'a pas fait.
+  stoppedReason String @default("")
+
+  updatedAt DateTime @updatedAt
+
+  @@map("auto_send")
+}
+
 /// Un rôle destinataire, et ce qui compte pour lui.
 ///
 /// La campagne écrit à plusieurs personnes d'une même maison : le pitch ne
