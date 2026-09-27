@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 91 | **« Envoyer » refusait en silence** : la règle du week-end s'appliquait au clic d'un humain, la lecture de messagerie jugeait la mauvaise boîte, et le refus s'affichait hors du champ de vision ; le verdict se rend désormais sur la carte cliquée, le départ y reste, et l'envoi manuel n'appelle jamais le modèle | **livré, à valider** |
 | 90 | **Le téléversement de vidéo échouait en 500 muet** : Next tronquait le corps à 10 Mo à cause de notre propre middleware ; limite honnête de 24 Mo, contrôle avant lecture, et un refus qui dit le poids, la limite et le geste | **livré, à valider** |
 | 89 | **La vidéo entre dans les étapes manuelles, hébergée** : une balise `{video}` qui rend une vignette cliquable en HTML et l'adresse en entier en texte, servie depuis notre domaine, sans pièce jointe et sans traceur | **livré, à valider** |
 | 88 | **La voie avant le formulaire, la file en cartes** : « Automatique (Alex) » ou « Manuel » choisi à la création avant tout éditeur d'étape ; « Départs du jour » regroupé par campagne, une carte bornée par départ, les actions sous un filet | **livré, à valider** |
@@ -12709,3 +12710,141 @@ exactement le pistage que la demande écarte en refusant qu'un traceur externe
 voyage avec la vignette. Le remplacer par le nôtre ne vaudrait pas mieux, et il
 faudrait le dire — ce serait un jalon à part, avec sa décision.
 
+
+---
+
+## Jalon 91 — « Envoyer » refusait, et ne le disait à personne
+
+### Le déploiement, écarté par mesure
+
+`git log --oneline origin/main..origin/claude/wonderful-cannon-1s8sd2` est
+**vide** : ce qui tourne en production est bien ce qui est dans `main`. Le défaut
+était donc dans le code servi, et il a fallu le reproduire — la demande arrivait
+sans message de console ni nom de campagne.
+
+### Trois causes, chacune avec son fichier
+
+Reproduites par le vrai bouton, dans un vrai navigateur, contre un vrai
+PostgreSQL et un puits SMTP.
+
+**1 · `lib/domain/sequence-rules.ts:145` (jalon 38) — la règle du week-end
+s'appliquait au clic d'un humain.** `nextStep` refusait « Aucun départ le samedi
+ni le dimanche » quelle que soit l'origine de la décision. Cette règle existe
+pour l'**automate** : un brouillon composé vendredi soir décrit l'état de
+vendredi, et la réponse arrivée samedi ne l'arrêterait pas (jalon 38). Un humain
+qui clique sur la carte, lui, **est** la décision — il vient de relire le texte,
+maintenant. Le jalon est livré un dimanche, ce qui a rendu la cause visible ;
+elle mordait tous les week-ends depuis trois ans de jalons.
+
+`nextStep` prend donc un `SendDecider` (`"machine"` par défaut, `"human"` quand
+la route de l'humain appelle), et **seule** la clause du week-end le lit : les
+fiches closes, les oppositions, les réponses reçues et les délais s'appliquent
+aux deux, sans exception.
+
+**2 · `lib/api/email-send.ts` — la lecture de messagerie jugeait la mauvaise
+boîte.** `readMailStatus()` était appelée **sans identifiant**, donc sur la boîte
+par défaut, *avant* que la boîte de la campagne soit résolue. Une campagne dont
+la boîte est parfaitement configurée se voyait refuser avec « Messagerie non
+configurée : il manque l'hôte SMTP » — en décrivant une **autre** boîte. Le
+contrôle est passé **après** la résolution, et son message nomme la boîte.
+
+**3 · le refus était invisible.** Deux moitiés, et elles se cumulaient : le
+verdict partait dans un bandeau rendu en tête de page, mesuré à `top: -3070` sur
+un écran qui fait plusieurs hauteurs depuis le jalon 88 ; et
+`app/api/departures/route.ts` rendait un **400 nu**, donc l'écran gardait son
+état d'avant le clic et la carte s'affichait comme si rien n'avait été tenté.
+C'est la définition de « rien ne se passe ».
+
+### Deux défauts de plus, trouvés en vérifiant
+
+**4 · un refus transitoire retirait la carte de la file.** `readDepartures` ne
+lit que `pending` et `failed` : écrire `skipped` sur un motif qui sera faux
+demain — délai non écoulé, week-end — faisait **disparaître** un départ qui
+n'était pas parti. Un échec ressemblait à un succès. `TRANSIENT_BLOCKS` sépare
+les deux : un motif transitoire n'écrit que la cause, la carte garde sa place.
+
+**5 · un échec d'envoi verrouillait la carte pour toujours.** La branche écrivait
+`status: "failed"`, or ce statut signifie « brouillon non composé » à la carte,
+qui **désactive alors tous ses boutons**. Corriger la cause ne servait à rien :
+le départ n'était plus renvoyable. Il reste `pending`, avec son `detail`.
+
+### Le verdict se rend sur la carte cliquée
+
+La route POST rend désormais la file **dans les deux cas** — message et file
+voyagent ensemble — et la vue garde l'identifiant du départ avec le verdict, pour
+le rendre sur la bonne carte : « **Rien n'est parti.** Boîte « Recette 91 »
+incomplète : il manque le mot de passe — ajoutez la variable
+`SMTP_PASSWORD_RECETTE91` dans les variables du service (Railway), puis
+redéployez. »
+
+Le message du mot de passe manquant nomme **la variable et l'endroit** : ce
+réglage ne se fait pas dans l'application, et sans ces deux informations on le
+cherche dans `/reglages` (jalon 16, appliqué à un refus lu ailleurs).
+
+Un refus qui retire légitimement le départ de la file — une fiche close, par
+exemple — n'a plus de carte pour porter son verdict : il retombe alors sur le
+bandeau de tête, avec « Rien n'est parti. » devant. Le silence, lui, n'existe
+plus.
+
+### L'envoi manuel ne facture rien, et une garde le fige
+
+Valider un départ d'étape **écrite à la main** (jalon 87) ne doit rien coûter :
+le texte est déjà écrit. `tests/departure-send-source.test.ts` échoue si le corps
+de `sendDeparture` contient `draftEmail`, `reviseEmail`, `researchCompany`,
+`researchFor`, `messages.create`, `messages.stream` ou `anthropic`, et si la
+route importe `@anthropic-ai` ou la rédaction. Statique parce que le défaut l'est :
+un appel glissé là compile, ne lève pas, et le compteur du jalon 36 le verrait
+**après** la facture.
+
+### Jalon 91 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (`migrate diff` **vide** — aucune migration),
+le serveur standalone de production, un **puits SMTP réel** et un navigateur
+piloté :
+
+- **1 · l'envoi part** : clic sur « Envoyer » d'un départ manuel → **1 message
+  de plus dans le puits**, MIME relu — `From: Recette 91 <recette91@aura.test>`,
+  `To: farid@r91.test`, objet encodé UTF-8, `multipart`, **aucune pièce
+  jointe** — le départ marqué `sent`, et la file annonce « Étape 1 envoyée … ».
+  La carte **ne quitte la liste qu'après** le succès ;
+- **2 · zéro appel au modèle** sur ce chemin : `api_usage` **246 avant, 246
+  après** ;
+- **3 · mot de passe retiré** (slug renommé pour que `SMTP_PASSWORD_…` ne
+  corresponde plus) : la carte rend le refus nommant la variable, mesuré **dans
+  le champ de vision** (`top: 818`), les 5 départs restent en file, et **1 seul**
+  reste marqué `sent` — celui du point 1 ;
+- **4 · campagne en pause** : « La campagne « R91 manuelle » est en pause : rien
+  ne part tant qu'elle ne redémarre pas. », et le puits **inchangé** (3 → 3) ;
+- **0 erreur console** sur tout le parcours ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1528 tests**) et
+  `npm run e2e` (**79 tests**, vingt fichiers) verts.
+
+`tests/e2e/departure-send.e2e.ts` clique le vrai bouton avec **`reachable()`,
+jamais `isVisible()`** (leçon du jalon 60 : celle-ci ne voit pas un verdict rendu
+à des écrans du geste), sur deux refus qui se reproduisent sans puits SMTP. Il
+sème sa boîte, ses deux campagnes et ses départs par Prisma, et les efface
+ensuite. **Éprouvé en réintroduisant le 400 nu** : les deux tests tombent, l'un
+sur « expected [ 400 ] to deeply equal [ 200 ] », l'autre sur l'erreur de console
+que le bandeau laisse derrière lui.
+
+### Jalon 91 — ce qui n'est pas fait
+
+**L'envoi réussi n'est pas couvert par la suite e2e.** Il demande un puits SMTP
+debout, que `npm run e2e` n'exige pas — les deux refus couverts sont ceux qui se
+reproduisent sans lui. Le succès est vérifié par la recette ci-dessus, pas par un
+test rejouable.
+
+**Le week-end ne protège plus l'envoi manuel, et c'est le sujet.** Un humain qui
+valide un brouillon un samedi peut le faire partir sur un état vieux de deux
+jours si une réponse est arrivée sans être relevée. Le relevé IMAP tourne tous
+les quarts d'heure (jalon 41), la carte affiche l'ancienneté de la dernière
+interaction (jalon 38), et la règle demeure pour l'automate — mais le garde-fou
+du jalon 38 est, pour l'humain, remplacé par son jugement.
+
+**Les cinq causes ont été trouvées sur une base de recette**, pas sur la vôtre.
+Si un envoi refuse encore en production, la carte en nomme désormais la raison :
+c'est ce qui manquait.
+
+**Aucune reprise des départs déjà marqués `failed`** par l'ancien code : ils
+restent lus comme « brouillon non composé » et leurs boutons restent désactivés.
+Les recomposer depuis la campagne les remet en file.

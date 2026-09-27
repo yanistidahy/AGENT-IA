@@ -84,8 +84,16 @@ export async function POST(request: Request) {
           ? await postponeDeparture(id)
           : await removeFromSequence(id);
 
-    if (!result.ok) return badRequest(result.message);
-    return jsonOk({ message: result.message, departures: await listDepartures() });
+    /*
+      **L'échec rend la file lui aussi.** Rendre un 400 nu laissait l'écran sur
+      son état d'avant le clic : un départ que le serveur venait de marquer
+      « échoué », avec sa cause, s'affichait encore comme s'il n'avait rien
+      tenté. Le message et la file voyagent donc ensemble dans les deux cas, et
+      c'est la carte qui portera la cause.
+    */
+    const departures = await listDepartures();
+    if (!result.ok) return jsonOk({ ok: false, message: result.message, departures });
+    return jsonOk({ ok: true, message: result.message, departures });
   } catch (error) {
     return serverError("POST /api/departures", error);
   }

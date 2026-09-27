@@ -24,6 +24,7 @@ import {
   canSendAutomatically,
   isWeekend,
   nextStep,
+  isTransientBlock,
   stopsEnrollment,
 } from "../domain/sequence-rules";
 import { replyAnchor } from "../domain/campaign-reset";
@@ -922,6 +923,11 @@ export async function sendDeparture(
     { repliedAt: replied, lastSentAt: enrollment.lastSentAt, lastStep: enrollment.lastStep },
     enrollment.sequence.steps,
     now,
+    // **Un clic est une décision, pas un passage d'automate.** La règle du
+    // week-end protège l'automate d'un brouillon périmé et d'une réponse non
+    // relevée ; appliquée à une personne qui regarde la carte, elle refusait
+    // l'envoi en silence. Tous les autres garde-fous valent dans les deux cas.
+    auto ? "machine" : "human",
   );
 
   if (!verdict.ok || verdict.step !== departure.step) {
@@ -929,9 +935,20 @@ export async function sendDeparture(
       ? "L'étape a changé depuis la composition."
       : BLOCK_LABELS[verdict.reason];
 
+    /*
+      **Un motif transitoire laisse le départ en file.** `readDepartures` ne lit
+      que `pending` et `failed` : marquer « écarté » un départ refusé parce que
+      le délai n'est pas écoulé le faisait disparaître de l'écran, alors que rien
+      n'était parti et que demain il serait dû. Une carte qui s'en va se lit
+      comme un envoi réussi.
+    */
+    const transient = !verdict.ok && isTransientBlock(verdict.reason);
+
     await prisma.sequenceDeparture.update({
       where: { id },
-      data: { status: "skipped", decidedAt: now, detail: reason },
+      data: transient
+        ? { detail: reason }
+        : { status: "skipped", decidedAt: now, detail: reason },
     });
     if (!verdict.ok && stopsEnrollment(verdict.reason)) {
       await prisma.sequenceEnrollment.update({
@@ -971,10 +988,19 @@ export async function sendDeparture(
   });
 
   if (!sent.ok) {
-    await prisma.sequenceDeparture.update({
-      where: { id },
-      data: { status: "failed", decidedAt: now, detail: sent.message },
-    });
+    /*
+      **Un envoi refusé laisse le départ en attente, avec sa cause.**
+
+      Il écrivait `status: "failed"`, or ce statut signifie « brouillon non
+      composé » pour la carte, qui rend alors « Brouillon non composé : … » et
+      **désactive tous ses boutons**. Un refus d'envoi produisait donc une carte
+      qui affirmait quelque chose de faux (le brouillon existe, il a été relu)
+      et qu'on ne pouvait plus jamais renvoyer, même après avoir corrigé la
+      cause, par exemple un mot de passe SMTP posé sur le service.
+
+      Le texte reste, la carte reste, la cause s'affiche, et le geste se rejoue.
+    */
+    await prisma.sequenceDeparture.update({ where: { id }, data: { detail: sent.message } });
     return { ok: false, message: sent.message };
   }
 

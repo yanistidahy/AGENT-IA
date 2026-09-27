@@ -110,6 +110,23 @@ export function stopsEnrollment(reason: BlockReason): boolean {
 }
 
 /**
+ * Ces motifs sont **transitoires** : ils seront faux demain, sans que personne
+ * ait rien à faire.
+ *
+ * La distinction décide du sort du **départ**, pas de l'inscription. Un départ
+ * refusé pour un motif transitoire doit **rester en attente** : le marquer
+ * écarté le fait sortir de la file (`readDepartures` ne lit que `pending` et
+ * `failed`), si bien qu'un clic sur « Envoyer » un dimanche faisait disparaître
+ * la carte sans que rien ne soit parti — un échec qui ressemble à un succès,
+ * exactement ce qu'on s'interdit.
+ */
+export const TRANSIENT_BLOCKS: readonly BlockReason[] = ["too-soon", "weekend"];
+
+export function isTransientBlock(reason: BlockReason): boolean {
+  return TRANSIENT_BLOCKS.includes(reason);
+}
+
+/**
  * L'étape suivante d'une inscription, ou le motif qui l'empêche.
  *
  * `steps` est la liste ordonnée des délais. Le délai d'une étape court depuis
@@ -121,11 +138,30 @@ export type NextStep =
   | { readonly ok: true; readonly step: number }
   | { readonly ok: false; readonly reason: BlockReason };
 
+/**
+ * Qui décide de cet envoi.
+ *
+ * `"machine"` — la composition du matin et l'envoi automatique : personne ne
+ * regarde, donc **la règle du week-end s'applique**. Elle existe pour deux
+ * raisons, et les deux ne concernent que l'automate : un brouillon écrit le
+ * samedi décrirait un état vieux de deux jours au moment de partir, et une
+ * réponse arrivée le week-end n'est relevée que le lundi (jalon 38).
+ *
+ * `"human"` — un clic sur « Envoyer » dans la file. La personne est devant la
+ * carte, elle lit l'ancienneté de la dernière interaction que la carte affiche,
+ * et **son clic est la décision**. Lui refuser l'envoi sans rien montrer — ce
+ * que faisait ce code — n'est pas un garde-fou, c'est un écran qui ne répond
+ * pas. Tout le reste tient : la réponse reçue, la fiche close, l'opposition au
+ * démarchage et le délai de l'étape sont vérifiés dans les deux cas.
+ */
+export type SendDecider = "machine" | "human";
+
 export function nextStep(
   contact: SequenceContact,
   state: SequenceState,
   steps: ReadonlyArray<{ readonly position: number; readonly delayDays: number }>,
   now: Date,
+  decider: SendDecider = "machine",
 ): NextStep {
   if (isTerminal(contact.lifecycle)) return { ok: false, reason: "terminal" };
   // L'opposition ferme vaut quel que soit le cycle de vie — règle du jalon 10,
@@ -142,7 +178,7 @@ export function nextStep(
   const step = steps.find((entry) => entry.position === wanted);
   if (step === undefined || wanted > MAX_STEPS) return { ok: false, reason: "finished" };
 
-  if (isWeekend(now)) return { ok: false, reason: "weekend" };
+  if (decider === "machine" && isWeekend(now)) return { ok: false, reason: "weekend" };
 
   if (state.lastSentAt !== null) {
     const due = new Date(state.lastSentAt);

@@ -53,7 +53,12 @@ export interface Departure {
   campaignPaused: boolean;
 }
 
-function isPayload(value: unknown): value is { departures: Departure[]; message?: string } {
+function isPayload(value: unknown): value is {
+  departures: Departure[];
+  message?: string;
+  /** Présent depuis le jalon 91 : un échec rend la file **et** son refus. */
+  ok?: boolean;
+} {
   return typeof value === "object" && value !== null && "departures" in value;
 }
 
@@ -77,6 +82,14 @@ export function DeparturesView({
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Le verdict du dernier geste, **rattaché à sa carte**.
+   *
+   * Un seul à la fois : deux refus affichés ensemble sur deux cartes
+   * éloignées feraient relire l'écran entier pour savoir lequel vient du clic
+   * qu'on a fait.
+   */
+  const [outcome, setOutcome] = useState<{ id: string; ok: boolean; message: string } | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   /** Le départ ouvert dans le panneau de rédaction, le cas échéant. */
   const [reworking, setReworking] = useState<Departure | null>(null);
@@ -95,16 +108,48 @@ export function DeparturesView({
     setBusy(id);
     setError(null);
     setNotice(null);
+    setOutcome(null);
     const result = await requestJson(
       "/api/departures",
       { method: "POST", body: JSON.stringify({ id, action }) },
       isPayload,
     );
     setBusy(null);
-    if (result.ok) {
-      setDepartures(result.data.departures);
-      setNotice(result.data.message ?? null);
-    } else setError(result.message);
+
+    /*
+      **Le refus s'affiche sur la carte, pas en tête de page.**
+
+      C'était la cause du défaut signalé : le message partait dans un bandeau
+      rendu au-dessus des groupes, et la page des départs fait plusieurs écrans
+      de haut depuis le jalon 88. Cliquer « Envoyer » sur une carte du bas
+      écrivait donc la cause hors du champ de vision — « rien ne se passe », la
+      carte reste, et l'échec ressemble à un bouton mort.
+
+      La carte qu'on vient de cliquer est le seul endroit dont on est certain
+      qu'il est sous les yeux.
+    */
+    if (!result.ok) {
+      // Panne de transport (réseau, 500) : la file n'a pas été rendue.
+      setOutcome({ id, ok: false, message: result.message });
+      return;
+    }
+
+    setDepartures(result.data.departures);
+    if (result.data.ok === false) {
+      /*
+        **Si la carte a quitté la file, le verdict remonte en tête de page.**
+
+        Un refus définitif — étape déjà envoyée, fiche close, opposition — écarte
+        le départ : la carte disparaît, et un verdict qui lui serait rattaché
+        disparaîtrait avec elle. Trouvé à la recette, pas à la lecture : l'écran
+        redevenait muet exactement dans les cas les plus graves.
+      */
+      const stillListed = result.data.departures.some((row) => row.id === id);
+      if (stillListed) setOutcome({ id, ok: false, message: result.data.message ?? "Envoi refusé." });
+      else setError(`Rien n'est parti. ${result.data.message ?? "Envoi refusé."}`);
+      return;
+    }
+    setNotice(result.data.message ?? null);
   };
 
   /** Enregistre la retouche manuelle. **Aucun appel au modèle sur ce chemin.** */
@@ -240,6 +285,7 @@ export function DeparturesView({
                       onEditSave={() => void save()}
                       onRework={() => setReworking(departure)}
                       onDecide={(action) => void decide(departure.id, action)}
+                      feedback={outcome?.id === departure.id ? outcome : null}
                     />
                   </li>
                 ))}

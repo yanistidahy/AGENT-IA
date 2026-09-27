@@ -32,20 +32,34 @@ describe("ce qui manque pour envoyer", () => {
     expect(missingFields(CONFIG, true)).toEqual([]);
   });
 
-  it("nomme le mot de passe par sa variable d'environnement", () => {
-    // Le nom de la variable est la seule information actionnable : le mot de
-    // passe ne se règle pas dans l'application, il se pose sur le service.
-    expect(missingFields(CONFIG, false)).toEqual([`le mot de passe (variable ${passwordEnvFor(CONFIG.slug)})`]);
+  it("nomme le mot de passe par sa variable d'environnement, et où la poser", () => {
+    /*
+      Le nom de la variable est la moitié de l'information actionnable : le mot
+      de passe ne se règle pas dans l'application, il se pose sur le service.
+      L'autre moitié est **où** — le refus se lit dans la file des départs, à
+      des écrans de l'endroit où l'on agit (jalon 91).
+
+      Le test porte sur ces deux faits plutôt que sur la phrase entière : une
+      reformulation ne doit pas le faire tomber, mais retirer la variable ou le
+      geste doit le faire tomber.
+    */
+    const [message, ...rest] = missingFields(CONFIG, false);
+    expect(rest).toEqual([]);
+    expect(message).toContain("mot de passe");
+    expect(message).toContain(passwordEnvFor(CONFIG.slug));
+    expect(message).toMatch(/variables du service|Railway/);
   });
 
   it("nomme chaque champ absent, pas seulement le premier", () => {
     const empty = { ...CONFIG, host: "", user: "", from: "" };
-    expect(missingFields(empty, false)).toEqual([
+    const missing = missingFields(empty, false);
+    expect(missing).toHaveLength(4);
+    expect(missing.slice(0, 3)).toEqual([
       "l'hôte SMTP",
       "l'identifiant",
       "l'adresse d'expédition",
-      `le mot de passe (variable ${passwordEnvFor(CONFIG.slug)})`,
     ]);
+    expect(missing[3]).toContain(passwordEnvFor(CONFIG.slug));
   });
 });
 

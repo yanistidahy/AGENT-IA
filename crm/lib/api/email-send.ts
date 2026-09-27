@@ -109,13 +109,6 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
     };
   }
 
-  const status = await readMailStatus();
-  if (!status.ready) {
-    return {
-      ok: false,
-      message: `Messagerie non configurée : il manque ${status.missing.join(", ")}. Voir Réglages → Messagerie.`,
-    };
-  }
 
   const subject = sanitizeSubject(input.subject);
 
@@ -138,6 +131,29 @@ export async function sendEmailToContact(input: SendEmailInput): Promise<SendEma
       : null) ?? pickMailbox(await listMailboxes(), contact.owner);
   if (mailbox === null) {
     return { ok: false, message: "Aucune boîte d'envoi n'est configurée. Réglages → Messagerie." };
+  }
+
+  /*
+    **Le contrôle de préparation porte sur la boîte qui va envoyer.**
+
+    C'était le défaut du jalon 91 : `readMailStatus()` était appelé sans
+    argument, donc il lisait la boîte **par défaut**. Conséquence mesurée — un
+    départ d'une campagne dont la boîte est parfaitement configurée était refusé
+    au motif qu'il manquait « l'hôte SMTP », qui manquait à une *autre* boîte.
+    Le message nommait donc des champs qu'on venait de remplir, sur un écran qui
+    ne disait même pas de quelle boîte il parlait.
+
+    Il doit être fait **après** la résolution de la boîte, et avec son
+    identifiant : c'est le seul ordre qui rend le refus vrai. Une boîte est
+    nommée dans le message, parce qu'à trois boîtes un refus anonyme fait
+    vérifier les deux mauvaises d'abord (jalon 54).
+  */
+  const status = await readMailStatus(mailbox.id);
+  if (!status.ready) {
+    return {
+      ok: false,
+      message: `Boîte « ${status.label} » incomplète : il manque ${status.missing.join(", ")}. Réglages → Messagerie.`,
+    };
   }
 
   const sent = await sendMail({
