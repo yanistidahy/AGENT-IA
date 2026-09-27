@@ -24,7 +24,9 @@
  * | Balise | Sans valeur |
  * |---|---|
  * | `{prenom}` | retirée, et l'appel réparé par `repairGreeting` — « Bonjour, » |
- * | `{societe}` | **la phrase qui la porte est retirée** |
+ * | `{nom}` | retirée — comme le prénom, elle ne casse pas la phrase qui la porte |
+ * | `{societe}` (et son alias `{marque}`) | **la phrase qui la porte est retirée** |
+ * | `{fonction}` | idem |
  * | `{site}` | idem |
  * | `{video}` | idem — sans vidéo configurée, la phrase qui l'annonce disparaît |
  *
@@ -62,9 +64,31 @@ export const MERGE_TAGS: readonly MergeTag[] = [
     fallback: "sans prénom connu, l'appel devient « Bonjour, » — aucun nom n'est inventé",
   },
   {
+    tag: "{nom}",
+    label: "Nom",
+    fallback: "sans nom de famille connu, la balise est simplement retirée",
+  },
+  {
     tag: "{societe}",
     label: "Société",
     fallback: "sans société, la phrase qui la nomme est retirée",
+  },
+  {
+    /*
+      **`{marque}` est un alias de `{societe}`, pas une seconde valeur.** Une
+      maison de e-commerce se nomme par sa marque, et c'est bien la société du
+      CRM (c'est aussi l'en-tête du fichier d'import). Deux valeurs distinctes
+      finiraient par se contredire ; ici les deux balises rendent la même
+      chaîne, et `canonicalTags` le ramène à une seule avant toute substitution.
+    */
+    tag: "{marque}",
+    label: "Marque (alias de Société)",
+    fallback: "identique à {societe} : sans elle, la phrase qui la nomme est retirée",
+  },
+  {
+    tag: "{fonction}",
+    label: "Fonction",
+    fallback: "sans fonction renseignée, la phrase qui la cite est retirée",
   },
   {
     tag: "{site}",
@@ -82,7 +106,12 @@ export const MERGE_TAGS: readonly MergeTag[] = [
 
 export interface MergeValues {
   readonly prenom: string;
+  /** Le nom de famille. Vide sur une fiche de marque sans personne (jalon 50). */
+  readonly nom: string;
+  /** Le nom de la société — ce que rendent **`{societe}` et `{marque}`**. */
   readonly societe: string;
+  /** L'intitulé de poste, tel qu'il est saisi. Vide = non renseigné. */
+  readonly fonction: string;
   /** L'hôte seul : `dermoplant.com`. Résolu comme la cible de recherche. */
   readonly site: string;
   /**
@@ -101,7 +130,10 @@ export interface MergeValues {
 export function unresolvedTags(template: string, values: MergeValues): readonly string[] {
   const missing: string[] = [];
   if (template.includes("{prenom}") && values.prenom.trim() === "") missing.push("{prenom}");
+  if (template.includes("{nom}") && values.nom.trim() === "") missing.push("{nom}");
+  if (template.includes("{fonction}") && values.fonction.trim() === "") missing.push("{fonction}");
   if (template.includes("{societe}") && values.societe.trim() === "") missing.push("{societe}");
+  if (template.includes("{marque}") && values.societe.trim() === "") missing.push("{marque}");
   if (template.includes("{site}") && values.site.trim() === "") missing.push("{site}");
   if (template.includes("{video}") && values.video.trim() === "") missing.push("{video}");
   return missing;
@@ -116,8 +148,26 @@ export function unresolvedTags(template: string, values: MergeValues): readonly 
  */
 export function unknownTags(template: string): readonly string[] {
   const known = new Set(MERGE_TAGS.map((entry) => entry.tag));
-  const found = template.match(/\{[^{}\n]{1,40}\}/g) ?? [];
-  return [...new Set(found.filter((tag) => !known.has(tag)))];
+  const unknown: string[] = [];
+
+  /*
+    **La double accolade est signalée, jamais tolérée.** `{{prenom}}` est la
+    syntaxe d'autres outils, et elle vient sous les doigts. La recherche de
+    balises simples y trouvait `{prenom}` — une balise connue — et laissait
+    donc partir « {Bonjour Marie} » chez le destinataire : les accolades
+    restantes se lisent comme une fusion ratée. **Le produit n'a qu'une
+    syntaxe**, et l'écart est nommé avant l'enregistrement.
+  */
+  for (const match of template.match(/\{\{[^{}\n]{0,40}\}\}/g) ?? []) {
+    unknown.push(match);
+  }
+
+  const singles = template.replace(/\{\{[^{}\n]{0,40}\}\}/g, " ");
+  for (const tag of singles.match(/\{[^{}\n]{1,40}\}/g) ?? []) {
+    if (!known.has(tag)) unknown.push(tag);
+  }
+
+  return [...new Set(unknown)];
 }
 
 /**
@@ -183,9 +233,21 @@ function tidy(text: string): string {
  * substitue ce qui reste. L'inverse retirerait une phrase sur une balise déjà
  * remplacée, donc au hasard de ce que contient la valeur.
  */
-export function renderTemplate(template: string, values: MergeValues): string {
-  let text = template;
+/**
+ * Ramène les alias à une seule balise, avant tout le reste.
+ *
+ * `{marque}` devient `{societe}` : le retrait de phrase, la substitution et le
+ * nettoyage n'ont ainsi qu'un seul cas à traiter, et un alias ajouté demain ne
+ * demande pas de doubler trois branches.
+ */
+function canonicalTags(template: string): string {
+  return template.replaceAll("{marque}", "{societe}");
+}
 
+export function renderTemplate(input: string, values: MergeValues): string {
+  let text = canonicalTags(input);
+
+  if (values.fonction.trim() === "") text = dropSentencesWith(text, "{fonction}");
   if (values.societe.trim() === "") text = dropSentencesWith(text, "{societe}");
   if (values.site.trim() === "") text = dropSentencesWith(text, "{site}");
   // Sans vidéo réglée, la phrase qui l'annonce part entièrement : « Voici une
@@ -195,6 +257,8 @@ export function renderTemplate(template: string, values: MergeValues): string {
 
   text = text
     .replaceAll("{prenom}", values.prenom.trim())
+    .replaceAll("{nom}", values.nom.trim())
+    .replaceAll("{fonction}", values.fonction.trim())
     .replaceAll("{societe}", values.societe.trim())
     .replaceAll("{site}", values.site.trim())
     .replaceAll("{video}", values.video.trim());
@@ -211,8 +275,10 @@ export function renderTemplate(template: string, values: MergeValues): string {
  */
 export function renderSubject(template: string, values: MergeValues): string {
   return tidy(
-    template
+    canonicalTags(template)
       .replaceAll("{prenom}", values.prenom.trim())
+      .replaceAll("{nom}", values.nom.trim())
+      .replaceAll("{fonction}", values.fonction.trim())
       .replaceAll("{societe}", values.societe.trim())
       .replaceAll("{site}", values.site.trim())
       .replaceAll("{video}", values.video.trim()),

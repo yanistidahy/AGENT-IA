@@ -27,6 +27,7 @@ import { ShiftsPanel } from "./shifts-panel";
 import { ModelsForm, type ModelsSettings } from "./models-form";
 import { StagesEditor } from "./stages-editor";
 import { RoleAnglesPanel } from "./role-angles-panel";
+import { ContactGroupsPanel } from "./contact-groups-panel";
 import type { RoleCoverage } from "@/lib/api/role-angles";
 
 interface SettingsViewProps {
@@ -66,6 +67,12 @@ interface SettingsViewProps {
    * `process.env`, qui n'existe pas dans le navigateur.
    */
   readonly roleAngles: RoleCoverage;
+  /** Les compteurs de groupes de fonction, lus côté serveur. */
+  readonly contactGroups: {
+    readonly byGroup: Readonly<Record<string, number>>;
+    readonly unclassified: number;
+    readonly total: number;
+  };
   readonly deploy: React.ReactNode;
   readonly costs: React.ReactNode;
   /**
@@ -107,6 +114,7 @@ export function SettingsView({
   tags,
   agents,
   roleAngles,
+  contactGroups,
   modelSettings,
   costs,
   deploy,
@@ -136,6 +144,13 @@ export function SettingsView({
         hint="nom, rôle, photo et cadence de chaque agent — l'identifiant technique ne bouge pas"
       >
         <CouncilPanel agents={agents} />
+      </Section>
+
+      <Section
+        title="Groupes de fonction"
+        hint="à qui on écrit — un groupe par fiche, déduit de la fonction, corrigible à la main"
+      >
+        <ContactGroupsPanel initial={contactGroups} />
       </Section>
 
       <Section

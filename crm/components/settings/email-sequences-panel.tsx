@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { requestJson } from "@/lib/client/http";
 import { AUTO_MIN_VALIDATED } from "@/lib/domain/sequence-rules";
 import type { StepMode } from "@/lib/domain/merge-tags";
+import type { StepVariant } from "@/lib/domain/step-variants";
 import { SequenceSteps } from "./sequence-steps";
 import type { SampleContact } from "./manual-step-editor";
 import type { CampaignMode } from "@/lib/domain/campaign-mode";
@@ -32,6 +33,15 @@ export interface SequenceStepView {
   body?: string;
   /** Le dernier objet réellement composé pour cette étape, s'il y en a un. */
   lastSubject?: string;
+  /**
+   * Les variantes par groupe de fonction.
+   *
+   * **Elles voyagent avec l'étape dans les deux sens.** Les étapes sont
+   * réécrites d'un bloc à chaque enregistrement : une variante que l'écran
+   * n'aurait pas renvoyée serait perdue avec l'ancienne ligne. Même contrat que
+   * les étapes elles-mêmes — l'écran manipule l'état complet.
+   */
+  variants?: readonly StepVariant[];
 }
 
 export interface SequenceView {
@@ -162,6 +172,7 @@ export function EmailSequencesPanel({
             mode: step.mode ?? "alex",
             subject: step.subject ?? "",
             body: step.body ?? "",
+            variants: step.variants ?? [],
           })),
         }),
       },

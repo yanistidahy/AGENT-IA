@@ -12,6 +12,8 @@ import { repairGreeting } from "../contact-identity";
 
 const full: MergeValues = {
   prenom: "Roxana",
+  nom: "Beraud",
+  fonction: "Responsable e-commerce",
   societe: "Dermoplant",
   site: "dermoplant.fr",
   video: "Voir la démonstration en vidéo",
@@ -166,5 +168,52 @@ describe("les balises annoncées", () => {
       expect(tag.fallback.length).toBeGreaterThan(10);
       expect(unknownTags(tag.tag)).toEqual([]);
     }
+  });
+});
+
+describe("les balises ajoutées au jalon de ce groupe", () => {
+  it("{nom}, {fonction} et {marque} se substituent", () => {
+    expect(
+      renderTemplate("Bonjour {prenom} {nom}, {fonction} chez {marque}.", full),
+    ).toBe("Bonjour Roxana Beraud, Responsable e-commerce chez Dermoplant.");
+  });
+
+  it("{marque} et {societe} rendent la même chose : c'est un alias, pas une seconde valeur", () => {
+    expect(renderSubject("Pour {marque}", full)).toBe(renderSubject("Pour {societe}", full));
+  });
+
+  it("sans fonction, la phrase qui la cite part entièrement", () => {
+    const values: MergeValues = { ...full, fonction: "" };
+    expect(renderTemplate("Bonjour. Vous êtes {fonction} chez {societe}. À bientôt.", values)).toBe(
+      "Bonjour. À bientôt.",
+    );
+  });
+
+  it("sans nom, la balise disparaît sans mutiler la phrase", () => {
+    const values: MergeValues = { ...full, nom: "" };
+    expect(renderTemplate("Bonjour {prenom} {nom},", values)).toBe("Bonjour Roxana,");
+  });
+
+  it("sans société, {marque} emporte sa phrase comme {societe}", () => {
+    const values: MergeValues = { ...full, societe: "" };
+    expect(renderTemplate("Bonjour. J'ai vu {marque} hier. À bientôt.", values)).toBe(
+      "Bonjour. À bientôt.",
+    );
+  });
+
+  it("les quatre nouvelles balises sont annoncées quand leur valeur manque", () => {
+    const vide: MergeValues = { prenom: "", nom: "", fonction: "", societe: "", site: "", video: "" };
+    expect(unresolvedTags("{nom} {fonction} {marque} {societe}", vide)).toEqual([
+      "{nom}",
+      "{fonction}",
+      "{societe}",
+      "{marque}",
+    ]);
+  });
+
+  it("« {{prenom}} » est signalée, et ne part jamais telle quelle", () => {
+    expect(unknownTags("Bonjour {{prenom}},")).toEqual(["{{prenom}}"]);
+    expect(unknownTags("Bonjour {prenom}, chez {marque}")).toEqual([]);
+    expect(unknownTags("Bonjour {prenoom},")).toEqual(["{prenoom}"]);
   });
 });

@@ -180,6 +180,30 @@ function ReportCard({ report }: { report: ImportReport }) {
               .join(" · ")}
           </li>
         ))}
+        {report.conflicts.length > 0 && (
+          <li className="mt-1">
+            {/*
+              **Une valeur différente n'est pas appliquée, mais elle est dite.**
+              L'import remplit les trous, il ne corrige pas : une Fonction
+              rectifiée à la main survit à un fichier qui porte l'ancienne. Se
+              taire ferait pourtant disparaître l'information, alors que c'est
+              peut-être le fichier qui a raison — on tranche donc soi-même, en
+              voyant les deux valeurs.
+            */}
+            <b className="font-semibold">
+              {report.conflicts.length} valeur(s) différente(s) non appliquée(s)
+            </b>{" "}
+            — le champ était déjà rempli :
+            <ul className="mt-0.5 grid gap-0.5 pl-3">
+              {report.conflicts.map((conflict, index) => (
+                <li key={`conflit-${conflict.line}-${conflict.field}-${index}`}>
+                  {conflict.name} · {conflict.field} : « {conflict.current} » conservé, le
+                  fichier disait « {conflict.incoming} »
+                </li>
+              ))}
+            </ul>
+          </li>
+        )}
         {report.errors.map((issue) => (
           <li key={issue.line} className="text-[#B2311F]">
             Ligne {issue.line} : {issue.message}

@@ -11,6 +11,8 @@ const contact: ContactRecord = {
   website: "",
   instagram: "",
   alexNote: "",
+  contactGroup: "autre",
+  groupSetBy: "none",
   dmAt: null,
   attempts: 0,
   unanswered: 0,

@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CampaignDetail } from "@/components/campaigns/campaign-detail";
-import { listCampaigns, listCampaignMembers } from "@/lib/api/campaigns";
+import {
+  listCampaigns,
+  listCampaignMembers,
+  readCampaignGroups,
+} from "@/lib/api/campaigns";
 import { listSequences } from "@/lib/api/email-sequences";
 import { listMailboxes } from "@/lib/api/mailboxes";
 import { mailboxOptions } from "@/lib/api/mailbox-options";
@@ -31,9 +35,10 @@ export default async function CampagnePage({
   const campaign = campaigns.find((entry) => entry.id === id);
   if (campaign === undefined) notFound();
 
-  const [sequences, members] = await Promise.all([
+  const [sequences, members, groups] = await Promise.all([
     listSequences(),
     listCampaignMembers(campaign.sequenceId),
+    readCampaignGroups(campaign.sequenceId),
   ]);
   const sequence = sequences.find((entry) => entry.id === campaign.sequenceId) ?? null;
 
@@ -50,6 +55,7 @@ export default async function CampagnePage({
             : { ...sequence, steps: [...sequence.steps], unlock: { ...sequence.unlock } }
         }
         members={members}
+        groups={groups}
         mailboxes={mailboxOptions(mailboxes)}
       />
     </div>

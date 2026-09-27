@@ -9,6 +9,7 @@ import {
 } from "@/lib/api/reference";
 import { listSequences } from "@/lib/api/sequences";
 import { listTags } from "@/lib/api/contacts";
+import { readGroupCounts } from "@/lib/api/contact-groups";
 import { prisma as db } from "@/lib/db";
 import { stageDealCounts } from "@/lib/api/settings";
 import { prisma } from "@/lib/db";
@@ -85,6 +86,7 @@ export default async function ReglagesPage() {
   // La vidéo, même motif : une seule composition, partagée avec sa route.
   const video = await readVideoPanelState();
   const roleAngles = await readRoleCoverage();
+  const contactGroups = await readGroupCounts();
   const tracking = await readTrackingConfig();
   const limits = await readLimits();
   const openAudit = await readOpenAudit();
@@ -128,6 +130,7 @@ export default async function ReglagesPage() {
       }))}
       agents={agents}
       roleAngles={roleAngles}
+      contactGroups={contactGroups}
       mail={mail}
       logo={logo}
       video={video}

@@ -8,6 +8,7 @@ import { signatureBlock } from "../agents/prompts/company";
 import { forbiddenSigners } from "../agents/email-draft";
 import { readMailConfig, signatureOf, signatureVideo } from "./mail";
 import { listSignatories, pickSignatory } from "./signatories";
+import { templateFor, type StepVariant } from "../domain/step-variants";
 
 /**
  * **Composer une étape écrite à la main : une substitution, rien d'autre.**
@@ -31,10 +32,13 @@ const CONTACT_SELECT = {
   id: true,
   firstName: true,
   lastName: true,
+  title: true,
   email: true,
   instagram: true,
   website: true,
   owner: true,
+  contactGroup: true,
+  groupSetBy: true,
   company: { select: { name: true, domain: true } },
 } as const;
 
@@ -64,6 +68,8 @@ export function mergeValuesOf(
   });
   return {
     prenom: contact.firstName,
+    nom: contact.lastName,
+    fonction: contact.title,
     societe: contact.company?.name ?? "",
     site: target?.host ?? "",
     // **Le libellé, pas l'adresse** : `{video}` se substitue comme le lien de
@@ -103,11 +109,25 @@ export interface ManualDraft {
  */
 export async function renderManualStep(
   contactId: string,
-  template: { readonly subject: string; readonly body: string },
+  step: { readonly subject: string; readonly body: string },
   mailboxId: string | undefined,
+  /**
+   * Les variantes de l'étape. **Le choix se fait ici, avec le groupe lu sur la
+   * fiche** — jamais par l'appelant : la composition, l'aperçu et le renvoi
+   * d'un départ poseraient sinon la même question de trois façons, et c'est
+   * toujours la troisième qui oublie le repli vers le défaut.
+   */
+  variants: readonly StepVariant[] = [],
 ): Promise<ManualDraft | null> {
   const contact = await readMergeContact(contactId);
   if (contact === null) return null;
+
+  const template = templateFor(
+    step,
+    variants,
+    // Une fiche jamais classée prend le défaut : elle n'est pas « Autre ».
+    contact.groupSetBy === "none" ? null : contact.contactGroup,
+  );
 
   const values = mergeValuesOf(contact, await videoLabel());
   const [config, signatories] = await Promise.all([readMailConfig(mailboxId), listSignatories()]);
@@ -136,6 +156,9 @@ export interface SampleContact {
   readonly id: string;
   readonly name: string;
   readonly values: MergeValues;
+  /** Le groupe de fonction : c'est lui qui choisit la variante à l'aperçu. */
+  readonly group: string;
+  readonly groupSetBy: string;
 }
 
 /**
@@ -161,10 +184,24 @@ export async function sampleContacts(sequenceId: string): Promise<SampleContact[
       id: contact.id,
       name: contactTitle(contact),
       values: mergeValuesOf(contact, label),
+      group: contact.contactGroup,
+      groupSetBy: contact.groupSetBy,
     }));
 
   // Le cas dégradé d'abord : c'est celui qu'on ne pense pas à vérifier.
+  /*
+    **Un contact par groupe d'abord, le cas dégradé ensuite.** L'aperçu doit
+    montrer chaque variante qui partira : ne garder que les trois fiches les
+    plus incomplètes masquerait un groupe entier. À l'intérieur d'un groupe, la
+    fiche la plus pauvre gagne — c'est celle qu'on ne pense pas à vérifier.
+  */
   const rank = (entry: SampleContact) =>
     (entry.values.prenom.trim() === "" ? 0 : 1) + (entry.values.site.trim() === "" ? 0 : 1);
-  return [...samples].sort((a, b) => rank(a) - rank(b)).slice(0, 3);
+
+  const best = new Map<string, SampleContact>();
+  for (const sample of [...samples].sort((a, b) => rank(a) - rank(b))) {
+    const key = sample.groupSetBy === "none" ? "none" : sample.group;
+    if (!best.has(key)) best.set(key, sample);
+  }
+  return [...best.values()];
 }
