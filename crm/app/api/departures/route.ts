@@ -5,6 +5,7 @@ import {
   listDepartures,
   postponeDeparture,
   removeFromSequence,
+  rewriteDeparture,
   saveDeparture,
   sendDeparture,
 } from "@/lib/api/departures";
@@ -13,16 +14,29 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /**
- * La file du matin : lecture, et les trois décisions.
+ * La file du matin : lecture, et les décisions.
  *
- * Trois actions et pas une de plus — envoyer, reporter d'un jour, retirer de la
- * séquence. Une file qui demanderait plus d'un geste par ligne serait contournée
- * dès la deuxième semaine, et c'est alors le mode automatique qu'on activerait
- * trop tôt.
+ * Trois décisions d'abord — envoyer, reporter d'un jour, retirer de la séquence.
+ * Une file qui demanderait plus d'un geste par ligne serait contournée dès la
+ * deuxième semaine, et c'est alors le mode automatique qu'on activerait trop
+ * tôt.
+ *
+ * `rewrite` les rejoint parce qu'une carte vide ou périmée n'a aucune des trois
+ * à offrir : ce qu'on veut n'est ni l'envoyer, ni la reporter, ni la retirer,
+ * mais **celle-ci, à jour**. Sur une étape écrite à la main, elle ne coûte rien.
  */
 const decisionSchema = z.object({
   id: z.string().min(1),
-  action: z.enum(["send", "postpone", "remove"], { error: "Action inconnue" }),
+  /*
+    **La portée de l'écran, pour que la réponse rende la même file.**
+
+    La route rendait `listDepartures()` sans portée : sur `/departs?campagne=…`,
+    le premier clic remplaçait la liste bornée par celle de tout le CRM, et
+    l'écran cessait de décrire ce que son bandeau annonçait. Trouvé en écrivant
+    la recette au clic, pas à la lecture.
+  */
+  campaignId: z.string().min(1).optional(),
+  action: z.enum(["send", "postpone", "remove", "rewrite"], { error: "Action inconnue" }),
 });
 
 /**
@@ -82,7 +96,9 @@ export async function POST(request: Request) {
         ? await sendDeparture(id, "human")
         : action === "postpone"
           ? await postponeDeparture(id)
-          : await removeFromSequence(id);
+          : action === "rewrite"
+            ? await rewriteDeparture(id)
+            : await removeFromSequence(id);
 
     /*
       **L'échec rend la file lui aussi.** Rendre un 400 nu laissait l'écran sur
@@ -91,7 +107,8 @@ export async function POST(request: Request) {
       tenté. Le message et la file voyagent donc ensemble dans les deux cas, et
       c'est la carte qui portera la cause.
     */
-    const departures = await listDepartures();
+    const scope = parsed.data.campaignId === undefined ? {} : { campaignId: parsed.data.campaignId };
+    const departures = await listDepartures(new Date(), scope);
     if (!result.ok) return jsonOk({ ok: false, message: result.message, departures });
     return jsonOk({ ok: true, message: result.message, departures });
   } catch (error) {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CampaignDetail } from "@/components/campaigns/campaign-detail";
+import { StaleDepartures } from "@/components/campaigns/stale-departures";
 import {
   listCampaigns,
   listCampaignMembers,
@@ -10,6 +11,7 @@ import { listSequences } from "@/lib/api/email-sequences";
 import { listMailboxes } from "@/lib/api/mailboxes";
 import { mailboxOptions } from "@/lib/api/mailbox-options";
 import { missingValueReports } from "@/lib/api/manual-step";
+import { countStaleDepartures } from "@/lib/api/departures";
 
 export const dynamic = "force-dynamic";
 
@@ -65,11 +67,21 @@ export default async function CampagnePage({
   const missing =
     templates.length === 0 ? [] : await missingValueReports(campaign.sequenceId, templates);
 
+  /*
+    **Combien de départs en file viennent d'un gabarit qui a bougé.** Lu ici
+    plutôt que dans `CampaignDetail` : ce composant recopie sa campagne dans un
+    `useState` au montage (dette du jalon 95), donc un nombre qui doit suivre un
+    enregistrement n'a rien à y faire.
+  */
+  const stale = await countStaleDepartures(campaign.id);
+  const billed = sequence !== null && sequence.steps.some((step) => step.mode !== "manual");
+
   return (
     <div className="px-6 py-6">
       <Link href="/campagnes" className="text-[12.5px] text-brand-d hover:underline">
         ← Toutes les campagnes
       </Link>
+      <StaleDepartures campaignId={campaign.id} count={stale} billed={billed} />
       <CampaignDetail
         campaign={campaign}
         sequence={

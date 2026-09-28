@@ -8,6 +8,7 @@ import {
   setCampaignOtherRouting,
   setCampaignRunning,
 } from "@/lib/api/campaigns";
+import { rewriteStaleDepartures } from "@/lib/api/departures";
 import { CONTACT_GROUPS } from "@/lib/domain/contact-group";
 import { OTHER_ROUTINGS } from "@/lib/domain/step-variants";
 import { z } from "zod";
@@ -61,6 +62,12 @@ const actionSchema = z.discriminatedUnion("action", [
     variante ces contacts reçoivent*, et rien d'autre : `setCampaignOtherRouting`
     n'écrit qu'une colonne de la campagne, jamais le groupe d'une fiche.
   */
+  /*
+    **Réécrire les départs composés avant la dernière modification.** Elle vit
+    ici parce qu'elle ne change qu'un état de file : rien n'est envoyé, rien
+    n'est supprimé, et le texte d'un départ redevient celui de son étape.
+  */
+  z.object({ action: z.literal("rewrite-stale"), campaignId: z.string().min(1) }),
   z.object({
     action: z.literal("other-routing"),
     campaignId: z.string().min(1),
@@ -79,6 +86,11 @@ export async function POST(request: Request) {
     if (parsed.data.action === "group-filter") {
       await setCampaignGroupFilter(parsed.data.campaignId, parsed.data.groups);
       return jsonOk({ campaigns: await listCampaigns() });
+    }
+
+    if (parsed.data.action === "rewrite-stale") {
+      const outcome = await rewriteStaleDepartures(parsed.data.campaignId);
+      return jsonOk({ campaigns: await listCampaigns(), ...outcome });
     }
 
     if (parsed.data.action === "other-routing") {

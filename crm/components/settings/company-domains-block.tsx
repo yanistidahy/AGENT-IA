@@ -20,6 +20,8 @@ export interface CompanyDomainPlanView {
   total: number;
   withoutClue: number;
   rows: Array<{ name: string; value: string; because: string; ambiguous: boolean }>;
+  /** Les fiches sans cible de recherche saisie. Voir `countBlindContacts`. */
+  blindContacts: { blind: number; deducible: number; withoutCompany: number };
 }
 
 export function CompanyDomainsBlock({
@@ -45,6 +47,19 @@ export function CompanyDomainsBlock({
         )
       }
     >
+      {/*
+        **Le compte des fiches, à côté de celui des sociétés.** Le report
+        ci-dessus écrit sur une société : il ne peut rien pour une fiche qui n'en
+        a aucune, et c'est le cas le plus fréquent des imports de prospection.
+        Sans ce chiffre, on ne sait pas si le travail qui reste est de compléter
+        des champs ou de rattacher des maisons.
+      */}
+      <li className="mb-1 list-none text-muted">
+        <span className="font-semibold text-ink">{plan.blindContacts.blind} fiche(s)</span> sans site
+        ni domaine de société. {plan.blindContacts.deducible} d&apos;entre elles portent un domaine
+        professionnel dans leur adresse électronique — dont{" "}
+        {plan.blindContacts.withoutCompany} sans aucune société liée.
+      </li>
       {plan.rows.map((row) => (
         <li key={`${row.name}-${row.value}`} className={row.ambiguous ? "text-[#9A6410]" : ""}>
           {row.ambiguous ? "⚠ " : ""}

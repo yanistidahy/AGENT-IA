@@ -1071,6 +1071,20 @@ model SequenceDeparture {
   /// `SequenceEnrollment.round`.
   round Int @default(1)
 
+  /// **L'empreinte du gabarit dont ce départ a été composé** : mode, objet,
+  /// message et variantes de l'étape, concaténés (voir `templateFingerprint`).
+  ///
+  /// Elle existe pour une seule raison : un avertissement de carte doit décrire
+  /// **ce qui partira**. Sans elle, la file rendait le corps composé et, juste
+  /// en dessous, un avertissement calculé sur le gabarit d'aujourd'hui — deux
+  /// textes différents affichés comme un seul.
+  ///
+  /// Vide = composé avant ce jalon, donc **« on ne sait pas », jamais
+  /// « périmé »** : déclarer périmée toute la file au premier déploiement
+  /// allumerait un avertissement partout, et une alerte qui sonne partout ne se
+  /// lit plus.
+  templateHash String @default("")
+
   @@unique([enrollmentId, step, round])
   @@index([day, status])
   @@map("sequence_departures")

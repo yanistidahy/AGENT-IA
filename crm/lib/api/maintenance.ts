@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
-import { proposeDomain } from "../domain/domain-guess";
+import { emailDomain, isFreeProvider, proposeDomain } from "../domain/domain-guess";
 import { acceptDomain } from "./domain-review";
 import { fold, searchText } from "../domain/text";
 import { nameOverflow, splitOverflow } from "../domain/status";
@@ -1081,6 +1081,53 @@ export interface CompanyDomainPlan {
   readonly rows: readonly CompanyDomainRow[];
   /** Sociétés sans domaine dont aucune adresse ne permet de déduire quoi que ce soit. */
   readonly withoutClue: number;
+  /**
+   * **Les fiches aveugles, et celles qui n'ont pas à l'être.**
+   *
+   * `blind` : ni site sur la fiche, ni domaine sur la société — donc aucune
+   * cible de recherche saisie. `deducible` : parmi elles, celles dont l'adresse
+   * électronique porte un domaine professionnel, donc dont la cible **est**
+   * déjà dans la donnée. `withoutCompany` : parmi ces dernières, celles qui
+   * n'ont aucune société liée — le cas des imports de prospection, et celui que
+   * le report ci-dessus ne peut pas traiter puisqu'il écrit sur une société.
+   *
+   * Le compte est affiché parce qu'il décide d'un geste : un grand
+   * `withoutCompany` veut dire qu'il faut rattacher des sociétés, pas compléter
+   * des champs un par un.
+   */
+  readonly blindContacts: {
+    readonly blind: number;
+    readonly deducible: number;
+    readonly withoutCompany: number;
+  };
+}
+
+/**
+ * Combien de fiches portent un domaine professionnel dans leur adresse alors
+ * qu'aucun champ ne le porte.
+ *
+ * Lu avec **la même exclusion de fournisseurs grand public** que la cible de
+ * recherche (`isFreeProvider`, jalon 75) : deux listes finiraient par ne plus
+ * contenir les mêmes, et c'est la seconde qu'on oublierait de compléter.
+ */
+async function countBlindContacts(): Promise<CompanyDomainPlan["blindContacts"]> {
+  const rows = await prisma.contact.findMany({
+    where: { website: "" },
+    select: { email: true, companyId: true, company: { select: { domain: true } } },
+  });
+
+  let blind = 0;
+  let deducible = 0;
+  let withoutCompany = 0;
+  for (const row of rows) {
+    if ((row.company?.domain ?? "").trim() !== "") continue;
+    blind += 1;
+    const domain = emailDomain(row.email);
+    if (domain === null || isFreeProvider(domain)) continue;
+    deducible += 1;
+    if (row.companyId === null) withoutCompany += 1;
+  }
+  return { blind, deducible, withoutCompany };
 }
 
 export async function planCompanyDomainFix(): Promise<CompanyDomainPlan> {
@@ -1115,7 +1162,7 @@ export async function planCompanyDomainFix(): Promise<CompanyDomainPlan> {
 
   // Les cas douteux en tête : c'est là que la relecture compte (jalon 26).
   rows.sort((left, right) => Number(right.ambiguous) - Number(left.ambiguous));
-  return { rows, withoutClue };
+  return { rows, withoutClue, blindContacts: await countBlindContacts() };
 }
 
 /** État avant écriture — une colonne, et de quoi la revider. */

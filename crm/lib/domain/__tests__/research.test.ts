@@ -121,12 +121,15 @@ describe("le garde-fou des affirmations produit", () => {
 });
 
 describe("la carte : trois états qui ne se confondent pas", () => {
-  it("aucune société rattachée, et aucun site : deux phrases, un même état", () => {
-    expect(researchCard(null).state).toBe("none");
+  it("rien tenté et rien d'exploitable sont deux états distincts", () => {
+    // **`absent`, et non `none`, depuis le jalon 96** : aucune recherche n'a été
+    // tentée, donc rien n'a été mesuré — et l'écran ne peut pas affirmer
+    // qu'aucune adresse professionnelle n'était déductible.
+    expect(researchCard(null).state).toBe("absent");
     // **Le sens a changé au jalon 84** : une fiche sans maison est désormais
     // une portée de recherche à part entière, donc `null` ne veut plus dire
-    // « pas de société » mais « la fiche est introuvable » — un incident.
-    expect(researchCard(null).headline).toContain("Aucune recherche n'a pu être lancée");
+    // « pas de société » mais « aucune lecture n'a eu lieu ».
+    expect(researchCard(null).headline).toContain("Aucune recherche n'a été lancée");
     const noSite = researchCard(research({ gap: "no-domain", facts: [], sources: [] }));
     expect(noSite.state).toBe("none");
     expect(noSite.headline).toBe("Aucun site exploitable");

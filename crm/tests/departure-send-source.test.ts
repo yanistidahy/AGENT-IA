@@ -48,7 +48,9 @@ describe("un envoi refusé se voit, et reste dans la file", () => {
     // main) refuse légitimement en 400, son écran est le champ qu'on vient de
     // remplir, pas une carte au bas d'une page de plusieurs écrans.
     const post = route.slice(route.indexOf("export async function POST"));
-    expect(post).toMatch(/const departures = await listDepartures\(\)/);
+    // La portée de l'écran voyage avec la décision depuis le jalon 96 : la
+    // file rendue doit être celle que le bandeau annonce.
+    expect(post).toMatch(/const departures = await listDepartures\(new Date\(\), scope\)/);
     expect(post).toMatch(/ok: false[\s\S]{0,80}departures/);
     expect(
       /if \(!result\.ok\) return badRequest/.test(post),
@@ -97,7 +99,11 @@ describe("le chemin d'envoi ne facture rien", () => {
   it("`sendDeparture` n'appelle ni le modèle ni la rédaction", () => {
     const service = sourceOf("lib/api/departures.ts");
     const start = service.indexOf("export async function sendDeparture");
-    const end = service.indexOf("export async function postponeDeparture");
+    // La borne est **l'export suivant**, quel qu'il soit : ancrée sur un nom
+    // précis, la garde cessait de décrire `sendDeparture` dès qu'une fonction
+    // s'intercalait — et c'est ce qui vient d'arriver avec la réécriture d'un
+    // départ, qui appelle légitimement le modèle sur une étape d'Alex.
+    const end = service.indexOf("\nexport ", start + 1);
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
 
@@ -120,6 +126,22 @@ describe("le chemin d'envoi ne facture rien", () => {
         `sendDeparture ne doit pas appeler ${forbidden} : valider un départ déjà écrit ne se facture pas`,
       ).toBe(false);
     }
+  });
+
+  it("réécrire une étape écrite à la main n'appelle pas le modèle", () => {
+    const service = sourceOf("lib/api/departures.ts");
+    const start = service.indexOf("export async function rewriteDeparture");
+    const end = service.indexOf("\nexport ", start + 1);
+    expect(start).toBeGreaterThan(-1);
+    const body = service.slice(start, end === -1 ? service.length : end);
+
+    // La branche manuelle substitue, elle n'écrit pas : `renderManualStep` et
+    // rien d'autre. `draftEmail` n'apparaît **qu'une fois**, dans la branche
+    // d'Alex, et le message rendu dit laquelle des deux a servi — un « rien n'a
+    // été facturé » qui ne serait pas vrai serait pire que pas de message.
+    expect(body).toContain("renderManualStep(");
+    expect(body.match(/draftEmail\(/g)?.length ?? 0).toBe(1);
+    expect(body).toContain("Aucun appel au modèle");
   });
 
   it("la route des décisions n'importe aucun client de modèle", () => {

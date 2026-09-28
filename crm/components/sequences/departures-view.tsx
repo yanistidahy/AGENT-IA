@@ -39,6 +39,8 @@ export interface Departure {
   lastActivityAt: string | null;
   /** Ce qu'Alex avait pour nommer la boutique. Voir `describeDemoSource`. */
   demoSource: string;
+  /** La fiche **est** une fiche de démonstration. Voir `isDemoContact`. */
+  demoData: boolean;
   /** Ce qu'Alex a lu sur la maison de ce contact. Voir `ResearchNote`. */
   research: ResearchCard;
   /** Une affirmation produit qu'aucune page lue ne soutient. */
@@ -58,6 +60,15 @@ export interface Departure {
    * les porte plus, et c'est précisément pourquoi il faut le dire ici.
    */
   dropped: { tag: string; label: string; sentence: string }[];
+  /**
+   * Pourquoi ce départ est vide — vide quand il a de quoi partir.
+   *
+   * Rendu par la fonction que l'envoi appelle : la carte annonce donc le refus
+   * que « Envoyer » rendrait, pas une seconde appréciation.
+   */
+  empty: string;
+  /** Composé avant la dernière modification de la séquence. */
+  stale: boolean;
 }
 
 function isPayload(value: unknown): value is {
@@ -111,14 +122,16 @@ export function DeparturesView({
   const [editing, setEditing] = useState<{ id: string; subject: string; body: string } | null>(null);
   const router = useRouter();
 
-  const decide = async (id: string, action: "send" | "postpone" | "remove") => {
+  const decide = async (id: string, action: "send" | "postpone" | "remove" | "rewrite") => {
     setBusy(id);
     setError(null);
     setNotice(null);
     setOutcome(null);
     const result = await requestJson(
       "/api/departures",
-      { method: "POST", body: JSON.stringify({ id, action }) },
+      // La portée voyage avec la décision : sans elle, la réponse rendrait
+      // toute la file, et l'écran cesserait de décrire son propre bandeau.
+      { method: "POST", body: JSON.stringify({ id, action, campaignId }) },
       isPayload,
     );
     setBusy(null);
