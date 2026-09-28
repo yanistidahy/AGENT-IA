@@ -77,11 +77,26 @@ export function ResearchNote({
           est générique, et c'est un défaut à corriger, pas une fiche à compléter.
           {research.target === "" ? "" : ` Site visé : ${research.target}.`}
         </p>
+      ) : research.state === "absent" ? (
+        /*
+          **Rien n'a été tenté, et on ne dit donc rien de plus.** La version
+          précédente affirmait ici « ni site sur la fiche, ni domaine sur la
+          société, ni adresse professionnelle à en déduire » — trois mesures que
+          ce cas n'a jamais faites. Sur une fiche dont le domaine était dans
+          l'adresse, cette phrase désignait la fiche alors qu'il n'y avait
+          simplement eu aucune lecture.
+        */
+        <p className="text-muted">
+          <span className="font-semibold text-ink">{research.headline}.</span> Rien n&apos;a été
+          mesuré : ni site, ni domaine, ni adresse. Une étape écrite à la main ne lance aucune
+          recherche, et le message n&apos;affirme donc rien sur cette entreprise.
+        </p>
       ) : (
         <p className="text-muted">
-          <span className="font-semibold text-ink">{research.headline}.</span> Ni site sur la fiche,
-          ni domaine sur la société, ni adresse électronique professionnelle à en déduire. Le
-          message est générique, et n'affirme donc rien sur cette entreprise.
+          <span className="font-semibold text-ink">{research.headline}.</span> La cible a été
+          cherchée : ni site sur la fiche, ni domaine sur la société, ni adresse électronique
+          professionnelle à en déduire. Le message est générique, et n&apos;affirme donc rien sur
+          cette entreprise.
         </p>
       )}
 

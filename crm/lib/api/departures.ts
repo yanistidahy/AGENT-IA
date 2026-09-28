@@ -41,7 +41,14 @@ import { mergeValuesOf, renderManualStep } from "./manual-step";
 import { readStepVariants } from "./step-variants";
 import { contactTitle, repairGreeting } from "../domain/contact-identity";
 import { demoTarget, describeDemoSource } from "../domain/demo-target";
-import { listSignatories, pickSignatory } from "./signatories";
+import { isDemoContact } from "../domain/demo-data";
+import { listSignatories, pickSignatory, signatureBlocks } from "./signatories";
+import {
+  emptyDepartureReason,
+  emptyDepartureRefusal,
+  isStaleDeparture,
+  templateFingerprint,
+} from "../domain/departure-content";
 import { sanitizeSubject } from "../domain/email-format";
 
 /**
@@ -58,6 +65,32 @@ import { sanitizeSubject } from "../domain/email-format";
  * professionnelle pour y répondre. Surtout, composer le samedi ferait entrer
  * deux jours d'aveuglement entre la décision et le clic.
  */
+
+/**
+ * Le gabarit d'une étape, mis à la forme de l'empreinte.
+ *
+ * **Une étape rédigée par Alex n'a pas d'objet ni de corps, elle a une
+ * consigne** : c'est elle qui décide du texte, donc c'est elle que l'empreinte
+ * doit lire. La prendre pour `body` évite une seconde forme d'empreinte, et
+ * `mode` distingue de toute façon les deux familles.
+ */
+function templateShapeOf(
+  step: {
+    readonly mode: string;
+    readonly brief: string;
+    readonly subject: string;
+    readonly body: string;
+  },
+  variants: readonly { readonly group: string; readonly subject: string; readonly body: string }[],
+) {
+  const manual = toStepMode(step.mode) === "manual";
+  return {
+    mode: manual ? "manual" : "alex",
+    subject: manual ? step.subject : "",
+    body: manual ? step.body : step.brief,
+    variants: variants.map((variant) => ({ ...variant })),
+  };
+}
 
 function dayKey(now: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -341,15 +374,23 @@ export async function composeDepartures(
     */
     let written: { readonly subject: string; readonly body: string } | null = null;
 
+    // Les variantes par groupe de fonction : le choix se fait dans
+    // `renderManualStep`, avec le groupe lu sur la fiche, et un groupe sans
+    // variante reçoit le message par défaut de l'étape. Elles sont lues ici
+    // parce que l'empreinte du gabarit les porte aussi.
+    const variants =
+      step !== undefined && toStepMode(step.mode) === "manual"
+        ? await readStepVariants(step.id)
+        : [];
+    const fingerprint =
+      step === undefined ? "" : templateFingerprint(templateShapeOf(step, variants));
+
     if (toStepMode(step?.mode ?? "") === "manual") {
       written = await renderManualStep(
         enrollment.contactId,
         { subject: step?.subject ?? "", body: step?.body ?? "" },
         enrollment.sequence.campaign?.mailboxId,
-        // Les variantes par groupe de fonction : le choix se fait dans
-        // `renderManualStep`, avec le groupe lu sur la fiche, et un groupe sans
-        // variante reçoit le message par défaut de l'étape.
-        step === undefined ? [] : await readStepVariants(step.id),
+        variants,
         // Le routage d'« Autre » et des fiches non classées, lu sur la
         // campagne. Absent (campagne d'avant ce réglage) = `default`, donc le
         // message par défaut de l'étape, donc le contenu d'avant à l'octet près.
@@ -409,6 +450,10 @@ export async function composeDepartures(
         day: dayKey(now),
         subject: written.subject,
         body: written.body,
+        // De quel gabarit ce texte vient : c'est ce qui permet de dire plus
+        // tard « composé avant votre dernière modification de la séquence »
+        // plutôt que d'afficher un avertissement calculé sur un autre texte.
+        templateHash: fingerprint,
       },
       select: { id: true },
     });
@@ -628,6 +673,15 @@ export interface DepartureView {
    */
   readonly demoSource: string;
   /**
+   * Cette fiche **est** une fiche de démonstration (jeu de seed, domaine
+   * réservé aux essais).
+   *
+   * Distinct de `demoSource`, qui ne dit que ce qu'Alex avait pour nommer la
+   * boutique : les confondre faisait afficher « Données de démonstration » sur
+   * de vraies personnes, et faisait douter de toute la file.
+   */
+  readonly demoData: boolean;
+  /**
    * Ce qu'Alex a lu sur la maison de ce contact, et ce qu'il en a retenu.
    *
    * **Lu à l'affichage, jamais copié sur le départ** : la recherche appartient
@@ -653,6 +707,20 @@ export interface DepartureView {
    * qui puisse disparaître sans qu'on l'ait écrit.
    */
   readonly dropped: readonly DroppedSentence[];
+  /**
+   * Pourquoi ce départ est vide, ou une chaîne vide quand il a de quoi partir.
+   *
+   * **Calculé par la fonction que l'envoi appelle** : la carte annonce donc le
+   * refus que « Envoyer » rendrait, jamais une seconde appréciation.
+   */
+  readonly empty: string;
+  /**
+   * Le gabarit a changé depuis la composition de ce départ.
+   *
+   * Vide quand il est à jour, ou quand on ne sait pas (départ composé avant
+   * l'empreinte : « on ne sait pas » n'est jamais « périmé »).
+   */
+  readonly stale: boolean;
   /** La maison du contact, affichée sous son nom. Vide quand il n'en a pas. */
   readonly companyName: string;
   readonly campaignName: string;
@@ -756,6 +824,7 @@ export async function listDepartures(
                 select: {
                   position: true,
                   mode: true,
+                  brief: true,
                   subject: true,
                   body: true,
                   variants: { select: { group: true, subject: true, body: true } },
@@ -819,6 +888,9 @@ export async function listDepartures(
 
   // Lu une fois : la vidéo est la même pour tout le monde.
   const label = (await signatureVideo())?.label ?? "";
+  // Idem pour les blocs de signature : le contrôle de vide les retire avant de
+  // juger, et c'est la même liste pour toute la file.
+  const blocks = signatureBlocks(await listSignatories());
 
   const views: DepartureView[] = [];
   for (const row of rows) {
@@ -833,8 +905,28 @@ export async function listDepartures(
     const template = row.enrollment.sequence.steps.find(
       (entry) => entry.position === row.step,
     );
+    /*
+      **Périmé, c'est-à-dire composé depuis un autre texte que celui de
+      l'étape d'aujourd'hui.** L'empreinte est recalculée ici et comparée à
+      celle stockée ; une empreinte stockée vide se lit « on ne sait pas », donc
+      reste silencieuse.
+    */
+    const stale =
+      template === undefined
+        ? false
+        : isStaleDeparture(
+            row.templateHash,
+            templateFingerprint(templateShapeOf(template, template.variants)),
+          );
+
+    /*
+      **Un avertissement de carte doit décrire ce qui partira.** Quand le
+      gabarit a bougé, la phrase retirée est calculée sur un texte que ce départ
+      ne porte pas : on se taît et on propose de le réécrire, plutôt que
+      d'annoncer une suppression dans un autre message.
+    */
     const dropped =
-      template === undefined || toStepMode(template.mode) !== "manual"
+      stale || template === undefined || toStepMode(template.mode) !== "manual"
         ? []
         : droppedSentences(
             templateFor(
@@ -890,6 +982,10 @@ export async function listDepartures(
       to: row.enrollment.contact.email,
       lastActivityDays: last === null ? null : daysSince(last.date, now),
       lastActivityAt: last?.date ?? null,
+      demoData: isDemoContact({
+        id: row.enrollment.contact.id,
+        email: row.enrollment.contact.email,
+      }),
       demoSource: describeDemoSource(
         demoTarget({
           website: row.enrollment.contact.website,
@@ -921,6 +1017,8 @@ export async function listDepartures(
       stepsTotal: row.enrollment.sequence._count.steps,
       campaignPaused: !row.enrollment.sequence.active,
       dropped: [...dropped],
+      empty: emptyDepartureReason(row, blocks) ?? "",
+      stale,
       createdAt: row.createdAt,
     });
   }
@@ -1051,6 +1149,24 @@ export async function sendDeparture(
     return { ok: false, message: "Ce départ demande une validation à la main." };
   }
 
+  /*
+    **Un départ vide est refusé ici, donc par les trois chemins.** Le clic
+    humain, la composition et l'ordonnanceur passent tous par cette fonction :
+    le contrôle y vit une seule fois, et une garde statique vérifie qu'ils ne
+    cessent pas de la partager. Il précède le débit, parce qu'un texte vide ne
+    partira pas davantage demain, et refuser pour cause de plafond afficherait
+    un motif faux (voir `emptyDepartureReason` pour ce que « vide » veut dire).
+  */
+  const emptyReason = emptyDepartureReason(departure, signatureBlocks(await listSignatories()));
+  if (emptyReason !== null) {
+    const refusal = emptyDepartureRefusal(emptyReason);
+    // Le départ **reste en attente** avec sa cause : le passer `failed` le
+    // ferait lire « brouillon non composé » et désactiverait ses boutons, donc
+    // on ne pourrait plus le réécrire (jalon 91).
+    await prisma.sequenceDeparture.update({ where: { id }, data: { detail: refusal } });
+    return { ok: false, message: refusal };
+  }
+
   const rate = await checkRate(now);
   if (!rate.ok) {
     // Ni envoyé ni perdu : le départ reste en attente et repart demain.
@@ -1104,6 +1220,227 @@ export async function sendDeparture(
     ok: true,
     message: `Étape ${departure.step} envoyée à ${sent.sent.contactName} (${sent.sent.to}).`,
   };
+}
+
+/**
+ * Combien de départs d'une campagne ont été composés **avant** sa dernière
+ * modification.
+ *
+ * Compté par la même comparaison que la carte (`isStaleDeparture`) : le nombre
+ * annoncé sur la campagne est donc exactement celui des cartes qui portent
+ * l'avertissement, et non un second comptage qui pourrait en différer : l'écart
+ * payé au jalon 49 entre une puce et sa liste.
+ */
+export async function countStaleDepartures(campaignId: string): Promise<number> {
+  const rows = await prisma.sequenceDeparture.findMany({
+    where: {
+      status: { in: ["pending", "failed"] },
+      enrollment: { sequence: { campaignId } },
+    },
+    select: {
+      step: true,
+      templateHash: true,
+      enrollment: {
+        select: {
+          sequence: {
+            select: {
+              steps: {
+                select: {
+                  position: true,
+                  mode: true,
+                  brief: true,
+                  subject: true,
+                  body: true,
+                  variants: { select: { group: true, subject: true, body: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  let stale = 0;
+  for (const row of rows) {
+    const step = row.enrollment.sequence.steps.find((entry) => entry.position === row.step);
+    if (step === undefined) continue;
+    if (isStaleDeparture(row.templateHash, templateFingerprint(templateShapeOf(step, step.variants)))) {
+      stale += 1;
+    }
+  }
+  return stale;
+}
+
+/**
+ * **Réécrire ce départ**, depuis le gabarit d'aujourd'hui.
+ *
+ * Le geste existe pour deux cartes : celle qui est vide (l'étape n'avait pas
+ * encore de texte quand elle a été composée) et celle qui est périmée (le
+ * gabarit a bougé depuis). Dans les deux cas, ce qu'on veut n'est pas un second
+ * brouillon mais **celui-ci, à jour**.
+ *
+ * **Une étape écrite à la main ne coûte rien** : le texte existe, la réécriture
+ * se réduit à remplacer trois balises, donc **aucun appel au modèle** et le
+ * compteur d'usage ne bouge pas. Une étape rédigée par Alex, elle, est un appel
+ * facturé, et c'est dit à l'écran avant le clic.
+ *
+ * Le départ est mis à jour **en place** : il garde son identité
+ * `(inscription, étape, tour)`, donc sa place dans la file et son historique.
+ * `editedAt` est effacé, parce que le texte n'est plus celui qu'on avait
+ * retouché à la main.
+ */
+export async function rewriteDeparture(
+  departureId: string,
+  now = new Date(),
+): Promise<DepartureOutcome> {
+  const departure = await prisma.sequenceDeparture.findUnique({
+    where: { id: departureId },
+    include: {
+      enrollment: {
+        include: {
+          sequence: {
+            select: {
+              id: true,
+              steps: true,
+              campaign: { select: { mailboxId: true, otherRouting: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (departure === null) return { ok: false, message: "Départ introuvable." };
+  if (departure.status === "sent") return { ok: false, message: "Ce départ est déjà parti." };
+
+  const step = departure.enrollment.sequence.steps.find(
+    (entry) => entry.position === departure.step,
+  );
+  if (step === undefined) {
+    return {
+      ok: false,
+      message: `L'étape ${departure.step} n'existe plus dans cette séquence : ce départ ne peut pas être réécrit.`,
+    };
+  }
+
+  const manual = toStepMode(step.mode) === "manual";
+  const variants = manual ? await readStepVariants(step.id) : [];
+
+  let written: { readonly subject: string; readonly body: string } | null = null;
+  if (manual) {
+    written = await renderManualStep(
+      departure.enrollment.contactId,
+      { subject: step.subject, body: step.body },
+      departure.enrollment.sequence.campaign?.mailboxId,
+      variants,
+      departure.enrollment.sequence.campaign?.otherRouting ?? "default",
+    );
+  } else {
+    const previous =
+      departure.step <= 1
+        ? null
+        : await previousMessage(departure.enrollment.contactId, departure.enrollment.sequenceId);
+    const draft = await draftEmail(
+      departure.enrollment.contactId,
+      undefined,
+      step.brief,
+      departure.enrollment.sequence.campaign?.mailboxId,
+      { step: departure.step, previous },
+    );
+    if (!draft.ok) return { ok: false, message: draft.message };
+    written = draft.draft;
+  }
+  if (written === null) {
+    return { ok: false, message: "La fiche de ce contact n'existe plus : rien à réécrire." };
+  }
+
+  await prisma.sequenceDeparture.update({
+    where: { id: departureId },
+    data: {
+      subject: written.subject,
+      body: written.body,
+      templateHash: templateFingerprint(templateShapeOf(step, variants)),
+      status: "pending",
+      detail: "",
+      editedAt: null,
+      day: dayKey(now),
+    },
+  });
+
+  return {
+    ok: true,
+    message: manual
+      ? "Départ réécrit avec le texte de l'étape. Aucun appel au modèle, rien n'a été facturé."
+      : "Départ réécrit par Alex, avec les consignes d'aujourd'hui.",
+  };
+}
+
+/**
+ * **Réécrire les départs périmés d'une campagne**, d'un geste.
+ *
+ * Rien de neuf ici : la boucle appelle `rewriteDeparture` départ par départ,
+ * donc les mêmes règles et le même coût. Sur une campagne écrite à la main,
+ * l'opération est gratuite et instantanée ; sur une campagne rédigée par Alex,
+ * c'est un appel facturé par départ, et la confirmation de l'écran le dit avant
+ * le clic.
+ */
+export async function rewriteStaleDepartures(
+  campaignId: string,
+  now = new Date(),
+): Promise<{ readonly rewritten: number; readonly failed: number }> {
+  const rows = await prisma.sequenceDeparture.findMany({
+    where: { status: { in: ["pending", "failed"] }, enrollment: { sequence: { campaignId } } },
+    select: { id: true },
+  });
+
+  let rewritten = 0;
+  let failed = 0;
+  for (const row of rows) {
+    // On relit la carte plutôt que de rejouer la liste : un départ réécrit
+    // entre-temps ne doit pas être repayé.
+    const stale = await isDepartureStale(row.id);
+    if (!stale) continue;
+    const outcome = await rewriteDeparture(row.id, now);
+    if (outcome.ok) rewritten += 1;
+    else failed += 1;
+  }
+  return { rewritten, failed };
+}
+
+/** Ce départ vient-il d'un gabarit qui a bougé depuis ? */
+async function isDepartureStale(departureId: string): Promise<boolean> {
+  const row = await prisma.sequenceDeparture.findUnique({
+    where: { id: departureId },
+    select: {
+      step: true,
+      templateHash: true,
+      enrollment: {
+        select: {
+          sequence: {
+            select: {
+              steps: {
+                select: {
+                  position: true,
+                  mode: true,
+                  brief: true,
+                  subject: true,
+                  body: true,
+                  variants: { select: { group: true, subject: true, body: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (row === null) return false;
+  const step = row.enrollment.sequence.steps.find((entry) => entry.position === row.step);
+  if (step === undefined) return false;
+  return isStaleDeparture(
+    row.templateHash,
+    templateFingerprint(templateShapeOf(step, step.variants)),
+  );
 }
 
 /**

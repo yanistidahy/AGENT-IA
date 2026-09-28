@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 96 | **Un départ vide, un départ périmé, et deux libellés qui mentaient** : le contrôle de vide posé dans `sendDeparture` (donc partagé par le clic, la composition et l'ordonnanceur), une empreinte de gabarit qui rend « périmé » lisible et fait taire l'avertissement qui parlait d'un autre texte, « Données de démonstration » réduit aux vraies fiches de démonstration, et la phrase de recherche qui cesse d'affirmer une mesure jamais faite | **livré, à valider** |
 | 95 | **L'éditeur de variantes, quatre défauts** : le menu « Aperçu pour » plafonné à **une** fiche par groupe par une `Map` que j'avais écrite au jalon précédent, le routage d'« Autre » et des non classés vers une variante, la phrase retirée rendue visible aux trois endroits où on la décide, et plus jamais d'objet vide | **livré, à valider** |
 | 94 | **Un groupe de fonction par contact, et un message par groupe** : quatre groupes déduits de la Fonction sur des **mots entiers** (« coordinatrice » ne contient pas « coo »), le spécifique qui bat la séniorité, une variante d'étape par groupe avec repli sur le message par défaut, et « jamais classé » distinct d'« Autre » | **livré, à valider** |
 | 93 | **L'envoi automatique tient la cadence** : une boucle en processus qui bat toutes les 5 s, un créneau réclamé par un `updateMany` conditionné — donc un verrou que deux instances ne peuvent pas partager —, une fenêtre 9 h – 17 h à Paris en jours ouvrés, une gigue de ±30 %, et trois échecs d'affilée qui coupent l'interrupteur en nommant la cause | **livré, à valider** |
@@ -13715,3 +13716,185 @@ on peut passer outre, et c'est voulu — parfois la phrase en moins est acceptab
 **Les chiffres ci-dessus viennent d'un jeu de recette**, pas de votre base. Le
 nombre réel de destinataires sans société s'affichera sur la page de la campagne,
 avant tout envoi.
+
+---
+
+## Jalon 96 — un départ vide, un départ périmé, et deux libellés qui mentaient
+
+### 1 · Le départ vide : la cause, et une correction à mon diagnostic
+
+**La carte signalée n'aurait pas pu envoyer un email vide, et je l'ai d'abord
+cru.** Mesuré : un objet vide est refusé par le schéma Zod de
+`lib/api/email-send.ts:41` (« L'objet ne peut pas être vide »). Ce qui est vrai,
+c'est que le refus arrivait **après le clic**, sans que rien sur la carte ne
+l'annonce.
+
+Mais le cas voisin, lui, avait des dents, et il est pire : **objet écrit, corps
+réduit à la signature → `sendDeparture` a répondu `{ok: true}` et un message est
+réellement arrivé dans le puits SMTP**, avec pour tout contenu le tableau de
+signature.
+
+La cause tient en une phrase : **`lib/api/departures.ts` — `sendDeparture` n'avait
+aucun contrôle de vide**, et le seul existant voit un corps **déjà signé**. Le
+corps d'un départ porte toujours la signature (imposée à la composition,
+jalon 33) : un brouillon composé depuis une étape sans texte rend donc trois
+lignes non vides, et elles passent.
+
+**Votre hypothèse est confirmée :** `composeAfterSave` a été retirée au jalon 70
+(« Enregistrer configure, « Écrire les mails » dépense »), donc enregistrer la
+séquence ne recompose plus les départs existants — c'est pourquoi un départ
+composé avant que le texte soit écrit survit en file.
+
+`lib/domain/departure-content.ts` (pur) porte la règle : « vide » se juge
+**après retrait de la signature**, sur les blocs *connus* (`knownSignatureBlocks`,
+jalon 66) et ancré en **fin de texte** — couper « les trois dernières lignes »
+mutilerait un message terminé par un post-scriptum. Le retrait est répété : un
+brouillon d'avant le jalon 67 peut porter deux signatures, et n'en retirer qu'une
+le laisserait paraître rempli alors qu'il ne dit rien.
+
+**Le contrôle vit dans `sendDeparture`, donc les trois chemins le partagent par
+construction** — clic humain, composition, ordonnanceur (jalon 93). Le poser dans
+la route de l'humain aurait été juste et aurait laissé l'automate envoyer des
+signatures seules ; une garde statique vérifie qu'ils ne cessent pas de passer par
+la même fonction.
+
+**Un départ refusé reste `pending`, avec sa cause.** `failed` signifie « brouillon
+non composé » pour la carte, qui désactive alors tous ses boutons : on ne pourrait
+plus le réécrire (leçon du jalon 91).
+
+### 2 · Le départ périmé : une empreinte, et un avertissement qui se taît
+
+La contradiction signalée était réelle et structurelle : la carte rendait le
+**corps composé** *et* un avertissement « phrase retirée » calculé sur le
+**gabarit d'aujourd'hui**. Deux textes différents, au même endroit, sans que rien
+ne l'indique — parce qu'aucune colonne ne disait de quel gabarit un départ
+venait.
+
+`SequenceDeparture.templateHash` (migration `45_departure_template_hash`) porte
+**le texte entier, pas un condensé** : la valeur est lisible en base, donc un
+diagnostic est possible sans rejouer quoi que ce soit, ce qui est exactement ce
+qui a manqué pour comprendre la carte signalée. Les variantes y sont **triées par
+groupe** : deux lectures d'ordre différent décrivent le même gabarit, et faire
+dépendre l'empreinte de l'ordre ferait passer pour périmés des départs qui ne le
+sont pas. Une étape rédigée par Alex n'a ni objet ni corps mais une **consigne** :
+c'est elle que l'empreinte lit.
+
+**Une empreinte vide vaut « on ne sait pas », jamais « périmé ».** Tous les
+départs composés avant ce jalon en portent une, et les déclarer périmés d'office
+allumerait un avertissement sur toute la file au premier déploiement — une alerte
+qui sonne partout n'est plus lue (jalon 62).
+
+**Et la phrase retirée se taît sur un départ périmé** : un avertissement de carte
+doit décrire ce qui partira, pas une suppression dans un texte que ce départ ne
+porte pas.
+
+« Réécrire ce départ » met le départ à jour **en place** — il garde son identité
+`(inscription, étape, tour)`, donc sa place dans la file — et `editedAt` est
+effacé, le texte n'étant plus celui qu'on avait retouché. Sur une étape écrite à
+la main, **aucun appel au modèle** : mesuré, le compteur d'usage ne bouge pas
+(246 → 246). La campagne porte le même compte, calculé par la **même
+comparaison** que les cartes, avec « Réécrire les départs » qui les reprend d'un
+geste et dit avant le clic si ce sera facturé.
+
+### 3 · « Données de démonstration » disait n'importe quoi
+
+**`components/sequences/departure-card.tsx` confondait deux choses** : ce qu'Alex
+avait sous la main pour nommer la boutique (`describeDemoSource`, jalon 68, dont
+la valeur est juste) et la **nature de la fiche**. Sur un prospect réel, le
+libellé faisait croire qu'on relisait un contact d'essai, donc douter de toute la
+file.
+
+La ligne dit maintenant ce qu'elle mesure — « Boutique à citer : … » — et
+« Fiche de démonstration » n'apparaît que sur un **fait** (`lib/domain/demo-data.ts`) :
+un identifiant du jeu de seed (`p12`, `c1`, là où une fiche réelle porte un `cuid`
+de vingt-cinq caractères) ou un domaine réservé aux essais (`.test`, `.example`,
+`example.com` — RFC 2606 et 6761, rien n'y arrive jamais). Tout le reste est une
+vraie fiche : se taire sur une fiche d'essai ne coûte rien, crier
+« démonstration » sur un prospect coûte la confiance qu'on accorde à l'écran.
+
+### 4 · La déduction depuis l'adresse n'était pas cassée — la phrase l'était
+
+**Votre diagnostic est réfuté, et c'est la bonne nouvelle.** Mesuré :
+`resolveResearchTarget({website:"", companyDomain:"", emails:["stephanie@acomodo.fr"]})`
+rend `acomodo.fr (déduit de l'adresse email)`. La liste d'exclusion est juste —
+`gmail.com`, `outlook.fr`, `orange.fr`, `free.fr` rendent tous « aucune cible » —
+et une fiche sans société n'est pas écartée avant le repli (jalon 84).
+
+**Ce qui était faux, c'est `components/sequences/research-note.tsx:80`** : la
+branche rendait, pour **tout** `state: "none"`, « Ni site sur la fiche, ni domaine
+sur la société, ni adresse électronique professionnelle à en déduire » — trois
+mesures que le cas le plus fréquent n'a jamais faites. Une étape écrite à la main
+ne lance **aucune** recherche (jalon 87) : il n'existait donc aucune ligne en
+base, et l'écran désignait la fiche là où il n'y avait simplement eu aucune
+lecture.
+
+`ResearchState` gagne un quatrième état, **`absent`** : « rien n'a été tenté, rien
+n'a été mesuré ». L'ancienne phrase est conservée pour le seul cas qui l'a
+méritée — `no-domain`, où la cible **a été** cherchée — et elle commence
+désormais par « La cible a été cherchée ».
+
+**Le compte demandé, mesuré sur la base locale de recette :** **67 fiches** sans
+site ni domaine de société, **66 d'entre elles** portent un domaine professionnel
+dans leur adresse, **49** sans aucune société liée. C'est une base de recette et
+non la production ; le compte de la vôtre est désormais **affiché dans le
+produit**, `/reglages` → « Domaine de société, depuis les adresses email », lu
+avec la même exclusion de fournisseurs que la cible de recherche.
+
+### Un défaut trouvé au clic, pas à la lecture
+
+`POST /api/departures` rendait `listDepartures()` **sans portée** : sur
+`/departs?campagne=…`, le premier clic remplaçait la file bornée par celle de tout
+le CRM, et l'écran cessait de décrire son propre bandeau. La portée voyage
+désormais avec la décision. Antérieur à ce jalon (jalon 91), invisible sans un
+test qui clique — c'est la cinquième fois (jalons 60, 61, 77, 79, 96).
+
+### Jalon 96 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `45_departure_template_hash`
+appliquée puis `migrate diff` **vide**), le serveur standalone de production, un
+**puits SMTP réel** et un navigateur piloté :
+
+- **1 · les quatre causes nommées** avec leur fichier, **reproduites avant tout
+  correctif** — dont le départ signature-seule réellement livré au puits ;
+- **2 · un départ vide est refusé par les deux chemins** : clic humain **et**
+  ordonnanceur, avec leur raison nommée, les deux départs restent `pending` avec
+  leur cause, et **le puits ne reçoit rien** (0 message avant, 0 après) ;
+- **3 · périmé** : à jour → `stale: false` ; l'étape modifiée après composition →
+  `stale: true`, **l'avertissement de phrase retirée se taît**, la campagne compte
+  1 ; « Réécrire ce départ » ramène le texte du jour, `stale` retombe à `false`,
+  et **le compteur d'usage est inchangé (246 → 246)** ;
+- **4 · une vraie fiche n'est jamais « de démonstration »** (`false` sur un
+  `cuid` + adresse professionnelle, `true` sur `p3`) ;
+- **5 · `stephanie@acomodo.fr` → `acomodo.fr (email)`** ; `gmail.com`,
+  `outlook.fr`, `orange.fr`, `free.fr` → aucune cible ;
+- **6 · e2e au clic**, avec **`reachable()` et jamais `isVisible()`** : les deux
+  avertissements atteignables, « Réécrire ce départ » ramène le texte de l'étape
+  (relu **en base**), aucune erreur de console ; **garde statique éprouvée sur le
+  défaut exact** (contrôle retiré de `sendDeparture` → deux tests tombent en le
+  nommant ; bandeau retiré de la carte → l'e2e tombe) ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1730 tests**) et
+  `npm run e2e` verts.
+
+### Jalon 96 — ce qui n'est pas fait
+
+**Les départs déjà en file ne portent pas d'empreinte**, et c'est délibéré : ils
+sont donc « on ne sait pas », jamais périmés. Le premier déploiement n'allume
+aucun avertissement sur l'existant ; la question ne se posera que pour les départs
+composés à partir de maintenant.
+
+**Le mode `compose` n'a pas pu exercer le contrôle de vide dans la recette** : il
+est refusé plus tôt par le double verrou du mode automatique (« Ce départ demande
+une validation à la main »). Le partage du contrôle est établi par le clic humain,
+par l'ordonnanceur, et par la garde statique qui interdit un second chemin
+d'envoi.
+
+**« Envoyer » reste actif sur une carte vide.** C'est ce qui a été demandé — le
+refus est nommé, il vient du serveur, et il est prouvé contre le puits — mais un
+bouton qui refusera toujours reste cliquable.
+
+**Le compte des fiches aveugles n'est pas actionnable en masse pour les fiches
+sans société** : le rattrapage de `/reglages` écrit sur une **société**, et 49 des
+66 fiches déductibles n'en ont aucune. Le chiffre est affiché pour décider du
+geste — rattacher des maisons — pas pour l'automatiser.
+
+**Les chiffres ci-dessus viennent d'une base de recette**, pas de la vôtre.

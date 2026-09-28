@@ -152,13 +152,19 @@ export function isStaleAt(fetchedAt: Date, now: Date, gap: ResearchGap = null): 
  *
  * Trois états, et ils doivent rester **distinguables d'un coup d'œil** :
  *
- * - `none` — aucune société rattachée, ou aucun site connu : rien n'a été
- *   tenté, et c'est la fiche qu'il faut compléter ;
+ * - `absent` — **aucune recherche n'a jamais été tentée** : il n'existe aucune
+ *   ligne en base pour cette fiche. Rien n'a donc été mesuré, et surtout
+ *   **aucune cible n'a été cherchée** — affirmer « ni adresse professionnelle à
+ *   en déduire » serait présenter une mesure jamais faite comme un fait, ce qui
+ *   a coûté un aller-retour entier sur une fiche dont le domaine était dans
+ *   l'adresse ;
+ * - `none` — la cible **a été cherchée** et rien n'est exploitable : c'est la
+ *   fiche qu'il faut compléter ; ;
  * - `failed` — la chaîne est cassée, et `detail` porte la raison exacte : c'est
  *   nous qu'il faut corriger, pas la fiche ;
  * - `read` — la lecture a eu lieu, et le nombre de sources le prouve.
  */
-export type ResearchState = "none" | "failed" | "read";
+export type ResearchState = "absent" | "none" | "failed" | "read";
 
 export interface ResearchCard {
   readonly state: ResearchState;
@@ -183,9 +189,13 @@ export interface ResearchCard {
 export function researchCard(research: Research | null): ResearchCard {
   if (research === null) {
     return {
-      state: "none",
+      // **`absent`, pas `none`.** Les deux se rendaient sous la même phrase, qui
+      // affirmait qu'aucune adresse professionnelle n'était déductible — une
+      // mesure que ce cas n'a précisément jamais faite (une étape écrite à la
+      // main ne lance aucune recherche, jalon 87).
+      state: "absent",
       target: "",
-      headline: "Aucune recherche n'a pu être lancée pour cette fiche",
+      headline: "Aucune recherche n'a été lancée pour cette fiche",
       detail: "",
       sources: [],
     };

@@ -71,7 +71,7 @@ export interface DepartureCardProps {
   readonly onEditCancel: () => void;
   readonly onEditSave: () => void;
   readonly onRework: () => void;
-  readonly onDecide: (action: "send" | "postpone" | "remove") => void;
+  readonly onDecide: (action: "send" | "postpone" | "remove" | "rewrite") => void;
   /**
    * Le verdict du dernier geste tenté **sur cette carte**.
    *
@@ -231,13 +231,78 @@ export function DepartureCard({
         */}
         {!failed && editing === null && (
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted">
-            <span>Données de démonstration : {departure.demoSource}</span>
+            {/*
+              **Ce qu'Alex avait pour nommer la boutique**, et rien de plus. Le
+              libellé disait « Données de démonstration » : sur un prospect réel,
+              il faisait croire qu'on relisait un contact d'essai. La nature de
+              la fiche est une autre question, et elle se décide sur un fait
+              (`isDemoContact`), jamais sur l'absence de site.
+            */}
+            <span>Boutique à citer : {departure.demoSource}</span>
+            {departure.demoData && (
+              <span
+                data-demo="1"
+                className="rounded-control border border-gold bg-gold-l px-2 py-0.5 text-ink"
+              >
+                Fiche de démonstration
+              </span>
+            )}
             <ResearchNote research={departure.research} ungrounded={departure.ungrounded} />
             {departure.echo !== "" && (
               <span className="rounded-control border border-danger bg-pulse-l px-2 py-1 text-danger">
                 {departure.echo}
               </span>
             )}
+          </div>
+        )}
+
+        {/*
+          **Ce départ est vide, et « Envoyer » ne le fera pas partir.** Le
+          contrôle est celui de l'envoi (`emptyDepartureReason`) : la carte
+          annonce donc le refus exact, plutôt qu'une appréciation d'écran qui
+          pourrait en différer. Le geste utile n'est ni d'envoyer ni de reporter,
+          c'est de le réécrire depuis le texte de l'étape.
+        */}
+        {!failed && editing === null && departure.empty !== "" && (
+          <div
+            data-empty="1"
+            className="mt-2 rounded-control border border-danger bg-pulse-l p-2 text-[11.5px] text-danger"
+          >
+            <b className="font-semibold">Ce départ est vide : réécrivez-le</b> — {departure.empty}.
+            <button
+              type="button"
+              className="ml-2 font-semibold underline"
+              disabled={busy !== null}
+              onClick={() => onDecide("rewrite")}
+            >
+              Réécrire ce départ
+            </button>
+          </div>
+        )}
+
+        {/*
+          **Périmé : le gabarit a changé depuis la composition.** Un
+          avertissement de carte doit décrire ce qui partira — c'est pour cela
+          que la phrase retirée se taît ici : elle serait calculée sur un texte
+          que ce départ ne porte pas.
+        */}
+        {!failed && editing === null && departure.empty === "" && departure.stale && (
+          <div
+            data-stale="1"
+            className="mt-2 rounded-control border border-gold bg-gold-l p-2 text-[11.5px] text-ink"
+          >
+            <b className="font-semibold">
+              Composé avant votre dernière modification de la séquence
+            </b>{" "}
+            — ce texte n&apos;est pas celui de l&apos;étape d&apos;aujourd&apos;hui.
+            <button
+              type="button"
+              className="ml-2 font-semibold text-brand-d underline"
+              disabled={busy !== null}
+              onClick={() => onDecide("rewrite")}
+            >
+              Réécrire ce départ
+            </button>
           </div>
         )}
 
