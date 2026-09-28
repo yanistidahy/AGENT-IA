@@ -9,6 +9,11 @@ import { SequenceSteps } from "./sequence-steps";
 import type { OtherRouting } from "@/lib/domain/step-variants";
 import { EMPTY_SAMPLES, type SampleSet } from "./manual-step-editor";
 import type { CampaignMode } from "@/lib/domain/campaign-mode";
+import {
+  describeResync,
+  hasResyncNews,
+  type ResyncReport,
+} from "@/lib/domain/departure-content";
 
 /**
  * Les séquences d'emails, et l'interrupteur qui ne s'active pas tout seul.
@@ -74,6 +79,14 @@ function isPayload(
 ): value is {
   sequences: SequenceView[];
   sequence?: SequenceView;
+  /**
+   * Le rapport de resynchronisation des départs manuels (jalon 97). Facultatif
+   * à la lecture plutôt qu'obligatoire : la charge traverse la frontière
+   * serveur vers client en JSON, où le type n'existe plus. Le promettre
+   * obligatoire décrirait ce qu'on espère recevoir, et c'est exactement le
+   * défaut qui a blanchi le panneau de rédaction au jalon 85.
+   */
+  resync?: ResyncReport;
 } {
   return typeof value === "object" && value !== null && "sequences" in value;
 }
@@ -211,10 +224,19 @@ export function EmailSequencesPanel({
           : result.data.sequences,
       );
       /*
-        **Enregistrer n'est qu'un enregistrement**, depuis le jalon 70 : aucun
-        appel au modèle, aucun départ composé, aucune facture. Écrire les mails
-        est un geste séparé, avec son bouton et son estimation de coût.
+        **Enregistrer ne facture rien**, depuis le jalon 70 : aucun appel au
+        modèle. Écrire les mails reste un geste séparé, avec son bouton et son
+        estimation de coût.
+
+        Ce que l'enregistrement fait désormais, en plus et sans rien dépenser :
+        il remet à jour les départs en attente des étapes **écrites à la main**.
+        Le rapport n'est affiché que s'il a quelque chose à dire — « 0 départ mis
+        à jour · 0 créé » à chaque enregistrement d'une campagne rédigée par Alex
+        serait du bruit, et on cesserait de lire la ligne qui compte.
       */
+      const resync = result.data.resync;
+      const news = resync !== undefined && hasResyncNews(resync) ? ` ${describeResync(resync)}.` : "";
+
       if (reopen) {
         const reopened = await requestJson(
           "/api/sequences-email/reopen",
@@ -243,11 +265,11 @@ export function EmailSequencesPanel({
         setDone(
           `Séquence enregistrée. ${reopened.data.reopened} inscription${
             reopened.data.reopened > 1 ? "s" : ""
-          } rouverte${reopened.data.reopened > 1 ? "s" : ""} — les personnes dues entreront dans la prochaine composition.`,
+          } rouverte${reopened.data.reopened > 1 ? "s" : ""} : les personnes dues entreront dans la prochaine composition.${news}`,
         );
         return;
       }
-      setDone("Séquence enregistrée.");
+      setDone(`Séquence enregistrée.${news}`);
     } else setError(result.message);
   };
 

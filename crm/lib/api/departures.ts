@@ -219,6 +219,19 @@ export interface ComposeScope {
    * dire une lecture toutes les huit secondes.
    */
   readonly jobId?: string;
+  /**
+   * **Ne composer que les étapes écrites à la main.**
+   *
+   * C'est ce qui permet à un enregistrement de séquence de resynchroniser sa
+   * file sans rien facturer : une étape manuelle est une substitution de trois
+   * balises, une étape rédigée par Alex est un appel au modèle par contact, et
+   * un enregistrement n'a jamais à dépenser (jalon 70).
+   *
+   * Une portée plutôt qu'une seconde boucle, pour la raison du jalon 56 : deux
+   * boucles feraient deux jeux de garde-fous, et le second oublierait un jour la
+   * fiche passée en « Perdu » depuis l'inscription.
+   */
+  readonly manualOnly?: boolean;
 }
 
 /** Quelqu'un a-t-il demandé l'arrêt de cette composition ? */
@@ -372,6 +385,18 @@ export async function composeDepartures(
       de la même façon, et l'envoi lui applique les mêmes garde-fous. Une étape
       manuelle saute Alex pour l'écriture, jamais pour la sécurité.
     */
+    const isManual = toStepMode(step?.mode ?? "") === "manual";
+    /*
+      **La portée « manuelle seule » saute l'étape d'Alex, elle ne la refuse
+      pas** : l'inscription reste active et dûe, et le passage quotidien ou
+      « Écrire les mails » l'écrira. Ce qui est évité, c'est de facturer un appel
+      depuis un geste qui n'en demande pas.
+    */
+    if (scope.manualOnly === true && !isManual) {
+      waiting += 1;
+      continue;
+    }
+
     let written: { readonly subject: string; readonly body: string } | null = null;
 
     // Les variantes par groupe de fonction : le choix se fait dans
@@ -385,7 +410,7 @@ export async function composeDepartures(
     const fingerprint =
       step === undefined ? "" : templateFingerprint(templateShapeOf(step, variants));
 
-    if (toStepMode(step?.mode ?? "") === "manual") {
+    if (isManual) {
       written = await renderManualStep(
         enrollment.contactId,
         { subject: step?.subject ?? "", body: step?.body ?? "" },
@@ -721,6 +746,19 @@ export interface DepartureView {
    * l'empreinte : « on ne sait pas » n'est jamais « périmé »).
    */
   readonly stale: boolean;
+  /**
+   * Ce brouillon a été retouché à la main avec « Modifier ».
+   *
+   * **Un fait enregistré par le geste lui-même** (`editedAt`, posé par
+   * `saveDeparture`), jamais deviné en comparant le texte au gabarit : une
+   * comparaison confondrait « corrigé par quelqu'un » avec « composé depuis une
+   * autre version du gabarit », qui est précisément l'autre cas, et c'est celui
+   * que `stale` décrit.
+   *
+   * C'est ce qui fait qu'un enregistrement de séquence ne l'écrase pas : la
+   * resynchronisation le conserve et la carte propose de le remplacer.
+   */
+  readonly edited: boolean;
   /** La maison du contact, affichée sous son nom. Vide quand il n'en a pas. */
   readonly companyName: string;
   readonly campaignName: string;
@@ -1019,6 +1057,7 @@ export async function listDepartures(
       dropped: [...dropped],
       empty: emptyDepartureReason(row, blocks) ?? "",
       stale,
+      edited: row.editedAt !== null,
       createdAt: row.createdAt,
     });
   }
@@ -1473,6 +1512,41 @@ export async function postponeDeparture(id: string, now = new Date()): Promise<D
   ]);
 
   return { ok: true, message: "Reporté à demain. Le brouillon sera réécrit avec l'état de demain." };
+}
+
+/**
+ * **Retirer le brouillon de la file, et rien d'autre.**
+ *
+ * Le contact reste inscrit, à la même étape : c'est le texte qu'on ne veut pas,
+ * pas la personne. Le prochain enregistrement de la séquence, ou la prochaine
+ * composition, le ramène avec le texte du jour : la contrainte d'unicité
+ * `(inscription, étape, tour)` ne voit plus de ligne pour ce couple.
+ *
+ * Deux différences avec ses voisins, et ce sont elles qui justifient une
+ * troisième fonction plutôt qu'un paramètre :
+ *
+ * - `postponeDeparture` avance `lastSentAt` d'un jour, donc **décale
+ *   l'échéance** : ici on ne reporte rien, on efface un brouillon ;
+ * - `removeFromSequence` arrête l'inscription : ici personne ne quitte la
+ *   campagne, et l'entonnoir ne bouge pas.
+ *
+ * Un départ **envoyé** est un fait et ne s'efface pas.
+ */
+export async function dropDeparture(id: string): Promise<DepartureOutcome> {
+  const departure = await prisma.sequenceDeparture.findUnique({
+    where: { id },
+    select: { status: true },
+  });
+  if (departure === null) return { ok: false, message: "Départ introuvable." };
+  if (departure.status === "sent") return { ok: false, message: "Ce départ est déjà parti." };
+
+  await prisma.sequenceDeparture.delete({ where: { id } });
+
+  return {
+    ok: true,
+    message:
+      "Départ retiré de la file. Le contact reste inscrit à la même étape : le prochain enregistrement de la séquence le ramènera avec le texte du jour.",
+  };
 }
 
 /** Retirer le contact de la séquence, définitivement. */

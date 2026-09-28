@@ -2,6 +2,7 @@ import { z } from "zod";
 import { badRequest, invalidPayload, jsonOk, serverError } from "@/lib/api/errors";
 import { readJson } from "@/lib/api/request";
 import {
+  dropDeparture,
   listDepartures,
   postponeDeparture,
   removeFromSequence,
@@ -24,6 +25,10 @@ export const maxDuration = 300;
  * `rewrite` les rejoint parce qu'une carte vide ou périmée n'a aucune des trois
  * à offrir : ce qu'on veut n'est ni l'envoyer, ni la reporter, ni la retirer,
  * mais **celle-ci, à jour**. Sur une étape écrite à la main, elle ne coûte rien.
+ *
+ * `drop` la rejoint pour la raison inverse : `remove` arrêtait une inscription
+ * quand on voulait seulement jeter un texte, et c'est la décision la plus lourde
+ * qu'on prenait faute d'une plus légère.
  */
 const decisionSchema = z.object({
   id: z.string().min(1),
@@ -36,7 +41,7 @@ const decisionSchema = z.object({
     la recette au clic, pas à la lecture.
   */
   campaignId: z.string().min(1).optional(),
-  action: z.enum(["send", "postpone", "remove", "rewrite"], { error: "Action inconnue" }),
+  action: z.enum(["send", "postpone", "remove", "rewrite", "drop"], { error: "Action inconnue" }),
 });
 
 /**
@@ -98,7 +103,9 @@ export async function POST(request: Request) {
           ? await postponeDeparture(id)
           : action === "rewrite"
             ? await rewriteDeparture(id)
-            : await removeFromSequence(id);
+            : action === "drop"
+              ? await dropDeparture(id)
+              : await removeFromSequence(id);
 
     /*
       **L'échec rend la file lui aussi.** Rendre un 400 nu laissait l'écran sur

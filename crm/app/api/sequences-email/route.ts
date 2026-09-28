@@ -52,9 +52,15 @@ export async function POST(request: Request) {
       La composition est donc passée derrière son propre bouton, « Écrire les
       mails ». Enregistrer redevient ce qu'un enregistrement doit être : sans
       effet de bord, sans coût, et rejouable autant de fois qu'on veut.
+
+      Le jalon 97 y ajoute la seule exception que le raisonnement autorise : les
+      départs en attente d'une étape **écrite à la main** sont réécrits, parce
+      que les réécrire ne coûte aucun appel au modèle. Le rapport voyage jusqu'à
+      l'écran pour que le geste ne soit pas muet.
     */
     return jsonOk({
       sequence: result.sequence,
+      resync: result.resync,
       sequences: await listSequences(),
     });
   } catch (error) {

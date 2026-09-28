@@ -58,7 +58,15 @@ describe.skipIf(chromiumPath() === null || PASSWORD === undefined)("la file du m
         trois décisions, la reprise avec Alex, et « Vider les départs ».
       */
       const card = cards.nth(0);
-      for (const label of ["Envoyer", "Modifier", "Retravailler avec Alex", "Retirer"]) {
+      // « Retirer » s'est dédoublé au jalon 97 : la file et la campagne ne se
+      // quittent pas du même geste, et les deux libellés le disent.
+      for (const label of [
+        "Envoyer",
+        "Modifier",
+        "Retravailler avec Alex",
+        "Retirer des départs",
+        "Retirer de la campagne",
+      ]) {
         const button = card.getByRole("button", { name: label });
         await button.scrollIntoViewIfNeeded();
         expect(await reachable(button)).toBe(true);
