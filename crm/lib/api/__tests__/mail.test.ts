@@ -25,6 +25,7 @@ const CONFIG = {
   signPhone: "",
   demoLabel: "Diagnostic offert",
   demoUrl: "https://exemple.test/",
+  ourSiteUrl: "https://auraflowai.fr/",
 };
 
 describe("ce qui manque pour envoyer", () => {

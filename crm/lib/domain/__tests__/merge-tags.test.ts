@@ -17,6 +17,7 @@ const full: MergeValues = {
   societe: "Dermoplant",
   site: "dermoplant.fr",
   video: "Voir la démonstration en vidéo",
+  notresite: "https://auraflowai.fr/",
 };
 
 describe("toStepMode", () => {
@@ -202,7 +203,15 @@ describe("les balises ajoutées au jalon de ce groupe", () => {
   });
 
   it("les quatre nouvelles balises sont annoncées quand leur valeur manque", () => {
-    const vide: MergeValues = { prenom: "", nom: "", fonction: "", societe: "", site: "", video: "" };
+    const vide: MergeValues = {
+      prenom: "",
+      nom: "",
+      fonction: "",
+      societe: "",
+      site: "",
+      video: "",
+      notresite: "",
+    };
     expect(unresolvedTags("{nom} {fonction} {marque} {societe}", vide)).toEqual([
       "{nom}",
       "{fonction}",

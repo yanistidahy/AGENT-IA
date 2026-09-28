@@ -19,6 +19,7 @@ import {
   toHtml,
   toPlainText,
   withSignatureLogo,
+  withOurSiteLink,
   withTrackingPixel,
   withVideoThumbnail,
   type DemoLink,
@@ -35,6 +36,7 @@ import { readLogoSummary } from "./mail-logo";
 import { readVideoSummary } from "./mail-video";
 import { clickUrl, publicBaseUrl, type ClickKind } from "./email-sends";
 import { DEFAULT_DEMO, DEFAULT_SIGNATURE, type Signature } from "../agents/prompts/company";
+import { DEFAULT_OUR_SITE_URL, ourSiteLink, type OurSiteLink } from "../domain/our-site";
 
 /**
  * Envoi de courriels, par SMTP.
@@ -79,6 +81,13 @@ export interface MailConfig {
   /** Lien de démonstration. `demoUrl` vide supprime la phrase entière. */
   readonly demoLabel: string;
   readonly demoUrl: string;
+  /**
+   * L'adresse de **notre** site, celle que `{notresite}` rend cliquable.
+   *
+   * Pas de libellé à côté : il est dérivé de l'adresse par `ourSiteLabel`. Vide
+   * supprime la phrase entière, comme `demoUrl`.
+   */
+  readonly ourSiteUrl: string;
 }
 
 /** Ce que l'écran a le droit de savoir du mot de passe : s'il existe. */
@@ -105,15 +114,26 @@ function toEncryption(value: string): "tls" | "starttls" {
   return value === "tls" ? "tls" : "starttls";
 }
 
-/** Le lien de démonstration — global, pas une propriété de boîte. */
-async function readDemoLink(): Promise<{ label: string; url: string }> {
+/**
+ * Les réglages globaux du corps du message : le lien de démonstration et notre
+ * site. **Globaux, pas des propriétés de boîte** — ce sont ceux de
+ * l'entreprise, et deux boîtes qui pointeraient deux sites se liraient comme
+ * deux sociétés (l'argument du logo au jalon 62).
+ */
+async function readGlobalLinks(): Promise<{
+  demo: { label: string; url: string };
+  ourSiteUrl: string;
+}> {
   const row = await prisma.settings.findUnique({
     where: { id: "singleton" },
-    select: { demoLabel: true, demoUrl: true },
+    select: { demoLabel: true, demoUrl: true, ourSiteUrl: true },
   });
   return {
-    label: row?.demoLabel ?? DEFAULT_DEMO.label,
-    url: row?.demoUrl ?? DEFAULT_DEMO.url,
+    demo: {
+      label: row?.demoLabel ?? DEFAULT_DEMO.label,
+      url: row?.demoUrl ?? DEFAULT_DEMO.url,
+    },
+    ourSiteUrl: row?.ourSiteUrl ?? DEFAULT_OUR_SITE_URL,
   };
 }
 
@@ -121,6 +141,7 @@ async function readDemoLink(): Promise<{ label: string; url: string }> {
 export function configOf(
   mailbox: Mailbox,
   demo: { readonly label: string; readonly url: string },
+  ourSiteUrl: string = DEFAULT_OUR_SITE_URL,
 ): MailConfig {
   return {
     mailboxId: mailbox.id,
@@ -137,6 +158,7 @@ export function configOf(
     signPhone: mailbox.signPhone,
     demoLabel: demo.label,
     demoUrl: demo.url,
+    ourSiteUrl,
   };
 }
 
@@ -148,7 +170,7 @@ export function configOf(
  * en nommant ce qui manque, jamais en levant.
  */
 export async function readMailConfig(mailboxId?: string): Promise<MailConfig> {
-  const demo = await readDemoLink();
+  const { demo, ourSiteUrl } = await readGlobalLinks();
   const mailbox =
     mailboxId === undefined || mailboxId === ""
       ? await defaultMailbox()
@@ -170,10 +192,11 @@ export async function readMailConfig(mailboxId?: string): Promise<MailConfig> {
       signPhone: "",
       demoLabel: demo.label,
       demoUrl: demo.url,
+      ourSiteUrl,
     };
   }
 
-  return configOf(mailbox, demo);
+  return configOf(mailbox, demo, ourSiteUrl);
 }
 
 /**
@@ -230,6 +253,28 @@ export async function signatureVideo(): Promise<VideoLink | undefined> {
 /** Le lien de démonstration tel que le formateur l'attend. */
 export function demoLinkOf(config: MailConfig): DemoLink {
   return { label: config.demoLabel, url: config.demoUrl };
+}
+
+/**
+ * Notre site tel que le formateur l'attend, ou `undefined`.
+ *
+ * **Une seule lecture décide de l'adresse et du libellé**, appelée par l'envoi
+ * comme par l'aperçu : deux résolutions finiraient par afficher un texte qui ne
+ * décrit pas le `href`, ce qu'un lecteur attentif lit comme une usurpation.
+ */
+export function ourSiteLinkOf(config: MailConfig): OurSiteLink | undefined {
+  return ourSiteLink(config.ourSiteUrl) ?? undefined;
+}
+
+/**
+ * L'adresse de notre site, telle que la balise la substitue, ou `""`.
+ *
+ * C'est la valeur que `mergeValuesOf` met dans `notresite` : l'adresse entière,
+ * pas le libellé — voir `lib/domain/our-site.ts`. Vide quand rien n'est réglé,
+ * donc la phrase qui la cite disparaît.
+ */
+export async function ourSiteUrlValue(): Promise<string> {
+  return ourSiteLinkOf(await readMailConfig())?.url ?? "";
 }
 
 /**
@@ -291,10 +336,10 @@ export async function readMailStatus(mailboxId?: string): Promise<MailStatus> {
 
 /** L'état de **chaque** boîte, pour le panneau — jamais un secret, son existence. */
 export async function readMailboxStatuses(): Promise<MailStatus[]> {
-  const demo = await readDemoLink();
+  const { demo, ourSiteUrl } = await readGlobalLinks();
   const mailboxes = await listMailboxes();
   return mailboxes.map((mailbox) => {
-    const config = configOf(mailbox, demo);
+    const config = configOf(mailbox, demo, ourSiteUrl);
     const passwordSet = password(config) !== "";
     const missing = missingFields(config, passwordSet);
     return { ...config, passwordSet, ready: missing.length === 0, missing };
@@ -515,9 +560,15 @@ export async function sendMail(input: SendInput): Promise<SendResult> {
   // intact. La vignette, elle, remplace un libellé au milieu du texte : posée
   // avant le logo, son balisage pourrait se retrouver dans la cellule de
   // signature si le libellé était écrit dans le dernier paragraphe.
-  const html = withVideoThumbnail(
-    withSignatureLogo(toHtml(input.body, demo), await signatureLogo()),
-    video,
+  // L'ancre de notre site vient après le logo, pour la même raison que la
+  // vignette : le logo doit voir un corps encore intact. Le texte, lui, n'a rien
+  // à développer, la balise ayant déjà substitué l'adresse entière (jalon 98).
+  const html = withOurSiteLink(
+    withVideoThumbnail(
+      withSignatureLogo(toHtml(input.body, demo), await signatureLogo()),
+      video,
+    ),
+    ourSiteLinkOf(config),
   );
 
   const message = {

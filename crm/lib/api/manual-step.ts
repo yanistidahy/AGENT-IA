@@ -6,7 +6,7 @@ import { contactTitle, repairGreeting } from "../domain/contact-identity";
 import { enforceSignature, sanitizeSubject } from "../domain/email-format";
 import { signatureBlock } from "../agents/prompts/company";
 import { forbiddenSigners } from "../agents/email-draft";
-import { readMailConfig, signatureOf, signatureVideo } from "./mail";
+import { ourSiteUrlValue, readMailConfig, signatureOf, signatureVideo } from "./mail";
 import { listSignatories, pickSignatory } from "./signatories";
 import {
   routedGroup,
@@ -65,9 +65,25 @@ async function readMergeContact(contactId: string) {
  * (jalon 75). Une seconde règle de résolution aurait fini par citer un site que
  * la carte de recherche dit ne pas connaître.
  */
+/**
+ * Les valeurs qui ne dépendent d'aucun contact : la vidéo et notre site.
+ *
+ * Réunies en une lecture plutôt qu'un paramètre chacune, pour que l'aperçu et la
+ * composition ne puissent pas en oublier une — c'est toujours la seconde qu'on
+ * oublie de passer, et elle partirait alors comme une phrase retirée sans raison.
+ */
+export interface TemplateGlobals {
+  /** Le libellé cliquable de la vidéo. Vide = aucune vidéo réglée. */
+  readonly video: string;
+  /** L'adresse entière de notre site. Vide = aucune adresse réglée. */
+  readonly notresite: string;
+}
+
+export const NO_GLOBALS: TemplateGlobals = { video: "", notresite: "" };
+
 export function mergeValuesOf(
   contact: NonNullable<MergeContact>,
-  videoLabel = "",
+  globals: TemplateGlobals = NO_GLOBALS,
 ): MergeValues {
   const target = resolveResearchTarget({
     website: contact.website,
@@ -87,7 +103,14 @@ export function mergeValuesOf(
     // monde — mais elle passe par ici parce que c'est la seule chose que le
     // gabarit sait substituer, et qu'une seconde voie ferait diverger l'aperçu
     // de l'envoi. Vide = aucune vidéo réglée, donc la phrase disparaît.
-    video: videoLabel,
+    video: globals.video,
+    /*
+      **L'adresse entière, pas le libellé** — l'écart avec `{video}`, et il est
+      voulu : la partie `text/plain` est alors juste sans aucun développement, et
+      seule la partie HTML demande une ancre (`withOurSiteLink`). Une règle de
+      rendu en moins, donc une divergence de moins entre les deux parties.
+    */
+    notresite: globals.notresite,
   };
 }
 
@@ -100,8 +123,9 @@ export function mergeValuesOf(
  * défaut que ce projet a payé plusieurs fois, et la règle du jalon 87 : une
  * seule définition du rendu, pour l'aperçu comme pour la composition.
  */
-async function videoLabel(): Promise<string> {
-  return (await signatureVideo())?.label ?? "";
+export async function templateGlobals(): Promise<TemplateGlobals> {
+  const [video, notresite] = await Promise.all([signatureVideo(), ourSiteUrlValue()]);
+  return { video: video?.label ?? "", notresite };
 }
 
 export interface ManualDraft {
@@ -145,7 +169,7 @@ export async function renderManualStep(
     routedGroup(contact.contactGroup, contact.groupSetBy, toOtherRouting(routing)),
   );
 
-  const values = mergeValuesOf(contact, await videoLabel());
+  const values = mergeValuesOf(contact, await templateGlobals());
   const [config, signatories] = await Promise.all([readMailConfig(mailboxId), listSignatories()]);
   const signatory =
     (mailboxId === undefined
@@ -216,7 +240,7 @@ const SAMPLE_LIMIT = 500;
  * qu'on ne croie pas relire la campagne.
  */
 export async function sampleContacts(sequenceId: string): Promise<SampleSet> {
-  const label = await videoLabel();
+  const globals = await templateGlobals();
 
   const enrolled = await prisma.sequenceEnrollment.count({ where: { sequenceId } });
   /*
@@ -255,7 +279,7 @@ export async function sampleContacts(sequenceId: string): Promise<SampleSet> {
     contacts: rows.map((contact) => ({
       id: contact.id,
       name: contactTitle(contact),
-      values: mergeValuesOf(contact, label),
+      values: mergeValuesOf(contact, globals),
       group: contact.contactGroup,
       groupSetBy: contact.groupSetBy,
     })),
@@ -282,7 +306,7 @@ export async function missingValueReports(
   sequenceId: string,
   templates: readonly string[],
 ): Promise<readonly MissingValueReport[]> {
-  const label = await videoLabel();
+  const globals = await templateGlobals();
   const rows = await prisma.contact.findMany({
     where: { enrollments: { some: { sequenceId } } },
     select: CONTACT_SELECT,
@@ -291,7 +315,7 @@ export async function missingValueReports(
 
   const byValue = new Map<string, { id: string; name: string }[]>();
   for (const contact of rows) {
-    const values = mergeValuesOf(contact, label);
+    const values = mergeValuesOf(contact, globals);
     const missing = new Set(
       templates.flatMap((template) => missingSentenceValues(template, values)),
     );
