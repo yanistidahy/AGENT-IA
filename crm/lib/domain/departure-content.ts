@@ -135,3 +135,57 @@ export function emptyDepartureReason(
 export function emptyDepartureRefusal(reason: string): string {
   return `Ce départ est vide (${reason}) : rien n'est parti. Écrivez le texte de l'étape, puis réécrivez ce départ.`;
 }
+
+/**
+ * ## 3 · Resynchroniser, et ce que le compte rendu doit dire
+ *
+ * Enregistrer une séquence ne recomposait rien depuis le jalon 70, et la raison
+ * tenait : un enregistrement ne doit ni facturer ni écraser un brouillon qu'on
+ * relit. Mais elle vaut pour une étape **rédigée par Alex**, dont chaque
+ * brouillon est un appel au modèle. Une étape **écrite à la main** ne coûte
+ * rien : son rendu est une substitution de trois balises, et laisser la file
+ * porter le texte d'avant l'enregistrement n'est alors pas une précaution,
+ * c'est un écran qui promet autre chose que ce qui partira.
+ *
+ * Le compte rendu porte **trois nombres distincts** parce qu'ils n'engagent pas
+ * la même chose : ce qui a été remis à jour, ce qui a été créé pour quelqu'un
+ * qui n'avait rien, et ce qui a été **conservé** faute d'avoir le droit d'être
+ * écrasé. Un total unique laisserait croire que tout a suivi.
+ */
+export interface ResyncReport {
+  /** Départs en attente réécrits depuis le gabarit courant. */
+  readonly updated: number;
+  /** Départs créés pour des inscrits dus qui n'en avaient aucun. */
+  readonly created: number;
+  /** Retouchés à la main, donc laissés tels quels, avec leur marqueur. */
+  readonly kept: number;
+  /** Ce qui a empêché la création (week-end, campagne en pause). Vide sinon. */
+  readonly blocked: string | null;
+}
+
+const plural = (count: number) => (count > 1 ? "s" : "");
+
+/**
+ * La phrase du compte rendu, composée ici pour n'exister qu'une fois.
+ *
+ * Elle nomme **pourquoi** un départ a été conservé — « retouché à la main » —
+ * plutôt que de le compter à part en silence : c'est le seul des trois nombres
+ * qui décrit une décision de l'utilisateur, et celui qu'il faut pouvoir
+ * contester.
+ */
+export function describeResync(report: ResyncReport): string {
+  const parts = [
+    `${report.updated} départ${plural(report.updated)} mis à jour`,
+    `${report.created} créé${plural(report.created)}`,
+  ];
+  if (report.kept > 0) {
+    parts.push(`${report.kept} conservé${plural(report.kept)} (retouché${plural(report.kept)} à la main)`);
+  }
+  const line = parts.join(" · ");
+  return report.blocked === null ? line : `${line}. ${report.blocked}`;
+}
+
+/** Y a-t-il quelque chose à dire ? Un enregistrement sans file reste muet. */
+export function hasResyncNews(report: ResyncReport): boolean {
+  return report.updated > 0 || report.created > 0 || report.kept > 0;
+}

@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 97 | **Enregistrer fait suivre la file** : les départs en attente d'une étape écrite à la main sont réécrits à l'enregistrement, empreinte absente comprise, sans un appel au modèle ; une retouche à la main survit et se remplace sur demande ; et « Retirer des départs » cesse d'obliger à retirer quelqu'un de la campagne pour jeter un texte | **livré, à valider** |
 | 96 | **Un départ vide, un départ périmé, et deux libellés qui mentaient** : le contrôle de vide posé dans `sendDeparture` (donc partagé par le clic, la composition et l'ordonnanceur), une empreinte de gabarit qui rend « périmé » lisible et fait taire l'avertissement qui parlait d'un autre texte, « Données de démonstration » réduit aux vraies fiches de démonstration, et la phrase de recherche qui cesse d'affirmer une mesure jamais faite | **livré, à valider** |
 | 95 | **L'éditeur de variantes, quatre défauts** : le menu « Aperçu pour » plafonné à **une** fiche par groupe par une `Map` que j'avais écrite au jalon précédent, le routage d'« Autre » et des non classés vers une variante, la phrase retirée rendue visible aux trois endroits où on la décide, et plus jamais d'objet vide | **livré, à valider** |
 | 94 | **Un groupe de fonction par contact, et un message par groupe** : quatre groupes déduits de la Fonction sur des **mots entiers** (« coordinatrice » ne contient pas « coo »), le spécifique qui bat la séniorité, une variante d'étape par groupe avec repli sur le message par défaut, et « jamais classé » distinct d'« Autre » | **livré, à valider** |
@@ -13898,3 +13899,159 @@ sans société** : le rattrapage de `/reglages` écrit sur une **société**, et
 geste — rattacher des maisons — pas pour l'automatiser.
 
 **Les chiffres ci-dessus viennent d'une base de recette**, pas de la vôtre.
+
+---
+
+## Jalon 97 — enregistrer fait suivre la file
+
+### La règle, et l'écart avec le jalon 70
+
+Le jalon 70 a débranché la composition de l'enregistrement, et sa raison tient :
+un enregistrement ne doit ni facturer, ni écraser un brouillon qu'on relit. Mais
+**elle ne vaut que pour une étape rédigée par Alex**, dont chaque brouillon est
+un appel au modèle. Une étape **écrite à la main** est une substitution de trois
+balises : réécrire ses départs ne coûte rien, et laisser la file porter le texte
+d'avant l'enregistrement n'est pas une précaution — c'est un écran qui montre
+autre chose que ce qui partira, exactement ce que le jalon 96 a passé sa journée
+à rendre visible.
+
+`resyncManualDepartures` fait donc trois gestes, dans cet ordre, et l'ordre est
+le sujet :
+
+| Geste | Sur qui | Pourquoi dans cet ordre |
+|---|---|---|
+| **réécrire** | les départs `pending` d'une étape manuelle, **empreinte absente comprise** | ceux sans empreinte sont les plus vieux, donc les plus sûrement périmés : c'est précisément le cas que le jalon 96 laissait de côté |
+| **conserver** | ceux dont `editedAt` est posé | une retouche à la main est un fait enregistré par le geste, pas une ressemblance de texte |
+| **créer** | les inscrits dus sans départ | par `composeDepartures(now, {sequenceId, manualOnly: true})` |
+
+**La création passe par la composition, jamais par une seconde boucle.** Décider
+soi-même qui est dû reviendrait à réécrire `nextStep`, et c'est la fonction qui
+porte les garde-fous : une seconde version en oublierait un, et ce serait celui
+de la fiche close ou de l'opposition au démarchage. C'est la règle du jalon 56,
+« une portée, pas une seconde boucle » — `manualOnly` est un champ de
+`ComposeScope`, et il **saute** l'étape d'Alex au lieu de la refuser :
+l'inscription reste active et due, et « Écrire les mails » l'écrira.
+
+**Une étape automatique n'est pas recomposée**, et garde le marqueur du jalon 96.
+Mesuré : rapport à zéro, objet, corps et empreinte inchangés, compteur d'usage
+inchangé.
+
+### Trois nombres, parce qu'ils ne s'engagent pas sur la même chose
+
+`describeResync` rend « 15 départs mis à jour · 2 créés · 1 conservé (retouché à
+la main) ». Les additionner ferait un total qui ne répond à aucune question :
+*mis à jour* décrit un texte remplacé, *créé* un contact qui n'avait rien, et
+*conservé* est le seul des trois qui décrit **une décision de l'utilisateur** —
+c'est celui qu'il faut lire.
+
+**Un rapport sans nouvelle ne s'affiche pas.** « 0 départ mis à jour · 0 créé »
+à chaque enregistrement d'une campagne rédigée par Alex serait du bruit, et l'on
+cesserait de lire la ligne qui compte (jalon 62).
+
+**Le week-end et la pause de campagne empêchent la création, jamais la mise à
+jour** : réécrire un texte n'est pas l'envoyer. Le blocage se dit à la suite du
+rapport plutôt qu'à sa place — taire quatre mises à jour parce qu'aucune création
+n'a eu lieu ferait croire que l'enregistrement n'a rien fait.
+
+### Une retouche à la main est reconnue au geste, jamais devinée du texte
+
+`editedAt` est posé par `saveDeparture`, donc par le geste lui-même. Comparer le
+texte au gabarit confondrait « corrigé par quelqu'un » avec « composé depuis une
+autre version du gabarit » — qui est précisément l'autre cas, celui que `stale`
+décrit depuis le jalon 96.
+
+Sur la carte, le bandeau « **Retouché à la main** · la séquence a changé depuis »
+passe **devant** celui de péremption : les deux décrivent le même écart de
+gabarit, mais celui-ci dit en plus qu'un humain est passé par là, ce qui change
+le geste à faire. Deux bandeaux superposés diraient deux fois la même chose, et
+l'un des deux serait lu de travers. « Remplacer par le texte de la séquence »
+appelle la réécriture du jalon 96, qui efface `editedAt` avec le texte qu'il
+marquait.
+
+### Deux retraits, et l'écart est tout le sujet
+
+| | « Retirer des départs » | « Retirer de la campagne » |
+|---|---|---|
+| Efface | le brouillon en attente | rien |
+| L'inscription | **reste active, à la même étape** | est arrêtée avec son motif |
+| Le prochain enregistrement | **ramène le départ** avec le texte du jour | ne ramène rien |
+| Confirmation | non — rien d'irremplaçable ne part | oui, et elle dit ce que le geste fait |
+
+`dropDeparture` est une troisième fonction plutôt qu'un paramètre de ses voisins,
+et c'est ce qui la rend sûre : `postponeDeparture` avance `lastSentAt`, donc
+**décale l'échéance** ; `removeFromSequence` arrête l'inscription. Une garde
+statique vérifie que le corps de `dropDeparture` ne contient ni l'un ni l'autre.
+Un départ **envoyé** ne s'efface pas : c'est un fait.
+
+Avant ce jalon, un seul bouton portait les deux : on prenait donc la décision la
+plus lourde — sortir quelqu'un de la campagne — pour se débarrasser d'un texte
+qu'on n'aimait pas. Et la confirmation nomme ce qui ne bouge pas : « Ses envois
+passés et son historique restent ».
+
+### Jalon 97 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (`migrate diff` **vide** — aucune migration :
+`editedAt` date du jalon 70 et `templateHash` du jalon 96), le serveur standalone
+de production et un navigateur piloté, sur un semis à trois états — un départ
+**sans empreinte**, un départ **retouché à la main**, un inscrit dû **sans départ
+du tout** :
+
+- **1 · enregistrer réécrit** : objet et message modifiés dans l'éditeur en
+  frise, « Enregistrer » cliqué → le rapport se lit à l'écran, « 1 départ mis à
+  jour · 1 créé · 1 conservé (retouché à la main) » ; en base, le départ sans
+  empreinte porte le nouvel objet, le nouveau texte **et une empreinte non
+  vide** ; l'inscrit dû en a un ; et **le compteur d'usage est inchangé**
+  (`api_usage` 246 → 246) ;
+- **2 · la retouche survit et se remplace** : `[data-edited]` atteignable
+  (`reachable()`, jamais `isVisible()`) portant « Retouché à la main » et « la
+  séquence a changé depuis », son objet à elle **intact** après l'enregistrement,
+  puis « Remplacer par le texte de la séquence » → le bandeau se détache, la base
+  porte le texte du jour et `editedAt` est **nul** ;
+- **3 · « Retirer des départs »** : la carte se détache, **0 départ** en base, et
+  l'inscription reste `active` à `lastStep 0` ; l'enregistrement suivant **ramène
+  le départ** avec le texte du jour ;
+- **4 · « Retirer de la campagne »** demande confirmation, la confirmation dit
+  que les envois passés et l'historique restent, **rien n'est écrit tant qu'on
+  n'a pas confirmé**, et confirmer arrête l'inscription avec son motif ;
+- **5 · une étape automatique ne recompose rien** : rapport
+  `{updated:0, created:0, kept:0}`, objet, corps et empreinte du départ d'Alex
+  **inchangés**, 1 départ avant et après, **246 → 246 appels facturés** ;
+- **0 erreur console** sur tout le parcours ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1738 tests**) et
+  `npm run e2e` (**96 tests**, vingt-six fichiers) verts.
+
+`tests/manual-resync-source.test.ts` ferme les deux façons de défaire ce jalon
+sans qu'aucun test ne rougisse — l'enregistrement qui cesse de resynchroniser, et
+celui qui se met à recomposer les étapes d'Alex. **Éprouvée en réintroduisant les
+deux défauts exacts** (appel de `resyncManualDepartures` retiré, puis le saut de
+la portée `manualOnly` supprimé de `composeDepartures`) : deux tests tombent,
+chacun nommant le défaut.
+
+**Une garde a dû être élargie plutôt que satisfaite** : `manual-step-source`
+exigeait le littéral `if (toStepMode(…))` avant `renderManualStep`, or le verdict
+est désormais lu dans `isManual` — la portée « manuelle seule » en a besoin avant
+la rédaction. La garde porte maintenant sur **l'ordre**, qui est la règle, et non
+sur une forme d'écriture qui n'en était que le véhicule.
+
+### Jalon 97 — ce qui n'est pas fait
+
+**Les départs d'une étape rédigée par Alex ne sont jamais réécrits par un
+enregistrement**, et c'est la règle : ils gardent le marqueur « composé avant
+votre dernière modification » du jalon 96, et leur réécriture reste un geste
+explicite et facturé, carte par carte ou par « Réécrire les départs ».
+
+**La réécriture est tout ou rien sur les étapes manuelles.** Un enregistrement
+réécrit tous les départs en attente non retouchés de la séquence ; on ne choisit
+pas d'en épargner un. Le refuge est la retouche à la main, qui est précisément ce
+que l'on conserve.
+
+**« Retirer des départs » n'a pas d'annulation** — mais elle n'en a pas besoin :
+le prochain enregistrement ramène le départ, et c'est vérifié.
+
+**Le rapport n'est pas historisé.** Il se lit une fois, dans la notice de
+l'enregistrement ; aucun écran ne dit combien de départs ont été réécrits la
+semaine dernière.
+
+**Les chiffres ci-dessus viennent d'un semis de recette**, pas de votre base. Le
+premier enregistrement en production dira combien de départs de vos campagnes
+manuelles portaient encore un texte d'avant votre dernière modification.

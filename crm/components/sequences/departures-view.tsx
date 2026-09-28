@@ -69,6 +69,8 @@ export interface Departure {
   empty: string;
   /** Composé avant la dernière modification de la séquence. */
   stale: boolean;
+  /** Retouché à la main : la resynchronisation le conserve (jalon 97). */
+  edited: boolean;
 }
 
 function isPayload(value: unknown): value is {
@@ -122,7 +124,7 @@ export function DeparturesView({
   const [editing, setEditing] = useState<{ id: string; subject: string; body: string } | null>(null);
   const router = useRouter();
 
-  const decide = async (id: string, action: "send" | "postpone" | "remove" | "rewrite") => {
+  const decide = async (id: string, action: "send" | "postpone" | "remove" | "rewrite" | "drop") => {
     setBusy(id);
     setError(null);
     setNotice(null);

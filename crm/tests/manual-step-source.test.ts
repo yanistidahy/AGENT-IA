@@ -36,7 +36,14 @@ describe("une étape manuelle n'appelle jamais le modèle", () => {
     // Le brouillon d'Alex n'est atteignable que dans la branche `else` : le
     // mode est lu d'abord, et la branche manuelle rend son texte puis rejoint
     // la création du départ.
-    expect(departures).toMatch(/if \(toStepMode\([\s\S]{0,200}renderManualStep\(/);
+    //
+    // La garde porte sur **l'ordre**, pas sur une forme d'écriture : le mode est
+    // désormais lu dans `isManual` (jalon 97, la portée « manuelle seule » a
+    // besoin du verdict avant la rédaction), et exiger le `if (toStepMode(…))`
+    // littéral aurait fait tomber la garde sur un refactor qui la respecte.
+    expect(departures).toMatch(
+      /const isManual = toStepMode\([\s\S]{0,1600}if \(isManual\) \{[\s\S]{0,200}renderManualStep\(/,
+    );
   });
 
   it("le rendu manuel est une pure substitution", () => {

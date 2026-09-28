@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   bodyWithoutSignature,
+  describeResync,
+  hasResyncNews,
   emptyDepartureRefusal,
   emptyDepartureReason,
   isStaleDeparture,
@@ -123,5 +125,40 @@ describe("une fiche de démonstration se reconnaît à un fait", () => {
       isDemoContact({ id: "cmuldvak000007dkjspz3yu9w", email: "stephanie@acomodo.fr" }),
     ).toBe(false);
     expect(isDemoContact({ id: "p3", email: "sophie@poussenature.fr" })).toBe(true);
+  });
+});
+
+describe("le rapport de resynchronisation", () => {
+  it("dit les trois nombres, et le pluriel suit", () => {
+    // La phrase de la demande, au caractère près : les trois nombres ne
+    // s'additionnent pas parce qu'ils ne s'engagent pas sur la même chose.
+    expect(
+      describeResync({ updated: 15, created: 2, kept: 1, blocked: null }),
+    ).toBe("15 départs mis à jour · 2 créés · 1 conservé (retouché à la main)");
+    expect(describeResync({ updated: 1, created: 1, kept: 0, blocked: null })).toBe(
+      "1 départ mis à jour · 1 créé",
+    );
+    expect(describeResync({ updated: 0, created: 0, kept: 3, blocked: null })).toBe(
+      "0 départ mis à jour · 0 créé · 3 conservés (retouchés à la main)",
+    );
+  });
+
+  it("le blocage de création se dit à la suite, sans effacer les mises à jour", () => {
+    // Le week-end et la pause empêchent la **création**, jamais la réécriture :
+    // réécrire un texte n'est pas l'envoyer, et taire les 4 mises à jour ferait
+    // croire que l'enregistrement n'a rien fait.
+    expect(
+      describeResync({ updated: 4, created: 0, kept: 0, blocked: "Samedi : rien n'a été composé." }),
+    ).toBe("4 départs mis à jour · 0 créé. Samedi : rien n'a été composé.");
+  });
+
+  it("un rapport sans nouvelle ne s'affiche pas", () => {
+    // Une campagne entièrement rédigée par Alex n'a rien à resynchroniser :
+    // annoncer « 0 départ mis à jour » à chaque enregistrement serait du bruit,
+    // et on cesserait de lire la ligne qui compte (jalon 62).
+    expect(hasResyncNews({ updated: 0, created: 0, kept: 0, blocked: null })).toBe(false);
+    expect(hasResyncNews({ updated: 0, created: 0, kept: 1, blocked: null })).toBe(true);
+    expect(hasResyncNews({ updated: 1, created: 0, kept: 0, blocked: null })).toBe(true);
+    expect(hasResyncNews({ updated: 0, created: 2, kept: 0, blocked: null })).toBe(true);
   });
 });

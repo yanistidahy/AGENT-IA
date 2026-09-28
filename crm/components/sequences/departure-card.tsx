@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { formatDate } from "@/lib/format";
 import { stepLabel } from "@/lib/domain/departure-groups";
 import { ResearchNote } from "./research-note";
@@ -71,7 +72,7 @@ export interface DepartureCardProps {
   readonly onEditCancel: () => void;
   readonly onEditSave: () => void;
   readonly onRework: () => void;
-  readonly onDecide: (action: "send" | "postpone" | "remove" | "rewrite") => void;
+  readonly onDecide: (action: "send" | "postpone" | "remove" | "rewrite" | "drop") => void;
   /**
    * Le verdict du dernier geste tenté **sur cette carte**.
    *
@@ -97,6 +98,9 @@ export function DepartureCard({
   onDecide,
   feedback,
 }: DepartureCardProps) {
+  // La confirmation du retrait de campagne vit dans la carte : c'est une
+  // question posée sur cette ligne, elle n'a pas à remonter à la vue.
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const failed = departure.status === "failed";
   const working = busy === departure.id;
   const locked = busy !== null || failed;
@@ -286,7 +290,38 @@ export function DepartureCard({
           que la phrase retirée se taît ici : elle serait calculée sur un texte
           que ce départ ne porte pas.
         */}
-        {!failed && editing === null && departure.empty === "" && departure.stale && (
+        {/*
+          **Retouché à la main : on ne l'écrase pas, on propose de le
+          remplacer.** Le fait vient du geste (`editedAt`), jamais d'une
+          comparaison de texte, et il passe **devant** l'avertissement de
+          péremption : les deux décrivent le même écart de gabarit, mais celui-ci
+          dit en plus qu'un humain est passé par là, ce qui change le geste à
+          faire. Deux bandeaux superposés diraient deux fois la même chose et
+          l'un des deux serait lu de travers.
+        */}
+        {!failed && editing === null && departure.empty === "" && departure.edited && (
+          <div
+            data-edited="1"
+            className="mt-2 rounded-control border border-gold bg-gold-l p-2 text-[11.5px] text-ink"
+          >
+            <b className="font-semibold">Retouché à la main</b> · la séquence a changé depuis. Votre
+            texte est conservé tel quel.
+            <button
+              type="button"
+              className="ml-2 font-semibold text-brand-d underline"
+              disabled={busy !== null}
+              onClick={() => onDecide("rewrite")}
+            >
+              Remplacer par le texte de la séquence
+            </button>
+          </div>
+        )}
+
+        {!failed &&
+          editing === null &&
+          departure.empty === "" &&
+          !departure.edited &&
+          departure.stale && (
           <div
             data-stale="1"
             className="mt-2 rounded-control border border-gold bg-gold-l p-2 text-[11.5px] text-ink"
@@ -385,14 +420,62 @@ export function DepartureCard({
         >
           Reporter à demain
         </button>
+        {/*
+          **Deux retraits, et l'écart est tout le sujet.** « des départs » efface
+          un brouillon : le contact reste inscrit à la même étape, et le prochain
+          enregistrement le ramène avec le texte du jour. « de la campagne »
+          arrête l'inscription. Un seul bouton pour les deux forçait à choisir la
+          décision la plus lourde pour se débarrasser d'un texte qu'on n'aimait
+          pas.
+        */}
         <button
           type="button"
-          className={`${BUTTON} border border-[#F0C9C2] bg-surface text-[#B2311F] hover:bg-pulse-l`}
+          className={`${BUTTON} border border-line bg-surface hover:bg-surface-2`}
           disabled={busy !== null}
-          onClick={() => onDecide("remove")}
+          onClick={() => onDecide("drop")}
         >
-          Retirer
+          Retirer des départs
         </button>
+        {/*
+          **Celui-ci demande confirmation, et la confirmation dit ce qu'il
+          fait** : arrêter une inscription n'est pas ranger une file, et un
+          libellé seul ne le dit pas.
+        */}
+        {confirmRemove ? (
+          <span className="flex items-center gap-2 text-[11.5px] text-danger">
+            Arrêter l&apos;inscription de {departure.contactName} à «&nbsp;
+            {departure.campaignName === "" ? departure.sequenceName : departure.campaignName}
+            &nbsp;» ? Ses envois passés et son historique restent ; elle ne recevra plus rien de
+            cette campagne.
+            <button
+              type="button"
+              className={`${BUTTON} bg-danger text-white hover:opacity-90`}
+              disabled={busy !== null}
+              onClick={() => {
+                setConfirmRemove(false);
+                onDecide("remove");
+              }}
+            >
+              Retirer de la campagne
+            </button>
+            <button
+              type="button"
+              className={`${BUTTON} border border-line bg-surface hover:bg-surface-2`}
+              onClick={() => setConfirmRemove(false)}
+            >
+              Annuler
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className={`${BUTTON} border border-[#F0C9C2] bg-surface text-[#B2311F] hover:bg-pulse-l`}
+            disabled={busy !== null}
+            onClick={() => setConfirmRemove(true)}
+          >
+            Retirer de la campagne
+          </button>
+        )}
       </footer>
     </article>
   );

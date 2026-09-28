@@ -12,6 +12,8 @@ import { REMOVED } from "../domain/campaign-members";
 import { prisma } from "../db";
 import { autoUnlock, BLOCK_LABELS, MAX_STEPS, type AutoUnlock } from "../domain/sequence-rules";
 import { contactTitle } from "../domain/contact-identity";
+import type { ResyncReport } from "../domain/departure-content";
+import { resyncManualDepartures } from "./manual-resync";
 import {
   daysUntilDue,
   FINISHED_STATUS,
@@ -347,7 +349,9 @@ export type SequenceInput = z.infer<typeof sequenceSchema>;
  */
 export async function saveSequence(
   input: SequenceInput,
-): Promise<{ ok: true; sequence: SequenceView } | { ok: false; message: string }> {
+): Promise<
+  { ok: true; sequence: SequenceView; resync: ResyncReport } | { ok: false; message: string }
+> {
   const id = input.id;
 
   if (input.autoMode && id !== undefined) {
@@ -446,10 +450,21 @@ export async function saveSequence(
   // lignes d'étapes.
   await closeWithoutNextStep(saved, input.steps.length);
 
+  /*
+    **Et la file suit l'enregistrement, pour les étapes écrites à la main.**
+    Le jalon 70 a débranché la composition d'ici, et sa raison tient : un
+    enregistrement ne doit ni facturer ni écraser un brouillon qu'on relit. Elle
+    ne vaut cependant que pour une étape rédigée par Alex, dont chaque brouillon
+    est un appel au modèle. Réécrire une étape manuelle ne coûte rien, et laisser
+    la file porter le texte d'avant n'est pas une précaution : c'est un écran qui
+    montre autre chose que ce qui partira.
+  */
+  const resync = await resyncManualDepartures(saved);
+
   const all = await listSequences();
   const sequence = all.find((entry) => entry.id === saved);
   if (sequence === undefined) return { ok: false, message: "Séquence introuvable après écriture." };
-  return { ok: true, sequence };
+  return { ok: true, sequence, resync };
 }
 
 export const enrollSchema = z.object({
