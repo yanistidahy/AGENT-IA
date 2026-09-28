@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
+import { ourSiteLabel } from "@/lib/domain/our-site";
 
 /**
  * Ce qui reste de messagerie **globale** : le lien de démonstration.
@@ -24,6 +25,12 @@ export interface MailStatus {
   /** Lien de démonstration. URL vide = Alex supprime la phrase entière. */
   demoLabel: string;
   demoUrl: string;
+  /**
+   * L'adresse de notre site, celle que `{notresite}` rend cliquable. Le texte
+   * visible n'a pas de champ : il est dérivé de l'adresse par `ourSiteLabel`,
+   * pour que le lien ne puisse pas afficher un domaine et pointer ailleurs.
+   */
+  ourSiteUrl: string;
 }
 
 /** Conservé pour les écrans qui affichent encore qui signe — dérivé des boîtes. */
@@ -45,6 +52,7 @@ const LABEL = "block text-[12px] font-semibold text-muted";
 export function MailPanel({ initial }: { readonly initial: MailStatus }) {
   const [demoLabel, setDemoLabel] = useState(initial.demoLabel);
   const [demoUrl, setDemoUrl] = useState(initial.demoUrl);
+  const [ourSiteUrl, setOurSiteUrl] = useState(initial.ourSiteUrl);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +62,7 @@ export function MailPanel({ initial }: { readonly initial: MailStatus }) {
     setError(null);
     const result = await requestJson(
       "/api/mail",
-      { method: "PATCH", body: JSON.stringify({ demoLabel, demoUrl }) },
+      { method: "PATCH", body: JSON.stringify({ demoLabel, demoUrl, ourSiteUrl }) },
       isPayload,
     );
     setBusy(false);
@@ -88,6 +96,26 @@ export function MailPanel({ initial }: { readonly initial: MailStatus }) {
             }}
             className={FIELD}
           />
+        </label>
+      </div>
+      <h3 className="mb-2 mt-4 font-display text-sm font-semibold">Adresse de notre site</h3>
+      <div className="grid max-w-[560px] gap-2.5">
+        <label className="block">
+          <span className={LABEL}>Adresse de notre site</span>
+          <input
+            value={ourSiteUrl}
+            placeholder="vide = la phrase qui porte {notresite} disparait"
+            onChange={(event) => {
+              setSaved(false);
+              setOurSiteUrl(event.target.value);
+            }}
+            className={FIELD}
+          />
+          <span className="mt-1 block text-[12px] text-muted">
+            {ourSiteLabel(ourSiteUrl) === ""
+              ? "Aucune adresse : la phrase qui porte {notresite} sera retiree."
+              : `{notresite} affichera « ${ourSiteLabel(ourSiteUrl)} » et pointera vers ${ourSiteUrl.trim()}`}
+          </span>
         </label>
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-2">

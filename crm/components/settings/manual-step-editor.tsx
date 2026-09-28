@@ -11,6 +11,7 @@ import {
   type MergeValues,
 } from "@/lib/domain/merge-tags";
 import { GROUP_LABELS, isContactGroup } from "@/lib/domain/contact-group";
+import { RenderedBody } from "./rendered-body";
 
 /**
  * L'éditeur d'une étape écrite à la main.
@@ -132,6 +133,7 @@ export function ManualStepEditor({
     societe: "",
     site: "",
     video: "",
+    notresite: "",
   };
 
   const missing = sample === null ? [] : unresolvedTags(`${subject}\n${body}`, values);
@@ -259,9 +261,7 @@ export function ManualStepEditor({
           <p className="mt-2 text-[11.5px] font-semibold text-muted">Objet</p>
           <p className="text-[12.5px] text-ink">{renderSubject(subject, values)}</p>
           <p className="mt-1.5 text-[11.5px] font-semibold text-muted">Message</p>
-          <pre className="whitespace-pre-wrap font-sans text-[12.5px] leading-relaxed text-ink">
-            {renderTemplate(body, values)}
-          </pre>
+          <RenderedBody text={renderTemplate(body, values)} ourSiteUrl={values.notresite} />
         </div>
       )}
     </div>

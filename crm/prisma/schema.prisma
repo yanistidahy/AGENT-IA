@@ -441,6 +441,17 @@ model Settings {
   demoLabel String @default("Diagnostic offert")
   demoUrl   String @default("https://deluxe-fudge-addd15.netlify.app/")
 
+  /// L'adresse de **notre** site, celle que `{notresite}` rend cliquable.
+  ///
+  /// Une seule colonne, et pas de champ pour le libellé visible : celui-ci est
+  /// dérivé de l'adresse (`ourSiteLabel`). Deux champs finiraient par se
+  /// contredire, et un message qui afficherait « auraflowai.fr » en pointant
+  /// ailleurs se lit comme une usurpation.
+  ///
+  /// Vide **supprime la phrase entière**, comme `demoUrl` : un lien mort dans un
+  /// premier contact coûte plus que l'absence de lien.
+  ourSiteUrl String @default("https://auraflowai.fr/")
+
   /// Un modèle par usage, plutôt qu'un modèle pour tout.
   ///
   /// Rédiger un email à partir d'un dossier fourni n'est pas la même tâche que

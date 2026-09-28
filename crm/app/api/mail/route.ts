@@ -29,6 +29,13 @@ const configSchema = z.object({
    */
   demoUrl: z.union([z.literal(""), z.url("Adresse du lien invalide")]),
 
+  /**
+   * L'adresse de **notre** site, celle que `{notresite}` rend cliquable. Vide
+   * est valide : la phrase qui portait la balise disparaît alors entièrement,
+   * la règle du jalon 87. Le libellé visible n'est pas un champ : il est dérivé
+   * de cette adresse, pour que les deux ne puissent pas se contredire.
+   */
+  ourSiteUrl: z.union([z.literal(""), z.url("Adresse de notre site invalide")]),
 });
 
 /** L'état complet lu par le panneau — jamais un secret, seulement son existence. */
@@ -65,6 +72,7 @@ export async function PATCH(request: Request) {
     const data = {
       demoLabel: parsed.data.demoLabel,
       demoUrl: parsed.data.demoUrl,
+      ourSiteUrl: parsed.data.ourSiteUrl,
     };
 
     await prisma.settings.upsert({

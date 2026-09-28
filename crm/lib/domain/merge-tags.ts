@@ -29,6 +29,7 @@
  * | `{fonction}` | idem |
  * | `{site}` | idem |
  * | `{video}` | idem — sans vidéo configurée, la phrase qui l'annonce disparaît |
+ * | `{notresite}` | idem — sans adresse réglée, la phrase qui la cite disparaît |
  *
  * Retirer la phrase plutôt que la seule balise est le seul choix honnête pour
  * les deux dernières : une phrase construite autour d'un nom qu'on n'a pas ne
@@ -92,9 +93,22 @@ export const MERGE_TAGS: readonly MergeTag[] = [
   },
   {
     tag: "{site}",
-    label: "Site",
+    label: "Son site (celui du prospect)",
     fallback:
-      "site de la fiche, à défaut celui de la société, à défaut le domaine de l'adresse email ; sans rien, la phrase qui le cite est retirée",
+      "LE SITE DU PROSPECT, pas le nôtre : site de la fiche, à défaut celui de la société, à défaut le domaine de l'adresse email ; sans rien, la phrase qui le cite est retirée",
+  },
+  {
+    /*
+      **`{notresite}` est notre site, `{site}` est le sien.** Les deux balises se
+      ressemblent à l'écrit et désignent des choses opposées : se tromper fait
+      inviter le prospect à visiter sa propre boutique. Le libellé et l'infobulle
+      de la puce les opposent donc explicitement, plutôt que de décrire chacune
+      dans son coin.
+    */
+    tag: "{notresite}",
+    label: "Notre site (pas le sien)",
+    fallback:
+      "notre adresse, réglée dans /reglages → Messagerie : lien cliquable en HTML, adresse entière en texte. Sans adresse réglée, la phrase qui la cite est retirée",
   },
   {
     tag: "{video}",
@@ -124,6 +138,16 @@ export interface MergeValues {
    * sur lequel s'accrocher. Vide = aucune vidéo réglée.
    */
   readonly video: string;
+  /**
+   * **L'adresse de notre site, entière** — pas son libellé.
+   *
+   * C'est l'écart avec `{video}`, et il est voulu : l'adresse substituée telle
+   * quelle rend la partie `text/plain` juste sans aucun développement, et c'est
+   * la couche d'envoi qui en fait une ancre côté HTML (`withOurSiteLink`). Une
+   * règle de rendu en moins, donc une divergence de moins entre les deux
+   * parties. Vide = aucune adresse réglée, donc la phrase disparaît.
+   */
+  readonly notresite: string;
 }
 
 /** Les balises **du gabarit** qui n'auront pas de valeur pour ce contact. */
@@ -136,6 +160,9 @@ export function unresolvedTags(template: string, values: MergeValues): readonly 
   if (template.includes("{marque}") && values.societe.trim() === "") missing.push("{marque}");
   if (template.includes("{site}") && values.site.trim() === "") missing.push("{site}");
   if (template.includes("{video}") && values.video.trim() === "") missing.push("{video}");
+  if (template.includes("{notresite}") && values.notresite.trim() === "") {
+    missing.push("{notresite}");
+  }
   return missing;
 }
 
@@ -212,6 +239,7 @@ const SENTENCE_TAGS: readonly { tag: string; label: string; missing: string }[] 
   { tag: "{fonction}", label: "fonction absente", missing: "fonction" },
   { tag: "{site}", label: "site absent", missing: "site" },
   { tag: "{video}", label: "vidéo non réglée", missing: "vidéo" },
+  { tag: "{notresite}", label: "adresse de notre site non réglée", missing: "notre site" },
 ];
 
 /** Les valeurs du contact que le texte utilise et qui lui manquent. */
@@ -274,6 +302,7 @@ function valueFor(tag: string, values: MergeValues): string {
   if (tag === "{societe}") return values.societe;
   if (tag === "{fonction}") return values.fonction;
   if (tag === "{site}") return values.site;
+  if (tag === "{notresite}") return values.notresite;
   return values.video;
 }
 
@@ -331,6 +360,9 @@ export function renderTemplate(input: string, values: MergeValues): string {
   // courte vidéo :  » laisserait un deux-points suspendu, et un lien mort
   // coûterait plus que la phrase qu'il portait.
   if (values.video.trim() === "") text = dropSentencesWith(text, "{video}");
+  // Sans adresse réglée, la phrase qui cite notre site part elle aussi : un lien
+  // mort vaut moins que la phrase qu'il portait (jalon 89).
+  if (values.notresite.trim() === "") text = dropSentencesWith(text, "{notresite}");
 
   text = text
     .replaceAll("{prenom}", values.prenom.trim())
@@ -338,7 +370,8 @@ export function renderTemplate(input: string, values: MergeValues): string {
     .replaceAll("{fonction}", values.fonction.trim())
     .replaceAll("{societe}", values.societe.trim())
     .replaceAll("{site}", values.site.trim())
-    .replaceAll("{video}", values.video.trim());
+    .replaceAll("{video}", values.video.trim())
+    .replaceAll("{notresite}", values.notresite.trim());
 
   return tidy(text);
 }
@@ -358,7 +391,8 @@ export function renderSubject(template: string, values: MergeValues): string {
       .replaceAll("{fonction}", values.fonction.trim())
       .replaceAll("{societe}", values.societe.trim())
       .replaceAll("{site}", values.site.trim())
-      .replaceAll("{video}", values.video.trim()),
+      .replaceAll("{video}", values.video.trim())
+      .replaceAll("{notresite}", values.notresite.trim()),
   )
     .split("\n")
     .join(" ")

@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 98 | **Notre site devient un lien cliquable** : une balise `{notresite}` qui rend une vraie ancre en HTML et l'adresse entière en texte, l'URL réglée une fois dans /reglages et le libellé visible dérivé d'elle, sans redirection, sans paramètre et sans compteur de clics | **livré, à valider** |
 | 97 | **Enregistrer fait suivre la file** : les départs en attente d'une étape écrite à la main sont réécrits à l'enregistrement, empreinte absente comprise, sans un appel au modèle ; une retouche à la main survit et se remplace sur demande ; et « Retirer des départs » cesse d'obliger à retirer quelqu'un de la campagne pour jeter un texte | **livré, à valider** |
 | 96 | **Un départ vide, un départ périmé, et deux libellés qui mentaient** : le contrôle de vide posé dans `sendDeparture` (donc partagé par le clic, la composition et l'ordonnanceur), une empreinte de gabarit qui rend « périmé » lisible et fait taire l'avertissement qui parlait d'un autre texte, « Données de démonstration » réduit aux vraies fiches de démonstration, et la phrase de recherche qui cesse d'affirmer une mesure jamais faite | **livré, à valider** |
 | 95 | **L'éditeur de variantes, quatre défauts** : le menu « Aperçu pour » plafonné à **une** fiche par groupe par une `Map` que j'avais écrite au jalon précédent, le routage d'« Autre » et des non classés vers une variante, la phrase retirée rendue visible aux trois endroits où on la décide, et plus jamais d'objet vide | **livré, à valider** |
@@ -14055,3 +14056,130 @@ semaine dernière.
 **Les chiffres ci-dessus viennent d'un semis de recette**, pas de votre base. Le
 premier enregistrement en production dira combien de départs de vos campagnes
 manuelles portaient encore un texte d'avant votre dernière modification.
+
+---
+
+## Jalon 98 — notre site devient un lien, pas une adresse en texte
+
+### Une source, deux rendus, et le libellé n'est pas un champ
+
+L'URL est réglée une fois dans `/reglages` → « Adresse de notre site »
+(`Settings.ourSiteUrl`, migration `46_our_site`, défaut `https://auraflowai.fr/`).
+**Le texte visible n'est pas un second champ** : il est dérivé de l'adresse par
+`ourSiteLabel` — scheme et barre finale retirés, rien de plus. Deux champs
+finiraient par se contredire, et le jour où l'on change de domaine le message
+afficherait « auraflowai.fr » en pointant ailleurs : c'est exactement ce qu'un
+lecteur attentif lit comme une usurpation (jalon 62). Une garde statique vérifie
+qu'aucune colonne de libellé n'existe et que le calcul ne vit qu'à un endroit.
+
+| Partie | Ce qui part | Qui le produit |
+|---|---|---|
+| `text/plain` | `https://auraflowai.fr/` | **la substitution seule**, rien à développer |
+| `text/html` | `<a href="https://auraflowai.fr/">auraflowai.fr</a>` | `withOurSiteLink`, à l'envoi |
+
+### Ce que la balise substitue, et pourquoi c'est l'URL
+
+`{notresite}` rend **l'adresse entière**, pas un libellé. C'est l'écart avec
+`{video}` et le lien de démonstration (jalon 34), qui substituent un libellé que
+la couche d'envoi développe ensuite des deux côtés. Substituer l'URL rend la
+partie texte juste **sans aucun développement** : une règle de rendu en moins,
+donc une divergence de moins entre les deux parties — et la substitution reste
+dans `renderTemplate` et `renderSubject`, les deux seuls endroits du produit où
+une balise est remplacée.
+
+Sans adresse réglée, **la phrase qui porte la balise disparaît entièrement**, la
+règle de `{site}` et de `{video}` : une phrase construite autour d'une adresse
+qu'on n'a pas ne survit pas à son retrait, et un lien mort dans un premier
+contact coûte plus que la phrase qu'il portait. **Seuls `http` et `https` sont
+acceptés** : une adresse `javascript:` rendue cliquable dans un courriel est une
+invitation qu'on ne peut pas retirer après coup.
+
+### Lien direct, et rien d'autre
+
+Ni redirection par notre domaine, ni paramètre, ni compteur de clics : la posture
+du lien de la vidéo (jalon 89), et elle vaut d'autant plus ici — mesurer les
+clics sur notre propre site demanderait un jeton par destinataire, c'est-à-dire
+précisément le pistage que le produit s'interdit. L'adresse qui part est celle qui
+est réglée, au caractère près, et la garde statique interdit `clickUrl`, `utm`,
+`/api/l/` et tout paramètre accroché au `href`.
+
+**L'ancre est posée après le logo, et le pixel reste le dernier.** Le logo prend
+le dernier paragraphe pour en faire la cellule droite d'un tableau (jalon 65), il
+doit donc voir un corps encore intact ; le pixel doit rester la toute dernière
+chose du corps (jalon 43). `withOurSiteLink` vit **hors de `toHtml()`**, comme le
+pixel, le logo et la vignette : la règle du jalon 32 — aucune image ni ancre dans
+la mise en forme du corps — tient toujours.
+
+### La puce, et l'aperçu qui montre un lien
+
+Une puce « {notresite} » rejoint la rangée « Insérer », **à côté de `{site}`**, et
+les deux infobulles les **opposent** plutôt que de décrire chacune dans son
+coin : `{site}` est le site du prospect, `{notresite}` est le nôtre. Les deux se
+ressemblent à l'écrit et désignent des choses contraires — se tromper invite le
+prospect à visiter sa propre boutique.
+
+L'aperçu rend une **ancre**, pas une adresse en texte brut : `RenderedBody`
+découpe le texte déjà rendu autour de l'adresse (`splitOurSiteLink`) et lit le
+libellé et la cible de `ourSiteLink`, **la même fonction que l'envoi**. Rien n'est
+substitué là : un aperçu qui fabriquerait son propre libellé pourrait montrer
+autre chose que ce qui part.
+
+### Jalon 98 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `46_our_site` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production, un **puits SMTP
+réel** et un navigateur piloté :
+
+- **1 · la source MIME brute** d'un départ manuel « Découvrez notre solution sur
+  {notresite}. » : `text/plain` porte `https://auraflowai.fr/` **en entier**, et
+  `text/html` porte `<a href="https://auraflowai.fr/">auraflowai.fr</a>` ;
+- **2 · changer l'URL change les deux parties** : `ourSiteUrl` passée à
+  `https://demo.auraflowai.fr` → l'enregistrement de l'étape **réécrit le départ
+  en attente** (rapport « 1 départ mis à jour », jalon 97), et le message
+  réellement reçu porte `demo.auraflowai.fr` en texte **et**
+  `<a href="https://demo.auraflowai.fr">demo.auraflowai.fr</a>` en HTML ;
+- **3 · aucun pistage** : **une seule** occurrence de `href` vers notre domaine
+  dans tout le message, égale à l'adresse réglée — aucun `?`, aucun `utm`, aucun
+  `/api/l/` ; un test le fixe sur le corps de `withOurSiteLink` ;
+- **4 · la puce** : atteignable (`reachable()`, jamais `isVisible()`), elle insère
+  la balise **au curseur** (« Voyez ▮ aujourd'hui. » → « Voyez {notresite}
+  aujourd'hui. »), son infobulle dit « notre adresse », l'aperçu rend un lien
+  `href="https://auraflowai.fr/"` de texte « auraflowai.fr », et
+  **« Balise inconnue » ne s'affiche jamais** ;
+- **5 · les gardes**, éprouvées sur les défauts exacts : une seconde substitution
+  ajoutée dans `lib/api/departures.ts` → la garde tombe en nommant le fichier ;
+  `?utm_source=crm` accroché au `href` → elle tombe en nommant l'ancre ; l'aperçu
+  ramené à du texte brut → l'e2e tombe ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1755 tests**) et
+  `npm run e2e` (**98 tests**, vingt-sept fichiers) verts.
+
+**Le piège de méthode a resservi**, pour la sixième fois : une première passe e2e
+a rendu 41 échecs, sur un serveur qui servait un bundle réécrit sous lui pendant
+qu'il tournait (la preuve de la garde demandait un build saboté puis un build
+propre). Redémarré sur le binaire final, la suite est verte. **Vérifier quel
+binaire répond avant de conclure quoi que ce soit sur le produit** (jalons 33, 34,
+37, 50, 51, 67).
+
+### Jalon 98 — ce qui n'est pas fait
+
+**Les brouillons d'Alex ne connaissent pas la balise.** Ses brouillons viennent du
+modèle par `draftEmail` et **ne passent pas par `renderTemplate`** : `{notresite}`
+n'y est donc pas substituée, et la balise est une affaire d'étapes écrites à la
+main. Une nuance à connaître tout de même : `withOurSiteLink` tourne à l'envoi sur
+**tous** les messages, donc si l'adresse réglée apparaît littéralement dans un
+brouillon d'Alex, elle devient une ancre — c'est d'ailleurs le correctif général du
+défaut signalé, mais ce n'est pas la balise. Un second chemin de substitution n'a
+pas été ajouté, et c'est ce que la garde interdit.
+
+**Aucun compteur de clics, et ce n'est pas un oubli** — voir « Lien direct » plus
+haut. Le savoir serait utile ; le mesurer demanderait le pistage que le produit
+refuse.
+
+**Le rendu réel dans un client de messagerie n'a pas été vu.** Ce qui est vérifié,
+c'est la source MIME : une ancre, un seul `href`, l'adresse au caractère près. Que
+Gmail ou Outlook la rendent cliquable relève du client — mais c'est précisément
+une ancre standard, le cas le plus simple qui soit.
+
+**Le libellé ne raccourcit pas l'adresse.** `www.` reste, et un chemin
+(`auraflowai.fr/demo`) reste : un libellé qui cacherait une partie de l'adresse
+serait un lien qui ne dit pas où il va.

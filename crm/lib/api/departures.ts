@@ -37,7 +37,7 @@ import {
 } from "../domain/step-variants";
 import { isContactGroup, type ContactGroup } from "../domain/contact-group";
 import { signatureVideo } from "./mail";
-import { mergeValuesOf, renderManualStep } from "./manual-step";
+import { mergeValuesOf, renderManualStep, templateGlobals } from "./manual-step";
 import { readStepVariants } from "./step-variants";
 import { contactTitle, repairGreeting } from "../domain/contact-identity";
 import { demoTarget, describeDemoSource } from "../domain/demo-target";
@@ -924,8 +924,8 @@ export async function listDepartures(
     },
   });
 
-  // Lu une fois : la vidéo est la même pour tout le monde.
-  const label = (await signatureVideo())?.label ?? "";
+  // Lus une fois : la vidéo et notre site sont les mêmes pour tout le monde.
+  const globals = await templateGlobals();
   // Idem pour les blocs de signature : le contrôle de vide les retire avant de
   // juger, et c'est la même liste pour toute la file.
   const blocks = signatureBlocks(await listSignatories());
@@ -979,7 +979,7 @@ export async function listDepartures(
                 toOtherRouting(row.enrollment.sequence.campaign?.otherRouting ?? "default"),
               ),
             ).body,
-            mergeValuesOf(row.enrollment.contact, label),
+            mergeValuesOf(row.enrollment.contact, globals),
           );
 
     const last = await prisma.activity.findFirst({

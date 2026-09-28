@@ -154,6 +154,7 @@ describe("la phrase retirée se voit", () => {
     societe: "",
     site: "exemple.fr",
     video: "",
+    notresite: "",
   };
 
   it("elle est nommée, et la phrase est rendue telle qu'elle est écrite", () => {

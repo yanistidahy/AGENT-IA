@@ -24,6 +24,7 @@
  */
 
 import type { VideoLink } from "./signature-video";
+import type { OurSiteLink } from "./our-site";
 
 /** Une ligne vide sépare deux paragraphes ; une simple fin de ligne les garde ensemble. */
 const PARAGRAPH_BREAK = /\n[ \t]*\n/;
@@ -96,6 +97,48 @@ export function toHtml(body: string, link?: DemoLink): string {
   });
 
   return `<html><body>${paragraphs.join("")}</body></html>`;
+}
+
+/**
+ * **Notre propre adresse devient une vraie ancre, dans la partie HTML.**
+ *
+ * Le défaut signalé : « auraflowai.fr » partait en texte brut, et seuls certains
+ * clients en font un lien. La partie `text/plain`, elle, n'a **rien à faire** —
+ * `{notresite}` y a déjà substitué l'adresse entière, qui est ce qu'un client
+ * texte sait rendre. C'est tout l'intérêt d'avoir substitué l'URL plutôt qu'un
+ * libellé : une seule des deux parties demande un traitement.
+ *
+ * Hors de `toHtml()`, comme le pixel et le logo : la règle du jalon 32 — aucune
+ * image, aucun style dans la mise en forme du corps — tient toujours, et ceci
+ * est une décision d'envoi. Une ancre n'est ni l'un ni l'autre, mais la placer
+ * ici garde une seule liste de choses que l'envoi ajoute au corps.
+ *
+ * **Ni redirection, ni paramètre, ni compteur** : le `href` est l'adresse
+ * réglée, au caractère près. C'est la posture du lien de la vidéo (jalon 89) —
+ * mesurer ces clics demanderait un jeton par destinataire, c'est-à-dire le
+ * pistage que le produit s'interdit.
+ *
+ * Une seule occurrence, comme `linkify` : l'adresse peut être citée deux fois
+ * dans un message, et un texte truffé d'ancres identiques se lit comme du
+ * démarchage en masse.
+ */
+export function withOurSiteLink(html: string, site?: OurSiteLink): string {
+  if (site === undefined) return html;
+  const url = site.url.trim();
+  const label = site.label.trim();
+  if (url === "" || label === "") return html;
+
+  // Le corps HTML est déjà échappé : on cherche donc l'adresse **échappée**, et
+  // l'on injecte du balisage dans un texte déjà neutralisé, jamais l'inverse.
+  const needle = escapeHtmlText(url);
+  const index = html.indexOf(needle);
+  if (index === -1) return html;
+
+  return (
+    html.slice(0, index) +
+    `<a href="${needle}">${escapeHtmlText(label)}</a>` +
+    html.slice(index + needle.length)
+  );
 }
 
 /**
