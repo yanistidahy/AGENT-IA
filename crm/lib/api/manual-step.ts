@@ -7,6 +7,8 @@ import { enforceSignature, sanitizeSubject } from "../domain/email-format";
 import { signatureBlock } from "../agents/prompts/company";
 import { forbiddenSigners } from "../agents/email-draft";
 import { ourSiteUrlValue, readMailConfig, signatureOf, signatureVideo } from "./mail";
+import { readVideoDisplay } from "./video-panel";
+import type { VideoDisplay } from "../domain/video-display";
 import { listSignatories, pickSignatory } from "./signatories";
 import {
   routedGroup,
@@ -212,6 +214,14 @@ export interface SampleSet {
   readonly totals: Readonly<Record<string, number>>;
   /** `false` = personne n'est encore inscrit, l'aperçu porte sur tout le CRM. */
   readonly enrolled: boolean;
+  /**
+   * Le mode d'affichage de la vidéo, **lu en base comme l'envoi le lira**.
+   *
+   * L'aperçu montre le libellé dans les deux modes, puisque c'est lui que la
+   * balise substitue : sans cette valeur, rien à l'écran ne dirait lequel des
+   * deux assemblages partira.
+   */
+  readonly videoDisplay: VideoDisplay;
 }
 
 /** Au-delà, on borne la liste — les compteurs restent exacts. */
@@ -240,7 +250,7 @@ const SAMPLE_LIMIT = 500;
  * qu'on ne croie pas relire la campagne.
  */
 export async function sampleContacts(sequenceId: string): Promise<SampleSet> {
-  const globals = await templateGlobals();
+  const [globals, videoDisplay] = await Promise.all([templateGlobals(), readVideoDisplay()]);
 
   const enrolled = await prisma.sequenceEnrollment.count({ where: { sequenceId } });
   /*
@@ -285,6 +295,7 @@ export async function sampleContacts(sequenceId: string): Promise<SampleSet> {
     })),
     totals,
     enrolled: enrolled > 0,
+    videoDisplay,
   };
 }
 

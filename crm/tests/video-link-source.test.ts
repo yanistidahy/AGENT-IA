@@ -181,7 +181,7 @@ describe("un seul rendu, une seule substitution", () => {
 
   it("la vignette est posée après le logo et avant le pixel", () => {
     const mail = codeOf("lib/api/mail.ts");
-    const html = /withVideoThumbnail\(\s*withSignatureLogo\(/.test(mail);
+    const html = /videoHtml\(\s*withSignatureLogo\(/.test(mail);
     expect(html, "la vignette doit envelopper le logo, pas l'inverse").toBe(true);
     // Le pixel reste la toute dernière chose du corps (jalon 43).
     expect(mail).toMatch(/html: withTrackingPixel\(html/);

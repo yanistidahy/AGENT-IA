@@ -38,6 +38,44 @@ export async function resyncManualDepartures(
   sequenceId: string,
   now = new Date(),
 ): Promise<ResyncReport> {
+  const rewritten = await rewriteManualDepartures(sequenceId);
+  if (rewritten === null) return { updated: 0, created: 0, kept: 0, blocked: null };
+
+  /*
+    **Ce qui manque est créé par la composition, pas par une boucle d'ici.**
+    Décider soi-même qui est dû reviendrait à réécrire `nextStep`, et c'est la
+    fonction qui porte les garde-fous : une seconde version en oublierait un, et
+    ce serait celui de la fiche close ou de l'opposition au démarchage.
+  */
+  const composed = await composeDepartures(now, { sequenceId, manualOnly: true });
+
+  return {
+    updated: rewritten.updated,
+    created: composed.composed,
+    kept: rewritten.kept,
+    // Le week-end et la pause de campagne empêchent la **création**, jamais la
+    // mise à jour : réécrire un texte n'est pas l'envoyer.
+    blocked:
+      composed.skipped ??
+      (rewritten.active
+        ? null
+        : "La campagne est en pause : aucun nouveau départ n'a été composé."),
+  };
+}
+
+/**
+ * La seule moitié qui réécrit : aucun départ créé, aucun appel au modèle.
+ *
+ * Séparée de la création parce que les deux appelants n'en veulent pas autant.
+ * L'enregistrement d'une séquence veut les deux ; un réglage global veut la
+ * réécriture seule, sinon enregistrer un libellé écrirait un premier message à
+ * qui se trouve dû ce matin. `null` quand la séquence n'existe pas.
+ */
+async function rewriteManualDepartures(sequenceId: string): Promise<{
+  readonly updated: number;
+  readonly kept: number;
+  readonly active: boolean;
+} | null> {
   const sequence = await prisma.emailSequence.findUnique({
     where: { id: sequenceId },
     select: {
@@ -46,14 +84,14 @@ export async function resyncManualDepartures(
       campaign: { select: { mailboxId: true, otherRouting: true } },
     },
   });
-  if (sequence === null) return { updated: 0, created: 0, kept: 0, blocked: null };
+  if (sequence === null) return null;
 
   const manual = sequence.steps.filter((step) => toStepMode(step.mode) === "manual");
   if (manual.length === 0) {
     // Une séquence entièrement rédigée par Alex n'a rien à resynchroniser : ses
     // départs gardent le marqueur « composé avant votre dernière modification »
     // (jalon 96), et leur réécriture reste un geste explicite et facturé.
-    return { updated: 0, created: 0, kept: 0, blocked: null };
+    return { updated: 0, kept: 0, active: sequence.active };
   }
 
   let updated = 0;
@@ -110,22 +148,39 @@ export async function resyncManualDepartures(
     }
   }
 
-  /*
-    **Ce qui manque est créé par la composition, pas par une boucle d'ici.**
-    Décider soi-même qui est dû reviendrait à réécrire `nextStep`, et c'est la
-    fonction qui porte les garde-fous : une seconde version en oublierait un, et
-    ce serait celui de la fiche close ou de l'opposition au démarchage.
-  */
-  const composed = await composeDepartures(now, { sequenceId, manualOnly: true });
+  return { updated, kept, active: sequence.active };
+}
 
-  return {
-    updated,
-    created: composed.composed,
-    kept,
-    // Le week-end et la pause de campagne empêchent la **création**, jamais la
-    // mise à jour : réécrire un texte n'est pas l'envoyer.
-    blocked:
-      composed.skipped ??
-      (sequence.active ? null : "La campagne est en pause : aucun nouveau départ n'a été composé."),
-  };
+/**
+ * **La même réécriture, pour tout le CRM, sans rien créer.**
+ *
+ * Un réglage global qui change la forme des mails (le libellé de la vidéo, son
+ * mode d'affichage) ne concerne pas une campagne mais toutes : la portée est
+ * donc le CRM entier. Ce qu'elle ne fait pas, en revanche, c'est appeler
+ * `composeDepartures` : enregistrer un réglage ne doit pas écrire un premier
+ * message à quelqu'un qui se trouve seulement être dû ce matin. La création
+ * reste le geste explicite d'« Écrire les mails ».
+ *
+ * Une retouche à la main est conservée et comptée, comme à l'enregistrement
+ * d'une séquence : c'est `editedAt` qui tranche, jamais une ressemblance de
+ * texte.
+ */
+export async function resyncAllManualDepartures(): Promise<{
+  readonly updated: number;
+  readonly kept: number;
+}> {
+  const sequences = await prisma.emailSequence.findMany({
+    where: { steps: { some: { mode: "manual" } } },
+    select: { id: true },
+  });
+
+  let updated = 0;
+  let kept = 0;
+  for (const sequence of sequences) {
+    const report = await rewriteManualDepartures(sequence.id);
+    if (report === null) continue;
+    updated += report.updated;
+    kept += report.kept;
+  }
+  return { updated, kept };
 }

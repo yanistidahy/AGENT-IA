@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 99 | **La vidéo se montre en lien texte, pas en vignette** : un réglage dans /reglages lu par la seule fonction qui rend la vidéo, « Lien texte » par défaut pour une installation neuve comme pour la ligne déjà en base, le mode Vignette conservé à l'octet près, et la file manuelle réécrite au changement | **livré, à valider** |
 | 98 | **Notre site devient un lien cliquable** : une balise `{notresite}` qui rend une vraie ancre en HTML et l'adresse entière en texte, l'URL réglée une fois dans /reglages et le libellé visible dérivé d'elle, sans redirection, sans paramètre et sans compteur de clics | **livré, à valider** |
 | 97 | **Enregistrer fait suivre la file** : les départs en attente d'une étape écrite à la main sont réécrits à l'enregistrement, empreinte absente comprise, sans un appel au modèle ; une retouche à la main survit et se remplace sur demande ; et « Retirer des départs » cesse d'obliger à retirer quelqu'un de la campagne pour jeter un texte | **livré, à valider** |
 | 96 | **Un départ vide, un départ périmé, et deux libellés qui mentaient** : le contrôle de vide posé dans `sendDeparture` (donc partagé par le clic, la composition et l'ordonnanceur), une empreinte de gabarit qui rend « périmé » lisible et fait taire l'avertissement qui parlait d'un autre texte, « Données de démonstration » réduit aux vraies fiches de démonstration, et la phrase de recherche qui cesse d'affirmer une mesure jamais faite | **livré, à valider** |
@@ -14056,6 +14057,160 @@ semaine dernière.
 **Les chiffres ci-dessus viennent d'un semis de recette**, pas de votre base. Le
 premier enregistrement en production dira combien de départs de vos campagnes
 manuelles portaient encore un texte d'avant votre dernière modification.
+
+---
+
+## Jalon 99 — la vidéo se montre en lien, pas en vignette
+
+### Le défaut signalé, et pourquoi le défaut du réglage change
+
+En prospection froide, une grande vignette se lit comme une lettre
+d'information. Elle est **souvent cachée derrière « afficher les images »** — la
+plupart des clients ne les chargent pas par défaut (jalon 37) — et l'image que
+nous servons n'est même pas une trame du film : aucun extracteur n'étant
+installé, elle est **engendrée** (jalon 89). On payait donc le signal visuel d'un
+publipostage pour montrer une plaque noire.
+
+Un premier message d'une personne à une autre ne porte pas d'image. Le défaut
+est donc le **lien texte**, et la vignette reste disponible : elle a du sens sur
+une relance à quelqu'un qui a déjà répondu. Ce qui change, c'est lequel des deux
+on obtient sans rien régler.
+
+**Le défaut porte sur la colonne** (`Settings.videoDisplay String @default("link")`,
+migration `47_video_display`) : une installation neuve **et** la ligne de
+réglages déjà en base lisent « Lien texte » sans que personne clique. C'est
+l'item 4 du test d'acceptation, vrai par construction plutôt que par un script
+de reprise.
+
+### Un seul réglage, lu par une seule fonction
+
+`withVideoThumbnail` devient **`videoHtml(html, video, display)`** : c'est le
+**seul** endroit du produit où la vidéo devient du balisage, donc l'aperçu,
+l'envoi manuel, l'envoi automatique et la resynchronisation à l'enregistrement
+ne peuvent pas afficher autre chose que ce qui partira. Une garde statique
+interdit un second rendu et un mode écrit en dur dans un appel.
+
+| Mode | `text/html` | `text/plain` |
+|---|---|---|
+| **Lien texte** | `<a href="…">Voir la démonstration en vidéo</a>`, sans style, sans `<img>`, sans tableau | inchangé : « libellé : adresse entière » |
+| **Vignette** | la sortie du jalon 89, **inchangée à l'octet près** | idem |
+
+La branche vignette est le code du jalon 89, repris tel quel : l'item 2 du test
+d'acceptation tient donc par construction, et il est mesuré (voir plus bas). Un
+seul écart délibéré : le contrôle « pas de vignette » a quitté le garde
+d'entrée pour la branche vignette — en mode lien, une image manquante ne doit
+pas supprimer le lien, qui est tout l'appel à l'action.
+
+**Une valeur inconnue retombe sur le lien texte** plutôt que de lever : une faute
+de frappe dans un réglage ne doit pas devenir une panne d'envoi, et le repli le
+moins risqué est celui qui n'envoie pas d'image.
+
+### La destination du clic ne change pas, et il faut le dire précisément
+
+La demande disait deux choses qui ne peuvent pas être vraies ensemble : « le
+lien mène au même endroit qu'avant » et « aucune redirection ». **« Inchangé »
+est opératoire, et voici ce que cela signifie** : depuis le jalon 92, le lien de
+la vidéo passe par **notre propre redirection de clic**
+(`/api/l/<jeton>/video`), servie par notre domaine, sans paramètre, et c'est
+elle qui alimente l'onglet « Prospects chauds ». Retirer ce passage aurait cassé
+une mesure livrée deux jalons plus tôt, sur le seul signal d'intérêt fiable du
+produit (l'ouverture du pixel n'en est pas un).
+
+Ce jalon **n'ajoute donc ni redirection, ni paramètre, ni compteur** : les deux
+modes portent exactement la même adresse, et elle est celle d'avant. Quand le
+suivi est coupé, il n'y a pas de jeton, donc le lien est nu (`/api/video/…` ou
+l'adresse collée) — c'est l'interrupteur du jalon 37, inchangé lui aussi.
+
+### Changer le réglage réécrit la file, et le compte se lit
+
+**Ce que le mode seul ne change pas** : le texte stocké d'un départ. `{video}`
+substitue le **libellé**, et c'est l'assemblage MIME que le mode gouverne. Mais
+le **libellé se règle dans le même panneau**, et lui change bien le corps rendu :
+la file doit donc suivre l'enregistrement, exactement comme elle suit celui
+d'une séquence (jalon 97). C'est l'honnête justification du geste, et elle vaut
+mieux que de laisser croire que le mode réécrit du texte.
+
+`resyncAllManualDepartures` est donc une réécriture **globale et sans
+création** : `rewriteManualDepartures` est extraite de la resynchronisation du
+jalon 97, et le chemin global n'appelle **jamais** `composeDepartures` —
+enregistrer un réglage ne doit pas écrire un premier message à quelqu'un qui se
+trouve seulement être dû ce matin. Une retouche à la main est **conservée et
+comptée** (`editedAt`, le geste et non une ressemblance de texte), et le panneau
+rend « 14 départs mis à jour · 1 retouché à la main conservé ».
+
+### L'aperçu dit quel mode est actif
+
+`SampleSet.videoDisplay` est lu **en base par la même fonction que l'envoi
+lira**, et l'aperçu en direct écrit, sous le message d'un contact réel dont le
+gabarit porte `{video}` : « Vidéo : mode **Lien texte**. Un lien cliquable dans
+le texte… ». Sans cette ligne, rien à l'écran ne dirait lequel des deux
+assemblages partira — l'aperçu montre le libellé dans les deux modes, puisque
+c'est lui que la balise substitue.
+
+### Jalon 99 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `47_video_display` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production, le **puits SMTP
+réel** et un navigateur piloté :
+
+- **1 · mode Lien texte, MIME brut du puits** : la partie HTML porte
+  `<a href="http://127.0.0.1:3312/api/l/<jeton>/video">Voir la démonstration en
+  vidéo</a>`, **aucune `<img>` de vignette** (les deux images restantes sont le
+  logo de signature et le pixel), aucun paramètre accroché à l'ancre ; la partie
+  texte porte « Voir la démonstration en vidéo : » suivi de l'**adresse
+  entière** ;
+- **2 · mode Vignette, identique à la référence** : comparé à
+  `/tmp/baseline-vignette.eml`, capturé **avant de toucher au code** →
+  **1533 octets normalisés contre 1533, identiques**, en neutralisant ce qui est
+  tiré par message (`Message-ID`, `Date`, frontière multipart, jeton de suivi) ;
+- **3 · changer le réglage** : `{"display":"link","updated":5,"kept":1}` →
+  « 5 départs mis à jour », et le départ retouché à la main garde son objet
+  (`Objet retouché à la main`) avec son `editedAt` ;
+- **4 · le défaut** : le défaut de la colonne lu dans
+  `information_schema` vaut `'link'::text`, et la ligne de réglages déjà en base
+  lit `link` — **sans qu'aucun script de reprise ait tourné** ;
+- **5 · au navigateur** : les deux modes **atteignables** (`reachable()`, jamais
+  `isVisible()`), « Lien texte » coché avant tout clic, et chaque clic
+  **écrit en base** — dans les deux sens, pour que le réglage ne soit pas à sens
+  unique. **0 erreur console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1771 tests**) et
+  `npm run e2e` verts.
+
+`tests/video-display-source.test.ts` ferme les trois façons de défaire ce jalon
+sans qu'aucun test ne rougisse — un second rendu, un mode deviné plutôt que lu,
+un défaut qui redevient la vignette. **Éprouvée sur trois défauts exacts** : le
+mode remplacé par `"thumbnail"` dans l'appel d'envoi (deux tests tombent, dont
+celui qui nomme `lib/api/mail.ts`), `DEFAULT_VIDEO_DISPLAY` passé à
+`"thumbnail"`, et `composeDepartures` glissé dans la réécriture globale. La
+garde `backup-columns` (jalon 42) a exigé `Settings.videoDisplay` dans la
+sauvegarde, comme aux jalons 47, 48, 72, 94 et 98.
+
+### Jalon 99 — ce qui n'est pas fait
+
+**Le lien passe toujours par notre redirection de clic** quand le suivi est
+actif — voir plus haut. Ce n'est ni un ajout, ni un oubli : c'est l'état d'avant
+ce jalon, conservé parce que le retirer casserait « Prospects chauds ». Si
+l'intention était vraiment un lien nu en mode texte, c'est une décision à
+prendre séparément, et elle coûte le signal de clic.
+
+**Le mode n'est pas réglable par campagne.** C'est un réglage global, comme le
+logo et la vidéo elle-même : c'est la forme du message, pas la propriété d'une
+boîte ni d'une campagne. Une vignette pour une relance et un lien pour un
+premier contact demanderait un réglage par étape, donc un autre objet.
+
+**Le rendu réel dans un client de messagerie n'a pas été vu**, comme depuis le
+jalon 89 : ce qui est vérifié, c'est la source MIME. Une ancre standard est en
+revanche le cas le plus simple qui soit, et c'est précisément l'argument du
+changement.
+
+**Les départs d'une étape rédigée par Alex ne sont pas réécrits** par ce
+réglage : la réécriture globale ne touche que les étapes manuelles, et celles
+d'Alex gardent leur marqueur « composé avant votre dernière modification »
+(jalon 96). Leur réécriture reste un geste explicite et facturé.
+
+**Les chiffres ci-dessus viennent d'un semis de recette**, pas de votre base. Le
+premier enregistrement en production dira combien de départs manuels en attente
+portaient encore le libellé d'avant.
 
 ---
 

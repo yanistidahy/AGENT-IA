@@ -24,6 +24,7 @@
  */
 
 import type { VideoLink } from "./signature-video";
+import { DEFAULT_VIDEO_DISPLAY, type VideoDisplay } from "./video-display";
 import type { OurSiteLink } from "./our-site";
 
 /** Une ligne vide sépare deux paragraphes ; une simple fin de ligne les garde ensemble. */
@@ -287,16 +288,41 @@ export function withSignatureLogo(html: string, logo?: SignatureLogo): string {
  * phrase, et transformer chaque mention en vignette produirait un message
  * truffé d'images.
  */
-export function withVideoThumbnail(html: string, video?: VideoLink): string {
+export function videoHtml(
+  html: string,
+  video?: VideoLink,
+  display: VideoDisplay = DEFAULT_VIDEO_DISPLAY,
+): string {
   if (video === undefined) return html;
   const label = video.label.trim();
   const url = video.url.trim();
-  const poster = video.posterUrl.trim();
-  if (label === "" || url === "" || poster === "") return html;
+  if (label === "" || url === "") return html;
 
   const needle = escapeHtmlText(label);
   const index = html.indexOf(needle);
   if (index === -1) return html;
+
+  /*
+    **Mode lien texte : une ancre ordinaire, et rien d'autre.** Pas d'image,
+    pas de tableau, aucun style — elle se rend donc comme n'importe quel lien du
+    corps, ce qui est exactement ce qu'on cherche : un premier message d'une
+    personne à une autre ne porte pas d'image, et une vignette masquée derrière
+    « afficher les images » ne montre rien du tout. La destination est la même
+    que celle de la vignette, au caractère près.
+  */
+  if (display === "link") {
+    return (
+      html.slice(0, index) +
+      `<a href="${escapeHtmlText(url)}">${needle}</a>` +
+      html.slice(index + needle.length)
+    );
+  }
+
+  // Mode vignette : la sortie du jalon 89, inchangée à l'octet près. Sans
+  // vignette servie il n'y a rien à poser, et le libellé reste du texte — le
+  // rendre cliquable ici changerait le mode que l'utilisateur a choisi.
+  const poster = video.posterUrl.trim();
+  if (poster === "") return html;
 
   // `width` en attribut **et** en style : un client qui ignore le CSS doit
   // quand même réserver la bonne place, sinon la mise en page saute au
