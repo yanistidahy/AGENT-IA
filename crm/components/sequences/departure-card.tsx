@@ -1,4 +1,5 @@
 "use client";
+import { CARRIED_LABEL } from "@/lib/domain/mailbox-cap";
 
 import { useState } from "react";
 import { formatDate } from "@/lib/format";
@@ -299,6 +300,22 @@ export function DepartureCard({
           faire. Deux bandeaux superposés diraient deux fois la même chose et
           l'un des deux serait lu de travers.
         */}
+        {/*
+          **Reporté, pas échoué.** La boîte a atteint son plafond du jour : le
+          départ garde sa place et partira le prochain jour ouvré. Le mot
+          compte — « échec » ferait chercher une panne là où il n'y a qu'une
+          file, et « ignoré » ferait croire à une perte.
+        */}
+        {!failed && editing === null && departure.carried && (
+          <div
+            data-carried="1"
+            className="mt-2 rounded-control border border-gold bg-gold-l p-2 text-[11.5px] text-ink"
+          >
+            <b className="font-semibold">{CARRIED_LABEL}</b> — ce départ partira le prochain jour
+            ouvré. Rien n&apos;est perdu, et son texte ne bouge pas.
+          </div>
+        )}
+
         {!failed && editing === null && departure.empty === "" && departure.edited && (
           <div
             data-edited="1"

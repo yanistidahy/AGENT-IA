@@ -1,3 +1,5 @@
+import { readMailboxUsage } from "./mailbox-cap";
+import { capReached, sortByPriority, describeCappedBoxes } from "../domain/mailbox-cap";
 import "server-only";
 import { prisma } from "../db";
 import { contactTitle } from "../domain/contact-identity";
@@ -84,9 +86,9 @@ function settingsOf(row: StateRow): AutoSendSettings {
  * n'est pas une duplication de règle mais une lecture : le compte affiché à
  * l'écran ne doit pas promettre des envois que la fonction refusera.
  */
-async function queue(): Promise<
-  readonly { readonly id: string; readonly label: string }[]
-> {
+async function queue(
+  now = new Date(),
+): Promise<readonly { readonly id: string; readonly label: string }[]> {
   const rows = await prisma.sequenceDeparture.findMany({
     where: {
       status: "pending",
@@ -97,8 +99,11 @@ async function queue(): Promise<
     orderBy: { createdAt: "asc" },
     select: {
       id: true,
+      step: true,
+      createdAt: true,
       enrollment: {
         select: {
+          sequence: { select: { campaign: { select: { mailboxId: true } } } },
           contact: {
             select: {
               firstName: true,
@@ -112,7 +117,31 @@ async function queue(): Promise<
       },
     },
   });
-  return rows.map((row) => {
+
+  /*
+    **Une boîte pleine est sautée, l'ordonnanceur continue avec les autres.**
+
+    L'écarter ici plutôt que de laisser `sendDeparture` refuser n'est pas une
+    duplication de règle : sans cela, le premier départ d'une boîte pleine
+    occuperait le créneau du tour, `tick` refuserait, et l'envoi automatique
+    s'arrêterait pour tout le monde au lieu de continuer ailleurs. Le refus
+    reste au même endroit — c'est la lecture qui apprend à regarder plus loin.
+  */
+  const usage = await readMailboxUsage(now);
+  const full = new Set(usage.filter((entry) => capReached(entry)).map((entry) => entry.mailboxId));
+
+  const open = rows.filter((row) => {
+    const box = row.enrollment.sequence.campaign?.mailboxId ?? "";
+    return box === "" || !full.has(box);
+  });
+
+  /*
+    **Le même ordre que « Départs du jour ».** Les relances d'abord, puis le
+    plus ancien : les deux surfaces dépensent les derniers créneaux du jour sur
+    les mêmes départs, et une garde statique vérifie qu'elles ne cessent pas de
+    partager cette fonction.
+  */
+  return sortByPriority(open).map((row) => {
     const contact = row.enrollment.contact;
     const name = contactTitle(contact);
     const house = contact.company?.name ?? "";
@@ -187,7 +216,7 @@ export async function tick(now = new Date()): Promise<TickReport> {
   }
   if (row.dueAt > now) return { detail: "pas encore l'heure", sent: false };
 
-  const pending = await queue();
+  const pending = await queue(now);
   const next = pending[0];
   if (next === undefined) return { detail: "aucun départ en attente", sent: false };
 
@@ -246,6 +275,15 @@ export interface AutoSendStatus {
    * qui n'a pas eu lieu en silence : le panneau les nomme, avec leur cause.
    */
   readonly dropped: readonly { readonly name: string; readonly reason: string }[];
+  /**
+   * Les boîtes qui ont atteint leur plafond du jour, nommées.
+   *
+   * L'ordonnanceur ne s'arrête pas pour autant : il saute ces départs et
+   * continue avec les autres boîtes. Sans cette phrase, la file paraîtrait
+   * bloquée alors qu'elle avance ailleurs, et « fin estimée » ne compterait
+   * qu'une partie des départs sans dire pourquoi.
+   */
+  readonly capNotice: string;
 }
 
 /** Les départs écartés depuis `since`, nommés avec leur motif. */
@@ -281,7 +319,7 @@ async function droppedSince(since: Date): Promise<AutoSendStatus["dropped"]> {
 export async function readAutoSendStatus(now = new Date()): Promise<AutoSendStatus> {
   const row = await readRow();
   const settings = settingsOf(row);
-  const pending = await queue();
+  const pending = await queue(now);
   const plan: AutoSendPlan = {
     enabled: row.enabled,
     dueAt: row.dueAt,
@@ -298,6 +336,7 @@ export async function readAutoSendStatus(now = new Date()): Promise<AutoSendStat
       pending.length === 0 ? null : estimatedEnd(row.dueAt ?? now, pending.length, settings),
     lastTickAt: row.lastTickAt,
     dropped: await droppedSince(new Date(now.getTime() - 24 * 3600 * 1000)),
+    capNotice: describeCappedBoxes(await readMailboxUsage(now)),
   };
 }
 

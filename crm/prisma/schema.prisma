@@ -452,6 +452,17 @@ model Settings {
   /// premier contact coûte plus que l'absence de lien.
   ourSiteUrl String @default("https://auraflowai.fr/")
 
+  /// **Le plafond d'envoi quotidien, par boîte.**
+  ///
+  /// Une seule valeur, appliquée à *chaque* boîte : trois boîtes à 50 font 150
+  /// messages par jour au plus. La réputation d'expédition se joue par adresse,
+  /// pas par produit, donc un plafond global ne dirait rien d'utile.
+  ///
+  /// Le jour est le jour calendaire de Paris, et le compte est lu dans le
+  /// journal des envois à la lecture : aucun compteur parallèle à tenir à jour.
+  /// `0` vaut « pas de plafond », la convention du plafond mensuel de l'API.
+  dailyMailboxCap Int @default(50)
+
   /// **Comment la vidéo se montre : un lien texte, ou une vignette.**
   ///
   /// Le défaut est `link`, et il porte sur la colonne : une installation neuve
@@ -1690,6 +1701,13 @@ model CompositionJob {
   stopped         Boolean   @default(false)
   /// L'échec, en clair. Vide si tout s'est bien passé.
   error           String    @default("")
+  /// Ce que la composition a laissé pour demain, et pourquoi.
+  ///
+  /// Distinct d'`error` : rien n'a échoué. Le plafond du jour d'une boîte est
+  /// atteint, donc on n'a pas payé des brouillons qui seraient à réécrire
+  /// demain matin. Vide quand il n'y a rien à dire — une phrase qui s'affiche
+  /// à chaque composition cesse d'être lue.
+  notice          String    @default("")
 
   @@index([campaignId])
   @@map("composition_jobs")

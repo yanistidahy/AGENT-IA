@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 100 | **Un plafond d'envoi quotidien par boîte** : un réglage unique appliqué à chaque boîte, le compte lu dans le journal des envois au jour de Paris, les départs de campagne refusés et reportés au prochain jour ouvré, les relances servies avant les premiers contacts, l'ordonnanceur qui saute une boîte pleine et continue ailleurs, et « Écrire les mails » borné à la capacité restante | **livré, à valider** |
 | 99 | **La vidéo se montre en lien texte, pas en vignette** : un réglage dans /reglages lu par la seule fonction qui rend la vidéo, « Lien texte » par défaut pour une installation neuve comme pour la ligne déjà en base, le mode Vignette conservé à l'octet près, et la file manuelle réécrite au changement | **livré, à valider** |
 | 98 | **Notre site devient un lien cliquable** : une balise `{notresite}` qui rend une vraie ancre en HTML et l'adresse entière en texte, l'URL réglée une fois dans /reglages et le libellé visible dérivé d'elle, sans redirection, sans paramètre et sans compteur de clics | **livré, à valider** |
 | 97 | **Enregistrer fait suivre la file** : les départs en attente d'une étape écrite à la main sont réécrits à l'enregistrement, empreinte absente comprise, sans un appel au modèle ; une retouche à la main survit et se remplace sur demande ; et « Retirer des départs » cesse d'obliger à retirer quelqu'un de la campagne pour jeter un texte | **livré, à valider** |
@@ -14338,3 +14339,203 @@ une ancre standard, le cas le plus simple qui soit.
 **Le libellé ne raccourcit pas l'adresse.** `www.` reste, et un chemin
 (`auraflowai.fr/demo`) reste : un libellé qui cacherait une partie de l'adresse
 serait un lien qui ne dit pas où il va.
+
+---
+
+## Jalon 100 — un plafond d'envoi quotidien, par boîte
+
+### Pourquoi par boîte, et pourquoi il ne remplace rien
+
+La réputation d'expédition se joue par **adresse d'envoi**, pas par produit :
+trois boîtes qui envoient cinquante messages chacune ne présentent pas le même
+profil qu'une boîte qui en envoie cent cinquante. Le réglage est donc **une
+seule valeur appliquée à chaque boîte** — 50 par défaut, trois boîtes, 150 par
+jour au plus — et `0` la coupe, la convention du plafond mensuel de l'API
+(jalon 36) et de la fenêtre d'avertissement entre collègues (jalon 53).
+
+Les plafonds du jalon 38 restent en place et ne font pas double emploi : ils
+portent sur **tout le CRM**, ils **apprennent d'un refus `450` du serveur**, et
+ils existent pour ne pas se faire couper. Celui-ci est une **discipline de
+prospection**, choisie à l'avance. Le nouveau passe **avant** l'ancien dans
+`sendDeparture`, parce qu'il est le plus spécifique : nommer la boîte et son
+compte renseigne davantage qu'un plafond global.
+
+### Le compte se lit, il ne se tient pas
+
+Il est refait **à chaque lecture**, par un `groupBy` sur `email_sends` borné au
+jour parisien. Aucun compteur n'est entretenu à côté : il finirait par diverger,
+et il divergerait **dans le mauvais sens**, en autorisant plus que le réel.
+C'est la leçon de `checkRate` (jalon 38), et une ligne d'envoi n'existe que
+lorsque SMTP a accepté (jalon 32) — le journal ne porte donc que des faits.
+
+**Tout ce qui part de la boîte est compté**, quel que soit le chemin : départ
+validé à la main, envoi de l'ordonnanceur, email écrit depuis une fiche.
+
+**Le jour est celui de Paris, lu par `Intl`.** Le serveur tourne en UTC :
+`getDate()` y désigne une autre journée une partie de la nuit, et un décalage
+saisonnier écrit en dur serait faux la moitié de l'année. Les bornes sont
+absolues, `start` inclus et **`end` exclu** — une borne haute posée à 23:59:59
+laisse passer entre les mailles un envoi à 23:59:59,400 (la leçon
+d'`added-window.ts`, jalon 59). Le décalage est relu **sur la borne calculée**,
+pas sur l'instant de départ : les deux diffèrent la nuit du changement d'heure,
+et c'est précisément la nuit où une borne fausse décalerait tout le comptage
+d'une heure. Le jour du 29 mars 2026 dure 23 heures, et les bornes le disent.
+
+### Ce qui est bloqué, et ce qui ne l'est jamais
+
+| | Bloqué ? | Compté ? |
+|---|---|---|
+| départ de campagne, clic « Envoyer » | **oui**, nommément | oui |
+| départ de campagne, envoi automatique | **oui** | oui |
+| email écrit depuis une fiche contact | **non, jamais** | oui, avec un avertissement |
+
+Un email écrit à la main est une réponse à quelque chose : le refuser ferait
+perdre une conversation pour protéger une moyenne. Il est donc **compté sans
+être bloqué**, et le panneau de rédaction dit ce que cet envoi fait au compte du
+jour, pour que personne ne découvre après coup pourquoi ses départs de campagne
+ne partent plus. L'avertissement est **vide sous le plafond** : une alerte qui
+sonne toujours n'est plus lue (jalon 62).
+
+**Le contrôle vit dans `sendDeparture`**, donc les trois chemins le partagent
+par construction — c'est la discipline du départ vide (jalon 96), et une garde
+statique vérifie qu'ils ne cessent pas de la partager.
+
+### Rien n'est perdu : reporté, jamais écarté
+
+Un départ refusé pour cause de plafond **reste `pending`** avec sa cause, comme
+un refus de débit. Le passer `skipped` le ferait **disparaître de la file**, et
+une carte qui s'en va se lit comme un envoi réussi (jalon 91). La carte affiche
+« Reporté : plafond de la boîte atteint » — et le mot compte : « échec » ferait
+chercher une panne là où il n'y a qu'une file, « ignoré » ferait croire à une
+perte.
+
+**`carried` est dérivé à la lecture, jamais stocké** : une colonne « reporté »
+devrait être remise à zéro chaque matin, et le matin où on l'oublierait l'écran
+annoncerait un report qui n'existe plus.
+
+### L'ordre dans lequel la capacité se dépense
+
+Les relances (étapes 2 et 3) d'abord, les premiers contacts ensuite, et à
+l'intérieur de chaque groupe le plus ancien d'abord. **La raison n'est pas
+l'ancienneté** : une relance s'adresse à quelqu'un qu'on a déjà approché, qui
+attend peut-être, et qui perd tout intérêt si la suite arrive trois jours en
+retard. Un premier contact, lui, ne coûte rien à décaler — le prospect ne nous
+attend pas. Dépenser les derniers créneaux du jour sur des inconnus laisserait
+des séquences en plan.
+
+`id` départage à ancienneté égale : une file qui se réordonne d'un
+rafraîchissement à l'autre ne se relit pas. **Une seule fonction**,
+`sortByPriority`, appelée par « Départs du jour » **et** par l'ordonnanceur.
+
+### L'ordonnanceur saute la boîte pleine, il ne s'arrête pas
+
+La file de `tick` écarte les départs des boîtes pleines **avant** de choisir. Ce
+n'est pas une duplication du refus : sans cela, le premier départ d'une boîte
+pleine occuperait le créneau du tour, `sendDeparture` refuserait, et l'envoi
+automatique s'arrêterait **pour tout le monde** au lieu de continuer ailleurs.
+Le panneau nomme les boîtes pleines et dit qu'il continue ; et la « fin
+estimée » n'en compte plus les départs, puisqu'ils ne partiront pas aujourd'hui.
+
+### « Écrire les mails » ne paie pas ce qui ne peut pas partir
+
+Un brouillon d'étape rédigée par Alex est **un appel au modèle facturé** : en
+écrire soixante pour une boîte qui n'en enverra que cinquante, c'est acheter dix
+textes qui seront périmés demain matin (jalon 96). La composition est donc bornée
+à la capacité restante de chaque boîte, et la bannière dit ce qui est laissé —
+« 3 départs sont laissés pour demain ». Les inscriptions restent **actives et
+dues** : rien n'est perdu, elles seront écrites au prochain passage, avec les
+consignes de ce jour-là.
+
+**Les étapes écrites à la main ne sont pas bornées** : elles ne coûtent rien, et
+la file les porte sans dommage. La borne vit donc dans la branche d'Alex, et la
+garde statique le vérifie.
+
+**Les brouillons déjà en file ne sont pas retranchés du budget**, et c'est un
+choix : ils peuvent partir, être retirés ou reportés d'ici ce soir, et la
+composition refuse de toute façon de réécrire un départ existant. Le budget
+borne ce que **ce passage** écrit, pas la file entière.
+
+### Le compteur en tête de la file
+
+« Envoyés aujourd'hui · contact@… 32/50 · yanis@… 12/50 ». Il porte sur **tout
+le CRM** même quand la file est bornée à une campagne : le plafond est celui de
+la boîte, pas de la campagne, et un compteur filtré annoncerait une capacité
+qu'une autre campagne a déjà dépensée. Sans plafond, il écrit `7/∞` plutôt que
+de fabriquer un dénominateur.
+
+### Jalon 100 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migrations `48_mailbox_cap` et
+`49_composition_notice` appliquées puis `migrate diff` **vide**), le serveur
+standalone de production, un **puits SMTP réel** et un navigateur piloté — les
+sept items du test d'acceptation :
+
+- **1 · plafond à 3, cinq départs sur une boîte** : « Un », « Deux », « Trois »
+  envoyés, **3 messages dans le puits SMTP**, le 4ᵉ et le 5ᵉ refusés avec
+  « Plafond atteint pour r100a@aura.test : 3/3 aujourd'hui. Ce départ partira
+  demain. », et **les deux cartes marquées « reporté »** ;
+- **2 · deux créneaux, une relance et trois premiers contacts** : la file sort
+  « Suite (étape 2) » **devant** les trois premiers contacts, bien qu'ils aient
+  été créés avant elle ;
+- **3 · l'ordonnanceur, une boîte pleine et une libre** : le tour envoie à
+  « Libre », **1 message dans le puits**, et **rien** ne part de la boîte
+  pleine — l'envoi automatique n'est pas arrêté pour autant ;
+- **4 · un email de fiche sur une boîte au-delà du plafond** : **parti**,
+  1 message dans le puits, et le compte de la boîte passe de **1/1 à 2/1** ;
+- **5 · « Écrire les mails » avec deux créneaux restants** : **2 départs tentés,
+  2 laissés pour demain** sur quatre inscrits, et le compteur de la boîte ne
+  bouge pas ;
+- **6 · le compteur contre le journal** : `r100a@aura.test 3/3` à l'écran,
+  **3** dans `email_sends` sur la même fenêtre ;
+- **7 · au navigateur** : compteur, report et refus **atteignables**
+  (`reachable()`, jamais `isVisible()`), la relance devant le premier contact,
+  le verdict rendu **sur la carte cliquée**, la file qui voyage avec lui
+  (200, jamais un 400 nu), les deux départs toujours en attente, **0 erreur
+  console** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1797 tests**) et
+  `npm run e2e` (**100 tests**, vingt-neuf fichiers) verts.
+
+`tests/mailbox-cap-source.test.ts` ferme les façons de défaire ce jalon sans
+qu'aucun test ne rougisse : un second contrôle de plafond, un email écrit à la
+main qui se met à être bloqué, un ordre de priorité qui cesse d'être partagé,
+une boîte pleine que l'ordonnanceur n'écarte plus, un verdict recomposé à la
+main, une borne posée sur le chemin manuel. **Éprouvée sur trois défauts
+exacts** — l'ordonnanceur revenu au tri par date, l'ordonnanceur qui ignore le
+plafond, et le contrôle retiré de `sendDeparture` : chaque fois un test tombe en
+le nommant. L'e2e a été **éprouvé de la même façon** : contrôle retiré,
+reconstruit, redémarré, il tombe sur « expected … to contain "Plafond atteint
+pour" ».
+
+La garde `backup-columns` (jalon 42) a exigé `Settings.dailyMailboxCap` dans la
+sauvegarde, comme aux jalons 47, 48, 72, 94, 98 et 99.
+
+### Jalon 100 — ce qui n'est pas vérifié
+
+**L'item 5 n'a pas pu montrer de brouillons réellement écrits.** Il n'y a pas de
+clé Anthropic dans cet environnement (depuis le jalon 73) : chaque brouillon
+d'Alex échoue au moment d'appeler le modèle, donc `composed` reste à 0. Ce que
+la recette établit est ce que la borne décide — **2 départs tentés sur quatre
+inscrits, exactement la capacité restante, et 2 laissés pour demain**. Que les
+deux brouillons soient bons relève du modèle.
+
+**Le jour est calendaire, pas glissant.** Une boîte qui atteint son plafond à
+16 h retrouve sa capacité à minuit, heure de Paris, pas vingt-quatre heures plus
+tard. C'est ce qui a été demandé, et c'est aussi ce qui rend le compteur
+lisible ; une fenêtre glissante décrirait mieux la charge vue par le serveur
+d'en face.
+
+**Les envois antérieurs au jalon 54 ne sont imputés à personne.** Ils portent un
+`mailboxId` vide : on ne sait pas de quelle boîte ils sont partis, et les
+attribuer à la première ferait mentir son compte.
+
+**Les réglages de l'envoi automatique ne sont toujours pas sauvegardés**
+(jalon 93), mais le plafond, lui, l'est : c'est une valeur saisie à la main, et
+la garde du jalon 42 l'a exigée.
+
+**Le plafond ne borne pas la réécriture de la file** (« Réécrire tous les
+départs », jalon 84) : elle remplace des brouillons qui existent déjà, elle n'en
+crée pas. Elle peut donc repayer un texte qui ne partira pas aujourd'hui.
+
+**Les chiffres de la recette viennent d'un semis de vérification**, pas de votre
+base. Le premier compteur en production dira ce que chaque boîte a réellement
+envoyé aujourd'hui, journal en main.

@@ -51,6 +51,11 @@ interface Draft {
   to: string;
   contactName: string;
   signatories: Signatory[];
+  /**
+   * L'avertissement de plafond par boîte, quand elle est au-delà. Absent
+   * sinon : cet email partira de toute façon, il est seulement compté.
+   */
+  capNotices?: Record<string, string>;
   signatoryId: string | null;
   /** Un collègue de la même maison écrit récemment — voir l'avertissement. */
   colleagueWarning: {
@@ -424,6 +429,21 @@ export function ComposePanel({
               </option>
             ))}
           </select>
+          {/*
+            **Il avertit, il n'empêche rien.** Un email écrit à la main répond à
+            quelque chose : le refuser ferait perdre une conversation pour
+            protéger une moyenne. Il dit ce que cet envoi fait au compte du
+            jour, pour que personne ne découvre après coup pourquoi les départs
+            de campagne de cette boîte attendent demain.
+          */}
+          {signatoryId !== null && (draft.capNotices?.[signatoryId] ?? "") !== "" && (
+            <p
+              data-over-cap="1"
+              className="mt-2 rounded-control border border-gold bg-gold-l px-2.5 py-2 text-[12px] text-ink"
+            >
+              {draft.capNotices?.[signatoryId]}
+            </p>
+          )}
         </label>
       )}
 

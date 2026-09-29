@@ -20,6 +20,7 @@ import { readImapStatus } from "@/lib/api/imap";
 import { inboxHealth } from "@/lib/api/inbox-health";
 import { readRoleCoverage } from "@/lib/api/role-angles";
 import { readTrackingConfig } from "@/lib/api/email-sends";
+import { readDailyCap } from "@/lib/api/mailbox-cap";
 import { readLimits } from "@/lib/api/send-rate";
 import { listSignatories } from "@/lib/api/signatories";
 import { LIFECYCLES } from "@/lib/domain/types";
@@ -89,6 +90,7 @@ export default async function ReglagesPage() {
   const contactGroups = await readGroupCounts();
   const tracking = await readTrackingConfig();
   const limits = await readLimits();
+  const dailyCap = await readDailyCap();
   const openAudit = await readOpenAudit();
   const lifecycles = lifecycleRows.map((row) => row.value);
 
@@ -147,6 +149,7 @@ export default async function ReglagesPage() {
       }}
       tracking={tracking}
       limits={limits}
+      dailyCap={dailyCap}
       stages={stages}
       dealCounts={dealCounts}
       settings={settings}

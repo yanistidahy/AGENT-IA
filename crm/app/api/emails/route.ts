@@ -1,4 +1,6 @@
 import { badRequest, invalidPayload, jsonOk, serverError } from "@/lib/api/errors";
+import { readMailboxUsage } from "@/lib/api/mailbox-cap";
+import { overCapNotice } from "@/lib/domain/mailbox-cap";
 import { readJson } from "@/lib/api/request";
 import { draftEmail } from "@/lib/agents/email-draft";
 import { departureDraft } from "@/lib/api/departures";
@@ -48,6 +50,26 @@ const bodySchema = z.discriminatedUnion("mode", [
   sendEmailSchema.extend({ mode: z.literal("send") }),
 ]);
 
+/**
+ * L'avertissement de plafond, par boîte, pour le panneau de rédaction.
+ *
+ * **Un email écrit à la main n'est jamais bloqué** : il répond à quelque chose,
+ * et le refuser ferait perdre une conversation pour protéger une moyenne. Il
+ * est compté comme les autres, et l'écran prévient quand la boîte est au-delà
+ * de son plafond, pour que personne ne découvre après coup pourquoi ses départs
+ * de campagne ne partent plus. Vide sous le plafond : une alerte qui sonne
+ * toujours n'est plus lue.
+ */
+async function capNotices(): Promise<Record<string, string>> {
+  const usage = await readMailboxUsage();
+  const notices: Record<string, string> = {};
+  for (const entry of usage) {
+    const notice = overCapNotice(entry);
+    if (notice !== "") notices[entry.mailboxId] = notice;
+  }
+  return notices;
+}
+
 export async function POST(request: Request) {
   const body = await readJson(request);
   if (body.ok === false) return badRequest("Corps de requête JSON illisible.");
@@ -59,13 +81,13 @@ export async function POST(request: Request) {
     if (parsed.data.mode === "departure") {
       const result = await departureDraft(parsed.data.departureId);
       if (!result.ok) return badRequest(result.message);
-      return jsonOk({ draft: result.draft });
+      return jsonOk({ draft: { ...result.draft, capNotices: await capNotices() } });
     }
 
     if (parsed.data.mode === "draft") {
       const result = await draftEmail(parsed.data.contactId, parsed.data.fromActivityId);
       if (!result.ok) return badRequest(result.message);
-      return jsonOk({ draft: result.draft });
+      return jsonOk({ draft: { ...result.draft, capNotices: await capNotices() } });
     }
 
     const result = await sendEmailToContact(parsed.data);

@@ -6,6 +6,7 @@ import { readMailStatus } from "@/lib/api/mail";
 import { readImapStatus } from "@/lib/api/imap";
 import { readTrackingConfig } from "@/lib/api/email-sends";
 import { readLimits } from "@/lib/api/send-rate";
+import { readDailyCap } from "@/lib/api/mailbox-cap";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,17 @@ const schema = z.object({
    */
   sendPerHour: z.number().int().min(1, "Au moins un envoi par heure").max(500),
   sendPerDay: z.number().int().min(1, "Au moins un envoi par jour").max(2000),
+
+  /**
+   * Le plafond quotidien **par boîte** (jalon 100), distinct des deux
+   * precedents qui portent sur tout le CRM. `0` vaut « pas de plafond », la
+   * convention des jalons 36 et 53 : sans elle, on ne pourrait plus le couper.
+   */
+  dailyMailboxCap: z
+    .number()
+    .int()
+    .min(0, "Zero, ou un nombre positif")
+    .max(500, "Cinq cents par boite et par jour au maximum"),
 });
 
 async function currentHourlyCeiling(): Promise<number> {
@@ -86,6 +98,7 @@ export async function PATCH(request: Request) {
       imap: await readImapStatus(mail, mail.passwordSet),
       tracking: await readTrackingConfig(),
       limits: await readLimits(),
+      dailyCap: await readDailyCap(),
     });
   } catch (error) {
     return serverError("PATCH /api/mail/imap", error);

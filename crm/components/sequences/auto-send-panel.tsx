@@ -26,6 +26,7 @@ export interface AutoSendView {
   };
   /** Ce qui a été retiré de la file aujourd'hui, et pourquoi. */
   readonly dropped: readonly { readonly name: string; readonly reason: string }[];
+  readonly capNotice: string;
 }
 
 function isView(value: unknown): value is AutoSendView {
@@ -127,6 +128,16 @@ export function AutoSendPanel({ initial }: { readonly initial: AutoSendView }) {
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-[13px] font-medium text-ink">{view.sentence}</p>
+        {/*
+          Le plafond d'une boîte n'arrête pas l'envoi automatique : il le
+          déplace. La phrase le dit, plutôt que de laisser lire une file qui
+          n'avance plus.
+        */}
+        {view.capNotice !== "" && (
+          <p data-cap-notice="1" className="mt-1 text-[12.5px] text-muted">
+            {view.capNotice}
+          </p>
+        )}
         <div className="flex items-center gap-2">
           <button
             type="button"
