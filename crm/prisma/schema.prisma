@@ -452,6 +452,16 @@ model Settings {
   /// premier contact coûte plus que l'absence de lien.
   ourSiteUrl String @default("https://auraflowai.fr/")
 
+  /// **Comment la vidéo se montre : un lien texte, ou une vignette.**
+  ///
+  /// Le défaut est `link`, et il porte sur la colonne : une installation neuve
+  /// comme la ligne de réglages déjà en base lisent donc « Lien texte » sans
+  /// que personne ait à cliquer. Voir `lib/domain/video-display.ts` pour la
+  /// raison du choix : en prospection froide, une grande vignette se lit comme
+  /// une lettre d'information, elle est souvent cachée derrière « afficher les
+  /// images », et l'image servie est engendrée, pas une trame du film.
+  videoDisplay String @default("link")
+
   /// Un modèle par usage, plutôt qu'un modèle pour tout.
   ///
   /// Rédiger un email à partir d'un dossier fourni n'est pas la même tâche que

@@ -21,7 +21,7 @@ import {
   withSignatureLogo,
   withOurSiteLink,
   withTrackingPixel,
-  withVideoThumbnail,
+  videoHtml,
   type DemoLink,
   type SignatureLogo,
 } from "../domain/email-format";
@@ -37,6 +37,11 @@ import { readVideoSummary } from "./mail-video";
 import { clickUrl, publicBaseUrl, type ClickKind } from "./email-sends";
 import { DEFAULT_DEMO, DEFAULT_SIGNATURE, type Signature } from "../agents/prompts/company";
 import { DEFAULT_OUR_SITE_URL, ourSiteLink, type OurSiteLink } from "../domain/our-site";
+import {
+  DEFAULT_VIDEO_DISPLAY,
+  toVideoDisplay,
+  type VideoDisplay,
+} from "../domain/video-display";
 
 /**
  * Envoi de courriels, par SMTP.
@@ -88,6 +93,13 @@ export interface MailConfig {
    * supprime la phrase entière, comme `demoUrl`.
    */
   readonly ourSiteUrl: string;
+  /**
+   * Comment la vidéo se montre : un lien texte, ou une vignette.
+   *
+   * Un réglage global, comme le logo et la vidéo elle-même : c'est la forme du
+   * message, pas la propriété d'une boîte. `videoHtml` est le seul lecteur.
+   */
+  readonly videoDisplay: VideoDisplay;
 }
 
 /** Ce que l'écran a le droit de savoir du mot de passe : s'il existe. */
@@ -123,10 +135,16 @@ function toEncryption(value: string): "tls" | "starttls" {
 async function readGlobalLinks(): Promise<{
   demo: { label: string; url: string };
   ourSiteUrl: string;
+  videoDisplay: VideoDisplay;
 }> {
   const row = await prisma.settings.findUnique({
     where: { id: "singleton" },
-    select: { demoLabel: true, demoUrl: true, ourSiteUrl: true },
+    select: {
+      demoLabel: true,
+      demoUrl: true,
+      ourSiteUrl: true,
+      videoDisplay: true,
+    },
   });
   return {
     demo: {
@@ -134,6 +152,8 @@ async function readGlobalLinks(): Promise<{
       url: row?.demoUrl ?? DEFAULT_DEMO.url,
     },
     ourSiteUrl: row?.ourSiteUrl ?? DEFAULT_OUR_SITE_URL,
+    videoDisplay:
+      row === null ? DEFAULT_VIDEO_DISPLAY : toVideoDisplay(row.videoDisplay),
   };
 }
 
@@ -142,6 +162,7 @@ export function configOf(
   mailbox: Mailbox,
   demo: { readonly label: string; readonly url: string },
   ourSiteUrl: string = DEFAULT_OUR_SITE_URL,
+  videoDisplay: VideoDisplay = DEFAULT_VIDEO_DISPLAY,
 ): MailConfig {
   return {
     mailboxId: mailbox.id,
@@ -159,6 +180,7 @@ export function configOf(
     demoLabel: demo.label,
     demoUrl: demo.url,
     ourSiteUrl,
+    videoDisplay,
   };
 }
 
@@ -170,7 +192,7 @@ export function configOf(
  * en nommant ce qui manque, jamais en levant.
  */
 export async function readMailConfig(mailboxId?: string): Promise<MailConfig> {
-  const { demo, ourSiteUrl } = await readGlobalLinks();
+  const { demo, ourSiteUrl, videoDisplay } = await readGlobalLinks();
   const mailbox =
     mailboxId === undefined || mailboxId === ""
       ? await defaultMailbox()
@@ -193,10 +215,11 @@ export async function readMailConfig(mailboxId?: string): Promise<MailConfig> {
       demoLabel: demo.label,
       demoUrl: demo.url,
       ourSiteUrl,
+      videoDisplay,
     };
   }
 
-  return configOf(mailbox, demo, ourSiteUrl);
+  return configOf(mailbox, demo, ourSiteUrl, videoDisplay);
 }
 
 /**
@@ -336,10 +359,10 @@ export async function readMailStatus(mailboxId?: string): Promise<MailStatus> {
 
 /** L'état de **chaque** boîte, pour le panneau — jamais un secret, son existence. */
 export async function readMailboxStatuses(): Promise<MailStatus[]> {
-  const { demo, ourSiteUrl } = await readGlobalLinks();
+  const { demo, ourSiteUrl, videoDisplay } = await readGlobalLinks();
   const mailboxes = await listMailboxes();
   return mailboxes.map((mailbox) => {
-    const config = configOf(mailbox, demo, ourSiteUrl);
+    const config = configOf(mailbox, demo, ourSiteUrl, videoDisplay);
     const passwordSet = password(config) !== "";
     const missing = missingFields(config, passwordSet);
     return { ...config, passwordSet, ready: missing.length === 0, missing };
@@ -564,9 +587,10 @@ export async function sendMail(input: SendInput): Promise<SendResult> {
   // vignette : le logo doit voir un corps encore intact. Le texte, lui, n'a rien
   // à développer, la balise ayant déjà substitué l'adresse entière (jalon 98).
   const html = withOurSiteLink(
-    withVideoThumbnail(
+    videoHtml(
       withSignatureLogo(toHtml(input.body, demo), await signatureLogo()),
       video,
+      config.videoDisplay,
     ),
     ourSiteLinkOf(config),
   );

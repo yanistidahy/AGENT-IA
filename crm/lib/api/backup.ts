@@ -278,6 +278,7 @@ const settingsRow = z.object({
   demoLabel: optionalText,
   demoUrl: optionalText,
   ourSiteUrl: optionalText,
+  videoDisplay: optionalText,
 
   /* — messagerie : copie « Envoyés », suivi, plafonds (jalons 37 et 38) — */
   imapHost: optionalText,

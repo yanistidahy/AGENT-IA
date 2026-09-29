@@ -1,6 +1,6 @@
 import { badRequest, jsonOk, serverError } from "@/lib/api/errors";
 import { deleteMailVideo, storeMailVideo } from "@/lib/api/mail-video";
-import { readVideoPanelState } from "@/lib/api/video-panel";
+import { readVideoPanelState, saveVideoDisplay } from "@/lib/api/video-panel";
 import {
   MAX_VIDEO_UPLOAD,
   describeBodyFailure,
@@ -104,7 +104,18 @@ export async function POST(request: Request) {
     });
     if (!stored.ok) return badRequest(stored.message);
 
-    return jsonOk(await state());
+    /*
+      Le mode est écrit **après** la vidéo, et il emporte la
+      resynchronisation : le libellé se règle dans le même formulaire, et c'est
+      lui qui change le corps rendu d'un départ. Réécrire la file avant d'avoir
+      stocké le libellé lui ferait porter l'ancien.
+    */
+    const resync = await saveVideoDisplay(String(form.get("affichage") ?? ""));
+
+    return jsonOk({
+      ...(await state()),
+      resync: { updated: resync.updated, kept: resync.kept },
+    });
   } catch (error) {
     return serverError("POST /api/mail/video", error);
   }

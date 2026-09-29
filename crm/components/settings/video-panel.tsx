@@ -7,6 +7,11 @@ import {
   MAX_VIDEO_UPLOAD,
   type VideoKind,
 } from "@/lib/domain/signature-video";
+import {
+  VIDEO_DISPLAY_LABELS,
+  VIDEO_DISPLAY_NOTES,
+  type VideoDisplay,
+} from "@/lib/domain/video-display";
 
 /**
  * La vidéo de démonstration — hébergement, vignette, libellé.
@@ -43,6 +48,10 @@ export interface VideoState {
   /** Où mène le clic, résolu. Vide = aucun lien composable. */
   readonly destination: string;
   readonly warnings: readonly string[];
+  /** Comment la vidéo se montre dans les mails. */
+  readonly display: VideoDisplay;
+  /** Ce que le dernier enregistrement a fait suivre, quand il a fait suivre. */
+  readonly resync?: { readonly updated: number; readonly kept: number };
 }
 
 function isVideoState(value: unknown): value is VideoState {
@@ -58,6 +67,7 @@ export function VideoPanel({ initial }: { readonly initial: VideoState }) {
   const [label, setLabel] = useState(initial.video?.label ?? DEFAULT_LABEL);
   const [file, setFile] = useState<File | null>(null);
   const [poster, setPoster] = useState<File | null>(null);
+  const [display, setDisplay] = useState<VideoDisplay>(initial.display);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -82,6 +92,7 @@ export function VideoPanel({ initial }: { readonly initial: VideoState }) {
         setKind(payload.video?.kind ?? "hosted");
         setUrl(payload.video?.url ?? "");
         setLabel(payload.video?.label ?? DEFAULT_LABEL);
+        setDisplay(payload.display);
         setSaved(true);
       }
       setFile(null);
@@ -98,6 +109,7 @@ export function VideoPanel({ initial }: { readonly initial: VideoState }) {
     form.set("kind", kind);
     form.set("url", url);
     form.set("label", label);
+    form.set("affichage", display);
     if (file !== null) form.set("fichier", file);
     if (poster !== null) form.set("vignette", poster);
     await call({ method: "POST", body: form });
@@ -111,8 +123,10 @@ export function VideoPanel({ initial }: { readonly initial: VideoState }) {
       <p className="mb-3 text-[12.5px] text-muted">
         Utilisable dans une étape écrite à la main par la balise{" "}
         <code className="rounded bg-surface-2 px-1 font-mono text-[11.5px]">{"{video}"}</code>.
-        Elle part comme <strong>une vignette cliquable</strong> en HTML et comme{" "}
-        <strong>l'adresse écrite en entier</strong> en texte brut —{" "}
+        En mode <strong>Lien texte</strong>, elle part comme une ancre ordinaire dans le corps
+        du message ; en mode <strong>Vignette</strong>, comme une image cliquable de la largeur
+        du message. Dans les deux cas l'adresse est écrite <strong>en entier</strong> en texte
+        brut, et le clic mène au même endroit —{" "}
         <strong>jamais en pièce jointe</strong> : une vidéo attachée est l'un des signaux de
         spam les plus forts, et IONOS refuserait le message pour sa taille. Sans vidéo réglée,
         la phrase qui porte la balise disparaît proprement.
@@ -157,6 +171,40 @@ export function VideoPanel({ initial }: { readonly initial: VideoState }) {
             </label>
           ))}
         </div>
+      </fieldset>
+
+      <fieldset className="mb-3">
+        <legend className="mb-1.5 font-mono text-[11px] uppercase tracking-wide text-muted">
+          Affichage de la vidéo dans les mails
+        </legend>
+        <div className="flex flex-col gap-1.5">
+          {(["link", "thumbnail"] as const).map((option) => (
+            <label
+              key={option}
+              className={`flex min-h-[44px] cursor-pointer items-start gap-2 rounded-control border px-3 py-2 text-[12.5px] ${
+                display === option ? "border-brand bg-brand-l" : "border-line-2"
+              }`}
+            >
+              <input
+                type="radio"
+                name="video-display"
+                checked={display === option}
+                onChange={() => setDisplay(option)}
+                className="mt-0.5"
+              />
+              <span>
+                <strong>{VIDEO_DISPLAY_LABELS[option]}</strong>
+                <span className="block text-muted">{VIDEO_DISPLAY_NOTES[option]}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <p className="mt-1.5 text-[12px] text-muted">
+          Un seul réglage, lu par la seule fonction qui rend la vidéo : l'aperçu, l'envoi manuel,
+          l'envoi automatique et la resynchronisation à l'enregistrement montrent tous le même
+          mode. Changer ce réglage réécrit les départs manuels en attente ; une retouche à la
+          main est conservée.
+        </p>
       </fieldset>
 
       {kind === "hosted" ? (
@@ -248,7 +296,17 @@ export function VideoPanel({ initial }: { readonly initial: VideoState }) {
             Retirer la vidéo
           </button>
         )}
-        {saved && <span className="text-[12px] text-win-d">Enregistrée.</span>}
+        {saved && (
+          <span className="text-[12px] text-win-d">
+            Enregistrée. Mode : {VIDEO_DISPLAY_LABELS[state.display]}.
+            {state.resync !== undefined && state.resync.updated > 0 && (
+              <> {state.resync.updated} départs mis à jour.</>
+            )}
+            {state.resync !== undefined && state.resync.kept > 0 && (
+              <> {state.resync.kept} retouché(s) à la main conservé(s).</>
+            )}
+          </span>
+        )}
       </div>
 
       {state.video !== null && (

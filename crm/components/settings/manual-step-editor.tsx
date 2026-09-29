@@ -12,6 +12,12 @@ import {
 } from "@/lib/domain/merge-tags";
 import { GROUP_LABELS, isContactGroup } from "@/lib/domain/contact-group";
 import { RenderedBody } from "./rendered-body";
+import {
+  DEFAULT_VIDEO_DISPLAY,
+  VIDEO_DISPLAY_LABELS,
+  VIDEO_DISPLAY_NOTES,
+  type VideoDisplay,
+} from "@/lib/domain/video-display";
 
 /**
  * L'éditeur d'une étape écrite à la main.
@@ -49,9 +55,16 @@ export interface SampleSet {
   readonly totals: Readonly<Record<string, number>>;
   /** `false` = personne n'est inscrit, l'aperçu porte sur tout le CRM. */
   readonly enrolled: boolean;
+  /** Le mode d'affichage de la vidéo, réglé dans /reglages. */
+  readonly videoDisplay: VideoDisplay;
 }
 
-export const EMPTY_SAMPLES: SampleSet = { contacts: [], totals: {}, enrolled: true };
+export const EMPTY_SAMPLES: SampleSet = {
+  contacts: [],
+  totals: {},
+  enrolled: true,
+  videoDisplay: DEFAULT_VIDEO_DISPLAY,
+};
 
 /** La clé de groupe d'une fiche : `none` pour une fiche jamais classée. */
 export function groupKeyOf(sample: SampleContact): string {
@@ -262,6 +275,13 @@ export function ManualStepEditor({
           <p className="text-[12.5px] text-ink">{renderSubject(subject, values)}</p>
           <p className="mt-1.5 text-[11.5px] font-semibold text-muted">Message</p>
           <RenderedBody text={renderTemplate(body, values)} ourSiteUrl={values.notresite} />
+          {values.video !== "" && body.includes("{video}") && (
+            <p className="mt-1.5 text-[12px] text-muted">
+              Vidéo : mode <strong>{VIDEO_DISPLAY_LABELS[samples.videoDisplay]}</strong>.{" "}
+              {VIDEO_DISPLAY_NOTES[samples.videoDisplay]} Réglable dans Réglages → Vidéo de
+              démonstration.
+            </p>
+          )}
         </div>
       )}
     </div>

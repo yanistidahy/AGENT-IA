@@ -26,6 +26,7 @@ const CONFIG = {
   demoLabel: "Diagnostic offert",
   demoUrl: "https://exemple.test/",
   ourSiteUrl: "https://auraflowai.fr/",
+  videoDisplay: "link" as const,
 };
 
 describe("ce qui manque pour envoyer", () => {

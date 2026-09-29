@@ -9,7 +9,7 @@ import {
   toPlainText,
   withSignatureLogo,
   withTrackingPixel,
-  withVideoThumbnail,
+  videoHtml,
 } from "../email-format";
 import type { VideoLink } from "../signature-video";
 
@@ -222,8 +222,58 @@ describe("la vidéo : une vignette en HTML, l'adresse en entier en texte", () =>
   const BODY =
     "Bonjour Roxana,\n\nVoici une courte vidéo : Voir la démonstration en vidéo.\n\nYanis Tidahy";
 
+  it("mode lien texte : une ancre ordinaire, aucune image", () => {
+    /*
+      Le défaut du produit, et la raison du jalon 99 : en prospection froide une
+      grande vignette se lit comme une lettre d'information, elle est souvent
+      cachée derrière « afficher les images », et l'image servie est engendrée.
+      Le lien texte se rend partout, sans rien à débloquer.
+    */
+    const html = videoHtml(toHtml(BODY), VIDEO, "link");
+    expect(html).toContain(
+      '<a href="https://crm.test/api/video/v1/fichier">Voir la démonstration en vidéo</a>',
+    );
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("<table");
+    // Aucun style : le lien se lit comme n'importe quel lien du corps.
+    expect(html).not.toMatch(/<a href="https:\/\/crm\.test[^"]*"[^>]+>/);
+  });
+
+  it("mode lien texte : le défaut, sans rien avoir à régler", () => {
+    // La colonne porte `link` par défaut, et la fonction aussi : une
+    // installation neuve comme la ligne de réglages déjà en base rendent le
+    // lien texte sans que personne ait cliqué.
+    expect(videoHtml(toHtml(BODY), VIDEO)).toBe(videoHtml(toHtml(BODY), VIDEO, "link"));
+  });
+
+  it("mode lien texte : une vignette absente n'empêche pas le lien", () => {
+    // La vignette est la seule chose qui manquerait, et le mode ne la demande
+    // pas : supprimer le lien pour autant serait perdre l'appel à l'action.
+    const html = videoHtml(toHtml(BODY), { ...VIDEO, posterUrl: "" }, "link");
+    expect(html).toContain('<a href="https://crm.test/api/video/v1/fichier">');
+  });
+
+  it("mode lien texte : la partie texte ne bouge pas", () => {
+    // Elle a toujours porté « libellé : adresse entière », et c'est déjà la
+    // bonne forme pour un client texte : le mode ne la concerne pas.
+    const text = toPlainText(BODY, undefined, VIDEO);
+    expect(text).toContain(
+      "Voir la démonstration en vidéo : https://crm.test/api/video/v1/fichier",
+    );
+  });
+
+  it("les deux modes mènent au même endroit", () => {
+    const cible = "https://crm.test/api/video/v1/fichier";
+    for (const mode of ["link", "thumbnail"] as const) {
+      const html = videoHtml(toHtml(BODY), VIDEO, mode);
+      expect((html.match(/href="/g) ?? []).length, mode).toBe(1);
+      expect(html, mode).toContain(`href="${cible}"`);
+      expect(html, mode).not.toMatch(/[?&]utm_/);
+    }
+  });
+
   it("rend une vignette cliquable, servie depuis notre domaine", () => {
-    const html = withVideoThumbnail(toHtml(BODY), VIDEO);
+    const html = videoHtml(toHtml(BODY), VIDEO, "thumbnail");
     expect(html).toContain('<a href="https://crm.test/api/video/v1/fichier">');
     expect(html).toContain('src="https://crm.test/api/video/v1"');
     expect(html).toContain('width="480"');
@@ -235,7 +285,7 @@ describe("la vidéo : une vignette en HTML, l'adresse en entier en texte", () =>
   });
 
   it("ne porte aucun paramètre de suivi, aucun hôte tiers", () => {
-    const html = withVideoThumbnail(toHtml(BODY), VIDEO);
+    const html = videoHtml(toHtml(BODY), VIDEO, "thumbnail");
     expect(html).not.toMatch(/[?&]utm_/);
     expect(html).not.toMatch(/src="https?:\/\/(?!crm\.test)/);
   });
@@ -248,7 +298,7 @@ describe("la vidéo : une vignette en HTML, l'adresse en entier en texte", () =>
       donc composité dans la vignette au téléversement, et le message ne rend
       qu'une seule balise.
     */
-    const html = withVideoThumbnail(toHtml(BODY), VIDEO);
+    const html = videoHtml(toHtml(BODY), VIDEO, "thumbnail");
     expect(html).not.toContain("position:absolute");
     expect(html).not.toContain("display:flex");
     expect((html.match(/<img/g) ?? []).length).toBe(1);
@@ -274,19 +324,19 @@ describe("la vidéo : une vignette en HTML, l'adresse en entier en texte", () =>
 
   it("ne touche à rien sans vidéo réglée", () => {
     const nu = toHtml(BODY);
-    expect(withVideoThumbnail(nu, undefined)).toBe(nu);
+    expect(videoHtml(nu, undefined, "thumbnail")).toBe(nu);
     expect(toPlainText(BODY, undefined, undefined)).toBe(toPlainText(BODY));
   });
 
   it("ne rend rien d'à moitié : un lien incomplet laisse le texte tel quel", () => {
     const nu = toHtml(BODY);
-    expect(withVideoThumbnail(nu, { ...VIDEO, posterUrl: "" })).toBe(nu);
-    expect(withVideoThumbnail(nu, { ...VIDEO, url: "" })).toBe(nu);
+    expect(videoHtml(nu, { ...VIDEO, posterUrl: "" }, "thumbnail")).toBe(nu);
+    expect(videoHtml(nu, { ...VIDEO, url: "" }, "thumbnail")).toBe(nu);
   });
 
   it("une seule occurrence, même si le libellé revient", () => {
     const body = "Voir la démonstration en vidéo. Puis Voir la démonstration en vidéo.";
-    const html = withVideoThumbnail(toHtml(body), VIDEO);
+    const html = videoHtml(toHtml(body), VIDEO, "thumbnail");
     expect((html.match(/<img/g) ?? []).length).toBe(1);
   });
 
@@ -303,7 +353,7 @@ describe("la vidéo : une vignette en HTML, l'adresse en entier en texte", () =>
       message jamais déroulé (jalon 43).
     */
     const html = withTrackingPixel(
-      withVideoThumbnail(withSignatureLogo(toHtml(BODY), undefined), VIDEO),
+      videoHtml(withSignatureLogo(toHtml(BODY), undefined), VIDEO, "thumbnail"),
       "https://crm.test/api/t/abc",
     );
     const pixel = html.indexOf("/api/t/abc");
