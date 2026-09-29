@@ -8,6 +8,8 @@ import { CompositionRefresh } from "@/components/sequences/composition-refresh";
 import { RewriteQueueAction } from "@/components/sequences/rewrite-queue-action";
 import { AutoSendPanel } from "@/components/sequences/auto-send-panel";
 import { readAutoSendStatus } from "@/lib/api/auto-send";
+import { readMailboxUsage } from "@/lib/api/mailbox-cap";
+import { describeUsage } from "@/lib/domain/mailbox-cap";
 import { ensureAutoSendLoop } from "@/lib/api/auto-send-loop";
 
 export const dynamic = "force-dynamic";
@@ -27,11 +29,12 @@ export default async function DepartsPage({
   const asked = raw["campagne"];
   const campaignId = Array.isArray(asked) ? asked[0] : asked;
 
-  const [departures, jobs, campaigns, auto] = await Promise.all([
+  const [departures, jobs, campaigns, auto, usage] = await Promise.all([
     listDepartures(new Date(), { campaignId }),
     readCompositionJobs(),
     campaignId === undefined ? Promise.resolve([]) : listCampaigns(),
     readAutoSendStatus(),
+    readMailboxUsage(),
   ]);
   const campaign = campaigns.find((entry) => entry.id === campaignId);
 
@@ -63,7 +66,25 @@ export default async function DepartsPage({
         entière, et un interrupteur rendu au-dessus d'une file filtrée laisserait
         croire qu'il ne concerne qu'elle.
       */}
-      <AutoSendPanel initial={{ settings: auto.settings, sentence: auto.sentence, plan: auto.plan, dropped: auto.dropped }} />
+      {/*
+        **Le compte du jour, par boîte, en tête de la file.**
+
+        Il porte sur tout le CRM même quand la file est bornée à une campagne :
+        le plafond est celui de la boîte, pas de la campagne, et un compteur
+        filtré annoncerait une capacité qu'une autre campagne a déjà dépensée.
+        Lu dans le journal des envois, donc il compte aussi les emails écrits
+        depuis une fiche.
+      */}
+      {usage.length > 0 && (
+        <p
+          data-cap-usage="1"
+          className="mx-6 mt-4 rounded-control border border-line bg-surface px-3 py-2 text-[12.5px] text-muted"
+        >
+          <b className="font-semibold text-ink">Envoyés aujourd&apos;hui</b> ·{" "}
+          {describeUsage(usage)}
+        </p>
+      )}
+      <AutoSendPanel initial={{ settings: auto.settings, sentence: auto.sentence, plan: auto.plan, dropped: auto.dropped, capNotice: auto.capNotice }} />
       <CompositionBanner jobs={jobs} />
       {/*
         Un filtre actif se **nomme**, avec de quoi l'annuler : une file bornée à

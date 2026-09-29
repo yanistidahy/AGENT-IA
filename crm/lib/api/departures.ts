@@ -15,6 +15,8 @@ import { draftEmail } from "../agents/email-draft";
 import { openingLine } from "./account";
 import { sendEmailToContact } from "./email-send";
 import { checkRate } from "./send-rate";
+import { readMailboxUsage, readUsageFor } from "./mailbox-cap";
+import { capReached, capRefusal, remainingOf, sortByPriority } from "../domain/mailbox-cap";
 import { REAL_ACTIVITY } from "./real-activity";
 import { ANSWERED_OUTCOMES } from "../domain/status";
 import { toLifecycle } from "../domain/guards";
@@ -132,6 +134,15 @@ export interface ComposeReport {
   readonly waiting: number;
   /** Interrompue à la demande. Ce qui était composé reste en file. */
   readonly stoppedByUser?: boolean;
+  /**
+   * Brouillons d'Alex laissés pour demain, la boîte ayant atteint son plafond.
+   *
+   * Un appel au modèle est facturé : en écrire soixante pour une boîte qui n'en
+   * enverra que cinquante, c'est acheter dix textes qui seront périmés demain
+   * matin (jalon 96). Les étapes écrites à la main ne sont pas bornées, elles ne
+   * coûtent rien.
+   */
+  readonly laterForCap: number;
 }
 
 /**
@@ -271,7 +282,7 @@ export async function composeDepartures(
   now = new Date(),
   scope: ComposeScope = {},
 ): Promise<ComposeReport> {
-  const empty = { composed: 0, sentAutomatically: 0, stopped: 0, waiting: 0 };
+  const empty = { composed: 0, sentAutomatically: 0, stopped: 0, waiting: 0, laterForCap: 0 };
 
   if (isWeekend(now)) {
     return { ...empty, skipped: "Samedi ou dimanche : aucune composition, aucun départ." };
@@ -299,7 +310,24 @@ export async function composeDepartures(
   let sentAutomatically = 0;
   let stopped = 0;
   let waiting = 0;
+  let laterForCap = 0;
   let stoppedByUser = false;
+
+  /*
+    **La capacité restante de chaque boîte, décomptée au fil de la boucle.**
+
+    Le budget est ce que le plafond laisse pour aujourd'hui, lu une fois dans le
+    journal des envois. Les brouillons **déjà en file** n'en sont pas retranchés,
+    et c'est un choix : ils peuvent partir, être retirés ou reportés d'ici ce
+    soir, et la composition refuse de toute façon de réécrire un départ existant.
+    Le budget borne donc ce que **ce passage** écrit, pas la file entière.
+
+    `null` vaut « pas de plafond » : le compilateur force à traiter le cas, là
+    où un `Infinity` traverserait silencieusement une soustraction.
+  */
+  const budget = new Map<string, number | null>(
+    (await readMailboxUsage(now)).map((entry) => [entry.mailboxId, remainingOf(entry)]),
+  );
 
   for (const enrollment of enrollments) {
     /*
@@ -425,6 +453,26 @@ export async function composeDepartures(
       // rare, et rien à inventer.
       if (written === null) continue;
     } else {
+      /*
+        **On ne paie pas un brouillon qui ne peut pas partir aujourd'hui.**
+
+        Seules les étapes rédigées par Alex sont bornées : une étape écrite à la
+        main est une substitution de trois balises, gratuite, et la file la
+        porte sans dommage. L'inscription reste active et dûe : rien n'est
+        perdu, elle sera écrite au prochain passage, avec les consignes de ce
+        jour-là plutôt qu'avec celles d'aujourd'hui.
+      */
+      const capBox = enrollment.sequence.campaign?.mailboxId ?? "";
+      const left = capBox === "" ? undefined : budget.get(capBox);
+      if (left !== undefined && left !== null) {
+        if (left <= 0) {
+          laterForCap += 1;
+          waiting += 1;
+          continue;
+        }
+        budget.set(capBox, left - 1);
+      }
+
       // **L'accroche du collègue composée ce matin même.** La règle du jalon 53
       // lit les envois, mais dans cette boucle, deux collègues d'une même maison
       // sont composés avant que quiconque soit envoyé : le second ne verrait
@@ -495,7 +543,7 @@ export async function composeDepartures(
     }
   }
 
-  return { skipped: null, composed, sentAutomatically, stopped, waiting, stoppedByUser };
+  return { skipped: null, composed, sentAutomatically, stopped, waiting, laterForCap, stoppedByUser };
 }
 
 /**
@@ -759,6 +807,17 @@ export interface DepartureView {
    * resynchronisation le conserve et la carte propose de le remplacer.
    */
   readonly edited: boolean;
+  /**
+   * La boite d'ou ce depart partira, vide pour un depart anterieur au jalon 54.
+   * C'est elle que le plafond quotidien regarde.
+   */
+  readonly mailboxId: string;
+  /**
+   * La boite a atteint son plafond du jour : ce depart **est reporte**, il
+   * n'est ni perdu ni refuse. La carte le dit avec `CARRIED_LABEL`, et le mot
+   * compte : « echec » ferait chercher une panne la ou il n'y a qu'une file.
+   */
+  readonly carried: boolean;
   /** La maison du contact, affichée sous son nom. Vide quand il n'en a pas. */
   readonly companyName: string;
   readonly campaignName: string;
@@ -851,7 +910,7 @@ export async function listDepartures(
             select: {
               name: true,
               active: true,
-              campaign: { select: { name: true, otherRouting: true } },
+              campaign: { select: { name: true, otherRouting: true, mailboxId: true } },
               /*
                 Les étapes écrites à la main, variantes comprises : c'est le
                 **gabarit** qu'il faut pour savoir quelle phrase le rendu a
@@ -1058,10 +1117,32 @@ export async function listDepartures(
       empty: emptyDepartureReason(row, blocks) ?? "",
       stale,
       edited: row.editedAt !== null,
+      mailboxId: row.enrollment.sequence.campaign?.mailboxId ?? "",
+      // Rempli apres la boucle : la capacite se lit une fois pour toute la file.
+      carried: false,
       createdAt: row.createdAt,
     });
   }
-  return views;
+
+  /*
+    **La capacite restante, lue une fois, et l'ordre dans lequel elle se
+    depense.**
+
+    `carried` est derive a la lecture, jamais stocke : une colonne « reporte »
+    devrait etre remise a zero chaque matin, et le matin ou on l'oublierait
+    l'ecran annoncerait un report qui n'existe plus. Ici, la file redit chaque
+    jour ce qui est vrai ce jour-la.
+
+    L'ordre vient de `sortByPriority`, la meme fonction que l'ordonnanceur : les
+    relances d'abord, puis le plus ancien. Les deux surfaces depensent donc les
+    derniers creneaux du jour sur les memes departs, et une garde statique
+    verifie qu'elles ne cessent pas de partager cette fonction.
+  */
+  const usage = await readMailboxUsage(now);
+  const full = new Set(usage.filter((row) => capReached(row)).map((row) => row.mailboxId));
+  const withCap = views.map((view) => ({ ...view, carried: full.has(view.mailboxId) }));
+
+  return sortByPriority(withCap);
 }
 
 export type DepartureOutcome =
@@ -1204,6 +1285,28 @@ export async function sendDeparture(
     // on ne pourrait plus le réécrire (jalon 91).
     await prisma.sequenceDeparture.update({ where: { id }, data: { detail: refusal } });
     return { ok: false, message: refusal };
+  }
+
+  /*
+    **Le plafond de la boite, juste avant le debit.**
+
+    Les deux refus se ressemblent et ne disent pas la meme chose : `checkRate`
+    porte sur tout le CRM et apprend d'un refus du serveur (jalon 38), celui-ci
+    est une discipline de prospection choisie a l'avance, par adresse d'envoi.
+    Il vient en premier parce qu'il est le plus specifique : nommer la boite et
+    son compte renseigne davantage qu'un plafond global.
+
+    Un depart refuse ici **reste en attente**, comme pour le debit : il partira
+    le prochain jour ouvre, et la carte dit qu'il est reporte.
+  */
+  const capBox = enrollment.sequence.campaign?.mailboxId ?? "";
+  if (capBox !== "") {
+    const usage = await readUsageFor(capBox, now);
+    if (usage !== null && capReached(usage)) {
+      const refusal = capRefusal(usage);
+      await prisma.sequenceDeparture.update({ where: { id }, data: { detail: refusal } });
+      return { ok: false, message: refusal };
+    }
   }
 
   const rate = await checkRate(now);

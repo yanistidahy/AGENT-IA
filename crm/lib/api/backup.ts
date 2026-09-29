@@ -289,6 +289,7 @@ const settingsRow = z.object({
   trackOpens: z.boolean().optional(),
   openRetentionMonths: z.number().int().optional(),
   sendPerHour: z.number().int().optional(),
+  dailyMailboxCap: z.number().int().optional(),
   sendPerDay: z.number().int().optional(),
   sendLimitNotice: optionalText,
   sendLimitNoticeAt: optionalDay,

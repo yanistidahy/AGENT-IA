@@ -47,6 +47,7 @@ interface SettingsViewProps {
   readonly inbox: InboxStatus;
   readonly tracking: TrackingStatus;
   readonly limits: SendLimits;
+  readonly dailyCap: number;
   readonly delays: ReminderDelays;
   /** Objectifs hebdomadaires de « Ma performance ». `0` = pas d'objectif. */
   readonly targets: { readonly calls: number; readonly emails: number };
@@ -107,6 +108,7 @@ export function SettingsView({
   opens,
   tracking,
   limits,
+  dailyCap,
   delays,
   targets,
   colleagueWarningDays,
@@ -173,7 +175,12 @@ export function SettingsView({
           <MailPanel initial={mail} />
           <LogoPanel initial={logo} />
           <VideoPanel initial={video} />
-          <ImapPanel initial={imap} initialTracking={tracking} initialLimits={limits} />
+          <ImapPanel
+            initial={imap}
+            initialTracking={tracking}
+            initialLimits={limits}
+            initialDailyCap={dailyCap}
+          />
           <InboxPanel initial={inbox} />
           {opens}
         </div>

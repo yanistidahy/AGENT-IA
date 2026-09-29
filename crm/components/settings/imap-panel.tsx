@@ -40,7 +40,12 @@ export interface SendLimits {
 
 function isPayload(
   value: unknown,
-): value is { imap: ImapStatus; tracking: TrackingStatus; limits: SendLimits } {
+): value is {
+  imap: ImapStatus;
+  tracking: TrackingStatus;
+  limits: SendLimits;
+  dailyCap: number;
+} {
   return typeof value === "object" && value !== null && "imap" in value;
 }
 
@@ -58,14 +63,17 @@ export function ImapPanel({
   initial,
   initialTracking,
   initialLimits,
+  initialDailyCap,
 }: {
   readonly initial: ImapStatus;
   readonly initialTracking: TrackingStatus;
   readonly initialLimits: SendLimits;
+  readonly initialDailyCap: number;
 }) {
   const [imap, setImap] = useState(initial);
   const [tracking, setTracking] = useState(initialTracking);
   const [limits, setLimits] = useState(initialLimits);
+  const [dailyCap, setDailyCap] = useState(initialDailyCap);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -88,6 +96,7 @@ export function ImapPanel({
           openRetentionMonths: tracking.retentionMonths,
           sendPerHour: limits.perHour,
           sendPerDay: limits.perDay,
+          dailyMailboxCap: dailyCap,
         }),
       },
       isPayload,
@@ -97,6 +106,7 @@ export function ImapPanel({
       setImap(result.data.imap);
       setTracking(result.data.tracking);
       setLimits(result.data.limits);
+      setDailyCap(result.data.dailyCap);
       setDone("Enregistré.");
     } else setError(result.message);
   };
@@ -256,6 +266,33 @@ export function ImapPanel({
             type="number"
             value={limits.perDay}
             onChange={(event) => setLimits({ ...limits, perDay: Number(event.target.value) })}
+          />
+        </label>
+      </div>
+
+      <h4 className="mt-5 font-display text-[13.5px] font-semibold">
+        Plafond d'envoi quotidien par boîte
+      </h4>
+      <p className="mt-1 text-[12.5px] text-muted">
+        Une seule valeur, appliquée <b className="font-semibold text-ink">à chaque boîte</b> :
+        trois boîtes à 50 font 150 messages par jour au plus. La réputation d'expédition se joue
+        par adresse, pas par produit. Le jour est celui de Paris, et le compte se lit dans le
+        journal des envois, quel que soit le chemin emprunté.{" "}
+        <b className="font-semibold text-ink">
+          Seuls les départs de campagne sont bloqués
+        </b>{" "}
+        : un email écrit depuis une fiche part toujours, il est seulement compté.{" "}
+        <b className="font-semibold text-ink">0 coupe le plafond.</b>
+      </p>
+      <div className="mt-2 grid gap-3 sm:grid-cols-2">
+        <label>
+          <span className={LABEL}>Envois par boîte et par jour</span>
+          <input
+            className={FIELD}
+            type="number"
+            min={0}
+            value={dailyCap}
+            onChange={(event) => setDailyCap(Number(event.target.value))}
           />
         </label>
       </div>

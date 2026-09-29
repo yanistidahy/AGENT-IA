@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "../db";
 import { composeDepartures, countComposable } from "./departures";
+import { describeAllowance } from "../domain/mailbox-cap";
 import { stepReady } from "../domain/sequence-steps";
 import { modelFor } from "./reference";
 import { costMicros } from "../domain/model-pricing";
@@ -333,6 +334,10 @@ async function runInBackground(jobId: string, sequenceId: string, now: Date): Pr
         done: report.composed,
         finishedAt: new Date(),
         stopped: report.stoppedByUser === true,
+        // Pas un échec : des brouillons d'Alex ont été laissés pour demain
+        // parce que le plafond du jour de leur boîte est atteint. Vide quand
+        // il n'y a rien à dire.
+        notice: describeAllowance(report.laterForCap),
       },
     });
   } catch (error) {
@@ -357,6 +362,8 @@ export interface JobView {
   readonly error: string;
   /** Arrêtée à la demande : ce qui était écrit est resté en file. */
   readonly stopped: boolean;
+  /** Ce qui a été laissé pour demain, plafond de boîte atteint. Vide sinon. */
+  readonly notice: string;
 }
 
 /**
@@ -396,6 +403,7 @@ export async function readCompositionJobs(now = new Date()): Promise<JobView[]> 
       finishedAt: true,
       stopped: true,
       error: true,
+      notice: true,
       campaign: { select: { sequence: { select: { id: true } } } },
     },
   });
@@ -418,6 +426,7 @@ export async function readCompositionJobs(now = new Date()): Promise<JobView[]> 
       running: job.finishedAt === null,
       error: job.error,
       stopped: job.stopped,
+      notice: job.notice,
     });
   }
   return views;

@@ -21,13 +21,16 @@ export interface CompositionProgress {
   readonly error: string;
   /** Arrêtée à la demande : ce qui était écrit est resté en file. */
   readonly stopped: boolean;
+  readonly notice: string;
 }
 
 export function CompositionBanner({ jobs }: { readonly jobs: readonly CompositionProgress[] }) {
   // Une composition arrêtée se montre aussi, et elle dit **combien** avait été
   // écrit avant l'arrêt : c'est la seule chose qu'on veut savoir après avoir
   // cliqué.
-  const shown = jobs.filter((job) => job.running || job.error !== "" || job.stopped);
+  const shown = jobs.filter(
+    (job) => job.running || job.error !== "" || job.stopped || job.notice !== "",
+  );
   if (shown.length === 0) return null;
 
   return (
@@ -46,7 +49,7 @@ export function CompositionBanner({ jobs }: { readonly jobs: readonly Compositio
               l&apos;arrêt, sur {job.total} prévu{job.total > 1 ? "s" : ""}. Ils sont dans la file,
               rien n&apos;a été envoyé.
             </p>
-          ) : job.error === "" ? (
+          ) : job.error === "" && job.running ? (
             <>
               <p>
                 <strong className="font-semibold">
@@ -81,6 +84,18 @@ export function CompositionBanner({ jobs }: { readonly jobs: readonly Compositio
                 <StopComposition campaignId={job.campaignId} />
               </div>
             </>
+          ) : job.notice !== "" ? (
+            /*
+              Pas un échec, donc pas le rouge de l'erreur : la composition a fait
+              ce qu'elle pouvait faire aujourd'hui, et elle dit ce qu'elle a
+              laissé plutôt que de payer des textes périmés demain matin.
+            */
+            <p>
+              <strong className="font-semibold">
+                {job.done} brouillon{job.done > 1 ? "s" : ""} écrit{job.done > 1 ? "s" : ""}
+              </strong>{" "}
+              — {job.notice}
+            </p>
           ) : (
             <p>
               <strong className="font-semibold">Composition interrompue</strong> après {job.done} sur{" "}
