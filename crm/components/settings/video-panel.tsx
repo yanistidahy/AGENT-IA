@@ -347,25 +347,32 @@ export function VideoPanel({ initial }: { readonly initial: VideoState }) {
                 </span>
               )}
             </div>
+            {/*
+              **Deux faits indépendants, deux lignes.** L'adresse de la vignette
+              dépend de `CRM_PUBLIC_URL` ; la destination du clic, pour une
+              adresse collée, n'en dépend pas — c'est l'adresse collée elle-même
+              (`videoDestination`, jalon 89). Les fondre en une seule condition
+              faisait disparaître « le clic va là » au moment précis où l'écran
+              venait d'annoncer que le clic quitte notre domaine : on lisait
+              « chez l'hébergeur » sans jamais savoir lequel.
+            */}
             <div className="mt-1 font-mono text-[11px]">
               {state.posterUrl === "" ? (
-                <span className="text-danger">
+                <div className="text-danger">
                   Aucune adresse publique connue (CRM_PUBLIC_URL) : la vignette ne partira pas,
                   et la phrase qui porte {"{video}"} sera retirée.
-                </span>
+                </div>
               ) : (
-                <>
-                  <div>vignette : {state.posterUrl}</div>
-                  <div>
-                    clic :{" "}
-                    {state.destination === "" ? (
-                      <span className="text-danger">aucune destination composable</span>
-                    ) : (
-                      state.destination
-                    )}
-                  </div>
-                </>
+                <div>vignette : {state.posterUrl}</div>
               )}
+              <div>
+                clic :{" "}
+                {state.destination === "" ? (
+                  <span className="text-danger">aucune destination composable</span>
+                ) : (
+                  state.destination
+                )}
+              </div>
             </div>
           </div>
         </div>

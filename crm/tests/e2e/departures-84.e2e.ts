@@ -129,14 +129,21 @@ describe.skipIf(skip)("la file du matin, jalon 84", () => {
     /*
       Soit le plan chiffré, soit son empêchement nommé : jamais un silence.
 
-      « Samedi ou dimanche » fait partie des empêchements, et il manquait ici :
-      la recette du jalon 84 avait tourné un jour de semaine, si bien que ce test
-      tombait tous les week-ends sur un produit parfaitement correct. Une garde
-      qui dépend du jour où on la lance ne garde rien.
+      **L'empêchement de cette fixture est déterminé, et il ne dépend pas du
+      jour.** Sa séquence est semée `active: false` (quatrième point du jalon), et
+      `lib/api/compose-now.ts:160` teste la séquence inactive **avant** le
+      week-end de la ligne 187 : la branche du samedi est donc inatteignable ici,
+      mesuré un mercredi comme un samedi. L'ancienne assertion énumérait quatre
+      empêchements possibles sans citer celui-là — elle tombait tous les jours sur
+      un produit qui nommait correctement son empêchement.
+
+      L'assertion porte donc sur la phrase exacte **et sur le geste qu'elle
+      demande** : un empêchement qui ne dit pas quoi faire se lit comme une panne.
     */
-    expect(panel).toMatch(
-      /seront réécrits sur .* campagne|La file est vide|week-end|Samedi ou dimanche/i,
+    expect(panel, "l'empêchement est nommé, jamais un silence").toContain(
+      "La séquence de cette campagne est inactive",
     );
+    expect(panel, "et il dit le geste à faire").toContain("Activez-la dans ses étapes");
 
     // Le plan ne dépense rien : aucun départ n'a bougé au simple affichage.
     const pending = await prisma.sequenceDeparture.count({

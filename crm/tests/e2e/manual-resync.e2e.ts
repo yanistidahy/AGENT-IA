@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Browser } from "playwright-core";
 import { prisma } from "../../lib/db";
 import { BASE_URL, chromiumPath, openBrowser, reachable, signIn, type Session } from "./browser";
+import { isWeekend } from "../../lib/domain/sequence-rules";
 
 /**
  * **Enregistrer met la file à jour, et le clic seul peut le prouver.**
@@ -27,6 +28,20 @@ import { BASE_URL, chromiumPath, openBrowser, reachable, signIn, type Session } 
 
 const PASSWORD = process.env.E2E_PASSWORD ?? process.env.WORKSPACE_PASSWORD;
 const skip = chromiumPath() === null || PASSWORD === undefined;
+
+/**
+ * **La création de départs est refusée le samedi et le dimanche**, jamais la
+ * mise à jour (jalon 97, et c'est la règle du jalon 38 : un brouillon écrit le
+ * samedi décrirait un état vieux de deux jours au moment de partir). Ce fichier
+ * tombait donc tous les week-ends, sur un produit parfaitement correct.
+ *
+ * L'oracle n'est pas une supposition sur le jour : c'est **`isWeekend`, la
+ * fonction que le produit lui-même applique**. Le test sait donc laquelle des
+ * deux issues est la bonne, et il l'assère exactement — aucune des deux n'est
+ * une alternance permissive. Le week-end, il exige en plus que l'inscrit reste
+ * **actif et dû** : c'est ce qui prouve que rien n'est perdu, seulement reporté.
+ */
+const WEEKEND = isWeekend(new Date());
 
 const P = "e2e97";
 const SLUG = "e2e-resync-97";
@@ -197,8 +212,15 @@ describe.skipIf(skip)("enregistrer remet la file à jour", () => {
     expect(await reachable(notice)).toBe(true);
     const text = await notice.innerText();
     expect(text).toContain("1 départ mis à jour");
-    expect(text).toContain("1 créé");
     expect(text).toContain("conservé (retouché à la main)");
+    if (WEEKEND) {
+      expect(text, "le week-end, la création est refusée et le rapport le nomme").toContain(
+        "Samedi ou dimanche",
+      );
+      expect(text).toContain("0 créé");
+    } else {
+      expect(text).toContain("1 créé");
+    }
 
     // Et c'est la base qui le dit, pas seulement l'écran.
     const vieux = await prisma.sequenceDeparture.findFirstOrThrow({
@@ -219,12 +241,25 @@ describe.skipIf(skip)("enregistrer remet la file à jour", () => {
     expect(retouche.subject).toBe("Mon objet à moi");
     expect(retouche.editedAt).not.toBeNull();
 
-    // L'inscrit dû sans départ en a un, avec le texte du jour.
-    const nouveau = await prisma.sequenceDeparture.findFirstOrThrow({
-      where: { enrollment: { contactId: `${P}c` } },
-      select: { body: true },
-    });
-    expect(nouveau.body).toContain(NEW_LINE);
+    // L'inscrit dû sans départ en a un, avec le texte du jour — et le week-end,
+    // il n'en a aucun **tout en restant dû** : reporté, jamais perdu.
+    if (WEEKEND) {
+      expect(
+        await prisma.sequenceDeparture.count({ where: { enrollment: { contactId: `${P}c` } } }),
+      ).toBe(0);
+      const due = await prisma.sequenceEnrollment.findFirstOrThrow({
+        where: { contactId: `${P}c`, sequenceId },
+        select: { status: true, lastStep: true },
+      });
+      expect(due.status).toBe("active");
+      expect(due.lastStep).toBe(0);
+    } else {
+      const nouveau = await prisma.sequenceDeparture.findFirstOrThrow({
+        where: { enrollment: { contactId: `${P}c` } },
+        select: { body: true },
+      });
+      expect(nouveau.body).toContain(NEW_LINE);
+    }
 
     // **Zéro appel au modèle**, prouvé par le compteur.
     expect(await prisma.apiUsage.count()).toBe(billedBefore);
@@ -288,17 +323,57 @@ describe.skipIf(skip)("enregistrer remet la file à jour", () => {
     await save.click();
     await page.waitForTimeout(4000);
 
-    const back = await prisma.sequenceDeparture.findFirstOrThrow({
-      where: { enrollment: { contactId: `${P}a` } },
-      select: { subject: true, body: true },
-    });
-    expect(back.subject).toBe("Nouvel objet du jalon 97");
-    expect(back.body).toContain(NEW_LINE);
+    /*
+      Le ramener est une **création**, donc refusée le samedi et le dimanche : ce
+      jour-là on exige l'autre moitié de la même règle — rien n'est recréé, et
+      l'inscription reste dûe, donc le lundi le ramènera.
+    */
+    if (WEEKEND) {
+      expect(
+        await prisma.sequenceDeparture.count({ where: { enrollment: { contactId: `${P}a` } } }),
+      ).toBe(0);
+      const still = await prisma.sequenceEnrollment.findFirstOrThrow({
+        where: { contactId: `${P}a`, sequenceId },
+        select: { status: true, lastStep: true },
+      });
+      expect(still.status).toBe("active");
+      expect(still.lastStep).toBe(0);
+    } else {
+      const back = await prisma.sequenceDeparture.findFirstOrThrow({
+        where: { enrollment: { contactId: `${P}a` } },
+        select: { subject: true, body: true },
+      });
+      expect(back.subject).toBe("Nouvel objet du jalon 97");
+      expect(back.body).toContain(NEW_LINE);
+    }
     expect(session.errors).toEqual([]);
   }, 120_000);
 
   it("« Retirer de la campagne » demande confirmation, et dit ce qu'elle fait", async () => {
     const { page } = session;
+    /*
+      Ce test porte sur la confirmation, pas sur la création : il lui faut
+      seulement une carte. Le week-end, la composition n'en a créé aucune pour
+      cette fiche (règle ci-dessus), on la **sème** donc — c'est une fixture, et
+      aucune assertion ne bouge.
+    */
+    const enrollment = await prisma.sequenceEnrollment.findFirstOrThrow({
+      where: { contactId: `${P}c`, sequenceId },
+      select: { id: true },
+    });
+    if ((await prisma.sequenceDeparture.count({ where: { enrollmentId: enrollment.id } })) === 0) {
+      await prisma.sequenceDeparture.create({
+        data: {
+          enrollmentId: enrollment.id,
+          step: 1,
+          round: 1,
+          status: "pending",
+          day: new Date().toISOString().slice(0, 10),
+          subject: "Nouvel objet du jalon 97",
+          body: `Bonjour Nouveau,\n\n${NEW_LINE}`,
+        },
+      });
+    }
     await page.goto(`${BASE_URL}/departs?campagne=${campaignId}`, { waitUntil: "networkidle" });
 
     const card = page.locator("article").filter({ hasText: "Nouveau" }).first();
