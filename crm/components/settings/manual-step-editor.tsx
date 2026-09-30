@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import {
   droppedSentences,
   MERGE_TAGS,
@@ -86,6 +86,8 @@ export function ManualStepEditor({
   tab = "default",
   scope = "le message par défaut",
   lockedSubject = null,
+  onWriteFirstSubject,
+  focusSubject = false,
 }: {
   readonly subject: string;
   readonly body: string;
@@ -102,6 +104,13 @@ export function ManualStepEditor({
    * elle-même, où l'objet se saisit.
    */
   readonly lockedSubject?: string | null;
+  /**
+   * Ce que « Écrire l'objet dans l'étape 1 » appelle. `undefined` = pas de
+   * lien : sur l'étape 1 il n'y a rien à ouvrir, on y est déjà.
+   */
+  readonly onWriteFirstSubject?: () => void;
+  /** Une relance vient de demander le focus sur ce champ Objet. */
+  readonly focusSubject?: boolean;
 }) {
   const area = useRef<HTMLTextAreaElement | null>(null);
   const line = useRef<HTMLInputElement | null>(null);
@@ -118,6 +127,21 @@ export function ManualStepEditor({
    * toujours le bouton. Le repli est le message, le champ le plus long.
    */
   const focused = useRef<"subject" | "body">("body");
+
+  /*
+    **Le focus demandé par une relance.** L'onglet a déjà basculé côté parent :
+    il ne reste qu'à poser le curseur dans le champ, et à l'amener à l'écran —
+    ouvrir l'étape 1 sans montrer le champ demanderait de le chercher, ce qui est
+    exactement ce que le lien évite.
+  */
+  useEffect(() => {
+    if (!focusSubject) return;
+    const field = line.current;
+    if (field === null) return;
+    field.scrollIntoView({ block: "center" });
+    field.focus();
+    focused.current = "subject";
+  }, [focusSubject]);
 
   /** Insère la balise au curseur du dernier champ focalisé. */
   const insert = (tag: string) => {
@@ -206,6 +230,22 @@ export function ManualStepEditor({
           <p className="rounded-control border border-line bg-surface-2 px-2.5 py-1.5 font-mono text-[12.5px] text-muted">
             {lockedSubject === "" ? "(l'étape 1 ne porte pas encore d'objet)" : lockedSubject}
           </p>
+          {/*
+            **Un manque doit porter son geste.** « L'étape 1 ne porte pas encore
+            d'objet » disait quoi faire sans dire où : le lien ouvre l'étape 1
+            **sur le même groupe**, curseur dans le champ Objet. Il n'apparaît
+            que lorsqu'il y a réellement quelque chose à écrire.
+          */}
+          {lockedSubject === "" && onWriteFirstSubject !== undefined && (
+            <button
+              type="button"
+              data-write-first-subject="1"
+              onClick={onWriteFirstSubject}
+              className="mt-1 text-[11.5px] font-semibold text-brand-d underline hover:text-brand"
+            >
+              Écrire l&apos;objet dans l&apos;étape 1
+            </button>
+          )}
           <p className="mt-1 text-[11.5px] text-muted">
             Une relance garde l&apos;objet du premier message : les messageries regroupent par
             objet, donc en changer ouvrirait une seconde conversation et le message auquel

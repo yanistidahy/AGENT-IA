@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { GROUP_LABELS, type ContactGroup } from "@/lib/domain/contact-group";
 import {
   editedVariant,
+  threadSubjectFor,
+  threadTemplate,
   type OtherRouting,
   type StepVariant,
 } from "@/lib/domain/step-variants";
@@ -26,7 +28,10 @@ export function StepMessage({
   samples,
   otherRouting = "default",
   position,
-  threadSubject,
+  threadSteps,
+  firstVariants,
+  focusSubject = null,
+  onWriteFirstSubject,
   onChange,
 }: {
   readonly subject: string;
@@ -37,8 +42,22 @@ export function StepMessage({
   readonly otherRouting?: OtherRouting;
   /** 1, 2 ou 3 — le pré-remplissage n'est proposé que sur la première étape. */
   readonly position: number;
-  /** L'objet de l'étape 1 : c'est lui qui partira, quelle que soit l'étape. */
-  readonly threadSubject: string;
+  /** Toutes les étapes — l'objet du fil se lit sur l'étape 1, groupe par groupe. */
+  readonly threadSteps: readonly {
+    readonly position: number;
+    readonly subject: string;
+    readonly body: string;
+  }[];
+  /** Les variantes de l'étape 1 : ce sont elles qui portent l'objet du fil. */
+  readonly firstVariants: readonly StepVariant[];
+  /**
+   * Une demande d'ouverture venue d'une relance : « écrire l'objet dans l'étape
+   * 1 », sur **le même groupe**. `key` change à chaque clic pour que deux
+   * demandes successives sur le même onglet se distinguent.
+   */
+  readonly focusSubject?: { readonly tab: VariantTab; readonly key: number } | null;
+  /** Ce que la relance appelle quand l'objet du fil manque pour son groupe. */
+  readonly onWriteFirstSubject?: (tab: VariantTab) => void;
   readonly onChange: (change: {
     subject?: string;
     body?: string;
@@ -48,7 +67,24 @@ export function StepMessage({
   const [tab, setTab] = useState<VariantTab>("default");
   const [sampleId, setSampleId] = useState("");
 
+  /*
+    **Une demande venue d'une relance ouvre le bon onglet, puis demande le
+    focus.** Deux clics successifs sur le même groupe doivent se distinguer, d'où
+    la clé : sans elle, le second ne rejouerait pas l'effet et le champ ne
+    reprendrait pas le focus — un lien qui ne fait rien la deuxième fois se lit
+    comme une panne.
+  */
+  const [seen, setSeen] = useState(0);
+  const asked = focusSubject !== null && focusSubject.key !== seen;
+  useEffect(() => {
+    if (focusSubject === null || focusSubject.key === seen) return;
+    setTab(focusSubject.tab);
+    setSeen(focusSubject.key);
+  }, [focusSubject, seen]);
+
   const current = tab === "default" ? { subject, body } : editedVariant(variants, tab);
+  /** Le gabarit tel qu'il partira : objet du fil compris, groupe par groupe. */
+  const thread = threadTemplate(threadSteps, position, variants, firstVariants);
 
   const patch = (change: { subject?: string; body?: string }) => {
     if (tab === "default") {
@@ -99,16 +135,44 @@ export function StepMessage({
           Le champ est remplacé par sa valeur en lecture seule et la raison —
           le masquer sans rien dire ferait chercher un champ disparu.
         */
-        lockedSubject={position === 1 ? null : threadSubject}
+        /*
+          **L'objet du fil de CE groupe** : la variante d'étape 1 du même
+          groupe, à défaut l'objet par défaut de l'étape 1. C'était le défaut —
+          l'écran ne lisait que le défaut, et annonçait « l'étape 1 ne porte pas
+          encore d'objet » au-dessus d'un groupe qui en avait un.
+        */
+        lockedSubject={
+          position === 1
+            ? null
+            : threadSubjectFor(
+                threadSteps,
+                position,
+                firstVariants,
+                tab === "default" ? null : tab,
+              )
+        }
+        /* Le lien de secours, quand le fil n'a pas d'objet pour ce groupe. */
+        onWriteFirstSubject={
+          position === 1 || onWriteFirstSubject === undefined
+            ? undefined
+            : () => onWriteFirstSubject(tab)
+        }
+        focusSubject={position === 1 && asked}
         scope={
           tab === "default"
             ? "le message par défaut de cette étape"
             : `la variante « ${GROUP_LABELS[tab]} »`
         }
       />
+      {/*
+        **L'aperçu montre le gabarit du fil**, pas celui de l'étape : sur une
+        relance, l'objet vient de l'étape 1 groupe par groupe, et c'est
+        `threadTemplate` — la fonction de la composition — qui l'applique. Un
+        aperçu calculé autrement montrerait un objet que l'envoi ne produit pas.
+      */}
       <GroupPreviews
-        step={{ subject, body }}
-        variants={variants}
+        step={thread.step}
+        variants={thread.variants}
         samples={samples}
         otherRouting={otherRouting}
       />

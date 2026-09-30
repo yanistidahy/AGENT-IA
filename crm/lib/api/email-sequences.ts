@@ -2,7 +2,6 @@ import "server-only";
 import { z } from "zod";
 import {
   STEP_MODES,
-  subjectForStep,
   subjectTagErrors,
   toStepMode,
   type StepMode,
@@ -13,7 +12,7 @@ import {
   isContactGroup,
   type ContactGroup,
 } from "../domain/contact-group";
-import { effectiveSubject, type StepVariant } from "../domain/step-variants";
+import { effectiveSubject, threadSubjectFor, type StepVariant } from "../domain/step-variants";
 import { REMOVED } from "../domain/campaign-members";
 import { prisma } from "../db";
 import { autoUnlock, BLOCK_LABELS, MAX_STEPS, type AutoUnlock } from "../domain/sequence-rules";
@@ -393,6 +392,13 @@ export async function saveSequence(
     position: index + 1,
     subject: step.subject,
   }));
+  /*
+    Les variantes de l'étape 1 : ce sont elles qui portent l'objet du fil, groupe
+    par groupe. Le jalon 101 ne lisait que `positions`, donc le seul objet par
+    défaut — d'où le refus d'un enregistrement dont l'objet vivait sur une
+    variante.
+  */
+  const firstVariants = input.steps[0]?.variants ?? [];
 
   for (const [index, step] of input.steps.entries()) {
     if (toStepMode(step.mode) !== "manual") continue;
@@ -418,9 +424,15 @@ export async function saveSequence(
       }
     }
 
-    const thread = subjectForStep(positions, index + 1);
+    /*
+      **L'objet du fil se juge groupe par groupe** (jalon 103) : une variante
+      Direction dont l'objet vit sur la variante d'étape 1 est parfaitement
+      valide, même quand le défaut de l'étape 1 est vide. Lire le seul défaut
+      refusait cet enregistrement — et c'était l'autre moitié du même défaut.
+    */
     for (const variant of step.variants) {
       if (variant.subject.trim() !== "" || variant.body.trim() !== "") {
+        const thread = threadSubjectFor(positions, index + 1, firstVariants, variant.group);
         if (effectiveSubject({ ...step, subject: thread }, variant) === null) {
           return {
             ok: false,
@@ -432,6 +444,13 @@ export async function saveSequence(
         }
       }
     }
+    /*
+      Le défaut de l'étape reste exigé dès qu'un message par défaut est écrit :
+      c'est lui que reçoivent les groupes sans variante et les fiches jamais
+      classées, et un `Subject:` vide ne se lit pas. Une campagne qui n'écrit que
+      des variantes laisse ce corps vide, et la garde ne la gêne pas.
+    */
+    const thread = threadSubjectFor(positions, index + 1, firstVariants, null);
     if (step.body.trim() !== "" && thread.trim() === "") {
       return {
         ok: false,

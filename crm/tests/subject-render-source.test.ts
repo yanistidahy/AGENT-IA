@@ -146,3 +146,100 @@ describe("l'objet se rend au même endroit pour tout le monde", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+/* --------------------------------- l'objet du fil se décide en un endroit ----- */
+
+/**
+ * **Un objet de relance ne se calcule que par `threadSubjectFor`.**
+ *
+ * Le défaut du jalon 101 était exactement là : `subjectForStep` ne lisait que
+ * l'objet **par défaut** de l'étape 1, et `threadTemplate` neutralisait les
+ * objets de variante. Un groupe dont l'objet vit sur sa variante d'étape 1 se
+ * retrouvait donc avec un objet vide — l'éditeur annonçait « l'étape 1 ne porte
+ * pas encore d'objet », et le départ était refusé à l'envoi par le contrôle de
+ * vide du jalon 96.
+ *
+ * Rien n'échouait : deux `string`, aucune exception, aucun type violé. D'où une
+ * garde statique, et elle porte sur **tous** les chemins — l'éditeur, l'aperçu,
+ * la composition, la resynchronisation à l'enregistrement, la réécriture d'un
+ * départ, la carte de la file et la validation à l'enregistrement.
+ */
+describe("l'objet du fil, groupe par groupe", () => {
+  /** Les six chemins qui ont un objet de relance à décider. */
+  const PATHS = [
+    "lib/api/departures.ts",
+    "lib/api/manual-resync.ts",
+    "lib/api/email-sequences.ts",
+    "components/settings/step-message.tsx",
+  ];
+
+  it("une seule fonction décide de l'objet du fil", () => {
+    const domain = code("lib/domain/step-variants.ts");
+    expect(domain, "threadSubjectFor est la règle").toContain("export function threadSubjectFor(");
+    // `subjectForStep` reste la notion « objet par défaut de l'étape 1 », et
+    // n'est lue que par le décideur : ailleurs, elle ignorerait les variantes.
+    for (const path of PATHS) {
+      expect(code(path), `${path} calcule un objet de fil sans le décideur`).not.toContain(
+        "subjectForStep(",
+      );
+    }
+  });
+
+  it("chaque chemin passe par threadSubjectFor ou threadTemplate", () => {
+    for (const path of PATHS) {
+      const source = code(path);
+      expect(
+        source.includes("threadSubjectFor(") || source.includes("threadTemplate("),
+        `${path} n'applique pas l'objet du fil`,
+      ).toBe(true);
+    }
+  });
+
+  it("threadTemplate reçoit les variantes de l'étape 1 partout où il est appelé", () => {
+    /*
+      Sans ce quatrième argument, `threadTemplate` retombe sur une liste vide :
+      c'est le défaut d'origine, et il est silencieux. La garde exige donc que
+      chaque chemin lise les variantes de l'étape 1.
+    */
+    for (const path of ["lib/api/departures.ts", "lib/api/manual-resync.ts"]) {
+      expect(code(path), `${path} ne lit pas les variantes de l'étape 1`).toContain(
+        "firstVariantsOf(",
+      );
+    }
+    expect(code("components/settings/step-message.tsx")).toContain("firstVariants");
+  });
+
+  it("l'éditeur d'une relance lit l'objet du fil du groupe édité, et rien d'autre", () => {
+    const source = code("components/settings/step-message.tsx");
+    expect(source).toContain("threadSubjectFor(");
+    // L'onglet édité choisit le groupe : un objet de fil calculé sans lui
+    // afficherait celui d'un autre groupe.
+    expect(source).toMatch(/tab === "default" \? null : tab/);
+  });
+
+  it("le manque porte son geste : « Écrire l'objet dans l'étape 1 »", () => {
+    /*
+      Un manque nommé sans son geste fait chercher où agir. Le lien ouvre
+      l'étape 1 **sur le même groupe**, curseur dans le champ Objet — et il
+      n'existe que lorsqu'il y a réellement quelque chose à écrire.
+    */
+    const editor = code("components/settings/manual-step-editor.tsx");
+    expect(editor).toContain("Écrire l&apos;objet dans l&apos;étape 1");
+    expect(editor).toContain("data-write-first-subject");
+    expect(editor, "le lien ne s'affiche que sur un objet de fil vide").toMatch(
+      /lockedSubject === "" && onWriteFirstSubject !== undefined/,
+    );
+    const steps = code("components/settings/sequence-steps.tsx");
+    expect(steps, "l'étape 1 est dépliée avant d'y demander le focus").toContain(
+      "current.includes(0) ? current : [0, ...current]",
+    );
+  });
+
+  it("l'aperçu par groupe montre le gabarit du fil, pas celui de l'étape", () => {
+    const source = code("components/settings/step-message.tsx");
+    expect(source).toContain("threadTemplate(");
+    expect(source, "l'aperçu lirait le gabarit de l'étape").toMatch(
+      /step=\{thread\.step\}[\s\S]{0,80}variants=\{thread\.variants\}/,
+    );
+  });
+});

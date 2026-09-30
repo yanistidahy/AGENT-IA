@@ -38,9 +38,11 @@ import {
   type DroppedSentence,
 } from "../domain/merge-tags";
 import {
+  firstVariantsOf,
   routedGroup,
   templateFor,
   toOtherRouting,
+  threadSubjectFor,
   threadTemplate,
 } from "../domain/step-variants";
 import { isContactGroup, type ContactGroup } from "../domain/contact-group";
@@ -115,6 +117,11 @@ function threadShapeOf(
     readonly brief: string;
     readonly subject: string;
     readonly body: string;
+    readonly variants?: readonly {
+      readonly group: string;
+      readonly subject: string;
+      readonly body: string;
+    }[];
   }[],
   position: number,
   variants: readonly { readonly group: string; readonly subject: string; readonly body: string }[],
@@ -127,6 +134,9 @@ function threadShapeOf(
     variants.filter((variant): variant is typeof variant & { group: ContactGroup } =>
       isContactGroup(variant.group),
     ),
+    // L'objet du fil se décide groupe par groupe sur l'étape 1 : l'empreinte
+    // doit donc bouger quand une variante d'étape 1 change d'objet.
+    firstVariantsOf(steps),
   );
   return templateShapeOf({ ...step, subject: thread.step.subject }, thread.variants);
 }
@@ -333,7 +343,9 @@ export async function composeDepartures(
     include: {
       sequence: {
         include: {
-          steps: { orderBy: { position: "asc" } },
+          // `variants` voyage avec l'étape : c'est l'étape 1 qui porte
+          // l'objet du fil, groupe par groupe (jalon 103).
+          steps: { orderBy: { position: "asc" }, include: { variants: true } },
           // La boîte de la campagne : chaque message de la séquence part de la
           // même adresse, avec la même signature (jalon 54).
           campaign: { select: { mailboxId: true, otherRouting: true } },
@@ -485,6 +497,7 @@ export async function composeDepartures(
         enrollment.sequence.steps,
         verdict.step,
         variants,
+        firstVariantsOf(enrollment.sequence.steps),
       );
       written = await renderManualStep(
         enrollment.contactId,
@@ -643,7 +656,9 @@ export async function countComposable(
       sequence: { active: true }, ...(scope.sequenceId === undefined ? {} : { sequenceId: scope.sequenceId }),
     },
     include: {
-      sequence: { include: { steps: { orderBy: { position: "asc" } } } },
+      sequence: {
+        include: { steps: { orderBy: { position: "asc" }, include: { variants: true } } },
+      },
       contact: {
         select: {
           id: true,
@@ -1089,7 +1104,22 @@ export async function listDepartures(
       stale || template === undefined || toStepMode(template.mode) !== "manual"
         ? []
         : subjectFallbacks(
-            threadTemplate(row.enrollment.sequence.steps, row.step, []).step.subject,
+            /*
+              **L'objet du fil de CE contact**, donc de son groupe : la variante
+              d'étape 1 du même groupe, à défaut le défaut de l'étape 1. Lire le
+              seul défaut annonçait les replis d'un objet que ce destinataire ne
+              reçoit pas.
+            */
+            threadSubjectFor(
+              row.enrollment.sequence.steps,
+              row.step,
+              firstVariantsOf(row.enrollment.sequence.steps),
+              routedGroup(
+                row.enrollment.contact.contactGroup,
+                row.enrollment.contact.groupSetBy,
+                toOtherRouting(row.enrollment.sequence.campaign?.otherRouting ?? "default"),
+              ),
+            ),
             mergeValuesOf(row.enrollment.contact, globals),
           );
 
@@ -1551,6 +1581,7 @@ export async function rewriteDeparture(
       departure.enrollment.sequence.steps,
       departure.step,
       variants,
+      firstVariantsOf(departure.enrollment.sequence.steps),
     );
     written = await renderManualStep(
       departure.enrollment.contactId,

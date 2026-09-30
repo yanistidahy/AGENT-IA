@@ -5,10 +5,13 @@ import {
   describeGroupFilter,
   editedVariant,
   filterKeeps,
+  firstVariantsOf,
   isWrittenVariant,
   parseGroupFilter,
   serializeGroupFilter,
   templateFor,
+  threadSubjectFor,
+  threadTemplate,
   unclassifiedWarning,
   type StepVariant,
 } from "../step-variants";
@@ -153,5 +156,150 @@ describe("les variantes pré-remplies suivent les règles du discours", () => {
   it("les trois angles sont réellement différents", () => {
     const bodies = written.map((seed) => seed.body);
     expect(new Set(bodies).size).toBe(bodies.length);
+  });
+});
+
+/* ------------------------------------------- l'objet du fil, par groupe ----- */
+
+describe("threadSubjectFor — l'objet du fil se décide groupe par groupe", () => {
+  const STEPS = [
+    { position: 1, subject: "", body: "défaut 1" },
+    { position: 2, subject: "", body: "défaut 2" },
+  ];
+  const FIRST: StepVariant[] = [
+    { group: "direction", subject: "Démo pour {societe}", body: "version Direction" },
+    // Une variante d'étape 1 **sans objet** : elle n'apporte rien au fil.
+    { group: "marketing", subject: "", body: "version Marketing" },
+  ];
+
+  it("prend la variante d'étape 1 du MÊME groupe", () => {
+    expect(threadSubjectFor(STEPS, 2, FIRST, "direction")).toBe("Démo pour {societe}");
+  });
+
+  it("retombe sur l'objet par défaut de l'étape 1 sans variante pour ce groupe", () => {
+    const withDefault = [
+      { position: 1, subject: "Objet par défaut", body: "b" },
+      { position: 2, subject: "Un objet à elle", body: "b2" },
+    ];
+    expect(threadSubjectFor(withDefault, 2, FIRST, "commercial")).toBe("Objet par défaut");
+    // Une variante d'étape 1 sans objet ne compte pas : c'est un repli, pas un choix.
+    expect(threadSubjectFor(withDefault, 2, FIRST, "marketing")).toBe("Objet par défaut");
+  });
+
+  it("hors groupe, c'est l'objet par défaut de l'étape 1", () => {
+    const withDefault = [
+      { position: 1, subject: "Objet par défaut", body: "b" },
+      { position: 2, subject: "Un objet à elle", body: "b2" },
+    ];
+    expect(threadSubjectFor(withDefault, 2, FIRST, null)).toBe("Objet par défaut");
+  });
+
+  /*
+    Sur l'étape 1, le fil **est** l'objet de ce groupe : c'est lui qui part, et
+    c'est lui que les relances hériteront. La cohérence des deux lectures est ce
+    qui fait qu'aucune étape ne peut ouvrir une seconde conversation.
+  */
+  it("sur l'étape 1, le fil d'un groupe est l'objet de sa variante", () => {
+    const withDefault = [{ position: 1, subject: "Objet par défaut", body: "b" }];
+    expect(threadSubjectFor(withDefault, 1, FIRST, "direction")).toBe("Démo pour {societe}");
+    expect(threadSubjectFor(withDefault, 1, FIRST, "commercial")).toBe("Objet par défaut");
+  });
+
+  /*
+    Le défaut reproduit : sans les variantes de l'étape 1, la relance d'un groupe
+    dont l'objet vit sur la variante n'avait **aucun** objet — donc un départ
+    refusé à l'envoi par le contrôle de vide du jalon 96.
+  */
+  it("le défaut du jalon 101 : sans les variantes de l'étape 1, l'objet est vide", () => {
+    expect(threadSubjectFor(STEPS, 2, [], "direction")).toBe("");
+    expect(threadSubjectFor(STEPS, 2, FIRST, "direction")).not.toBe("");
+  });
+});
+
+describe("threadTemplate — la relance porte l'objet du fil de chaque groupe", () => {
+  const STEPS = [
+    { position: 1, subject: "", body: "défaut 1" },
+    { position: 2, subject: "", body: "défaut 2" },
+  ];
+  const FIRST: StepVariant[] = [
+    { group: "direction", subject: "Démo pour {societe}", body: "version Direction" },
+  ];
+
+  it("l'objet du groupe atteint le texte composé", () => {
+    const thread = threadTemplate(
+      STEPS,
+      2,
+      [{ group: "direction", subject: "", body: "relance Direction" }],
+      FIRST,
+    );
+    const chosen = templateFor(thread.step, thread.variants, "direction");
+    expect(chosen.subject).toBe("Démo pour {societe}");
+    expect(chosen.body).toBe("relance Direction");
+  });
+
+  it("un groupe qui porte l'objet du fil sans variante de relance en reçoit une", () => {
+    const thread = threadTemplate(STEPS, 2, [], FIRST);
+    const chosen = templateFor(thread.step, thread.variants, "direction");
+    expect(chosen.subject, "le fil tient pour ce groupe").toBe("Démo pour {societe}");
+    // Le corps, lui, retombe sur le défaut de l'étape : rien n'est inventé.
+    expect(chosen.body).toBe("défaut 2");
+  });
+
+  it("un objet de variante de relance ne peut pas rouvrir un second fil", () => {
+    const thread = threadTemplate(
+      STEPS,
+      2,
+      [{ group: "direction", subject: "Un objet à elle", body: "relance" }],
+      FIRST,
+    );
+    expect(templateFor(thread.step, thread.variants, "direction").subject).toBe(
+      "Démo pour {societe}",
+    );
+  });
+
+  it("un repli sur le défaut reste un repli, pour que l'aperçu le dise", () => {
+    const withDefault = [
+      { position: 1, subject: "Objet par défaut", body: "b" },
+      { position: 2, subject: "", body: "b2" },
+    ];
+    const thread = threadTemplate(
+      withDefault,
+      2,
+      [{ group: "commercial", subject: "", body: "relance Commercial" }],
+      FIRST,
+    );
+    const chosen = templateFor(thread.step, thread.variants, "commercial");
+    expect(chosen.subject).toBe("Objet par défaut");
+    expect(chosen.subjectFromStep, "l'objet vient du défaut, et l'écran le dit").toBe(true);
+  });
+
+  it("l'étape 1 n'est pas touchée : ses variantes gardent leur objet", () => {
+    const thread = threadTemplate(STEPS, 1, FIRST, FIRST);
+    expect(templateFor(thread.step, thread.variants, "direction").subject).toBe(
+      "Démo pour {societe}",
+    );
+  });
+});
+
+describe("firstVariantsOf", () => {
+  it("lit les variantes de la plus petite position, et écarte un groupe inconnu", () => {
+    const steps = [
+      { position: 2, variants: [{ group: "direction", subject: "s2", body: "b2" }] },
+      {
+        position: 1,
+        variants: [
+          { group: "direction", subject: "s1", body: "b1" },
+          { group: "inconnu", subject: "x", body: "y" },
+        ],
+      },
+    ];
+    expect(firstVariantsOf(steps)).toEqual([
+      { group: "direction", subject: "s1", body: "b1" },
+    ]);
+  });
+
+  it("rend une liste vide quand rien n'est chargé", () => {
+    expect(firstVariantsOf([{ position: 1 }])).toEqual([]);
+    expect(firstVariantsOf([])).toEqual([]);
   });
 });

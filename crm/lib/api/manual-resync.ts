@@ -3,7 +3,7 @@ import { prisma } from "../db";
 import { composeDepartures } from "./departures";
 import { renderManualStep } from "./manual-step";
 import { readStepVariants } from "./step-variants";
-import { threadTemplate } from "../domain/step-variants";
+import { firstVariantsOf, threadTemplate } from "../domain/step-variants";
 import { templateFingerprint, type ResyncReport } from "../domain/departure-content";
 import { toStepMode } from "../domain/merge-tags";
 
@@ -81,7 +81,18 @@ async function rewriteManualDepartures(sequenceId: string): Promise<{
     where: { id: sequenceId },
     select: {
       active: true,
-      steps: { select: { id: true, position: true, mode: true, subject: true, body: true } },
+      steps: {
+        select: {
+          id: true,
+          position: true,
+          mode: true,
+          subject: true,
+          body: true,
+          // L'objet du fil se décide groupe par groupe sur l'étape 1 : ses
+          // variantes voyagent donc avec les étapes (jalon 103).
+          variants: { select: { group: true, subject: true, body: true } },
+        },
+      },
       campaign: { select: { mailboxId: true, otherRouting: true } },
     },
   });
@@ -106,7 +117,12 @@ async function rewriteManualDepartures(sequenceId: string): Promise<{
       départs d'étape 2, qui partiraient avec l'ancien objet, hors du fil, sans
       que rien ne le dise.
     */
-    const thread = threadTemplate(sequence.steps, step.position, variants);
+    const thread = threadTemplate(
+      sequence.steps,
+      step.position,
+      variants,
+      firstVariantsOf(sequence.steps),
+    );
     const fingerprint = templateFingerprint({
       mode: "manual",
       subject: thread.step.subject,
