@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   MERGE_TAGS,
   renderSubject,
+  subjectFallbacks,
+  subjectForStep,
+  subjectTagErrors,
   renderTemplate,
   toStepMode,
   unknownTags,
@@ -137,17 +140,127 @@ describe("unresolvedTags et {video}", () => {
 });
 
 describe("renderSubject", () => {
-  it("retire la balise sans vider la ligne", () => {
+  it("substitue ce qu'il connaît", () => {
     expect(renderSubject("Une démonstration pour {societe}", full)).toBe(
       "Une démonstration pour Dermoplant",
-    );
-    expect(renderSubject("Une démonstration pour {societe}", { ...full, societe: "" })).toBe(
-      "Une démonstration pour",
     );
   });
 
   it("reste sur une seule ligne", () => {
     expect(renderSubject("Bonjour\n{prenom}", full)).toBe("Bonjour Roxana");
+  });
+
+  /*
+    **Un objet est une ligne, pas un paragraphe.** Retirer « la phrase » le
+    viderait, et retirer la seule balise laisse « Une démonstration pour » —
+    une fusion ratée, lisible comme telle par le destinataire. D'où des replis
+    neutres, qui n'affirment rien : c'est la deuxième personne.
+  */
+  it("remplace une société absente par « votre marque », jamais par du vide", () => {
+    expect(renderSubject("Une démonstration préparée pour {societe}", { ...full, societe: "" })).toBe(
+      "Une démonstration préparée pour votre marque",
+    );
+    // L'alias suit, sans seconde branche à tenir.
+    expect(renderSubject("Une démonstration préparée pour {marque}", { ...full, societe: "" })).toBe(
+      "Une démonstration préparée pour votre marque",
+    );
+  });
+
+  it("remplace un site absent par « votre site »", () => {
+    expect(renderSubject("Une idée pour {site}", { ...full, site: "" })).toBe(
+      "Une idée pour votre site",
+    );
+  });
+
+  it("un prénom absent ne laisse pas de virgule en tête, et la majuscule revient", () => {
+    expect(
+      renderSubject("{prenom}, une question sur {site}", { ...full, prenom: "", site: "" }),
+    ).toBe("Une question sur votre site");
+    // Avec prénom, rien n'est touché : la casse de l'auteur est la sienne.
+    expect(renderSubject("{prenom}, une question sur {site}", full)).toBe(
+      "Roxana, une question sur dermoplant.fr",
+    );
+  });
+
+  it("un nom ou une fonction absents ne laissent ni espace double ni ponctuation orpheline", () => {
+    expect(
+      renderSubject("Pour {prenom} {nom}, {fonction} chez {societe}", {
+        ...full,
+        nom: "",
+        fonction: "",
+      }),
+    ).toBe("Pour Roxana, chez Dermoplant");
+    // « Bonjour , » est le défaut nommé au jalon 50 : il ne doit jamais sortir.
+    expect(renderSubject("Bonjour {prenom}, un mot", { ...full, prenom: "" })).not.toContain(" ,");
+    expect(renderSubject("Bonjour {prenom}, un mot", { ...full, prenom: "" })).toBe(
+      "Bonjour, un mot",
+    );
+  });
+
+  it("{notresite} rend le libellé, pas l'adresse entière", () => {
+    // Une URL dans un objet ne se clique pas, et occupe la place du sujet.
+    expect(renderSubject("Un mot depuis {notresite}", full)).toBe(
+      "Un mot depuis auraflowai.fr",
+    );
+  });
+
+  it("{video} est refusée dans un objet, avec sa raison", () => {
+    const errors = subjectTagErrors("Regardez {video} aujourd'hui");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.tag).toBe("{video}");
+    expect(errors[0]?.reason).toContain("lien cliquable");
+    expect(subjectTagErrors("Une démonstration pour {societe}")).toEqual([]);
+  });
+
+  it("les replis employés sont nommés, jamais silencieux", () => {
+    expect(subjectFallbacks("Pour {societe} sur {site}", { ...full, societe: "" })).toEqual([
+      "société absente, remplacée par « votre marque »",
+    ]);
+    expect(
+      subjectFallbacks("Pour {societe} sur {site}", { ...full, societe: "", site: "" }),
+    ).toHaveLength(2);
+    // Rien à dire quand tout est renseigné : une alerte qui sonne toujours
+    // n'est plus lue.
+    expect(subjectFallbacks("Pour {societe}", full)).toEqual([]);
+  });
+});
+
+describe("l'objet d'une relance est celui de l'étape 1", () => {
+  const steps = [
+    { position: 1, subject: "Une démonstration préparée pour {societe}" },
+    { position: 2, subject: "Un rappel" },
+    { position: 3, subject: "" },
+  ];
+
+  it("les étapes 2 et 3 reprennent l'objet de l'étape 1", () => {
+    expect(subjectForStep(steps, 2)).toBe("Une démonstration préparée pour {societe}");
+    expect(subjectForStep(steps, 3)).toBe("Une démonstration préparée pour {societe}");
+  });
+
+  it("l'étape 1 garde le sien", () => {
+    expect(subjectForStep(steps, 1)).toBe("Une démonstration préparée pour {societe}");
+  });
+
+  it("une séquence à une seule étape est inchangée", () => {
+    expect(subjectForStep([{ position: 1, subject: "Seul" }], 1)).toBe("Seul");
+  });
+
+  /*
+    Les positions ne sont pas garanties ordonnées à la lecture : c'est la plus
+    petite qui fait foi, pas la première du tableau.
+  */
+  it("la plus petite position fait foi, quel que soit l'ordre reçu", () => {
+    const shuffled = [
+      { position: 3, subject: "Trois" },
+      { position: 1, subject: "Un" },
+      { position: 2, subject: "Deux" },
+    ];
+    expect(subjectForStep(shuffled, 2)).toBe("Un");
+    expect(subjectForStep(shuffled, 3)).toBe("Un");
+  });
+
+  it("aucun « Re: » n'est ajouté : ce n'est pas une réponse", () => {
+    expect(subjectForStep(steps, 2)).not.toContain("Re:");
   });
 });
 

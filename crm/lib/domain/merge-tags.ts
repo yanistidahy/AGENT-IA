@@ -1,3 +1,5 @@
+import { ourSiteLabel } from "./our-site";
+
 /**
  * **Une étape écrite à la main, avec des balises remplacées par contact.**
  *
@@ -377,24 +379,165 @@ export function renderTemplate(input: string, values: MergeValues): string {
 }
 
 /**
- * L'objet, rendu.
+ * ## L'objet, et pourquoi il ne se rend pas comme un corps
  *
- * Même substitution, **sans découpage en phrases** : un objet est une ligne, et
- * en retirer « la phrase » le viderait entièrement. Une balise sans valeur y
- * est donc simplement retirée, et le nettoyage recolle la ponctuation.
+ * Un corps est fait de phrases : une balise sans valeur y fait **retirer la
+ * phrase** qui la porte, parce qu'une phrase construite autour d'un nom qu'on
+ * n'a pas ne survit pas à son retrait (jalon 87).
+ *
+ * **Un objet est une ligne.** Y retirer « la phrase » le viderait entièrement,
+ * et un message sans objet n'arrive pas. Retirer la seule balise ne vaut pas
+ * mieux : « Une démonstration préparée pour » se lit comme une fusion ratée,
+ * et « , une question sur » commence par une virgule orpheline.
+ *
+ * D'où des **replis neutres**, et c'est le seul endroit du produit où l'on
+ * remplace une valeur manquante par un mot choisi à l'avance :
+ *
+ * | Balise | Sans valeur, dans un objet |
+ * |---|---|
+ * | `{societe}` / `{marque}` | « votre marque » |
+ * | `{site}` | « votre site » |
+ * | `{prenom}`, `{nom}`, `{fonction}` | retirées, et la ponctuation recollée |
+ * | `{notresite}` | retirée — sans adresse réglée il n'y a rien à nommer |
+ * | `{video}` | **refusée à l'écriture** : un lien ne se clique pas dans un objet |
+ *
+ * Ce n'est pas la contradiction du « aucun repli inventé » des jalons 25 et 48.
+ * Ceux-là interdisent d'**affirmer un fait** qu'on ne connaît pas — un domaine,
+ * un DM, un angle de métier. « votre marque » n'affirme rien : c'est la
+ * deuxième personne, exactement ce qu'on écrirait à la main en ne connaissant
+ * pas le nom de la maison. Le corps garde donc sa règle, et l'objet la sienne.
+ */
+
+/** Ce qu'un objet met à la place d'une valeur manquante, et rien d'autre. */
+const SUBJECT_FALLBACKS: readonly { readonly tag: string; readonly text: string }[] = [
+  { tag: "{societe}", text: "votre marque" },
+  { tag: "{site}", text: "votre site" },
+];
+
+/** La balise qu'un objet ne peut pas porter, et la raison, dite une seule fois. */
+export const SUBJECT_FORBIDDEN: readonly { readonly tag: string; readonly reason: string }[] = [
+  {
+    tag: "{video}",
+    reason:
+      "un objet ne porte pas de lien cliquable : la vidéo s'annonce dans le message, pas dans l'objet",
+  },
+];
+
+/**
+ * Les balises que cet objet ne peut pas porter, avec leur raison.
+ *
+ * Rendu par le domaine et non composé par l'écran : l'éditeur et la route
+ * d'enregistrement disent ainsi exactement la même phrase.
+ */
+export function subjectTagErrors(
+  template: string,
+): readonly { readonly tag: string; readonly reason: string }[] {
+  const text = canonicalTags(template);
+  return SUBJECT_FORBIDDEN.filter((entry) => text.includes(entry.tag));
+}
+
+/**
+ * Les replis que **ce** contact déclenchera dans cet objet, dits en clair.
+ *
+ * C'est la moitié utile de la fonction : un repli silencieux ferait partir
+ * « votre marque » à quelqu'un dont on connaît pourtant la société, sans que
+ * personne s'aperçoive que la fiche est incomplète.
+ */
+export function subjectFallbacks(
+  template: string,
+  values: MergeValues,
+): readonly string[] {
+  const text = canonicalTags(template);
+  return SUBJECT_FALLBACKS.filter(
+    (entry) => text.includes(entry.tag) && valueFor(entry.tag, values).trim() === "",
+  ).map((entry) =>
+    entry.tag === "{societe}"
+      ? `société absente, remplacée par « ${entry.text} »`
+      : `site absent, remplacé par « ${entry.text} »`,
+  );
+}
+
+/**
+ * Recolle la ponctuation d'un objet dont une balise a disparu.
+ *
+ * Trois cas, dans cet ordre : la ponctuation **en tête** (« , une question »),
+ * celle restée **collée à une autre** (« Bonjour , Dermoplant »), et les
+ * espaces doubles. `tidy` ne sait pas faire les deux premiers : dans un corps,
+ * une virgule en tête de ligne vient d'une phrase qu'on a le droit de retirer
+ * entièrement, ici elle vient d'un mot manquant au milieu d'une ligne qu'il
+ * faut sauver.
+ */
+function tidySubject(line: string): string {
+  const head = line.replace(/^[\s,;:.!?…-]+/, "");
+  const cleaned = head
+    .replace(/([,;:])\s*(?=[,;:])/g, "")
+    .replace(/\s+([,.])/g, "$1")
+    .replace(/\(\s*\)/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  /*
+    **La majuscule n'est remise que si l'on a coupé la tête.** « {prenom}, une
+    question sur {site} » sans prénom commencerait par une minuscule, ce qui se
+    lit comme une phrase tronquée. Quand rien n'a été retiré, on ne touche pas à
+    la casse : l'auteur a écrit son objet comme il l'entend, et le corriger
+    serait décider à sa place.
+  */
+  if (head === line.trimStart() || cleaned === "") return cleaned;
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+/**
+ * L'objet, rendu pour un contact.
+ *
+ * **Le seul chemin par lequel un objet devient du texte**, et une garde
+ * statique le vérifie : un second rendu ferait partir un `Subject:` que
+ * l'aperçu n'a jamais montré.
+ *
+ * `{notresite}` y rend le **libellé** (« auraflowai.fr »), pas l'adresse : une
+ * URL entière dans un objet ne se clique pas et occupe la place du sujet.
  */
 export function renderSubject(template: string, values: MergeValues): string {
-  return tidy(
-    canonicalTags(template)
-      .replaceAll("{prenom}", values.prenom.trim())
-      .replaceAll("{nom}", values.nom.trim())
-      .replaceAll("{fonction}", values.fonction.trim())
-      .replaceAll("{societe}", values.societe.trim())
-      .replaceAll("{site}", values.site.trim())
-      .replaceAll("{video}", values.video.trim())
-      .replaceAll("{notresite}", values.notresite.trim()),
-  )
-    .split("\n")
-    .join(" ")
-    .trim();
+  let text = canonicalTags(template);
+
+  for (const entry of SUBJECT_FALLBACKS) {
+    if (valueFor(entry.tag, values).trim() === "") {
+      text = text.replaceAll(entry.tag, entry.text);
+    }
+  }
+
+  const site = values.notresite.trim();
+  text = text
+    .replaceAll("{prenom}", values.prenom.trim())
+    .replaceAll("{nom}", values.nom.trim())
+    .replaceAll("{fonction}", values.fonction.trim())
+    .replaceAll("{societe}", values.societe.trim())
+    .replaceAll("{site}", values.site.trim())
+    .replaceAll("{video}", values.video.trim())
+    .replaceAll("{notresite}", site === "" ? "" : ourSiteLabel(site));
+
+  return tidySubject(text.split("\n").join(" "));
+}
+
+/**
+ * L'objet d'une étape : celui de l'étape 1, pour toutes les étapes.
+ *
+ * **Une relance qui change d'objet ouvre un nouveau fil.** Les messageries
+ * regroupent par objet et par participants : le prospect verrait alors deux
+ * conversations parallèles, et perdrait le message auquel la relance répond.
+ * C'était déjà la règle du discours d'Alex (jalon 84) ; les étapes écrites à la
+ * main portaient chacune son champ, et rien ne les empêchait de diverger.
+ *
+ * Pas de « Re: » non plus : un « Re: » sur un message qui n'est pas une réponse
+ * est un faux signal de conversation, et les clients rattachent très bien sans.
+ */
+export function subjectForStep(
+  steps: readonly { readonly position: number; readonly subject: string }[],
+  position: number,
+): string {
+  const first = [...steps].sort((a, b) => a.position - b.position)[0];
+  const own = steps.find((entry) => entry.position === position);
+  // Une seule étape, ou l'étape 1 elle-même : son propre objet.
+  if (first === undefined || first.position === position) return own?.subject ?? "";
+  return first.subject;
 }

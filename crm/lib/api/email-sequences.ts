@@ -1,6 +1,12 @@
 import "server-only";
 import { z } from "zod";
-import { STEP_MODES, toStepMode, type StepMode } from "../domain/merge-tags";
+import {
+  STEP_MODES,
+  subjectForStep,
+  subjectTagErrors,
+  toStepMode,
+  type StepMode,
+} from "../domain/merge-tags";
 import {
   CONTACT_GROUPS,
   GROUP_LABELS,
@@ -378,25 +384,58 @@ export async function saveSequence(
     les filtres le laissent passer. Le refus nomme l'étape et le geste plutôt
     que de laisser l'écran deviner.
   */
+  /*
+    **L'objet se juge sur celui du fil, pas sur celui de l'étape.** Depuis le
+    jalon 101, une relance reprend l'objet de l'étape 1 : exiger qu'elle en
+    porte un à elle refuserait un enregistrement parfaitement correct.
+  */
+  const positions = input.steps.map((step, index) => ({
+    position: index + 1,
+    subject: step.subject,
+  }));
+
   for (const [index, step] of input.steps.entries()) {
     if (toStepMode(step.mode) !== "manual") continue;
+
+    /*
+      **{video} est refusée dans un objet, avec sa raison.** Un objet ne porte
+      pas de lien cliquable : remplacer la balise par son libellé ferait partir
+      un appel à l'action qui n'en est pas un. La phrase vient du domaine, donc
+      l'éditeur et cette route disent exactement la même chose.
+    */
+    for (const error of subjectTagErrors(step.subject)) {
+      return {
+        ok: false,
+        message: `Étape ${index + 1}, objet : ${error.tag} n'y est pas acceptée, ${error.reason}. Retirez-la de l'objet, elle reste utilisable dans le message.`,
+      };
+    }
+    for (const variant of step.variants) {
+      for (const error of subjectTagErrors(variant.subject)) {
+        return {
+          ok: false,
+          message: `Étape ${index + 1}, variante « ${GROUP_LABELS[variant.group]} », objet : ${error.tag} n'y est pas acceptée, ${error.reason}.`,
+        };
+      }
+    }
+
+    const thread = subjectForStep(positions, index + 1);
     for (const variant of step.variants) {
       if (variant.subject.trim() !== "" || variant.body.trim() !== "") {
-        if (effectiveSubject(step, variant) === null) {
+        if (effectiveSubject({ ...step, subject: thread }, variant) === null) {
           return {
             ok: false,
             message:
               `Étape ${index + 1}, variante « ${GROUP_LABELS[variant.group]} » : aucun objet. ` +
-              "Écrivez-en un sur la variante, ou sur le message par défaut de l'étape — " +
+              "Écrivez-en un sur la variante, ou sur le message par défaut de l'étape 1 — " +
               "un message sans objet n'arrive pas.",
           };
         }
       }
     }
-    if (step.body.trim() !== "" && effectiveSubject(step, undefined) === null) {
+    if (step.body.trim() !== "" && thread.trim() === "") {
       return {
         ok: false,
-        message: `Étape ${index + 1} : le message par défaut n'a pas d'objet. Un message sans objet n'arrive pas.`,
+        message: `Étape ${index + 1} : aucun objet. L'objet du fil est celui de l'étape 1 — écrivez-le là. Un message sans objet n'arrive pas.`,
       };
     }
   }

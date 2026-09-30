@@ -1,7 +1,12 @@
 "use client";
 
 import { CONTACT_GROUPS, GROUP_LABELS, type ContactGroup } from "@/lib/domain/contact-group";
-import { droppedSentences, renderSubject, renderTemplate } from "@/lib/domain/merge-tags";
+import {
+  droppedSentences,
+  renderSubject,
+  renderTemplate,
+  subjectFallbacks,
+} from "@/lib/domain/merge-tags";
 import {
   describeChoice,
   isWrittenVariant,
@@ -204,9 +209,18 @@ export function GroupPreviews({
             <p className="mt-1.5 text-[11.5px] font-semibold text-muted">
               Objet — {describeSubjectSource(chosen)}
             </p>
-            <p className="text-[12.5px] text-ink">
+            <p className="text-[12.5px] text-ink" data-variant-subject="1">
               {renderSubject(chosen.subject, sample.values)}
             </p>
+            {/*
+              Le même avertissement que l'éditeur, sur chaque variante : un repli
+              employé se dit là où on relit le texte qui partira.
+            */}
+            {subjectFallbacks(chosen.subject, sample.values).length > 0 && (
+              <p className="mt-1 rounded-control border border-gold bg-gold-l px-2 py-1 text-[11.5px] text-ink">
+                Objet : {subjectFallbacks(chosen.subject, sample.values).join(" · ")}.
+              </p>
+            )}
             <p className="mt-1.5 text-[11.5px] font-semibold text-muted">Message</p>
             <pre className="whitespace-pre-wrap font-sans text-[12.5px] leading-relaxed text-ink">
               {renderTemplate(chosen.body, sample.values)}

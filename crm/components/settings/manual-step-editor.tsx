@@ -5,6 +5,8 @@ import {
   droppedSentences,
   MERGE_TAGS,
   renderSubject,
+  subjectFallbacks,
+  subjectTagErrors,
   renderTemplate,
   unknownTags,
   unresolvedTags,
@@ -83,6 +85,7 @@ export function ManualStepEditor({
   onChange,
   tab = "default",
   scope = "le message par défaut",
+  lockedSubject = null,
 }: {
   readonly subject: string;
   readonly body: string;
@@ -94,20 +97,44 @@ export function ManualStepEditor({
   readonly tab?: string;
   /** Ce que l'écran est en train d'écrire, dit en clair au-dessus des champs. */
   readonly scope?: string;
+  /**
+   * L'objet imposé par l'étape 1, sur une relance. `null` sur l'étape 1
+   * elle-même, où l'objet se saisit.
+   */
+  readonly lockedSubject?: string | null;
 }) {
   const area = useRef<HTMLTextAreaElement | null>(null);
+  const line = useRef<HTMLInputElement | null>(null);
+  /**
+   * Quel champ a eu le focus en dernier, **objet ou message**.
+   *
+   * C'était le défaut : `insert` écrivait toujours dans `body`, et le champ
+   * Objet ne portait aucune référence. Cliquer une puce en écrivant son objet
+   * envoyait donc la balise à la fin du message, hors de vue — la puce
+   * paraissait morte, et les balises inutilisables dans un objet.
+   *
+   * Le focus est mémorisé au `focus` plutôt que lu au clic : le bouton prend le
+   * focus dès qu'on appuie dessus, donc `document.activeElement` désignerait
+   * toujours le bouton. Le repli est le message, le champ le plus long.
+   */
+  const focused = useRef<"subject" | "body">("body");
 
-  /** Insère la balise au curseur — et à la fin quand le champ n'a pas le focus. */
+  /** Insère la balise au curseur du dernier champ focalisé. */
   const insert = (tag: string) => {
-    const node = area.current;
+    const target = focused.current === "subject" ? "subject" : "body";
+    const node = target === "subject" ? line.current : area.current;
+    const text = target === "subject" ? subject : body;
+
     if (node === null) {
-      onChange({ body: `${body}${tag}` });
+      onChange(target === "subject" ? { subject: `${text}${tag}` } : { body: `${text}${tag}` });
       return;
     }
-    const start = node.selectionStart;
-    const end = node.selectionEnd;
-    const next = `${body.slice(0, start)}${tag}${body.slice(end)}`;
-    onChange({ body: next });
+
+    const start = node.selectionStart ?? text.length;
+    const end = node.selectionEnd ?? start;
+    const next = `${text.slice(0, start)}${tag}${text.slice(end)}`;
+    onChange(target === "subject" ? { subject: next } : { body: next });
+
     // Le curseur reste après la balise : on continue de taper sa phrase.
     requestAnimationFrame(() => {
       node.focus();
@@ -149,8 +176,19 @@ export function ManualStepEditor({
     notresite: "",
   };
 
-  const missing = sample === null ? [] : unresolvedTags(`${subject}\n${body}`, values);
-  const unknown = unknownTags(`${subject}\n${body}`);
+  /*
+    **L'objet et le message ne se jugent pas de la même façon**, et les mêler
+    faisait dire « balise sans valeur » pour un objet qui la traite désormais par
+    un repli neutre. Le message annonce ses phrases retirées, l'objet ses replis.
+  */
+  /** L'objet qui partira : celui de l'étape 1 sur une relance, le sien sinon. */
+  const liveSubject = lockedSubject ?? subject;
+  const missing = sample === null ? [] : unresolvedTags(body, values);
+  const unknown = unknownTags(`${liveSubject}\n${body}`);
+  /** Les balises que l'objet ne peut pas porter — {video} en tête. */
+  const subjectErrors = subjectTagErrors(liveSubject);
+  /** Les replis que **cette** fiche déclenchera dans l'objet. */
+  const subjectNotes = sample === null ? [] : subjectFallbacks(liveSubject, values);
   // Les phrases que le rendu va retirer pour **cette** fiche, avec leur raison.
   const dropped = sample === null ? [] : droppedSentences(body, values);
 
@@ -160,22 +198,64 @@ export function ManualStepEditor({
         Vous écrivez <b className="font-semibold text-ink">{scope}</b>.
       </p>
 
+      {lockedSubject !== null ? (
+        <div data-subject-locked="1">
+          <span className="block text-[11.5px] font-semibold text-muted">
+            Objet — celui de l&apos;étape 1
+          </span>
+          <p className="rounded-control border border-line bg-surface-2 px-2.5 py-1.5 font-mono text-[12.5px] text-muted">
+            {lockedSubject === "" ? "(l'étape 1 ne porte pas encore d'objet)" : lockedSubject}
+          </p>
+          <p className="mt-1 text-[11.5px] text-muted">
+            Une relance garde l&apos;objet du premier message : les messageries regroupent par
+            objet, donc en changer ouvrirait une seconde conversation et le message auquel
+            cette relance répond se perdrait. Aucun «&nbsp;Re:&nbsp;» n&apos;est ajouté — ce
+            n&apos;est pas une réponse.
+          </p>
+        </div>
+      ) : (
       <label className="block">
         <span className="block text-[11.5px] font-semibold text-muted">Objet</span>
         <input
+          ref={line}
+          data-field="subject"
           className={FIELD}
           value={subject}
           placeholder="ex. Une démonstration préparée pour {societe}"
+          onFocus={() => {
+            focused.current = "subject";
+          }}
           onChange={(event) => onChange({ subject: event.target.value })}
         />
       </label>
+      )}
+
+      {/*
+        **Refusé, pas corrigé en silence.** Un lien ne se clique pas dans un
+        objet : remplacer la balise par son libellé ferait partir un appel à
+        l'action qui n'en est pas un. La raison est celle du domaine, donc la
+        route d'enregistrement dit exactement la même phrase.
+      */}
+      {subjectErrors.length > 0 && (
+        <p
+          data-subject-error="1"
+          className="mt-1.5 rounded-control border border-danger bg-surface p-2 text-[11.5px] text-danger"
+        >
+          {subjectErrors.map((entry) => `${entry.tag} : ${entry.reason}`).join(" · ")}. Retirez-la
+          de l&apos;objet — elle reste utilisable dans le message.
+        </p>
+      )}
 
       <label className="mt-2 block">
         <span className="block text-[11.5px] font-semibold text-muted">Message</span>
         <textarea
           ref={area}
+          data-field="body"
           className={`${FIELD} min-h-[180px] font-mono text-[12.5px] leading-relaxed`}
           value={body}
+          onFocus={() => {
+            focused.current = "body";
+          }}
           placeholder={"Bonjour {prenom},\n\nEn regardant {societe}…"}
           onChange={(event) => onChange({ body: event.target.value })}
         />
@@ -272,7 +352,22 @@ export function ManualStepEditor({
           )}
 
           <p className="mt-2 text-[11.5px] font-semibold text-muted">Objet</p>
-          <p className="text-[12.5px] text-ink">{renderSubject(subject, values)}</p>
+          <p className="text-[12.5px] text-ink" data-preview-subject="1">
+            {renderSubject(liveSubject, values)}
+          </p>
+          {/*
+            **Un repli employé se dit.** Sinon « votre marque » part à quelqu'un
+            dont on connaît la société, et personne ne s'aperçoit que la fiche
+            est incomplète — la carte du départ porte la même phrase.
+          */}
+          {subjectNotes.length > 0 && (
+            <p
+              data-subject-fallback="1"
+              className="mt-1 rounded-control border border-gold bg-gold-l px-2 py-1 text-[11.5px] text-ink"
+            >
+              Objet : {subjectNotes.join(" · ")}.
+            </p>
+          )}
           <p className="mt-1.5 text-[11.5px] font-semibold text-muted">Message</p>
           <RenderedBody text={renderTemplate(body, values)} ourSiteUrl={values.notresite} />
           {values.video !== "" && body.includes("{video}") && (

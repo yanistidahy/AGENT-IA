@@ -53,6 +53,8 @@ export interface Departure {
   stepsTotal: number;
   /** Sa campagne est en pause : rien ne partira tant qu'elle l'est. */
   campaignPaused: boolean;
+  /** Les replis employés par l'objet pour ce contact. Vide quand il n'y en a pas. */
+  subjectFallbacks: readonly string[];
   /** La boîte d'envoi de sa campagne, vide avant le jalon 54. */
   mailboxId: string;
   /** Sa boîte a atteint son plafond du jour : ce départ est reporté. */
