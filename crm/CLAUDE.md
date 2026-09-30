@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 103 | **L'objet du fil se décide groupe par groupe** : une relance hérite de l'objet de la variante d'étape 1 **du même groupe**, à défaut du défaut de l'étape 1 ; une seule fonction (`threadSubjectFor`) sert l'éditeur, l'aperçu, la composition, la resynchronisation, la réécriture, la carte et la validation ; un groupe qui porte l'objet du fil garde son fil même sans variante de relance ; et le champ verrouillé porte son geste — « Écrire l'objet dans l'étape 1 », sur le même groupe, curseur dans le champ | **livré, à valider** |
 | 102 | **La suite e2e redevient verte, et cesse de dépendre du jour** : trois échecs nommés avec leur fichier et leur ligne — deux défauts de test, un défaut du produit (le panneau vidéo masquait la destination du clic avec l'adresse de la vignette, deux faits indépendants) —, aucune assertion assouplie, et l'oracle du week-end devenu `isWeekend`, la fonction que le produit applique | **livré, à valider** |
 | 101 | **Les balises servent aussi dans l'objet** : les puces « Insérer » écrivent dans le champ qui avait le focus, un seul `renderSubject` sur tous les chemins d'envoi, des replis neutres décidés par une seule table (« votre marque », « votre site ») sans virgule orpheline, `{video}` refusée dans un objet avec sa raison, `{notresite}` en texte, le repli nommé dans l'aperçu et sur la carte de départ, et les relances qui portent l'objet de l'étape 1 sans « Re: » | **livré, à valider** |
 | 100 | **Un plafond d'envoi quotidien par boîte** : un réglage unique appliqué à chaque boîte, le compte lu dans le journal des envois au jour de Paris, les départs de campagne refusés et reportés au prochain jour ouvré, les relances servies avant les premiers contacts, l'ordonnanceur qui saute une boîte pleine et continue ailleurs, et « Écrire les mails » borné à la capacité restante | **livré, à valider** |
@@ -14862,3 +14863,171 @@ est donc une couverture de jour ouvré, et le test le dit.
 **Aucune garde statique n'a été ajoutée pour le défaut du panneau vidéo.** Ce qui
 le ferme est le test qui clique ; une garde qui interdirait de regrouper deux
 conditions dans un composant décrirait une forme d'écriture, pas une règle.
+
+---
+
+## Jalon 103 — l'objet du fil se décide groupe par groupe
+
+### La cause, avec son fichier et sa ligne
+
+Reproduite au clic avant tout correctif, sur une campagne dont l'objet vit sur la
+variante Direction de l'étape 1 et nulle part ailleurs. L'éditeur de l'étape 2,
+onglet Direction, rendait :
+
+> Objet — celui de l'étape 1
+> **(l'étape 1 ne porte pas encore d'objet)**
+
+**Trois lignes, une seule cause : la règle du jalon 101 lisait l'objet *par
+défaut* de l'étape 1, et ignorait ses variantes.**
+
+| Fichier et ligne | Ce qu'il faisait |
+|---|---|
+| `components/settings/sequence-steps.tsx:303` | `threadSubject={steps[0]?.subject ?? ""}` — l'éditeur ne recevait que le défaut. **C'est la ligne qui produit la phrase signalée** |
+| `lib/domain/merge-tags.ts:534` | `subjectForStep` prend `{position, subject}` : elle ne **peut pas** voir une variante |
+| `lib/domain/step-variants.ts:304` et `:311` | `threadTemplate` calculait un objet pour tous les groupes, puis **neutralisait** l'objet de chaque variante de relance |
+
+**Et ce n'était pas cosmétique.** Mesuré au niveau du domaine avant correctif :
+
+```
+templateFor(direction) = {"subject":"","body":"relance Direction",…}
+```
+
+Un objet vide, donc un départ **refusé à l'envoi** par le contrôle de vide du
+jalon 96 : le groupe ne pouvait plus être relancé du tout. Rien n'échouait pour
+autant — deux `string`, aucune exception, aucun type violé, les 1817 tests
+unitaires verts.
+
+### Une seule fonction décide, et l'ordre est celui de la précision
+
+`threadSubjectFor(steps, position, firstVariants, group)` — `lib/domain/step-variants.ts`.
+Deux cas, pas trois :
+
+1. la variante d'étape 1 **du même groupe**, si elle porte un objet ;
+2. à défaut, l'objet **par défaut** de l'étape 1.
+
+`group === null` demande l'objet hors de tout groupe, c'est-à-dire ce que reçoit
+un contact sans variante. `subjectForStep` reste la notion « objet par défaut de
+l'étape 1 » et n'est plus lue que par ce décideur : ailleurs, elle ignorerait les
+variantes — et c'était exactement le défaut.
+
+**Sept chemins l'appellent, et une garde statique l'exige** : l'éditeur, l'aperçu
+par groupe, la composition, la resynchronisation à l'enregistrement, la
+réécriture d'un départ, la carte de la file et la validation à l'enregistrement.
+Deux règles pour un même objet finiraient par ouvrir deux conversations chez le
+destinataire, et c'est précisément ce que le fil interdit.
+
+### Un groupe qui porte l'objet du fil garde son fil, même sans variante de relance
+
+C'est le cas qu'on ne voit pas en lisant la règle. Si la Direction porte un objet
+d'étape 1 mais **aucune** variante d'étape 2, son contact recevait le message par
+défaut — donc l'objet par défaut de l'étape 1, donc **un autre objet que son
+premier message**, donc une seconde conversation.
+
+`threadTemplate` **synthétise** donc une variante pour ces groupes : l'objet du
+fil, et un corps vide, si bien que `templateFor` retombe sur le corps par défaut
+de l'étape. Rien n'est inventé, et le fil tient.
+
+**Un objet hérité qui vaut le défaut est laissé vide**, délibérément : c'est ce
+qui fait que `templateFor` rend `subjectFromStep: true` et que l'aperçu continue
+de dire d'où l'objet vient (jalon 95). Le poser en dur ferait passer un repli
+pour un objet écrit à la main.
+
+### Les variantes de l'étape 1 voyagent avec les étapes
+
+`firstVariantsOf(steps)` les lit dans les étapes **déjà chargées**, et les quatre
+lectures qui composent un gabarit les ramènent désormais (`include: { variants: true }`).
+Une seconde requête serait une occasion de plus de voir autre chose que ce que la
+première a vu.
+
+### La validation à l'enregistrement se juge groupe par groupe
+
+`lib/api/email-sequences.ts` refusait un enregistrement parfaitement correct :
+une variante Direction dont l'objet vit sur la variante d'étape 1 était comptée
+« aucun objet » parce que la validation lisait le seul défaut. C'était l'autre
+moitié du même défaut. Le refus subsiste **là où il est vrai** — un groupe qui
+n'hérite de rien — et le défaut de l'étape reste exigé dès qu'un message par
+défaut est écrit, puisque c'est lui que reçoivent les fiches jamais classées.
+
+### Le manque porte son geste
+
+« (l'étape 1 ne porte pas encore d'objet) » disait quoi faire sans dire **où**.
+Un bouton **« Écrire l'objet dans l'étape 1 »** apparaît sous le champ verrouillé
+— et seulement quand le fil n'a réellement rien pour ce groupe. Il déplie
+l'étape 1, l'ouvre **sur le même onglet de groupe**, et pose le curseur dans le
+champ Objet en l'amenant à l'écran : ouvrir l'étape 1 sans montrer le champ
+demanderait de le chercher, ce qui est exactement ce que le lien évite.
+
+La demande porte une **clé horodatée** : deux clics successifs sur le même groupe
+doivent se distinguer, sinon le second ne rejouerait pas l'effet et le champ ne
+reprendrait pas le focus — un lien qui ne fait rien la deuxième fois se lit comme
+une panne.
+
+### Jalon 103 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (`migrate diff` **vide** — aucune migration :
+tout se décide dans le domaine), le serveur standalone de production, un **puits
+SMTP réel** et un navigateur piloté — les cinq items du test d'acceptation :
+
+- **1 · la cause nommée** avec ses trois fichiers et leurs lignes, **reproduite
+  avant correctif** : la phrase relevée au clic, et l'objet composé vide mesuré
+  au niveau du domaine ;
+- **2 · « Démo pour {societe} » sur l'étape 1 Direction, défaut de l'étape 1
+  vide** → l'éditeur de l'étape 2 rend `Démo pour {societe}` (et **plus** « ne
+  porte pas encore d'objet »), l'aperçu du groupe rend **« Démo pour Maison Lune
+  103 »** sur un contact réel, le départ composé par la route réelle porte
+  **« Démo pour Maison Lune »**, et le **MIME brut** reçu par le puits porte
+  `Subject: =?UTF-8?Q?D=C3=A9mo_pour_Maison_Lune?=` → décodé « Démo pour Maison
+  Lune » ;
+- **3 · un groupe sans variante d'étape 1** (Commercial) hérite du défaut :
+  départ composé **« Objet par défaut pour Maison Lune »** ; et tant que ce
+  défaut est vide, son objet reste vide — le contrôle du jalon 96 l'arrête, ce
+  qui est le comportement voulu ;
+- **4 · « Écrire l'objet dans l'étape 1 »**, cliqué avec **`reachable()`, jamais
+  `isVisible()`** : l'étape 1 s'ouvre, `data-variant-scope` vaut `commercial` —
+  **le même groupe** — et `document.activeElement` porte `data-field="subject"` ;
+- **5 · la garde statique** `tests/subject-render-source.test.ts`, **éprouvée sur
+  deux défauts exacts** : l'éditeur remis à `threadSteps[0]?.subject` (le défaut
+  d'origine) → « expected … to contain 'threadSubjectFor(' » ; `firstVariantsOf`
+  retiré des chemins d'écriture → « lib/api/departures.ts ne lit pas les
+  variantes de l'étape 1 ». Le test e2e a été éprouvé de la même façon, binaire
+  reconstruit : il tombe sur « expected … to contain 'Démo pour {societe}' » ;
+- `npm run build`, `npx tsc --noEmit` et `npx vitest run` (**1835 tests**) verts ;
+  `npm run e2e` : **107 tests verts sur 31 fichiers**.
+
+### Jalon 103 — une fragilité de mon propre jalon 102, corrigée
+
+L'assertion de `departures-84` que j'avais resserrée au jalon 102 **dépendait de
+l'état de la base** : `planRewriteQueue` balaie *toutes* les campagnes et garde le
+**premier** empêchement, donc laquelle gagne dépend de ce que la base porte par
+ailleurs. Elle est passée deux fois par chance, et elle est tombée dès qu'une
+campagne de recette a porté des départs en attente.
+
+Elle énumère désormais les issues du produit **par leurs phrases exactes** — plan
+chiffré, file vide, séquence inactive, week-end, campagne archivée — et exige
+qu'il y en ait une ; et **quand c'est bien l'empêchement de sa fixture**, elle
+exige en plus le geste. C'est plus strict que l'alternance de mots-clés du jalon
+101 (« week-end » seul pouvait passer sur autre chose), et cela supprime une
+dépendance à l'état de la base — la même classe de problème que la dépendance au
+jour.
+
+### Jalon 103 — ce qui n'est pas fait
+
+**Les départs d'une étape rédigée par Alex ne sont pas concernés.** Une étape
+d'Alex n'a pas de variantes : son objet vient du modèle, et son angle des notes
+de rôle du jalon 53.
+
+**Les objets déjà composés ne sont pas réécrits par la lecture.** La
+resynchronisation à l'enregistrement les reprend (jalon 97), et l'empreinte de
+péremption bouge maintenant quand une variante d'étape 1 change d'objet — donc un
+départ composé avant ce jalon se signale « composé avant votre dernière
+modification » et se réécrit d'un clic.
+
+**Le lien n'apparaît pas sur l'étape 1.** Il n'y a rien à ouvrir : on y est déjà,
+et le champ Objet y est saisissable.
+
+**Un groupe sans variante d'étape 1 et sans objet par défaut reste sans objet.**
+C'est exact — il n'y a rien à hériter — mais on l'apprend au moment de valider
+l'envoi (dette du jalon 101, inchangée).
+
+**Les chiffres de la recette viennent d'un semis de vérification**, pas de votre
+base.

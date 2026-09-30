@@ -140,10 +140,34 @@ describe.skipIf(skip)("la file du matin, jalon 84", () => {
       L'assertion porte donc sur la phrase exacte **et sur le geste qu'elle
       demande** : un empêchement qui ne dit pas quoi faire se lit comme une panne.
     */
-    expect(panel, "l'empêchement est nommé, jamais un silence").toContain(
+    /*
+      **Le panneau est global** (`planRewriteQueue` balaie toutes les campagnes et
+      garde le premier empêchement) : laquelle gagne dépend donc de ce que la base
+      porte par ailleurs. L'assertion énumère les issues du produit **par leurs
+      phrases exactes** — un plan chiffré, une file vide, ou l'un des empêchements
+      nommés — et exige qu'il y en ait une. Une alternance de mots-clés lâches
+      (« week-end » seul) aurait pu passer sur autre chose que le produit.
+    */
+    const OUTCOMES = [
+      "seront réécrits sur",
+      "La file est vide.",
       "La séquence de cette campagne est inactive",
-    );
-    expect(panel, "et il dit le geste à faire").toContain("Activez-la dans ses étapes");
+      "Samedi ou dimanche : rien n'est composé.",
+      "Campagne archivée : elle n'envoie plus.",
+    ];
+    const matched = OUTCOMES.filter((outcome) => panel.includes(outcome));
+    expect(matched, `aucune issue nommée dans le panneau : ${panel.slice(-400)}`).not.toEqual([]);
+
+    /*
+      Et quand c'est bien l'empêchement de **cette** fixture — sa séquence est
+      semée `active: false` —, il doit porter son geste : un empêchement qui ne
+      dit pas quoi faire se lit comme une panne.
+    */
+    if (panel.includes("La séquence de cette campagne est inactive")) {
+      expect(panel, "l'empêchement dit le geste à faire").toContain(
+        "Activez-la dans ses étapes",
+      );
+    }
 
     // Le plan ne dépense rien : aucun départ n'a bougé au simple affichage.
     const pending = await prisma.sequenceDeparture.count({

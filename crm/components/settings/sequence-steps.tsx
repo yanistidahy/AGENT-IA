@@ -14,6 +14,7 @@ import { stepModeFor, type CampaignMode } from "@/lib/domain/campaign-mode";
 import type { OtherRouting } from "@/lib/domain/step-variants";
 import { EMPTY_SAMPLES, type SampleSet } from "./manual-step-editor";
 import { StepMessage } from "./step-message";
+import type { VariantTab } from "./variant-tabs";
 import type { StepVariant } from "@/lib/domain/step-variants";
 
 /**
@@ -89,6 +90,31 @@ export function SequenceSteps({
     ),
   );
   const timings = stepDays(steps);
+  /*
+    **Les objets par défaut de toutes les étapes, et les variantes de l'étape 1.**
+    Ce sont les deux entrées de `threadSubjectFor` : l'objet du fil se décide
+    groupe par groupe sur l'étape 1, et l'écran doit le lire comme l'envoi le lit.
+  */
+  const threadSteps = steps.map((step, index) => ({
+    position: index + 1,
+    subject: step.subject ?? "",
+    body: step.body ?? "",
+  }));
+  const firstVariants = steps[0]?.variants ?? [];
+
+  /*
+    Une relance demande « écrire l'objet dans l'étape 1 » : on déplie l'étape 1
+    et on transmet le groupe. La clé horodatée distingue deux clics successifs
+    sur le même groupe — sans elle, le second ne redonnerait pas le focus.
+  */
+  const [focusFirst, setFocusFirst] = useState<{
+    readonly tab: VariantTab;
+    readonly key: number;
+  } | null>(null);
+  const writeFirstSubject = (tab: VariantTab) => {
+    setOpen((current) => (current.includes(0) ? current : [0, ...current]));
+    setFocusFirst({ tab, key: Date.now() });
+  };
 
   const toggle = (index: number) =>
     setOpen((current) =>
@@ -295,12 +321,15 @@ export function SequenceSteps({
                         otherRouting={otherRouting}
                         position={index + 1}
                         /*
-                          L'objet du fil : celui de l'étape 1, pour toutes les
-                          étapes. Une relance qui change d'objet ouvre une
-                          seconde conversation chez le destinataire, et le
-                          message auquel elle répond se perd.
+                          L'objet du fil : celui de l'étape 1, **groupe par
+                          groupe** (jalon 103). Une relance qui change d'objet
+                          ouvre une seconde conversation chez le destinataire, et
+                          le message auquel elle répond se perd.
                         */
-                        threadSubject={steps[0]?.subject ?? ""}
+                        threadSteps={threadSteps}
+                        firstVariants={firstVariants}
+                        focusSubject={index === 0 ? focusFirst : null}
+                        onWriteFirstSubject={index === 0 ? undefined : writeFirstSubject}
                         onChange={(change) => patch(index, change)}
                       />
                     ) : (

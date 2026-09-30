@@ -282,13 +282,85 @@ export function unclassifiedWarning(unclassified: number): string {
 }
 
 /**
+ * **L'objet du fil, pour un groupe donné — la seule fonction qui le décide.**
+ *
+ * La règle du jalon 101 était juste et incomplète : « l'objet de l'étape 1 pour
+ * toutes les étapes ». Elle lisait l'objet **par défaut** de l'étape 1, et
+ * ignorait ses variantes. Or l'objet vit très souvent sur la variante — c'est
+ * même tout l'intérêt d'un groupe : « Démo pour {societe} » à la Direction ne
+ * s'écrit pas comme au Commercial. Une relance retombait alors sur un objet
+ * vide, donc refusée à l'envoi par le contrôle du jalon 96 : **le groupe ne
+ * pouvait plus être relancé du tout**.
+ *
+ * L'ordre est celui de la précision décroissante, et il n'y a pas de troisième
+ * cas :
+ *
+ * 1. la variante d'étape 1 **du même groupe**, si elle porte un objet ;
+ * 2. à défaut, l'objet par défaut de l'étape 1.
+ *
+ * `group === null` demande l'objet du fil hors de tout groupe — le défaut de
+ * l'étape 1, c'est-à-dire ce que reçoit un contact sans variante.
+ *
+ * Tout ce qui calcule un objet de relance passe par ici : l'éditeur, l'aperçu,
+ * la composition, la resynchronisation à l'enregistrement, la réécriture d'un
+ * départ et la validation à l'enregistrement. Une garde statique le vérifie —
+ * deux règles pour un même objet finiraient par ouvrir deux conversations chez
+ * le destinataire, et c'est précisément ce que le fil interdit.
+ */
+export function threadSubjectFor(
+  steps: readonly { readonly position: number; readonly subject: string }[],
+  position: number,
+  firstVariants: readonly StepVariant[],
+  group: ContactGroup | null,
+): string {
+  const own = group === null ? undefined : firstVariants.find((entry) => entry.group === group);
+  if (own !== undefined && own.subject.trim() !== "") return own.subject;
+  return subjectForStep(steps, position);
+}
+
+/**
+ * Les variantes de l'étape de plus petite position, **celles qui portent
+ * l'objet du fil**.
+ *
+ * Lues dans les étapes déjà chargées plutôt que par une seconde requête : les
+ * lectures qui composent un gabarit ramènent de toute façon les variantes, et
+ * une requête de plus serait une occasion de plus de ramener autre chose que ce
+ * que la première a vu.
+ */
+export function firstVariantsOf(
+  steps: readonly {
+    readonly position: number;
+    readonly variants?: readonly {
+      readonly group: string;
+      readonly subject: string;
+      readonly body: string;
+    }[];
+  }[],
+): StepVariant[] {
+  const first = [...steps].sort((a, b) => a.position - b.position)[0];
+  return (first?.variants ?? [])
+    .filter((variant) => isContactGroup(variant.group))
+    .map((variant) => ({
+      group: variant.group as ContactGroup,
+      subject: variant.subject,
+      body: variant.body,
+    }));
+}
+
+/**
  * **Le gabarit d'une étape, avec l'objet du fil.**
  *
- * `subjectForStep` décide de l'objet — celui de l'étape 1 pour toutes les
- * étapes, parce qu'une relance qui change d'objet ouvre un nouveau fil. Cette
- * fonction l'applique **aussi aux variantes** d'une relance : une variante
- * d'étape 2 qui porterait son propre objet remettrait la divergence par la
- * porte de derrière, et le prospect verrait deux conversations.
+ * `threadSubjectFor` décide de l'objet, groupe par groupe. Cette fonction
+ * l'applique **aussi aux variantes** d'une relance : une variante d'étape 2 qui
+ * porterait son propre objet remettrait la divergence par la porte de derrière,
+ * et le prospect verrait deux conversations.
+ *
+ * **Un groupe qui porte un objet d'étape 1 sans avoir de variante de relance en
+ * reçoit une, synthétisée avec cet objet et un corps vide** : `templateFor`
+ * retombe alors sur le corps par défaut de l'étape, et le fil tient pour ce
+ * groupe-là. Sans cette synthèse, le contact recevrait le défaut de l'étape,
+ * donc l'objet par défaut de l'étape 1 — un autre objet que son premier
+ * message, donc une seconde conversation.
  *
  * Elle est le **seul** endroit où un gabarit d'étape se compose pour l'envoi :
  * les trois chemins (composition, resync à l'enregistrement, réécriture d'un
@@ -299,16 +371,39 @@ export function threadTemplate(
   steps: readonly { readonly position: number; readonly subject: string; readonly body: string }[],
   position: number,
   variants: readonly StepVariant[],
+  firstVariants: readonly StepVariant[] = [],
 ): { readonly step: StepTemplate; readonly variants: readonly StepVariant[] } {
   const own = steps.find((entry) => entry.position === position);
-  const subject = subjectForStep(steps, position);
   const first = [...steps].sort((a, b) => a.position - b.position)[0];
   const isFirst = first === undefined || first.position === position;
+  const subject = threadSubjectFor(steps, position, isFirst ? [] : firstVariants, null);
+
+  if (isFirst) return { step: { subject, body: own?.body ?? "" }, variants };
+
+  const byGroup = new Map(variants.map((variant) => [variant.group, variant]));
+  const groups = new Set<ContactGroup>([
+    ...byGroup.keys(),
+    // Les groupes qui portent un objet d'étape 1 : ils doivent garder leur fil,
+    // même sans variante de relance à eux.
+    ...firstVariants.filter((entry) => entry.subject.trim() !== "").map((entry) => entry.group),
+  ]);
 
   return {
     step: { subject, body: own?.body ?? "" },
-    // Sur une relance, les objets de variante sont neutralisés — pas effacés en
-    // base : la lecture les ignore, et le champ n'est plus proposé à l'écran.
-    variants: isFirst ? variants : variants.map((variant) => ({ ...variant, subject: "" })),
+    variants: [...groups].map((group) => {
+      /*
+        Jamais l'objet propre de la variante de relance : celui du fil. Laissé
+        **vide** quand il vaut le défaut de l'étape, pour que `templateFor`
+        rende `subjectFromStep: true` et que l'aperçu continue de dire d'où
+        l'objet vient (jalon 95) — le poser en dur ferait passer un repli pour
+        un objet écrit à la main.
+      */
+      const inherited = threadSubjectFor(steps, position, firstVariants, group);
+      return {
+        group,
+        subject: inherited === subject ? "" : inherited,
+        body: byGroup.get(group)?.body ?? "",
+      };
+    }),
   };
 }
