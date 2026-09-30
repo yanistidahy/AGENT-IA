@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 102 | **La suite e2e redevient verte, et cesse de dépendre du jour** : trois échecs nommés avec leur fichier et leur ligne — deux défauts de test, un défaut du produit (le panneau vidéo masquait la destination du clic avec l'adresse de la vignette, deux faits indépendants) —, aucune assertion assouplie, et l'oracle du week-end devenu `isWeekend`, la fonction que le produit applique | **livré, à valider** |
 | 101 | **Les balises servent aussi dans l'objet** : les puces « Insérer » écrivent dans le champ qui avait le focus, un seul `renderSubject` sur tous les chemins d'envoi, des replis neutres décidés par une seule table (« votre marque », « votre site ») sans virgule orpheline, `{video}` refusée dans un objet avec sa raison, `{notresite}` en texte, le repli nommé dans l'aperçu et sur la carte de départ, et les relances qui portent l'objet de l'étape 1 sans « Re: » | **livré, à valider** |
 | 100 | **Un plafond d'envoi quotidien par boîte** : un réglage unique appliqué à chaque boîte, le compte lu dans le journal des envois au jour de Paris, les départs de campagne refusés et reportés au prochain jour ouvré, les relances servies avant les premiers contacts, l'ordonnanceur qui saute une boîte pleine et continue ailleurs, et « Écrire les mails » borné à la capacité restante | **livré, à valider** |
 | 99 | **La vidéo se montre en lien texte, pas en vignette** : un réglage dans /reglages lu par la seule fonction qui rend la vidéo, « Lien texte » par défaut pour une installation neuve comme pour la ligne déjà en base, le mode Vignette conservé à l'octet près, et la file manuelle réécrite au changement | **livré, à valider** |
@@ -14698,12 +14699,9 @@ en-tête parti égale l'objet rendu de son propre départ ».
 
 ### Jalon 101 — ce qui n'est pas fait
 
-**Deux tests e2e antérieurs échouent, et ils échouent aussi sans ce jalon** :
-mesuré en remisant le travail et en rejouant les deux fichiers sur le binaire
-d'avant — `departures-84` (« Réécrire tous les départs » : le panneau ne rend ni
-le plan chiffré ni un empêchement nommé) et `video-settings` (l'adresse collée
-n'apparaît pas dans le texte de la page). Ils sont donc à traiter, et ce n'est
-pas ici.
+~~**Deux tests e2e antérieurs échouent, et ils échouent aussi sans ce jalon**~~
+**Traités au jalon 102** — plus un troisième, révélé par le passage à horloge
+gelée sur un samedi. Voir la section ci-dessous.
 
 **Les objets déjà composés d'une étape rédigée par Alex ne sont pas réécrits.**
 La resynchronisation à l'enregistrement ne touche que les étapes manuelles
@@ -14721,3 +14719,146 @@ dit, mais on l'apprend au moment de valider.
 
 **Les chiffres de la recette viennent d'un semis de vérification**, pas de votre
 base.
+
+---
+
+## Jalon 102 — la suite e2e redevient verte, et elle cesse de dépendre du jour
+
+Une suite rouge cache les défauts neufs : les trois échecs sont donc traités
+avant tout autre travail. **Aucun n'était le même genre de faute**, et les
+confondre aurait coûté un aller-retour par test.
+
+### Les trois causes, nommées avec leur fichier et leur ligne
+
+| Test | Cause | Verdict |
+|---|---|---|
+| `departures-84` | `tests/e2e/departures-84.e2e.ts:137` — l'assertion énumérait quatre empêchements possibles **sans citer celui que sa propre fixture produit** | **défaut de test** |
+| `video-settings` | `components/settings/video-panel.tsx:351` — l'absence d'adresse publique masquait **aussi** la destination du clic, qui n'en dépend pas | **défaut du produit** |
+| `manual-resync` (3 tests) | la création de départs est refusée le samedi et le dimanche (règle du jalon 38, reprise au jalon 97) : le fichier tombait **tous les week-ends** | **défaut de test** |
+
+### 1 · `departures-84` ne dépend pas du jour, et c'est mesuré
+
+La fixture sème délibérément une séquence **en pause** (`active: false`, quatrième
+point du jalon 84). Or `lib/api/compose-now.ts:160` teste la séquence inactive
+**avant** le week-end de la ligne 187 : la branche du samedi est donc
+**inatteignable** pour cette campagne, et le panneau rend toujours la même phrase
+— relevée au clic, un mercredi comme un samedi :
+
+> La séquence de cette campagne est inactive — une campagne neuve l'est toujours.
+> Activez-la dans ses étapes pour que des départs puissent être composés.
+
+Le produit ne se taisait donc **jamais** : il nommait son empêchement, et c'est
+l'assertion qui ne le connaissait pas. Il n'y avait rien à geler, et le dire vaut
+mieux que d'ajouter une horloge qui n'aurait rien réparé.
+
+**L'assertion est resserrée, pas assouplie** — une alternance de quatre motifs
+devient la phrase exacte **et le geste qu'elle demande** :
+
+```ts
+// avant
+expect(panel).toMatch(
+  /seront réécrits sur .* campagne|La file est vide|week-end|Samedi ou dimanche/i,
+);
+
+// après
+expect(panel, "l'empêchement est nommé, jamais un silence").toContain(
+  "La séquence de cette campagne est inactive",
+);
+expect(panel, "et il dit le geste à faire").toContain("Activez-la dans ses étapes");
+```
+
+### 2 · `video-settings` : deux faits indépendants sous une seule condition
+
+Le panneau annonçait « Le clic va chez l'hébergeur, qui verra qui ouvre la
+vidéo », puis **ne disait pas lequel** : le bloc qui porte `clic : …` était
+entièrement gardé par `state.posterUrl === ""`.
+
+Or les deux adresses ne dépendent pas de la même chose. `videoDestination`
+(jalon 89) rend, pour une adresse collée, **l'adresse collée elle-même** — elle
+n'a pas besoin de `CRM_PUBLIC_URL`. Seule la **vignette** en a besoin. Les fondre
+faisait disparaître la destination au moment précis où l'écran venait d'avertir
+que le clic quitte notre domaine : on relisait un avertissement sans sa donnée.
+
+Le produit est corrigé — l'avertissement d'adresse publique et la ligne `clic :`
+sont désormais deux lignes indépendantes — et **l'assertion du test n'a pas
+bougé d'un caractère** :
+
+```ts
+// avant et après, identique
+expect(text).toContain("vimeo.com/999888777");
+```
+
+### 3 · `manual-resync` : l'oracle est la règle du produit, pas une supposition
+
+Le samedi, `resyncManualDepartures` **met à jour mais ne crée pas** — c'est la
+règle du jalon 38 (« un brouillon écrit le samedi décrirait un état vieux de deux
+jours au moment de partir »), et elle est juste. Le rapport le dit d'ailleurs en
+toutes lettres : « 1 départ mis à jour · **0 créé** · 1 conservé … Samedi ou
+dimanche : rien n'est composé. »
+
+Le test ne suppose donc plus le jour : il lit **`isWeekend`, la fonction que le
+produit lui-même applique**, et assère exactement l'issue correspondante. Aucune
+des deux branches n'est permissive, et **la branche week-end exige davantage** —
+que l'inscrit reste *actif et dû*, c'est-à-dire que rien n'est perdu, seulement
+reporté :
+
+```ts
+// avant
+expect(text).toContain("1 départ mis à jour");
+expect(text).toContain("1 créé");
+expect(text).toContain("conservé (retouché à la main)");
+
+// après
+expect(text).toContain("1 départ mis à jour");
+expect(text).toContain("conservé (retouché à la main)");
+if (WEEKEND) {
+  expect(text, "le week-end, la création est refusée et le rapport le nomme").toContain(
+    "Samedi ou dimanche",
+  );
+  expect(text).toContain("0 créé");
+} else {
+  expect(text).toContain("1 créé");
+}
+```
+
+Même traitement pour le départ retiré puis ramené par l'enregistrement suivant
+(`expect(back.subject).toBe("Nouvel objet du jalon 97")` le reste en semaine ; le
+week-end, on exige **0 départ et une inscription toujours dûe**). Et le test de
+« Retirer de la campagne », qui porte sur la confirmation et non sur la création,
+**sème** sa carte quand la composition n'en a créé aucune : une fixture, aucune
+assertion touchée.
+
+### Jalon 102 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (`migrate diff` **vide** — aucune migration),
+le serveur standalone de production et un navigateur piloté :
+
+- **la suite e2e complète, verte deux fois sur le binaire courant** :
+  **104 tests / 30 fichiers** un mercredi, puis **104 / 30** avec **l'horloge de
+  la machine gelée sur samedi 3 octobre 2026** (base et serveur redémarrés sous
+  cette horloge, `date +%A` relevé au début de chaque passage) ;
+- **les trois causes reproduites avant correctif** : le panneau de
+  `departures-84` relevé au clic, la ligne `clic :` absente de `video-settings`,
+  et `manual-resync` tombant sur « 0 créé » le samedi ;
+- `npm run build`, `npx tsc --noEmit` et `npx vitest run` (**1817 tests**) verts.
+
+**Le défaut du produit n'est couvert que par un test qui clique**, et c'est la
+classe de défaut des jalons 60, 61, 77, 79, 95 et 96 : le composant rendait, le
+panneau s'affichait, aucun type n'était violé et aucun test unitaire ne pouvait
+voir qu'une ligne manquait.
+
+### Jalon 102 — ce qui n'est pas fait
+
+**Le serveur n'a pas de couture d'horloge**, et il n'en reçoit pas ici : geler le
+temps pour un test e2e passerait par un crochet dans le code de production, ce
+qui est un risque plus grand que la fragilité qu'il réparerait. Le gel a donc
+lieu **au niveau de la machine**, dans la recette — et la suite, elle, ne dépend
+plus du jour où on la lance.
+
+**La branche week-end de `manual-resync` n'exerce pas la création.** C'est la
+règle du produit : le samedi, il n'y a rien à créer. La couverture de la création
+est donc une couverture de jour ouvré, et le test le dit.
+
+**Aucune garde statique n'a été ajoutée pour le défaut du panneau vidéo.** Ce qui
+le ferme est le test qui clique ; une garde qui interdirait de regrouper deux
+conditions dans un composant décrirait une forme d'écriture, pas une règle.
