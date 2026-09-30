@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 101 | **Les balises servent aussi dans l'objet** : les puces « Insérer » écrivent dans le champ qui avait le focus, un seul `renderSubject` sur tous les chemins d'envoi, des replis neutres décidés par une seule table (« votre marque », « votre site ») sans virgule orpheline, `{video}` refusée dans un objet avec sa raison, `{notresite}` en texte, le repli nommé dans l'aperçu et sur la carte de départ, et les relances qui portent l'objet de l'étape 1 sans « Re: » | **livré, à valider** |
 | 100 | **Un plafond d'envoi quotidien par boîte** : un réglage unique appliqué à chaque boîte, le compte lu dans le journal des envois au jour de Paris, les départs de campagne refusés et reportés au prochain jour ouvré, les relances servies avant les premiers contacts, l'ordonnanceur qui saute une boîte pleine et continue ailleurs, et « Écrire les mails » borné à la capacité restante | **livré, à valider** |
 | 99 | **La vidéo se montre en lien texte, pas en vignette** : un réglage dans /reglages lu par la seule fonction qui rend la vidéo, « Lien texte » par défaut pour une installation neuve comme pour la ligne déjà en base, le mode Vignette conservé à l'octet près, et la file manuelle réécrite au changement | **livré, à valider** |
 | 98 | **Notre site devient un lien cliquable** : une balise `{notresite}` qui rend une vraie ancre en HTML et l'adresse entière en texte, l'URL réglée une fois dans /reglages et le libellé visible dérivé d'elle, sans redirection, sans paramètre et sans compteur de clics | **livré, à valider** |
@@ -14539,3 +14540,184 @@ crée pas. Elle peut donc repayer un texte qui ne partira pas aujourd'hui.
 **Les chiffres de la recette viennent d'un semis de vérification**, pas de votre
 base. Le premier compteur en production dira ce que chaque boîte a réellement
 envoyé aujourd'hui, journal en main.
+
+---
+
+## Jalon 101 — les balises servent aussi dans l'objet
+
+### La cause, avec son fichier et sa ligne
+
+Reproduite avant tout correctif, au clic, dans un vrai navigateur. Des quatre
+candidats proposés, **un seul était vrai**, et un second défaut de rendu se
+cachait derrière :
+
+| Candidat | Verdict |
+|---|---|
+| les puces « Insérer » n'écrivent que dans le message | **vrai, et c'est la cause** — `components/settings/manual-step-editor.tsx`, `insert()` : `area.current` et `body` étaient écrits en dur, le champ Objet n'était jamais une cible |
+| le champ Objet refuse ou signale les balises | faux : `subjectTagErrors` n'existait pas, et rien ne refusait |
+| l'aperçu ou la carte de départ montrent la balise brute | **vrai pour un second défaut** : `renderSubject` retirait la balise sans repli, donc « {prenom}, une question sur {site} » rendait « , une question sur » — une virgule en tête et une phrase amputée |
+| un chemin d'envoi ne rend pas l'objet | **faux, réfuté par mesure** : les cinq chemins passent par `renderManualStep`, donc par `renderSubject` |
+
+Le défaut des puces **est invisible à la suite unitaire, et c'est mesuré** :
+réintroduit (`insert()` qui écrit toujours dans `body`), les **1817 tests
+unitaires restent verts**. La puce rend, le bouton répond, la balise atterrit à
+la fin du message. C'est la classe de défaut des jalons 60, 61, 77, 79 et 96 —
+elle ne se voit qu'en cliquant.
+
+### Un objet ne peut pas perdre une phrase
+
+Un corps retire la phrase entière qui porte une balise sans valeur (jalon 87) :
+une phrase construite autour d'un nom qu'on n'a pas ne survit pas à son retrait.
+**Un objet est une seule phrase** : la retirer laisserait un `Subject:` vide,
+c'est-à-dire un message qui n'arrive pas. Les replis neutres sont donc la seule
+issue, et **une seule table les décide** (`SUBJECT_FALLBACKS`) :
+
+| Balise | Dans un objet |
+|---|---|
+| `{societe}`, `{marque}` | « votre marque » |
+| `{site}` | « votre site » |
+| `{prenom}`, `{nom}`, `{fonction}` | retirées, puis l'objet est recousu |
+| `{notresite}` | le libellé en texte, « auraflowai.fr » — jamais une ancre : un objet ne porte pas de lien |
+| `{video}` | **refusée**, dans l'éditeur et à l'enregistrement |
+
+**« votre marque » n'est pas un fait inventé**, et c'est la différence avec les
+replis refusés aux jalons 25 et 48 : ceux-là affirmaient quelque chose sur le
+prospect — un domaine, un DM, une équipe. « votre marque » n'affirme rien, c'est
+la deuxième personne. Le destinataire lit une phrase à son adresse, pas une
+donnée fausse à son sujet.
+
+`tidySubject` recoud : ponctuation orpheline en tête retirée, doubles espaces et
+virgules qui se suivent nettoyées, et **la casse relevée seulement quand la tête
+a été coupée** — sinon l'objet garde la casse de son auteur, qui est la sienne.
+« Bonjour , » ne peut plus se produire, et un test porte les deux chaînes exactes
+du test d'acceptation.
+
+**`{video}` est refusée par l'écran et par la route, avec une seule raison**,
+écrite dans le domaine : « un objet ne porte pas de lien cliquable : la vidéo
+s'annonce dans le message, pas dans l'objet ». Deux formulations finiraient par
+diverger.
+
+### Les puces écrivent dans le champ qui avait le focus
+
+Le champ visé est mémorisé **à `onFocus`**, jamais lu au moment du clic : le
+bouton de la puce prend le focus, donc `document.activeElement` désigne la puce
+elle-même. L'insertion se fait au curseur (`selectionStart`/`selectionEnd`) du
+champ retenu, pour le texte par défaut **et pour chaque variante de groupe** —
+c'est le même éditeur, donc il n'y a rien de plus à câbler.
+
+### Les relances portent l'objet de l'étape 1
+
+Les messageries regroupent par objet et par participants : une relance qui change
+d'objet ouvre une seconde conversation, et le message auquel elle répond se perd.
+`subjectForStep` rend donc l'objet de la plus petite position pour toutes les
+étapes, et l'éditeur d'une relance n'a **aucun champ Objet** — un bloc en lecture
+seule, avec la raison. Aucun « Re: » : ce n'est pas une réponse.
+
+`threadTemplate` porte la règle, et **neutralise l'objet des variantes d'une
+relance** : sans cela une variante de groupe réintroduirait la divergence par la
+porte de derrière.
+
+**Un second défaut trouvé en câblant** : l'empreinte de péremption (jalon 96)
+lisait l'objet **propre** de l'étape. Changer l'objet de l'étape 1 ne marquait
+donc pas périmés les départs d'étape 2, qui portent pourtant cet objet-là. Les
+cinq sites d'empreinte lisent maintenant l'objet **du fil**.
+
+Et le contrôle de vide du jalon 96 porte sur l'objet **rendu** — il lit
+`departure.subject`, déjà passé par `renderSubject` : un objet réduit à une
+balise sans valeur ne part donc jamais vide, et le contrôle ne lit jamais le
+gabarit.
+
+### Le repli employé est nommé là où on relit le texte
+
+Trois surfaces, une seule fonction (`subjectFallbacks`) : l'aperçu de l'éditeur,
+l'aperçu de chaque variante, et la carte de départ — « Objet : société absente,
+remplacée par « votre marque » ». Un repli silencieux serait un texte qu'on relit
+sans savoir qu'il a été réparé. Sur un départ périmé, la carte se **taît** : un
+avertissement doit décrire ce qui partira (jalon 96).
+
+### Jalon 101 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (`migrate diff` **vide** — aucune migration :
+tout se décide dans le domaine), le serveur standalone de production, un **puits
+SMTP réel** et un navigateur piloté — les sept items du test d'acceptation :
+
+- **1 · la cause nommée** avec son fichier et sa fonction, reproduite avant
+  correctif, et le second défaut de rendu nommé avec elle ;
+- **2 · « Une démonstration préparée pour {societe} », sur le fil** : `Subject`
+  brut `=?UTF-8?Q?Une_d=C3=A9monstration_pr=C3=A9par=C3=A9?= =?UTF-8?Q?e_pour_votre_marque?=`
+  → décodé « Une démonstration préparée pour votre marque » pour la fiche sans
+  société, et « … pour R101 Dermoplänt Épicé » pour celle qui en porte une —
+  **accents corrects, en-tête replié sur deux lignes de continuation** ;
+- **3 · « {prenom}, une question sur {site} »** sur une fiche sans prénom →
+  « Une question sur votre site », **aucune virgule en tête** ; avec prénom →
+  « Roxana, une question sur r101.test » ;
+- **4 · la puce suit le focus**, au clic : `{societe}` cliquée l'objet en focus →
+  l'objet la reçoit et le message ne bouge pas ; `{site}` cliquée le message en
+  focus → l'inverse ;
+- **5 · `{video}` refusée** dans l'objet avec sa raison citant « lien cliquable » ;
+  `{notresite}` acceptée et rendue « auraflowai.fr », **sans `https://`** ;
+- **6 · enregistrer réécrit la file** : deux départs en attente passent de « Un
+  objet sans balise » aux deux objets rendus (`{"updated":2}`), et **le clic
+  humain comme l'ordonnanceur produisent un `Subject` égal à l'objet rendu de
+  leur propre départ** — deux destinataires, deux objets, chacun le sien ;
+- **6 ter · une relance** dont l'étape 2 portait en base « Un objet qui ne
+  devrait jamais partir » compose **l'objet de l'étape 1**, sans « Re: » ;
+- **7 · e2e au clic** avec **`reachable()`, jamais `isVisible()`** — la puce dans
+  les deux sens, l'objet rendu dans l'aperçu, le refus de `{video}`, et la
+  relance qui n'a **aucun** champ Objet ; **garde statique éprouvée sur trois
+  défauts exacts** (un objet composé dans un chemin d'envoi, `threadTemplate`
+  retiré d'un chemin d'écriture, le repli retiré de la table) ;
+- `npm run build`, `npx tsc --noEmit` et `npx vitest run` (**1817 tests**) verts ;
+  `npm run e2e` : **102 tests verts sur 104**, les deux échecs étant antérieurs à
+  ce jalon (voir ci-dessous).
+
+`tests/subject-render-source.test.ts` ferme les façons de défaire ce jalon sans
+qu'aucun test ne rougisse : un second rendu d'objet, un chemin d'envoi qui
+compose son `Subject:` lui-même, un chemin d'écriture qui lit `step.subject` hors
+du fil, un aperçu calculé autrement que l'envoi, un repli recopié ailleurs, un
+contrôle de vide qui lirait le gabarit.
+
+### Jalon 101 — deux défauts de recette, nommés comme tels
+
+Aucun des deux n'était un défaut du produit, et les confondre aurait coûté un
+aller-retour :
+
+1. **mon décodeur d'en-tête ne lisait que la première ligne.** Un `Subject`
+   RFC 2047 de plus de 76 caractères est **replié** sur des lignes de
+   continuation : décodé tronqué, il rendait « Une démonstration préparé ».
+   Corrigé en dépliant l'en-tête avant de le décoder ;
+2. **ma fiche « sans rien » restait déductible.** Son adresse était
+   `anonyme@r101.test`, donc `{site}` se déduisait du domaine de l'adresse
+   (jalon 75) et le repli ne se déclenchait pas. Passée à `anonyme@gmail.com`,
+   un fournisseur grand public exclu de la déduction.
+
+Et **une attente fausse de ma part, corrigée plutôt que contournée** : j'avais
+écrit « un seul objet distinct parmi les en-têtes partis ». C'est faux — deux
+destinataires rendent légitimement deux objets. L'assertion est devenue « chaque
+en-tête parti égale l'objet rendu de son propre départ ».
+
+### Jalon 101 — ce qui n'est pas fait
+
+**Deux tests e2e antérieurs échouent, et ils échouent aussi sans ce jalon** :
+mesuré en remisant le travail et en rejouant les deux fichiers sur le binaire
+d'avant — `departures-84` (« Réécrire tous les départs » : le panneau ne rend ni
+le plan chiffré ni un empêchement nommé) et `video-settings` (l'adresse collée
+n'apparaît pas dans le texte de la page). Ils sont donc à traiter, et ce n'est
+pas ici.
+
+**Les objets déjà composés d'une étape rédigée par Alex ne sont pas réécrits.**
+La resynchronisation à l'enregistrement ne touche que les étapes manuelles
+(jalon 97), et un brouillon d'Alex garde son marqueur « composé avant votre
+dernière modification ».
+
+**Les replis ne sont pas réglables.** « votre marque » et « votre site » sont
+écrits dans le domaine ; les ouvrir à `/reglages` serait un second endroit où la
+même phrase se décide.
+
+**Un objet réduit à une seule balise sans valeur reste refusé à l'envoi**, pas à
+l'écriture : l'éditeur ne signale pas qu'un objet ne portant que `{prenom}` sera
+vide pour les fiches sans prénom. Le contrôle du jalon 96 l'arrête, la carte le
+dit, mais on l'apprend au moment de valider.
+
+**Les chiffres de la recette viennent d'un semis de vérification**, pas de votre
+base.

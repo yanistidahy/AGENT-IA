@@ -3,6 +3,7 @@ import { prisma } from "../db";
 import { composeDepartures } from "./departures";
 import { renderManualStep } from "./manual-step";
 import { readStepVariants } from "./step-variants";
+import { threadTemplate } from "../domain/step-variants";
 import { templateFingerprint, type ResyncReport } from "../domain/departure-content";
 import { toStepMode } from "../domain/merge-tags";
 
@@ -99,11 +100,18 @@ async function rewriteManualDepartures(sequenceId: string): Promise<{
 
   for (const step of manual) {
     const variants = await readStepVariants(step.id);
+    /*
+      **Le gabarit du fil, empreinte comprise.** L'objet vient de l'étape 1 :
+      sans cela, changer l'objet du premier message ne rendrait pas périmés les
+      départs d'étape 2, qui partiraient avec l'ancien objet, hors du fil, sans
+      que rien ne le dise.
+    */
+    const thread = threadTemplate(sequence.steps, step.position, variants);
     const fingerprint = templateFingerprint({
       mode: "manual",
-      subject: step.subject,
-      body: step.body,
-      variants: variants.map((variant) => ({ ...variant })),
+      subject: thread.step.subject,
+      body: thread.step.body,
+      variants: thread.variants.map((variant) => ({ ...variant })),
     });
 
     const pending = await prisma.sequenceDeparture.findMany({
@@ -125,9 +133,9 @@ async function rewriteManualDepartures(sequenceId: string): Promise<{
 
       const written = await renderManualStep(
         departure.enrollment.contactId,
-        { subject: step.subject, body: step.body },
+        thread.step,
         sequence.campaign?.mailboxId,
-        variants,
+        thread.variants,
         sequence.campaign?.otherRouting ?? "default",
       );
       // La fiche a disparu entre la lecture et le rendu : rare, et rien à

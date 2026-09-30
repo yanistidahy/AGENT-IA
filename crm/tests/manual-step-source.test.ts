@@ -41,8 +41,12 @@ describe("une étape manuelle n'appelle jamais le modèle", () => {
     // désormais lu dans `isManual` (jalon 97, la portée « manuelle seule » a
     // besoin du verdict avant la rédaction), et exiger le `if (toStepMode(…))`
     // littéral aurait fait tomber la garde sur un refactor qui la respecte.
+    // La fenêtre après `if (isManual) {` est large : le gabarit du fil se
+    // compose entre les deux (jalon 101, `threadTemplate`), et exiger une
+    // adjacence stricte ferait tomber la garde sur un refactor qui la respecte.
+    // Ce qu'elle fixe est **l'ordre**, pas la distance.
     expect(departures).toMatch(
-      /const isManual = toStepMode\([\s\S]{0,1600}if \(isManual\) \{[\s\S]{0,200}renderManualStep\(/,
+      /const isManual = toStepMode\([\s\S]{0,1600}if \(isManual\) \{[\s\S]{0,900}renderManualStep\(/,
     );
   });
 

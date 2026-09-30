@@ -47,8 +47,15 @@ describe("{notresite} substitue l'adresse entière", () => {
     expect(out).not.toContain("{notresite}");
   });
 
-  it("l'objet la substitue aussi", () => {
-    expect(renderSubject("Voir {notresite}", VALUES)).toBe("Voir https://auraflowai.fr/");
+  /*
+    **Dans un objet, c'est le libellé, pas l'adresse** — décision du jalon 101,
+    qui renverse ce que ce test fixait. Une URL entière dans un `Subject:` ne se
+    clique pas, occupe la place du sujet, et se lit comme du démarchage en
+    masse. Le corps, lui, garde l'adresse complète : c'est là qu'on la copie.
+  */
+  it("l'objet rend le libellé, le corps l'adresse entière", () => {
+    expect(renderSubject("Voir {notresite}", VALUES)).toBe("Voir auraflowai.fr");
+    expect(renderTemplate("Voir {notresite}.", VALUES)).toBe("Voir https://auraflowai.fr/.");
   });
 
   it("sans adresse réglée, la phrase entière disparaît", () => {

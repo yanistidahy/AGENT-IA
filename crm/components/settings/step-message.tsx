@@ -26,6 +26,7 @@ export function StepMessage({
   samples,
   otherRouting = "default",
   position,
+  threadSubject,
   onChange,
 }: {
   readonly subject: string;
@@ -36,6 +37,8 @@ export function StepMessage({
   readonly otherRouting?: OtherRouting;
   /** 1, 2 ou 3 — le pré-remplissage n'est proposé que sur la première étape. */
   readonly position: number;
+  /** L'objet de l'étape 1 : c'est lui qui partira, quelle que soit l'étape. */
+  readonly threadSubject: string;
   readonly onChange: (change: {
     subject?: string;
     body?: string;
@@ -91,6 +94,12 @@ export function StepMessage({
         onSample={setSampleId}
         onChange={patch}
         tab={tab}
+        /*
+          Sur une relance, l'objet ne se saisit pas : il vient de l'étape 1.
+          Le champ est remplacé par sa valeur en lecture seule et la raison —
+          le masquer sans rien dire ferait chercher un champ disparu.
+        */
+        lockedSubject={position === 1 ? null : threadSubject}
         scope={
           tab === "default"
             ? "le message par défaut de cette étape"

@@ -31,11 +31,17 @@ import {
   stopsEnrollment,
 } from "../domain/sequence-rules";
 import { replyAnchor } from "../domain/campaign-reset";
-import { droppedSentences, toStepMode, type DroppedSentence } from "../domain/merge-tags";
+import {
+  droppedSentences,
+  subjectFallbacks,
+  toStepMode,
+  type DroppedSentence,
+} from "../domain/merge-tags";
 import {
   routedGroup,
   templateFor,
   toOtherRouting,
+  threadTemplate,
 } from "../domain/step-variants";
 import { isContactGroup, type ContactGroup } from "../domain/contact-group";
 import { signatureVideo } from "./mail";
@@ -92,6 +98,37 @@ function templateShapeOf(
     body: manual ? step.body : step.brief,
     variants: variants.map((variant) => ({ ...variant })),
   };
+}
+
+/**
+ * L'empreinte d'une étape, **objet du fil compris**.
+ *
+ * Sans elle, changer l'objet de l'étape 1 ne rendrait pas périmés les départs
+ * d'étape 2 : leur empreinte ne lirait que leur propre étape, qui n'a pas bougé.
+ * Ils partiraient donc avec l'ancien objet, hors du fil, sans que rien ne le
+ * dise. L'empreinte lit ce qui décide réellement du texte.
+ */
+function threadShapeOf(
+  steps: readonly {
+    readonly position: number;
+    readonly mode: string;
+    readonly brief: string;
+    readonly subject: string;
+    readonly body: string;
+  }[],
+  position: number,
+  variants: readonly { readonly group: string; readonly subject: string; readonly body: string }[],
+) {
+  const step = steps.find((entry) => entry.position === position);
+  if (step === undefined) return templateShapeOf({ mode: "alex", brief: "", subject: "", body: "" }, []);
+  const thread = threadTemplate(
+    steps,
+    position,
+    variants.filter((variant): variant is typeof variant & { group: ContactGroup } =>
+      isContactGroup(variant.group),
+    ),
+  );
+  return templateShapeOf({ ...step, subject: thread.step.subject }, thread.variants);
 }
 
 function dayKey(now: Date): string {
@@ -436,14 +473,24 @@ export async function composeDepartures(
         ? await readStepVariants(step.id)
         : [];
     const fingerprint =
-      step === undefined ? "" : templateFingerprint(templateShapeOf(step, variants));
+      step === undefined
+        ? ""
+        : templateFingerprint(threadShapeOf(enrollment.sequence.steps, verdict.step, variants));
 
     if (isManual) {
+      // **L'objet vient du fil, pas de l'étape.** Une relance qui change
+      // d'objet ouvre une seconde conversation chez le destinataire : c'est
+      // `threadTemplate` qui tranche, pour les trois chemins d'écriture.
+      const thread = threadTemplate(
+        enrollment.sequence.steps,
+        verdict.step,
+        variants,
+      );
       written = await renderManualStep(
         enrollment.contactId,
-        { subject: step?.subject ?? "", body: step?.body ?? "" },
+        thread.step,
         enrollment.sequence.campaign?.mailboxId,
-        variants,
+        thread.variants,
         // Le routage d'« Autre » et des fiches non classées, lu sur la
         // campagne. Absent (campagne d'avant ce réglage) = `default`, donc le
         // message par défaut de l'étape, donc le contenu d'avant à l'octet près.
@@ -811,6 +858,15 @@ export interface DepartureView {
    * La boite d'ou ce depart partira, vide pour un depart anterieur au jalon 54.
    * C'est elle que le plafond quotidien regarde.
    */
+  /**
+   * Les replis que l'objet a employés pour ce contact, dits en clair.
+   *
+   * Recalculés à la lecture depuis le **gabarit**, comme la phrase retirée et la
+   * garde d'écho : l'objet stocké ne porte plus la balise, et c'est bien le
+   * problème : sans cette ligne, « votre marque » part à quelqu'un dont on
+   * connaît la société sans que personne s'aperçoive que la fiche est incomplète.
+   */
+  readonly subjectFallbacks: readonly string[];
   readonly mailboxId: string;
   /**
    * La boite a atteint son plafond du jour : ce depart **est reporte**, il
@@ -1013,7 +1069,9 @@ export async function listDepartures(
         ? false
         : isStaleDeparture(
             row.templateHash,
-            templateFingerprint(templateShapeOf(template, template.variants)),
+            templateFingerprint(
+              threadShapeOf(row.enrollment.sequence.steps, row.step, template.variants),
+            ),
           );
 
     /*
@@ -1022,6 +1080,19 @@ export async function listDepartures(
       ne porte pas : on se taît et on propose de le réécrire, plutôt que
       d'annoncer une suppression dans un autre message.
     */
+    /*
+      **Les replis de l'objet, sur le même gabarit que les phrases retirées.**
+      Silencieux sur un départ périmé, pour la même raison : ils décriraient un
+      texte que ce départ ne porte pas.
+    */
+    const subjectNotes =
+      stale || template === undefined || toStepMode(template.mode) !== "manual"
+        ? []
+        : subjectFallbacks(
+            threadTemplate(row.enrollment.sequence.steps, row.step, []).step.subject,
+            mergeValuesOf(row.enrollment.contact, globals),
+          );
+
     const dropped =
       stale || template === undefined || toStepMode(template.mode) !== "manual"
         ? []
@@ -1114,6 +1185,7 @@ export async function listDepartures(
       stepsTotal: row.enrollment.sequence._count.steps,
       campaignPaused: !row.enrollment.sequence.active,
       dropped: [...dropped],
+      subjectFallbacks: subjectNotes,
       empty: emptyDepartureReason(row, blocks) ?? "",
       stale,
       edited: row.editedAt !== null,
@@ -1407,7 +1479,12 @@ export async function countStaleDepartures(campaignId: string): Promise<number> 
   for (const row of rows) {
     const step = row.enrollment.sequence.steps.find((entry) => entry.position === row.step);
     if (step === undefined) continue;
-    if (isStaleDeparture(row.templateHash, templateFingerprint(templateShapeOf(step, step.variants)))) {
+    if (
+      isStaleDeparture(
+        row.templateHash,
+        templateFingerprint(threadShapeOf(row.enrollment.sequence.steps, row.step, step.variants)),
+      )
+    ) {
       stale += 1;
     }
   }
@@ -1470,11 +1547,16 @@ export async function rewriteDeparture(
 
   let written: { readonly subject: string; readonly body: string } | null = null;
   if (manual) {
+    const thread = threadTemplate(
+      departure.enrollment.sequence.steps,
+      departure.step,
+      variants,
+    );
     written = await renderManualStep(
       departure.enrollment.contactId,
-      { subject: step.subject, body: step.body },
+      thread.step,
       departure.enrollment.sequence.campaign?.mailboxId,
-      variants,
+      thread.variants,
       departure.enrollment.sequence.campaign?.otherRouting ?? "default",
     );
   } else {
@@ -1501,7 +1583,9 @@ export async function rewriteDeparture(
     data: {
       subject: written.subject,
       body: written.body,
-      templateHash: templateFingerprint(templateShapeOf(step, variants)),
+      templateHash: templateFingerprint(
+        threadShapeOf(departure.enrollment.sequence.steps, departure.step, variants),
+      ),
       status: "pending",
       detail: "",
       editedAt: null,
@@ -1581,7 +1665,9 @@ async function isDepartureStale(departureId: string): Promise<boolean> {
   if (step === undefined) return false;
   return isStaleDeparture(
     row.templateHash,
-    templateFingerprint(templateShapeOf(step, step.variants)),
+    templateFingerprint(
+      threadShapeOf(row.enrollment.sequence.steps, step.position, step.variants),
+    ),
   );
 }
 

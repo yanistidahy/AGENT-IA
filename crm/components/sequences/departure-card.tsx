@@ -364,6 +364,21 @@ export function DepartureCard({
           partie… », et l'incohérence ne se découvrait qu'à la réception. La règle
           ne change pas ; ce qui change, c'est qu'elle est annoncée sur la carte.
         */}
+        {/*
+          **Un repli d'objet se dit sur la carte, pas seulement à l'aperçu.**
+          C'est ici qu'on relit ce qui partira, et « votre marque » sur une
+          maison qu'on connaît désigne une fiche à compléter, pas un texte à
+          réécrire.
+        */}
+        {!failed && editing === null && departure.subjectFallbacks.length > 0 && (
+          <p
+            data-subject-fallback="1"
+            className="mt-2 rounded-control border border-gold bg-gold-l p-2 text-[11.5px] text-ink"
+          >
+            <b className="font-semibold">Objet</b> : {departure.subjectFallbacks.join(" · ")}.
+          </p>
+        )}
+
         {!failed && editing === null && departure.dropped.length > 0 && (
           <div
             data-dropped={departure.dropped.length}

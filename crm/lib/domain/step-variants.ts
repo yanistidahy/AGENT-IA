@@ -1,4 +1,5 @@
 import { CONTACT_GROUPS, GROUP_LABELS, isContactGroup, type ContactGroup } from "./contact-group";
+import { subjectForStep } from "./merge-tags";
 
 /**
  * **Une variante d'étape par groupe de fonction, et un défaut qui rattrape le
@@ -278,4 +279,36 @@ export function describeCounts(counts: {
 export function unclassifiedWarning(unclassified: number): string {
   if (unclassified === 0) return "";
   return `${unclassified} contacts jamais classés : recalculez les groupes`;
+}
+
+/**
+ * **Le gabarit d'une étape, avec l'objet du fil.**
+ *
+ * `subjectForStep` décide de l'objet — celui de l'étape 1 pour toutes les
+ * étapes, parce qu'une relance qui change d'objet ouvre un nouveau fil. Cette
+ * fonction l'applique **aussi aux variantes** d'une relance : une variante
+ * d'étape 2 qui porterait son propre objet remettrait la divergence par la
+ * porte de derrière, et le prospect verrait deux conversations.
+ *
+ * Elle est le **seul** endroit où un gabarit d'étape se compose pour l'envoi :
+ * les trois chemins (composition, resync à l'enregistrement, réécriture d'un
+ * départ) l'appellent, et une garde statique vérifie qu'aucun ne lit
+ * `step.subject` directement.
+ */
+export function threadTemplate(
+  steps: readonly { readonly position: number; readonly subject: string; readonly body: string }[],
+  position: number,
+  variants: readonly StepVariant[],
+): { readonly step: StepTemplate; readonly variants: readonly StepVariant[] } {
+  const own = steps.find((entry) => entry.position === position);
+  const subject = subjectForStep(steps, position);
+  const first = [...steps].sort((a, b) => a.position - b.position)[0];
+  const isFirst = first === undefined || first.position === position;
+
+  return {
+    step: { subject, body: own?.body ?? "" },
+    // Sur une relance, les objets de variante sont neutralisés — pas effacés en
+    // base : la lecture les ignore, et le champ n'est plus proposé à l'écran.
+    variants: isFirst ? variants : variants.map((variant) => ({ ...variant, subject: "" })),
+  };
 }

@@ -294,6 +294,13 @@ export function SequenceSteps({
                         samples={samples}
                         otherRouting={otherRouting}
                         position={index + 1}
+                        /*
+                          L'objet du fil : celui de l'étape 1, pour toutes les
+                          étapes. Une relance qui change d'objet ouvre une
+                          seconde conversation chez le destinataire, et le
+                          message auquel elle répond se perd.
+                        */
+                        threadSubject={steps[0]?.subject ?? ""}
                         onChange={(change) => patch(index, change)}
                       />
                     ) : (
