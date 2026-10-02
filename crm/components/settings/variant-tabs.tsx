@@ -9,11 +9,14 @@ import {
 } from "@/lib/domain/merge-tags";
 import {
   describeChoice,
+  describeSubjectPlan,
   isWrittenVariant,
-  describeSubjectSource,
+  renderSubjectPlan,
   routedGroup,
+  subjectForGroup,
   templateFor,
   type OtherRouting,
+  type StepSubjectSource,
   type StepVariant,
 } from "@/lib/domain/step-variants";
 import { STEP_ONE_SEEDS } from "@/lib/domain/step-variant-seeds";
@@ -158,17 +161,22 @@ function TabButton({
  * précisément ce que donnent les fiches réelles (jalon 87).
  */
 export function GroupPreviews({
-  step,
+  steps,
+  position,
   variants,
   samples,
   otherRouting = "default",
 }: {
-  readonly step: { readonly subject: string; readonly body: string };
+  /** Toutes les étapes : l'objet se décide dessus, groupe par groupe. */
+  readonly steps: readonly (StepSubjectSource & { readonly body: string })[];
+  readonly position: number;
   readonly variants: readonly StepVariant[];
   readonly samples: SampleSet;
   /** Le routage d'« Autre » et des fiches non classées, lu sur la campagne. */
   readonly otherRouting?: OtherRouting;
 }) {
+  const own = steps.find((entry) => entry.position === position);
+  const step = { subject: own?.subject ?? "", body: own?.body ?? "" };
   const byGroup = new Map<string, SampleContact>();
   for (const sample of samples.contacts) {
     const key = groupKeyOf(sample);
@@ -185,11 +193,12 @@ export function GroupPreviews({
           l'envoi appellent `routedGroup` puis `templateFor` : une seconde règle
           montrerait une variante que l'envoi ne choisirait pas.
         */
-        const chosen = templateFor(
-          step,
-          variants,
-          routedGroup(sample.group, sample.groupSetBy, otherRouting),
-        );
+        const group = routedGroup(sample.group, sample.groupSetBy, otherRouting);
+        // Le corps vient du gabarit de l'étape ; l'objet, du décideur — les deux
+        // mêmes fonctions que l'envoi, donc un aperçu qui ne peut pas mentir.
+        const chosen = templateFor(step, variants, group);
+        const plan = subjectForGroup(steps, position, group);
+        const subject = renderSubjectPlan(plan, sample.values, renderSubject);
         const dropped = droppedSentences(chosen.body, sample.values);
         return (
           <div key={key} className="rounded-card border border-line bg-surface-2 p-2.5">
@@ -207,18 +216,18 @@ export function GroupPreviews({
               </p>
             ))}
             <p className="mt-1.5 text-[11.5px] font-semibold text-muted">
-              Objet — {describeSubjectSource(chosen)}
+              Objet — {describeSubjectPlan(plan, group, subject.usedFallback)}
             </p>
             <p className="text-[12.5px] text-ink" data-variant-subject="1">
-              {renderSubject(chosen.subject, sample.values)}
+              {subject.subject}
             </p>
             {/*
               Le même avertissement que l'éditeur, sur chaque variante : un repli
               employé se dit là où on relit le texte qui partira.
             */}
-            {subjectFallbacks(chosen.subject, sample.values).length > 0 && (
+            {subjectFallbacks(plan.template, sample.values).length > 0 && (
               <p className="mt-1 rounded-control border border-gold bg-gold-l px-2 py-1 text-[11.5px] text-ink">
-                Objet : {subjectFallbacks(chosen.subject, sample.values).join(" · ")}.
+                Objet : {subjectFallbacks(plan.template, sample.values).join(" · ")}.
               </p>
             )}
             <p className="mt-1.5 text-[11.5px] font-semibold text-muted">Message</p>

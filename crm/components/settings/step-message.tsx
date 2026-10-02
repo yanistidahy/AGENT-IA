@@ -3,11 +3,16 @@
 import { useEffect, useState } from "react";
 import { GROUP_LABELS, type ContactGroup } from "@/lib/domain/contact-group";
 import {
+  CUSTOM_SUBJECT_WARNING,
   editedVariant,
-  threadSubjectFor,
-  threadTemplate,
+  subjectForGroup,
+  SUBJECT_MODE_LABELS,
+  SUBJECT_MODES,
+  toSubjectMode,
   type OtherRouting,
+  type StepSubjectSource,
   type StepVariant,
+  type SubjectMode,
 } from "@/lib/domain/step-variants";
 import { STEP_ONE_SEEDS } from "@/lib/domain/step-variant-seeds";
 import { ManualStepEditor, type SampleSet } from "./manual-step-editor";
@@ -29,7 +34,7 @@ export function StepMessage({
   otherRouting = "default",
   position,
   threadSteps,
-  firstVariants,
+  subjectMode = "thread",
   focusSubject = null,
   onWriteFirstSubject,
   onChange,
@@ -42,14 +47,14 @@ export function StepMessage({
   readonly otherRouting?: OtherRouting;
   /** 1, 2 ou 3 — le pré-remplissage n'est proposé que sur la première étape. */
   readonly position: number;
-  /** Toutes les étapes — l'objet du fil se lit sur l'étape 1, groupe par groupe. */
-  readonly threadSteps: readonly {
-    readonly position: number;
-    readonly subject: string;
-    readonly body: string;
-  }[];
-  /** Les variantes de l'étape 1 : ce sont elles qui portent l'objet du fil. */
-  readonly firstVariants: readonly StepVariant[];
+  /**
+   * **Toutes les étapes, telles que le décideur les lit** : leur objet, leur
+   * mode et leurs variantes. C'est ce qui fait que l'écran voit exactement ce
+   * que l'envoi verra — l'objet du fil se lit sur l'étape 1, groupe par groupe.
+   */
+  readonly threadSteps: readonly (StepSubjectSource & { readonly body: string })[];
+  /** `thread` — l'objet de l'étape 1 ; `custom` — celui de cette étape. */
+  readonly subjectMode?: SubjectMode;
   /**
    * Une demande d'ouverture venue d'une relance : « écrire l'objet dans l'étape
    * 1 », sur **le même groupe**. `key` change à chaque clic pour que deux
@@ -61,6 +66,7 @@ export function StepMessage({
   readonly onChange: (change: {
     subject?: string;
     body?: string;
+    subjectMode?: SubjectMode;
     variants?: readonly StepVariant[];
   }) => void;
 }) {
@@ -83,8 +89,8 @@ export function StepMessage({
   }, [focusSubject, seen]);
 
   const current = tab === "default" ? { subject, body } : editedVariant(variants, tab);
-  /** Le gabarit tel qu'il partira : objet du fil compris, groupe par groupe. */
-  const thread = threadTemplate(threadSteps, position, variants, firstVariants);
+  /** Le mode effectif : l'étape 1 porte toujours son propre objet. */
+  const mode: SubjectMode = position === 1 ? "thread" : toSubjectMode(subjectMode);
 
   const patch = (change: { subject?: string; body?: string }) => {
     if (tab === "default") {
@@ -122,6 +128,41 @@ export function StepMessage({
         onTab={setTab}
         onSeed={position === 1 ? seed : null}
       />
+      {position > 1 && (
+        /*
+          **Le choix est au-dessus du champ, pas dans un réglage à part.** C'est
+          là qu'on se demande « est-ce que je garde la conversation ? », et la
+          conséquence se lit avant de cliquer plutôt qu'après l'envoi.
+        */
+        <fieldset className="sm:col-span-2 mt-2 rounded-control border border-line p-2.5">
+          <legend className="px-1 text-[11.5px] font-semibold text-muted">
+            Objet de cette relance
+          </legend>
+          <div className="flex flex-col gap-1.5">
+            {SUBJECT_MODES.map((value) => (
+              <label key={value} className="flex items-start gap-2 text-[12.5px]">
+                <input
+                  type="radio"
+                  name={`subject-mode-${position}`}
+                  data-subject-mode={value}
+                  checked={mode === value}
+                  onChange={() => onChange({ subjectMode: value })}
+                  className="mt-0.5"
+                />
+                <span>{SUBJECT_MODE_LABELS[value]}</span>
+              </label>
+            ))}
+          </div>
+          {mode === "custom" && (
+            <p
+              data-custom-subject-warning="1"
+              className="mt-2 rounded-control border border-gold bg-gold-l px-2 py-1 text-[11.5px] text-ink"
+            >
+              {CUSTOM_SUBJECT_WARNING}
+            </p>
+          )}
+        </fieldset>
+      )}
       <ManualStepEditor
         subject={current.subject}
         body={current.body}
@@ -131,25 +172,16 @@ export function StepMessage({
         onChange={patch}
         tab={tab}
         /*
-          Sur une relance, l'objet ne se saisit pas : il vient de l'étape 1.
-          Le champ est remplacé par sa valeur en lecture seule et la raison —
-          le masquer sans rien dire ferait chercher un champ disparu.
-        */
-        /*
-          **L'objet du fil de CE groupe** : la variante d'étape 1 du même
-          groupe, à défaut l'objet par défaut de l'étape 1. C'était le défaut —
-          l'écran ne lisait que le défaut, et annonçait « l'étape 1 ne porte pas
-          encore d'objet » au-dessus d'un groupe qui en avait un.
+          **Verrouillé seulement en mode « Garder ».** Le champ est alors
+          remplacé par l'objet du fil de **ce groupe** et par la raison — le
+          masquer sans rien dire ferait chercher un champ disparu. En mode
+          « Objet personnalisé », `null` rend le champ éditable, avec les puces,
+          les replis et le refus de {video} comme sur l'étape 1.
         */
         lockedSubject={
-          position === 1
+          position === 1 || mode === "custom"
             ? null
-            : threadSubjectFor(
-                threadSteps,
-                position,
-                firstVariants,
-                tab === "default" ? null : tab,
-              )
+            : subjectForGroup(threadSteps, position, tab === "default" ? null : tab).template
         }
         /* Le lien de secours, quand le fil n'a pas d'objet pour ce groupe. */
         onWriteFirstSubject={
@@ -165,14 +197,15 @@ export function StepMessage({
         }
       />
       {/*
-        **L'aperçu montre le gabarit du fil**, pas celui de l'étape : sur une
-        relance, l'objet vient de l'étape 1 groupe par groupe, et c'est
-        `threadTemplate` — la fonction de la composition — qui l'applique. Un
-        aperçu calculé autrement montrerait un objet que l'envoi ne produit pas.
+        **L'aperçu appelle le décideur, comme l'envoi.** `subjectForGroup` tranche
+        entre l'objet du fil et l'objet personnalisé, et `renderSubjectPlan`
+        applique le repli de vide : un aperçu calculé autrement montrerait un
+        objet que l'envoi ne produit pas.
       */}
       <GroupPreviews
-        step={thread.step}
-        variants={thread.variants}
+        steps={threadSteps}
+        position={position}
+        variants={variants}
         samples={samples}
         otherRouting={otherRouting}
       />

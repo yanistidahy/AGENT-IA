@@ -109,25 +109,30 @@ describe("une seule règle de routage, appelée par les deux surfaces", () => {
 describe("jamais d'objet vide", () => {
   it("l'enregistrement refuse avant d'écrire, en nommant l'étape", () => {
     const source = read("lib/api/email-sequences.ts");
-    expect(source).toContain("effectiveSubject(");
+    /*
+      Depuis le jalon 104 le verdict se lit sur le plan du décideur
+      (`subjectForGroup`), qui connaît le mode de l'étape et la variante du
+      groupe : `effectiveSubject` ne voyait ni l'un ni l'autre.
+    */
+    expect(source).toContain("subjectForGroup(");
     const guard = source.slice(0, source.indexOf("const saved = await prisma.$transaction"));
     expect(
       guard,
       "Le refus doit précéder la transaction : refuser après avoir écrit laisserait " +
         "une étape enregistrée avec un objet vide.",
-    ).toContain("effectiveSubject(");
+    ).toContain("subjectForGroup(");
     expect(guard).toContain("un message sans objet n'arrive pas");
   });
 
   it("le repli de la variante est explicite, pas un hasard de lecture", () => {
     const source = read("lib/domain/step-variants.ts");
     expect(source).toContain("subjectFromStep");
-    expect(source).toContain("export function effectiveSubject(");
-    expect(source).toContain("export function describeSubjectSource(");
+    expect(source).toContain("export function subjectForGroup(");
+    expect(source).toContain("export function describeSubjectPlan(");
   });
 
   it("l'aperçu dit quel objet partira", () => {
-    expect(read("components/settings/variant-tabs.tsx")).toContain("describeSubjectSource(");
+    expect(read("components/settings/variant-tabs.tsx")).toContain("describeSubjectPlan(");
   });
 });
 

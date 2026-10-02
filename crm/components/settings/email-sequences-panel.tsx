@@ -37,6 +37,16 @@ export interface SequenceStepView {
   mode?: StepMode;
   subject?: string;
   body?: string;
+  /**
+   * D'où vient l'objet de cette étape — « thread » ou « custom », jalon 104.
+   *
+   * **Il voyage avec l'étape dans les deux sens**, comme les variantes et pour
+   * la même raison : les étapes sont réécrites d'un bloc à chaque
+   * enregistrement, et un champ que l'écran ne renverrait pas retomberait au
+   * défaut de la colonne — donc « Garder », donc un objet personnalisé qui
+   * s'efface au premier enregistrement sans que rien ne le dise.
+   */
+  subjectMode?: string;
   /** Le dernier objet réellement composé pour cette étape, s'il y en a un. */
   lastSubject?: string;
   /**
@@ -189,6 +199,7 @@ export function EmailSequencesPanel({
             mode: step.mode ?? "alex",
             subject: step.subject ?? "",
             body: step.body ?? "",
+            subjectMode: step.subjectMode ?? "thread",
             variants: step.variants ?? [],
           })),
         }),

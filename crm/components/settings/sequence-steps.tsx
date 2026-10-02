@@ -11,7 +11,7 @@ import {
 import { MAX_STEPS } from "@/lib/domain/sequence-rules";
 import { toStepMode, type StepMode } from "@/lib/domain/merge-tags";
 import { stepModeFor, type CampaignMode } from "@/lib/domain/campaign-mode";
-import type { OtherRouting } from "@/lib/domain/step-variants";
+import { toSubjectMode, type OtherRouting } from "@/lib/domain/step-variants";
 import { EMPTY_SAMPLES, type SampleSet } from "./manual-step-editor";
 import { StepMessage } from "./step-message";
 import type { VariantTab } from "./variant-tabs";
@@ -43,6 +43,8 @@ export interface StepDraft {
   brief: string;
   /** `alex` — Alex écrit ; `manual` — le texte est écrit à la main (jalon 87). */
   mode?: StepMode;
+  /** `thread` — l'objet de l'étape 1 ; `custom` — celui de cette étape. */
+  subjectMode?: string;
   subject?: string;
   body?: string;
   /** Le dernier objet réellement composé pour cette étape, s'il y en a un. */
@@ -99,8 +101,9 @@ export function SequenceSteps({
     position: index + 1,
     subject: step.subject ?? "",
     body: step.body ?? "",
+    subjectMode: step.subjectMode,
+    variants: step.variants,
   }));
-  const firstVariants = steps[0]?.variants ?? [];
 
   /*
     Une relance demande « écrire l'objet dans l'étape 1 » : on déplie l'étape 1
@@ -327,7 +330,7 @@ export function SequenceSteps({
                           le message auquel elle répond se perd.
                         */
                         threadSteps={threadSteps}
-                        firstVariants={firstVariants}
+                        subjectMode={toSubjectMode(step.subjectMode ?? "thread")}
                         focusSubject={index === 0 ? focusFirst : null}
                         onWriteFirstSubject={index === 0 ? undefined : writeFirstSubject}
                         onChange={(change) => patch(index, change)}

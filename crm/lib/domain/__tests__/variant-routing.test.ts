@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   describeRouting,
-  describeSubjectSource,
-  effectiveSubject,
   OTHER_ROUTINGS,
   routedGroup,
   ROUTING_LABELS,
@@ -109,28 +107,7 @@ describe("jamais d'objet vide", () => {
     expect(chosen.subjectFromStep).toBe(true);
   });
 
-  it("l'aperçu dit quel objet partira, et d'où il vient", () => {
-    expect(describeSubjectSource(templateFor(STEP, VARIANTS, "marketing"))).toBe(
-      "objet du message par défaut (la variante « Marketing & digital » n'en porte pas)",
-    );
-    expect(describeSubjectSource(templateFor(STEP, VARIANTS, "direction"))).toBe(
-      "objet de la variante « Direction »",
-    );
-    expect(describeSubjectSource(templateFor(STEP, VARIANTS, null))).toBe(
-      "objet du message par défaut",
-    );
-  });
 
-  it("aucun objet nulle part : c'est le seul cas refusé", () => {
-    expect(effectiveSubject({ subject: "  ", body: "x" }, { subject: " ", body: "y" })).toBeNull();
-    expect(effectiveSubject({ subject: "Défaut", body: "x" }, { subject: " ", body: "y" })).toBe(
-      "Défaut",
-    );
-    expect(effectiveSubject({ subject: " ", body: "x" }, { subject: "À moi", body: "y" })).toBe(
-      "À moi",
-    );
-    expect(effectiveSubject({ subject: " ", body: "x" }, undefined)).toBeNull();
-  });
 
   it("un objet vide ne peut donc jamais atteindre le rendu", () => {
     // La garantie qui compte : quelle que soit la variante choisie, l'objet

@@ -994,6 +994,16 @@ model EmailSequenceStep {
   subject   String @default("")
   body      String @default("")
 
+  /// **D'où vient l'objet de cette étape** (jalon 104).
+  ///
+  /// `thread` — celui de l'étape 1, groupe par groupe : la relance reste dans la
+  /// conversation du premier message (règle du jalon 101). C'est le défaut, donc
+  /// ce que portent toutes les étapes existantes.
+  /// `custom` — l'objet de cette étape, variantes comprises. Un objet différent
+  /// ouvre une nouvelle conversation chez le destinataire, et l'écran le dit.
+  /// Sans effet sur l'étape 1, qui porte toujours son propre objet.
+  subjectMode String @default("thread")
+
   variants EmailStepVariant[]
 
   @@unique([sequenceId, position])

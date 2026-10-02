@@ -12,7 +12,12 @@ import {
   isContactGroup,
   type ContactGroup,
 } from "../domain/contact-group";
-import { effectiveSubject, threadSubjectFor, type StepVariant } from "../domain/step-variants";
+import {
+  subjectForGroup,
+  SUBJECT_MODES,
+  toSubjectMode,
+  type StepVariant,
+} from "../domain/step-variants";
 import { REMOVED } from "../domain/campaign-members";
 import { prisma } from "../db";
 import { autoUnlock, BLOCK_LABELS, MAX_STEPS, type AutoUnlock } from "../domain/sequence-rules";
@@ -149,6 +154,7 @@ export async function listSequences(): Promise<SequenceView[]> {
         delayDays: step.delayDays,
         brief: step.brief,
         mode: toStepMode(step.mode),
+        subjectMode: toSubjectMode(step.subjectMode),
         subject: step.subject,
         body: step.body,
         lastSubject: samples.get(step.position) ?? "",
@@ -312,6 +318,12 @@ export const sequenceSchema = z.object({
         // inconnue retomberait sur `alex` à la lecture, donc sur un texte écrit
         // à la main qui ne partirait jamais. Mieux vaut refuser la charge utile.
         mode: z.enum(STEP_MODES).default("alex"),
+        /*
+          **D'où vient l'objet de cette étape** (jalon 104). Validé ici et pas
+          seulement à l'écran : une valeur inconnue retomberait sur « garder le
+          fil » à la lecture, donc sur un objet que personne n'a choisi.
+        */
+        subjectMode: z.enum(SUBJECT_MODES).default("thread"),
         subject: z.string().trim().max(200).default(""),
         body: z.string().max(8000).default(""),
         /**
@@ -388,17 +400,18 @@ export async function saveSequence(
     jalon 101, une relance reprend l'objet de l'étape 1 : exiger qu'elle en
     porte un à elle refuserait un enregistrement parfaitement correct.
   */
+  /*
+    Les étapes telles que le décideur les lit : leur objet, **leur mode**, et
+    leurs variantes. C'est `subjectForGroup` qui tranche, donc la validation voit
+    exactement ce que l'envoi verra — y compris qu'une étape en mode « Garder »
+    ignore l'objet qu'elle porte encore en base.
+  */
   const positions = input.steps.map((step, index) => ({
     position: index + 1,
     subject: step.subject,
+    subjectMode: step.subjectMode,
+    variants: step.variants,
   }));
-  /*
-    Les variantes de l'étape 1 : ce sont elles qui portent l'objet du fil, groupe
-    par groupe. Le jalon 101 ne lisait que `positions`, donc le seul objet par
-    défaut — d'où le refus d'un enregistrement dont l'objet vivait sur une
-    variante.
-  */
-  const firstVariants = input.steps[0]?.variants ?? [];
 
   for (const [index, step] of input.steps.entries()) {
     if (toStepMode(step.mode) !== "manual") continue;
@@ -432,8 +445,8 @@ export async function saveSequence(
     */
     for (const variant of step.variants) {
       if (variant.subject.trim() !== "" || variant.body.trim() !== "") {
-        const thread = threadSubjectFor(positions, index + 1, firstVariants, variant.group);
-        if (effectiveSubject({ ...step, subject: thread }, variant) === null) {
+        const plan = subjectForGroup(positions, index + 1, variant.group);
+        if (plan.template.trim() === "") {
           return {
             ok: false,
             message:
@@ -450,8 +463,8 @@ export async function saveSequence(
       classées, et un `Subject:` vide ne se lit pas. Une campagne qui n'écrit que
       des variantes laisse ce corps vide, et la garde ne la gêne pas.
     */
-    const thread = threadSubjectFor(positions, index + 1, firstVariants, null);
-    if (step.body.trim() !== "" && thread.trim() === "") {
+    const plan = subjectForGroup(positions, index + 1, null);
+    if (step.body.trim() !== "" && plan.template.trim() === "") {
       return {
         ok: false,
         message: `Étape ${index + 1} : aucun objet. L'objet du fil est celui de l'étape 1 — écrivez-le là. Un message sans objet n'arrive pas.`,
@@ -478,6 +491,7 @@ export async function saveSequence(
           delayDays: step.delayDays,
           brief: step.brief,
           mode: step.mode,
+          subjectMode: step.subjectMode,
           subject: step.subject,
           body: step.body,
         },

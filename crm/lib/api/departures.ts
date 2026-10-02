@@ -38,11 +38,12 @@ import {
   type DroppedSentence,
 } from "../domain/merge-tags";
 import {
-  firstVariantsOf,
+  renderSubjectPlan,
   routedGroup,
+  subjectForGroup,
   templateFor,
   toOtherRouting,
-  threadSubjectFor,
+  toSubjectMode,
   threadTemplate,
 } from "../domain/step-variants";
 import { isContactGroup, type ContactGroup } from "../domain/contact-group";
@@ -117,6 +118,7 @@ function threadShapeOf(
     readonly brief: string;
     readonly subject: string;
     readonly body: string;
+    readonly subjectMode?: string;
     readonly variants?: readonly {
       readonly group: string;
       readonly subject: string;
@@ -134,11 +136,16 @@ function threadShapeOf(
     variants.filter((variant): variant is typeof variant & { group: ContactGroup } =>
       isContactGroup(variant.group),
     ),
-    // L'objet du fil se décide groupe par groupe sur l'étape 1 : l'empreinte
-    // doit donc bouger quand une variante d'étape 1 change d'objet.
-    firstVariantsOf(steps),
   );
-  return templateShapeOf({ ...step, subject: thread.step.subject }, thread.variants);
+  /*
+    **Le mode entre dans l'empreinte.** Sans lui, basculer « Garder » ↔ « Objet
+    personnalisé » ne rendrait pas les départs d'étape 2 périmés : leur objet
+    changerait sans qu'aucune carte le dise.
+  */
+  return templateShapeOf(
+    { ...step, subject: `${toSubjectMode(step.subjectMode ?? "thread")}|${thread.step.subject}` },
+    thread.variants,
+  );
 }
 
 function dayKey(now: Date): string {
@@ -490,20 +497,17 @@ export async function composeDepartures(
         : templateFingerprint(threadShapeOf(enrollment.sequence.steps, verdict.step, variants));
 
     if (isManual) {
-      // **L'objet vient du fil, pas de l'étape.** Une relance qui change
-      // d'objet ouvre une seconde conversation chez le destinataire : c'est
-      // `threadTemplate` qui tranche, pour les trois chemins d'écriture.
-      const thread = threadTemplate(
-        enrollment.sequence.steps,
-        verdict.step,
-        variants,
-        firstVariantsOf(enrollment.sequence.steps),
-      );
+      /*
+        **L'objet est décidé par `subjectForGroup`, dans `renderManualStep`.**
+        Le groupe de la fiche ne se connaît que là, et c'est lui qui choisit
+        entre l'objet du fil et l'objet personnalisé de l'étape (jalon 104).
+      */
       written = await renderManualStep(
         enrollment.contactId,
-        thread.step,
+        enrollment.sequence.steps,
+        verdict.step,
         enrollment.sequence.campaign?.mailboxId,
-        thread.variants,
+        variants,
         // Le routage d'« Autre » et des fiches non classées, lu sur la
         // campagne. Absent (campagne d'avant ce réglage) = `default`, donc le
         // message par défaut de l'étape, donc le contenu d'avant à l'octet près.
@@ -1110,16 +1114,15 @@ export async function listDepartures(
               seul défaut annonçait les replis d'un objet que ce destinataire ne
               reçoit pas.
             */
-            threadSubjectFor(
+            subjectForGroup(
               row.enrollment.sequence.steps,
               row.step,
-              firstVariantsOf(row.enrollment.sequence.steps),
               routedGroup(
                 row.enrollment.contact.contactGroup,
                 row.enrollment.contact.groupSetBy,
                 toOtherRouting(row.enrollment.sequence.campaign?.otherRouting ?? "default"),
               ),
-            ),
+            ).template,
             mergeValuesOf(row.enrollment.contact, globals),
           );
 
@@ -1577,17 +1580,12 @@ export async function rewriteDeparture(
 
   let written: { readonly subject: string; readonly body: string } | null = null;
   if (manual) {
-    const thread = threadTemplate(
-      departure.enrollment.sequence.steps,
-      departure.step,
-      variants,
-      firstVariantsOf(departure.enrollment.sequence.steps),
-    );
     written = await renderManualStep(
       departure.enrollment.contactId,
-      thread.step,
+      departure.enrollment.sequence.steps,
+      departure.step,
       departure.enrollment.sequence.campaign?.mailboxId,
-      thread.variants,
+      variants,
       departure.enrollment.sequence.campaign?.otherRouting ?? "default",
     );
   } else {
