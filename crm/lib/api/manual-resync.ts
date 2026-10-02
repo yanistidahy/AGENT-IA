@@ -117,12 +117,7 @@ async function rewriteManualDepartures(sequenceId: string): Promise<{
       départs d'étape 2, qui partiraient avec l'ancien objet, hors du fil, sans
       que rien ne le dise.
     */
-    const thread = threadTemplate(
-      sequence.steps,
-      step.position,
-      variants,
-      firstVariantsOf(sequence.steps),
-    );
+    const thread = threadTemplate(sequence.steps, step.position, variants);
     const fingerprint = templateFingerprint({
       mode: "manual",
       subject: thread.step.subject,
@@ -149,9 +144,10 @@ async function rewriteManualDepartures(sequenceId: string): Promise<{
 
       const written = await renderManualStep(
         departure.enrollment.contactId,
-        thread.step,
+        sequence.steps,
+        step.position,
         sequence.campaign?.mailboxId,
-        thread.variants,
+        variants,
         sequence.campaign?.otherRouting ?? "default",
       );
       // La fiche a disparu entre la lecture et le rendu : rare, et rien à

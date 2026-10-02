@@ -56,7 +56,13 @@ describe("une étape manuelle n'appelle jamais le modèle", () => {
     expect(manual).not.toContain("messages.stream");
     expect(manual).not.toContain("researchCompany");
     expect(manual).toContain("renderTemplate(");
-    expect(manual).toContain("renderSubject(");
+    /*
+      Depuis le jalon 104 l'objet passe par `renderSubjectPlan`, qui reçoit
+      `renderSubject` et applique en plus le repli de vide : la substitution est
+      la même, elle est simplement appelée par le décideur.
+    */
+    expect(manual).toContain("renderSubjectPlan(");
+    expect(manual).toContain("renderSubject,");
   });
 
   it("mais les règles d'envoi ne sont pas contournées", () => {

@@ -68,30 +68,36 @@ describe("l'objet se rend au même endroit pour tout le monde", () => {
       expect(source, `${path} rend un objet de son côté`).not.toContain("renderSubject(");
       expect(source, `${path} recopie un repli d'objet`).not.toContain("votre marque");
     }
-    // Le rendu vit dans le service du gabarit manuel, et nulle part ailleurs.
-    expect(code("lib/api/manual-step.ts")).toContain("renderSubject(");
+    /*
+      Le rendu vit dans le service du gabarit manuel, et nulle part ailleurs.
+      Depuis le jalon 104 il passe par `renderSubjectPlan`, qui reçoit
+      `renderSubject` et applique en plus le repli de vide : la fonction de rendu
+      n'est donc plus appelée en direct, elle est **passée** au décideur.
+    */
+    const manual = code("lib/api/manual-step.ts");
+    expect(manual).toContain("renderSubjectPlan(");
+    expect(manual, "la fonction de rendu est bien celle du domaine").toContain("renderSubject,");
   });
 
-  it("les trois chemins d'écriture passent par threadTemplate", () => {
+  it("aucun chemin d'écriture ne lit step.subject pour composer un objet", () => {
     /*
-      `threadTemplate` porte la règle du fil : l'objet de l'étape 1 pour toutes
-      les étapes. Lire `step.subject` directement la contournerait, et la
-      relance ouvrirait une seconde conversation chez le destinataire.
+      Lire `step.subject` directement contournerait le décideur : la relance
+      partirait avec son propre objet alors qu'elle doit, par défaut, garder
+      celui de l'étape 1 — et le destinataire verrait deux conversations.
     */
     for (const path of ["lib/api/departures.ts", "lib/api/manual-resync.ts"]) {
       const source = code(path);
-      expect(source, `${path} n'applique pas l'objet du fil`).toContain("threadTemplate(");
-      expect(source, `${path} lit step.subject sans passer par le fil`).not.toMatch(
+      expect(source, `${path} lit step.subject sans passer par le décideur`).not.toMatch(
         /subject:\s*step\??\.?\.?subject/,
       );
     }
-    const compose = code("lib/api/departures.ts");
-    expect((compose.match(/threadTemplate\(/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 
-  it("l'aperçu rend l'objet avec la fonction de l'envoi", () => {
+  it("l'aperçu rend l'objet avec les fonctions de l'envoi", () => {
     expect(code("components/settings/manual-step-editor.tsx")).toContain("renderSubject(");
-    expect(code("components/settings/variant-tabs.tsx")).toContain("renderSubject(");
+    const preview = code("components/settings/variant-tabs.tsx");
+    expect(preview).toContain("renderSubjectPlan(");
+    expect(preview).toContain("subjectForGroup(");
   });
 
   it("un repli employé est nommé partout où l'on relit le texte", () => {
@@ -147,82 +153,142 @@ describe("l'objet se rend au même endroit pour tout le monde", () => {
   });
 });
 
-/* --------------------------------- l'objet du fil se décide en un endroit ----- */
+/* --------------------------------- l'objet se décide en un seul endroit ----- */
 
 /**
- * **Un objet de relance ne se calcule que par `threadSubjectFor`.**
+ * **L'objet d'une étape ne se calcule que par `subjectForGroup`.**
  *
- * Le défaut du jalon 101 était exactement là : `subjectForStep` ne lisait que
- * l'objet **par défaut** de l'étape 1, et `threadTemplate` neutralisait les
- * objets de variante. Un groupe dont l'objet vit sur sa variante d'étape 1 se
- * retrouvait donc avec un objet vide — l'éditeur annonçait « l'étape 1 ne porte
- * pas encore d'objet », et le départ était refusé à l'envoi par le contrôle de
- * vide du jalon 96.
+ * Deux défauts fermés ici, et aucun ne faisait rougir quoi que ce soit :
  *
- * Rien n'échouait : deux `string`, aucune exception, aucun type violé. D'où une
- * garde statique, et elle porte sur **tous** les chemins — l'éditeur, l'aperçu,
- * la composition, la resynchronisation à l'enregistrement, la réécriture d'un
- * départ, la carte de la file et la validation à l'enregistrement.
+ * - **jalon 103** : `subjectForStep` ne lisait que l'objet par défaut de
+ *   l'étape 1, donc un groupe dont l'objet vit sur sa variante se retrouvait
+ *   avec un objet vide — départ refusé à l'envoi par le contrôle du jalon 96 ;
+ * - **jalon 104** : une relance peut désormais porter **son** objet. Le mode se
+ *   lit sur l'étape, et un chemin qui l'ignorerait enverrait un objet que
+ *   personne n'a choisi — soit en ouvrant une conversation qu'on voulait garder,
+ *   soit en gardant celle qu'on voulait quitter.
+ *
+ * Rien n'échouait dans les deux cas : des `string`, aucune exception, aucun type
+ * violé. D'où une garde statique, et elle porte sur **tous** les chemins —
+ * l'éditeur, l'aperçu, la composition, la resynchronisation à l'enregistrement,
+ * la réécriture d'un départ, la carte de la file et la validation.
  */
-describe("l'objet du fil, groupe par groupe", () => {
-  /** Les six chemins qui ont un objet de relance à décider. */
+describe("l'objet d'une étape, décidé en un seul endroit", () => {
+  /** Les chemins qui ont un objet d'étape à décider. */
   const PATHS = [
+    "lib/api/manual-step.ts",
     "lib/api/departures.ts",
-    "lib/api/manual-resync.ts",
     "lib/api/email-sequences.ts",
     "components/settings/step-message.tsx",
+    "components/settings/variant-tabs.tsx",
   ];
 
-  it("une seule fonction décide de l'objet du fil", () => {
+  it("une seule fonction décide, et c'est subjectForGroup", () => {
     const domain = code("lib/domain/step-variants.ts");
-    expect(domain, "threadSubjectFor est la règle").toContain("export function threadSubjectFor(");
-    // `subjectForStep` reste la notion « objet par défaut de l'étape 1 », et
-    // n'est lue que par le décideur : ailleurs, elle ignorerait les variantes.
+    expect(domain, "subjectForGroup est la règle").toContain("export function subjectForGroup(");
+    expect(domain, "et le repli de vide est appliqué à un seul endroit").toContain(
+      "export function renderSubjectPlan(",
+    );
+    /*
+      `subjectForStep` n'existe plus comme décideur : elle ignorait les variantes
+      **et** le mode. Toute réapparition en dehors du domaine serait un second
+      calcul d'objet.
+    */
     for (const path of PATHS) {
-      expect(code(path), `${path} calcule un objet de fil sans le décideur`).not.toContain(
+      expect(code(path), `${path} calcule un objet sans le décideur`).not.toContain(
         "subjectForStep(",
       );
     }
   });
 
-  it("chaque chemin passe par threadSubjectFor ou threadTemplate", () => {
+  it("chaque chemin passe par le décideur", () => {
     for (const path of PATHS) {
       const source = code(path);
       expect(
-        source.includes("threadSubjectFor(") || source.includes("threadTemplate("),
-        `${path} n'applique pas l'objet du fil`,
+        source.includes("subjectForGroup(") || source.includes("threadTemplate("),
+        `${path} n'applique pas le décideur`,
       ).toBe(true);
     }
-  });
-
-  it("threadTemplate reçoit les variantes de l'étape 1 partout où il est appelé", () => {
-    /*
-      Sans ce quatrième argument, `threadTemplate` retombe sur une liste vide :
-      c'est le défaut d'origine, et il est silencieux. La garde exige donc que
-      chaque chemin lise les variantes de l'étape 1.
-    */
-    for (const path of ["lib/api/departures.ts", "lib/api/manual-resync.ts"]) {
-      expect(code(path), `${path} ne lit pas les variantes de l'étape 1`).toContain(
-        "firstVariantsOf(",
+    // Le rendu, lui, applique le repli de vide — jamais un `Subject:` vide.
+    for (const path of ["lib/api/manual-step.ts", "components/settings/variant-tabs.tsx"]) {
+      expect(code(path), `${path} rend un objet sans le repli de vide`).toContain(
+        "renderSubjectPlan(",
       );
     }
-    expect(code("components/settings/step-message.tsx")).toContain("firstVariants");
   });
 
-  it("l'éditeur d'une relance lit l'objet du fil du groupe édité, et rien d'autre", () => {
-    const source = code("components/settings/step-message.tsx");
-    expect(source).toContain("threadSubjectFor(");
-    // L'onglet édité choisit le groupe : un objet de fil calculé sans lui
-    // afficherait celui d'un autre groupe.
-    expect(source).toMatch(/tab === "default" \? null : tab/);
+  it("le mode de l'étape est lu, jamais supposé", () => {
+    const domain = code("lib/domain/step-variants.ts");
+    // Une valeur inconnue vaut « garder le fil » : jamais une conversation de plus.
+    expect(domain).toContain("export function toSubjectMode(");
+    expect(domain).toMatch(/value === "custom" \? "custom" : "thread"/);
+    // Le mode voyage jusqu'au décideur, et il est validé à l'enregistrement.
+    expect(code("lib/api/email-sequences.ts")).toContain("subjectMode");
+    expect(code("lib/api/email-sequences.ts")).toContain("z.enum(SUBJECT_MODES)");
+  });
+
+  it("le mode fait l'aller-retour avec l'écran", () => {
+    /*
+      **Trouvé au clic, pas à la lecture.** Les étapes sont réécrites d'un bloc
+      à chaque enregistrement : un champ que la charge utile ne renvoie pas
+      retombe au défaut de la colonne — donc « Garder ». Le choix se cochait, la
+      conséquence s'affichait, l'aperçu rendait l'objet personnalisé, et
+      l'enregistrement l'effaçait en silence. Rien n'échouait : deux objets
+      valides, aucun type violé, aucun test rouge.
+    */
+    const panel = code("components/settings/email-sequences-panel.tsx");
+    expect(panel, "la charge utile porte le mode").toMatch(
+      /subjectMode: step\.subjectMode \?\? "thread"/,
+    );
+    expect(panel, "et le brouillon d'étape le déclare").toMatch(/subjectMode\?: string/);
+  });
+
+  it("le mode entre dans l'empreinte de péremption", () => {
+    /*
+      Sans lui, basculer « Garder » ↔ « Objet personnalisé » changerait l'objet
+      des départs en attente sans qu'aucune carte le dise (jalon 96).
+    */
+    const source = code("lib/api/departures.ts");
+    expect(source).toContain("toSubjectMode(step.subjectMode");
+  });
+
+  it("une étape en mode « Garder » ignore son objet stocké", () => {
+    /*
+      La règle vit dans le décideur, et elle est vérifiée sur le comportement par
+      les tests du domaine. Ici on ferme le contournement : aucun écran ne
+      réimplémente la bascule.
+    */
+    const editor = code("components/settings/step-message.tsx");
+    expect(editor).toContain("subjectForGroup(");
+    expect(editor, "le champ n'est verrouillé qu'en mode « Garder »").toMatch(
+      /position === 1 \|\| mode === "custom"/,
+    );
+  });
+
+  it("l'éditeur dit la conséquence d'un objet personnalisé", () => {
+    const domain = code("lib/domain/step-variants.ts");
+    expect(domain).toContain("export const CUSTOM_SUBJECT_WARNING");
+    expect(domain).toContain("nouvelle conversation");
+    // Dite dans le domaine, affichée par l'écran : une seule formulation.
+    expect(code("components/settings/step-message.tsx")).toContain("CUSTOM_SUBJECT_WARNING");
+  });
+
+  it("aucun chemin d'envoi ne pose d'en-tête de fil", () => {
+    /*
+      **Le produit n'a jamais posé `In-Reply-To` ni `References`** : le
+      rattachement repose sur l'objet et les participants, ce que les messageries
+      font seules. Un objet personnalisé n'a donc rien à défaire — et la garde
+      interdit qu'on en ajoute, ce qui recréerait un fil que l'objet vient
+      précisément de quitter.
+    */
+    for (const path of ["lib/api/mail.ts", "lib/api/email-send.ts", "lib/api/departures.ts"]) {
+      const source = code(path);
+      expect(source, `${path} pose un en-tête de fil`).not.toMatch(/inReplyTo|In-Reply-To/);
+      expect(source, `${path} pose un en-tête de fil`).not.toMatch(/references:\s/i);
+    }
   });
 
   it("le manque porte son geste : « Écrire l'objet dans l'étape 1 »", () => {
-    /*
-      Un manque nommé sans son geste fait chercher où agir. Le lien ouvre
-      l'étape 1 **sur le même groupe**, curseur dans le champ Objet — et il
-      n'existe que lorsqu'il y a réellement quelque chose à écrire.
-    */
     const editor = code("components/settings/manual-step-editor.tsx");
     expect(editor).toContain("Écrire l&apos;objet dans l&apos;étape 1");
     expect(editor).toContain("data-write-first-subject");
@@ -232,14 +298,6 @@ describe("l'objet du fil, groupe par groupe", () => {
     const steps = code("components/settings/sequence-steps.tsx");
     expect(steps, "l'étape 1 est dépliée avant d'y demander le focus").toContain(
       "current.includes(0) ? current : [0, ...current]",
-    );
-  });
-
-  it("l'aperçu par groupe montre le gabarit du fil, pas celui de l'étape", () => {
-    const source = code("components/settings/step-message.tsx");
-    expect(source).toContain("threadTemplate(");
-    expect(source, "l'aperçu lirait le gabarit de l'étape").toMatch(
-      /step=\{thread\.step\}[\s\S]{0,80}variants=\{thread\.variants\}/,
     );
   });
 });

@@ -11,9 +11,12 @@ import { readVideoDisplay } from "./video-panel";
 import type { VideoDisplay } from "../domain/video-display";
 import { listSignatories, pickSignatory } from "./signatories";
 import {
+  renderSubjectPlan,
   routedGroup,
+  subjectForGroup,
   templateFor,
   toOtherRouting,
+  type StepSubjectSource,
   type StepVariant,
 } from "../domain/step-variants";
 import { missingSentenceValues } from "../domain/merge-tags";
@@ -143,7 +146,17 @@ export interface ManualDraft {
  */
 export async function renderManualStep(
   contactId: string,
-  step: { readonly subject: string; readonly body: string },
+  /**
+   * **Toutes les étapes, et la position composée** — pas un gabarit déjà
+   * aplati.
+   *
+   * L'objet d'une étape dépend du groupe de la fiche, et le groupe ne se connaît
+   * qu'ici : c'est donc ici que `subjectForGroup` est appelé. Passer un objet
+   * déjà choisi obligerait l'appelant à deviner le groupe, et il y a trois
+   * appelants — c'est toujours le troisième qui se tromperait.
+   */
+  steps: readonly (StepSubjectSource & { readonly body: string })[],
+  position: number,
   mailboxId: string | undefined,
   /**
    * Les variantes de l'étape. **Le choix se fait ici, avec le groupe lu sur la
@@ -162,8 +175,9 @@ export async function renderManualStep(
   const contact = await readMergeContact(contactId);
   if (contact === null) return null;
 
+  const own = steps.find((entry) => entry.position === position);
   const template = templateFor(
-    step,
+    { subject: own?.subject ?? "", body: own?.body ?? "" },
     variants,
     // **Routage, pas classement** : la fiche n'est pas réécrite. Une fiche
     // jamais classée est routée comme « Autre » — dans les deux cas personne
@@ -172,6 +186,21 @@ export async function renderManualStep(
   );
 
   const values = mergeValuesOf(contact, await templateGlobals());
+  /*
+    **L'objet passe par le décideur, jamais par le gabarit du corps.** Le mode de
+    l'étape (fil ou objet personnalisé), la variante du groupe et le repli de
+    vide s'y décident en un seul endroit — `renderSubjectPlan` applique le repli,
+    et `templateFor` ne sert plus qu'au corps.
+  */
+  const rendered = renderSubjectPlan(
+    subjectForGroup(
+      steps,
+      position,
+      routedGroup(contact.contactGroup, contact.groupSetBy, toOtherRouting(routing)),
+    ),
+    values,
+    renderSubject,
+  );
   const [config, signatories] = await Promise.all([readMailConfig(mailboxId), listSignatories()]);
   const signatory =
     (mailboxId === undefined
@@ -183,7 +212,7 @@ export async function renderManualStep(
     signatory === null ? signatureBlock(signatureOf(config)) : signatureBlock(signatory);
 
   return {
-    subject: sanitizeSubject(renderSubject(template.subject, values)),
+    subject: sanitizeSubject(rendered.subject),
     // L'ordre des deux garde-fous est celui de la rédaction : l'appel d'abord,
     // il ouvre le message ; la signature ensuite, elle le ferme.
     body: enforceSignature(

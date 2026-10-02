@@ -30,6 +30,16 @@ const TAG = "E2eCap100";
 let browser: Browser | null = null;
 let session: Session | null = null;
 let previousCap = 50;
+/**
+ * La campagne de la recette, pour **borner la file à elle seule**.
+ *
+ * Sans cette portée, les assertions comptaient les cartes de *toute* la file :
+ * une autre campagne portant des départs reportés les faisait tomber, ce qui
+ * est la même classe de fragilité que la dépendance au jour du jalon 102 — un
+ * test qui dépend de l'état de la base ne garde rien. Le compteur par boîte,
+ * lui, reste global : c'est la règle du jalon 100, et le test l'exige.
+ */
+let campaignId = "";
 
 async function wipe(): Promise<void> {
   await prisma.emailSend.deleteMany({ where: { sequenceName: { startsWith: TAG } } });
@@ -128,6 +138,7 @@ describe.skipIf(skip)("le plafond d'une boîte se lit et se refuse sur la carte"
     const campaign = await prisma.campaign.create({
       data: { name: `${TAG} campagne`, mailboxId: box.id, mode: "manual" },
     });
+    campaignId = campaign.id;
     const sequence = await prisma.emailSequence.create({
       data: {
         name: `${TAG} campagne`,
@@ -191,7 +202,9 @@ describe.skipIf(skip)("le plafond d'une boîte se lit et se refuse sur la carte"
       }
     });
 
-    await page.goto(`${BASE_URL}/departs`, { waitUntil: "networkidle" });
+    // La file bornée à cette campagne : ce qu'une autre campagne porte ne
+    // décide pas de ce que ce test compte.
+    await page.goto(`${BASE_URL}/departs?campagne=${campaignId}`, { waitUntil: "networkidle" });
 
     // 1 · le compteur par boîte, en tête, égal au journal.
     const counter = page.locator("[data-cap-usage]").first();

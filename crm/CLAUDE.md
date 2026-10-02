@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 104 | **Une relance peut porter son propre objet** : un choix par étape — « Garder l'objet de l'étape 1 (même conversation) », le défaut, ou « Objet personnalisé (nouvelle conversation) » avec son champ éditable, ses variantes par groupe, ses puces « Insérer » et les replis neutres du jalon 101 ; une seule fonction (`subjectForGroup`) décide de l'objet de n'importe quelle étape pour n'importe quel groupe, et l'éditeur, l'aperçu, la composition, la resynchronisation, la carte de départ et les deux chemins d'envoi l'appellent ; la conséquence se lit **avant** de cliquer, le repli d'un objet personnalisé vide est l'objet du fil, et une campagne d'avant ce jalon rend un MIME identique à l'octet près | **livré, à valider** |
 | 103 | **L'objet du fil se décide groupe par groupe** : une relance hérite de l'objet de la variante d'étape 1 **du même groupe**, à défaut du défaut de l'étape 1 ; une seule fonction (`threadSubjectFor`) sert l'éditeur, l'aperçu, la composition, la resynchronisation, la réécriture, la carte et la validation ; un groupe qui porte l'objet du fil garde son fil même sans variante de relance ; et le champ verrouillé porte son geste — « Écrire l'objet dans l'étape 1 », sur le même groupe, curseur dans le champ | **livré, à valider** |
 | 102 | **La suite e2e redevient verte, et cesse de dépendre du jour** : trois échecs nommés avec leur fichier et leur ligne — deux défauts de test, un défaut du produit (le panneau vidéo masquait la destination du clic avec l'adresse de la vignette, deux faits indépendants) —, aucune assertion assouplie, et l'oracle du week-end devenu `isWeekend`, la fonction que le produit applique | **livré, à valider** |
 | 101 | **Les balises servent aussi dans l'objet** : les puces « Insérer » écrivent dans le champ qui avait le focus, un seul `renderSubject` sur tous les chemins d'envoi, des replis neutres décidés par une seule table (« votre marque », « votre site ») sans virgule orpheline, `{video}` refusée dans un objet avec sa raison, `{notresite}` en texte, le repli nommé dans l'aperçu et sur la carte de départ, et les relances qui portent l'objet de l'étape 1 sans « Re: » | **livré, à valider** |
@@ -15031,3 +15032,175 @@ l'envoi (dette du jalon 101, inchangée).
 
 **Les chiffres de la recette viennent d'un semis de vérification**, pas de votre
 base.
+
+---
+
+## Jalon 104 — une relance peut porter son propre objet
+
+### Le choix est une propriété de l'étape, et la conséquence se lit avant
+
+`EmailSequenceStep.subjectMode` (migration `50_step_subject_mode`), `thread` ou
+`custom`. **Le défaut porte sur la colonne**, donc toutes les étapes existantes
+lisent « Garder » sans que personne clique : c'est ce qui rend l'item 6 du test
+d'acceptation vrai par construction plutôt que par un script de reprise — la
+leçon du mode d'affichage de la vidéo au jalon 99.
+
+| Mode | Le champ Objet | Ce que le destinataire reçoit |
+|---|---|---|
+| **Garder l'objet de l'étape 1 (même conversation)** — le défaut | verrouillé sur l'objet du fil de **ce groupe** (jalon 103) | la relance se range sous le premier message |
+| **Objet personnalisé (nouvelle conversation)** | éditable, variantes par groupe comprises, avec les puces « Insérer » | une conversation neuve, sans le premier mail au-dessus |
+
+**La conséquence est écrite sous le choix, pas après l'envoi** : « Avec un objet
+différent, ce message arrive dans une nouvelle conversation, sans votre premier
+mail au-dessus. » C'est la seule chose de ce réglage qu'on ne peut pas deviner,
+et elle est **composée dans le domaine** (`CUSTOM_SUBJECT_WARNING`) — dite une
+seconde fois par l'écran, elle finirait par ne plus dire la même chose.
+
+**L'étape 1 n'a pas de choix** : elle porte son objet, c'est elle qui ouvre la
+conversation. Le `fieldset` n'est rendu que pour `position > 1`.
+
+### Une seule fonction décide de l'objet de n'importe quelle étape
+
+`subjectForGroup(steps, position, group)` — `lib/domain/step-variants.ts` — rend
+un **plan** plutôt qu'une chaîne : le gabarit, son repli, le mode qui l'a décidé
+et s'il vient d'une variante. Trois cas, dans cet ordre :
+
+1. l'**étape 1** porte son propre objet, groupe par groupe (jalon 103) ;
+2. une étape en mode **`thread`** porte l'objet du fil — **et son objet stocké
+   est ignoré**, jamais effacé : le vider à la bascule perdrait un texte qu'on
+   voudra peut-être reprendre, et c'est le décideur qui l'écarte, pas l'écriture
+   qui le détruit ;
+3. une étape en mode **`custom`** porte le sien — la variante du groupe si elle
+   en a un, à défaut l'objet par défaut **de cette étape** —, avec l'objet du fil
+   comme repli.
+
+**Le repli porte sur l'objet rendu, pas sur le gabarit**, et c'est la décision
+qui compte : un objet personnalisé réduit à `{societe}` pour une fiche sans
+société donnerait, après les replis du jalon 101, une chaîne vide — donc un
+`Subject:` vide, donc un message qui n'arrive pas. `renderSubjectPlan` rend donc
+le fil dans ce cas, et **l'aperçu nomme le repli** : un texte réparé en silence
+est un texte qu'on relit sans savoir qu'il a été réparé.
+
+`threadSubjectFor`, `describeSubjectSource` et `effectiveSubject` sont
+**supprimées** : laisser trois façons de répondre à la même question, c'est se
+garantir qu'une seule sera corrigée le jour où la règle changera. **Sept chemins
+appellent le décideur** — l'éditeur, l'aperçu par groupe, la composition, la
+resynchronisation à l'enregistrement, la réécriture d'un départ, la carte de la
+file et la validation à l'enregistrement — et une garde statique l'exige.
+
+### Ce que le code fait aujourd'hui des en-têtes de fil
+
+**Il n'en pose aucun**, et c'était la question. `lib/api/mail.ts` compose
+`{from, to, replyTo, subject, messageId, date, text, html, textEncoding}` : ni
+`In-Reply-To`, ni `References`, à aucun endroit du produit. Le regroupement en
+conversation repose **uniquement sur l'objet et les participants**, ce qui est
+précisément pourquoi un objet différent ouvre une nouvelle conversation — et
+pourquoi la phrase d'avertissement dit la vérité.
+
+Il n'y avait donc **rien à retirer** pour une étape en objet personnalisé ; ce
+qui est ajouté, c'est une garde qui interdit d'en poser un demain. Sans elle, un
+`In-Reply-To` ajouté pour « améliorer le fil » recollerait une étape à objet
+personnalisé dans la conversation qu'elle est censée quitter, et le réglage
+cesserait de faire ce que son libellé promet.
+
+### Le mode entre dans l'empreinte de péremption
+
+Basculer « Garder » ↔ « Objet personnalisé » change l'objet des départs déjà en
+file. Sans le mode dans l'empreinte, aucune carte ne le dirait (jalon 96) :
+`threadShapeOf` préfixe donc l'objet du fil par le mode, et un départ composé
+avant la bascule se signale « composé avant votre dernière modification ». Sur
+une étape **écrite à la main**, l'enregistrement les réécrit de lui-même
+(jalon 97) : mesuré, `updated: 3` au passage en personnalisé, `updated: 3` au
+retour.
+
+### Un défaut trouvé au clic, pas à la lecture
+
+**`components/settings/email-sequences-panel.tsx` — la charge utile
+d'enregistrement ne portait pas `subjectMode`.** Les étapes sont réécrites d'un
+bloc à chaque enregistrement : le champ retombait donc au défaut de la colonne,
+donc « Garder ». Le choix se cochait, la conséquence s'affichait, l'aperçu
+rendait l'objet personnalisé, **et l'enregistrement l'effaçait en silence**.
+
+Rien n'échouait — deux objets valides, aucun type violé, les 1841 tests
+unitaires verts. C'est la classe de défaut des jalons 60, 61, 77, 79, 95, 96
+et 102, et c'est le test qui clique qui l'a trouvé. Une garde statique exige
+désormais que le mode fasse l'aller-retour, et elle a été **éprouvée en retirant
+la ligne exacte** : elle tombe en la nommant.
+
+### Vérifié aussi : le « corps vide » du jalon 103, qui n'en était pas un
+
+Le rapport du jalon 103 annonçait qu'un groupe portant une variante d'étape 1
+sans variante de relance reçoit une variante synthétisée « au corps vide ».
+**Mesuré, cela ne produit jamais de départ vide** : `templateFor` retombe sur le
+corps **par défaut de l'étape** quand la variante n'en porte pas, et c'est
+précisément ce que cette synthèse cherche. Vérifié de bout en bout (item 5) —
+corps `« Relance par défaut de l'étape 2. »`, départ non signalé vide, envoi
+accepté. Aucun correctif n'était nécessaire, et le dire vaut mieux que de
+corriger ce qui marche.
+
+### Jalon 104 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `50_step_subject_mode` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production, un **puits SMTP
+réel** et un navigateur piloté — les sept items du test d'acceptation :
+
+- **1 · étape 3 en « Objet personnalisé » avec « Dernier message pour
+  {societe} »** : le `Subject` brut relu dans le puits donne **« Dernier message
+  pour Maison Lune »** et **« Dernier message pour votre marque »** pour le
+  contact sans société ;
+- **2 · l'étape 2 laissée sur « Garder »** rend l'objet de l'étape 1
+  (« Démo pour Maison Lune », « Démo pour votre marque »), **son objet stocké
+  « Objet que personne ne doit voir » étant ignoré** ;
+- **3 · une variante Direction sur l'étape 3** porte son propre objet (« Un
+  dernier mot, Nina ») pendant qu'un contact Commercial sans variante reçoit
+  l'objet personnalisé **par défaut de l'étape** ;
+- **4 · retour à « Garder »** : `created: 3` au passage en personnalisé,
+  `updated: 3` au retour, et les objets redeviennent ceux de l'étape 1 ;
+- **5 · le corps synthétisé** — voir ci-dessus ;
+- **6 · une campagne d'avant ce jalon** : le même semis envoyé par le **binaire
+  courant** puis par le **binaire du jalon 103** (`8f7e4fb`, bâti dans un arbre
+  de travail séparé, servi sur le même port avec le même environnement) →
+  MIME normalisé **1321 octets contre 1321** et **1339 contre 1339**,
+  **identiques à l'octet près**, en neutralisant ce qui est tiré au hasard à
+  chaque message (`Message-ID`, `Date`, frontière multipart, jeton de suivi) ;
+- **7 · e2e au clic**, avec **`reachable()` et jamais `isVisible()`** : « Garder »
+  coché avant tout clic et le champ verrouillé, la bascule qui déverrouille et
+  affiche la conséquence, la puce `{societe}` qui écrit **dans l'objet**,
+  l'aperçu qui rend « Dernier message pour Maison Lune 104 », et le retour à
+  « Garder » qui reverrouille — **le choix relu en base dans les deux sens** ;
+  plus la garde statique, éprouvée sur son défaut exact ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1841 tests**) et
+  `npm run e2e` (**110 tests**, trente-deux fichiers) verts.
+
+### Une fragilité de recette, nommée et fermée
+
+`tests/e2e/mailbox-cap.e2e.ts` comptait les cartes reportées de **toute** la
+file : une autre campagne portant des départs reportés le faisait tomber
+(« expected 4 to be 2 »), ce qui est la même classe de fragilité que la
+dépendance au jour du jalon 102 et que celle à l'état de la base du jalon 103.
+Il borne désormais la page à **sa** campagne (`/departs?campagne=<id>`), et c'est
+**mesuré** : avec une campagne étrangère portant délibérément un départ reporté,
+le test passe, et la suite complète avec lui. Le compteur par boîte, lui, reste
+global — c'est la règle du jalon 100, et le test continue de l'exiger.
+
+### Jalon 104 — ce qui n'est pas fait
+
+**Une étape rédigée par Alex n'a pas de choix d'objet utile.** Le réglage existe
+sur n'importe quelle relance, mais l'objet d'un brouillon d'Alex vient du modèle :
+en mode « Objet personnalisé » sans objet écrit, il retombe sur l'objet du fil.
+Rien à l'écran ne le dit.
+
+**Les replis ne sont pas réglables** — « votre marque » et « votre site » vivent
+dans le domaine (jalon 101), et les ouvrir à `/reglages` serait un second endroit
+où la même phrase se décide.
+
+**Un objet personnalisé réduit à une seule balise sans valeur n'est pas signalé à
+l'écriture.** Il ne partira jamais vide — le repli du fil l'en empêche, et
+l'aperçu le nomme — mais l'éditeur ne prévient pas que cet objet-là ne sera
+jamais celui qu'on vient de taper.
+
+**Aucun écran ne liste « les étapes en objet personnalisé ».** Le choix se lit
+étape par étape, dans sa frise.
+
+**Les chiffres de la recette viennent d'un semis de vérification**, pas de votre
+base — et l'item 6 compare deux binaires sur la même base, pas un déploiement.

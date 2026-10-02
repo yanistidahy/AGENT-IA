@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { renderSubject } from "../merge-tags";
 import {
   describeChoice,
+  describeSubjectPlan,
   describeCounts,
   describeGroupFilter,
   editedVariant,
@@ -10,9 +12,11 @@ import {
   parseGroupFilter,
   serializeGroupFilter,
   templateFor,
-  threadSubjectFor,
+  renderSubjectPlan,
+  subjectForGroup,
   threadTemplate,
   unclassifiedWarning,
+  type StepSubjectSource,
   type StepVariant,
 } from "../step-variants";
 import { STEP_ONE_SEEDS } from "../step-variant-seeds";
@@ -159,122 +163,167 @@ describe("les variantes pré-remplies suivent les règles du discours", () => {
   });
 });
 
-/* ------------------------------------------- l'objet du fil, par groupe ----- */
+/* ------------------------------- l'objet d'une étape, et son mode ----------- */
 
-describe("threadSubjectFor — l'objet du fil se décide groupe par groupe", () => {
-  const STEPS = [
-    { position: 1, subject: "", body: "défaut 1" },
-    { position: 2, subject: "", body: "défaut 2" },
-  ];
-  const FIRST: StepVariant[] = [
-    { group: "direction", subject: "Démo pour {societe}", body: "version Direction" },
+/** `renderSubject` du domaine, passée au décideur comme en production. */
+const render = (template: string, values: Parameters<typeof renderSubject>[1]) =>
+  renderSubject(template, values);
+
+const VALUES = {
+  prenom: "Nina",
+  nom: "Direction",
+  fonction: "Fondatrice",
+  societe: "Maison Lune",
+  site: "maisonlune.test",
+  notresite: "auraflowai.fr",
+  video: "",
+};
+
+describe("subjectForGroup — l'objet d'une étape, pour un groupe", () => {
+  const FIRST_VARIANTS = [
+    { group: "direction" as const, subject: "Démo pour {societe}", body: "v1" },
     // Une variante d'étape 1 **sans objet** : elle n'apporte rien au fil.
-    { group: "marketing", subject: "", body: "version Marketing" },
+    { group: "marketing" as const, subject: "", body: "v1 marketing" },
+  ];
+  const STEPS: (StepSubjectSource & { readonly body: string })[] = [
+    { position: 1, subject: "Objet par défaut", body: "b1", variants: FIRST_VARIANTS },
+    { position: 2, subject: "Objet à elle", body: "b2" },
+    { position: 3, subject: "Dernier message pour {societe}", body: "b3" },
   ];
 
-  it("prend la variante d'étape 1 du MÊME groupe", () => {
-    expect(threadSubjectFor(STEPS, 2, FIRST, "direction")).toBe("Démo pour {societe}");
+  it("l'étape 1 porte son propre objet, variante du groupe d'abord", () => {
+    expect(subjectForGroup(STEPS, 1, "direction").template).toBe("Démo pour {societe}");
+    expect(subjectForGroup(STEPS, 1, "commercial").template).toBe("Objet par défaut");
   });
 
-  it("retombe sur l'objet par défaut de l'étape 1 sans variante pour ce groupe", () => {
-    const withDefault = [
-      { position: 1, subject: "Objet par défaut", body: "b" },
-      { position: 2, subject: "Un objet à elle", body: "b2" },
-    ];
-    expect(threadSubjectFor(withDefault, 2, FIRST, "commercial")).toBe("Objet par défaut");
-    // Une variante d'étape 1 sans objet ne compte pas : c'est un repli, pas un choix.
-    expect(threadSubjectFor(withDefault, 2, FIRST, "marketing")).toBe("Objet par défaut");
+  it("une relance en mode « Garder » ignore l'objet qu'elle porte", () => {
+    const plan = subjectForGroup(STEPS, 2, "direction");
+    expect(plan.mode).toBe("thread");
+    expect(plan.template, "jamais « Objet à elle »").toBe("Démo pour {societe}");
+    expect(subjectForGroup(STEPS, 2, "commercial").template).toBe("Objet par défaut");
   });
 
-  it("hors groupe, c'est l'objet par défaut de l'étape 1", () => {
-    const withDefault = [
-      { position: 1, subject: "Objet par défaut", body: "b" },
-      { position: 2, subject: "Un objet à elle", body: "b2" },
-    ];
-    expect(threadSubjectFor(withDefault, 2, FIRST, null)).toBe("Objet par défaut");
+  it("une relance en mode « Objet personnalisé » porte le sien", () => {
+    const steps = [...STEPS];
+    steps[2] = { ...STEPS[2]!, subjectMode: "custom" };
+    const plan = subjectForGroup(steps, 3, "commercial");
+    expect(plan.mode).toBe("custom");
+    expect(plan.template).toBe("Dernier message pour {societe}");
+    // Et le fil reste disponible comme repli.
+    expect(plan.fallback).toBe("Objet par défaut");
   });
 
-  /*
-    Sur l'étape 1, le fil **est** l'objet de ce groupe : c'est lui qui part, et
-    c'est lui que les relances hériteront. La cohérence des deux lectures est ce
-    qui fait qu'aucune étape ne peut ouvrir une seconde conversation.
-  */
-  it("sur l'étape 1, le fil d'un groupe est l'objet de sa variante", () => {
-    const withDefault = [{ position: 1, subject: "Objet par défaut", body: "b" }];
-    expect(threadSubjectFor(withDefault, 1, FIRST, "direction")).toBe("Démo pour {societe}");
-    expect(threadSubjectFor(withDefault, 1, FIRST, "commercial")).toBe("Objet par défaut");
+  it("une variante de relance personnalisée l'emporte sur le défaut de l'étape", () => {
+    const steps = [...STEPS];
+    steps[2] = {
+      ...STEPS[2]!,
+      subjectMode: "custom",
+      variants: [{ group: "direction" as const, subject: "Un mot, {prenom}", body: "b" }],
+    };
+    expect(subjectForGroup(steps, 3, "direction").template).toBe("Un mot, {prenom}");
+    // Un groupe sans variante prend l'objet personnalisé **de l'étape**.
+    expect(subjectForGroup(steps, 3, "commercial").template).toBe("Dernier message pour {societe}");
   });
 
-  /*
-    Le défaut reproduit : sans les variantes de l'étape 1, la relance d'un groupe
-    dont l'objet vit sur la variante n'avait **aucun** objet — donc un départ
-    refusé à l'envoi par le contrôle de vide du jalon 96.
-  */
-  it("le défaut du jalon 101 : sans les variantes de l'étape 1, l'objet est vide", () => {
-    expect(threadSubjectFor(STEPS, 2, [], "direction")).toBe("");
-    expect(threadSubjectFor(STEPS, 2, FIRST, "direction")).not.toBe("");
+  it("un objet personnalisé vide comme gabarit n'est pas un choix : on garde le fil", () => {
+    const steps = [...STEPS];
+    steps[1] = { ...STEPS[1]!, subject: "", subjectMode: "custom" };
+    expect(subjectForGroup(steps, 2, "direction").template).toBe("Démo pour {societe}");
+  });
+
+  it("un mode inconnu vaut « Garder » : jamais une conversation de plus", () => {
+    const steps = [...STEPS];
+    steps[1] = { ...STEPS[1]!, subjectMode: "n'importe quoi" };
+    expect(subjectForGroup(steps, 2, null).template).toBe("Objet par défaut");
+  });
+
+  it("en mode « Garder », le repli est l'objet retenu : il n'y a rien à rattraper", () => {
+    const plan = subjectForGroup(STEPS, 2, "direction");
+    expect(plan.fallback).toBe(plan.template);
   });
 });
 
-describe("threadTemplate — la relance porte l'objet du fil de chaque groupe", () => {
+describe("renderSubjectPlan — jamais d'objet vide", () => {
   const STEPS = [
-    { position: 1, subject: "", body: "défaut 1" },
-    { position: 2, subject: "", body: "défaut 2" },
-  ];
-  const FIRST: StepVariant[] = [
-    { group: "direction", subject: "Démo pour {societe}", body: "version Direction" },
+    { position: 1, subject: "Démo pour {societe}", body: "b1" },
+    // Un objet personnalisé qui ne porte qu'un prénom : non vide comme gabarit,
+    // **vide une fois rendu** pour une fiche sans prénom.
+    { position: 2, subject: "{prenom}", subjectMode: "custom", body: "b2" },
   ];
 
-  it("l'objet du groupe atteint le texte composé", () => {
-    const thread = threadTemplate(
-      STEPS,
-      2,
-      [{ group: "direction", subject: "", body: "relance Direction" }],
-      FIRST,
+  it("rend l'objet personnalisé quand il donne quelque chose", () => {
+    const rendered = renderSubjectPlan(subjectForGroup(STEPS, 2, null), VALUES, render);
+    expect(rendered.subject).toBe("Nina");
+    expect(rendered.usedFallback).toBe(false);
+  });
+
+  it("retombe sur l'objet du fil quand le rendu est vide, et le dit", () => {
+    const rendered = renderSubjectPlan(
+      subjectForGroup(STEPS, 2, null),
+      { ...VALUES, prenom: "" },
+      render,
     );
+    expect(rendered.subject, "jamais un Subject: vide").toBe("Démo pour Maison Lune");
+    expect(rendered.usedFallback, "et l'aperçu peut le nommer").toBe(true);
+  });
+
+  it("ne prétend pas replier quand le fil est vide lui aussi", () => {
+    const steps = [
+      { position: 1, subject: "", body: "b1" },
+      { position: 2, subject: "{prenom}", subjectMode: "custom", body: "b2" },
+    ];
+    const rendered = renderSubjectPlan(
+      subjectForGroup(steps, 2, null),
+      { ...VALUES, prenom: "" },
+      render,
+    );
+    expect(rendered.subject).toBe("");
+    expect(rendered.usedFallback).toBe(false);
+  });
+});
+
+describe("threadTemplate — l'empreinte et l'aperçu voient le même objet", () => {
+  const FIRST = [{ group: "direction" as const, subject: "Démo pour {societe}", body: "v1" }];
+  const STEPS: (StepSubjectSource & { readonly body: string })[] = [
+    { position: 1, subject: "", body: "défaut 1", variants: FIRST },
+    { position: 2, subject: "", body: "Corps par défaut de l'étape 2." },
+  ];
+
+  it("l'objet du groupe atteint le gabarit composé", () => {
+    const thread = threadTemplate(STEPS, 2, [
+      { group: "direction", subject: "", body: "relance Direction" },
+    ]);
     const chosen = templateFor(thread.step, thread.variants, "direction");
     expect(chosen.subject).toBe("Démo pour {societe}");
     expect(chosen.body).toBe("relance Direction");
   });
 
-  it("un groupe qui porte l'objet du fil sans variante de relance en reçoit une", () => {
-    const thread = threadTemplate(STEPS, 2, [], FIRST);
+  /*
+    **Mesuré, et c'est le point que le rapport du jalon 103 laissait ambigu :**
+    la variante synthétisée porte un corps vide, et `templateFor` retombe alors
+    sur le corps **par défaut de l'étape**. Le départ n'est donc jamais vide.
+  */
+  it("un groupe sans variante de relance reçoit le corps par défaut de l'étape", () => {
+    const thread = threadTemplate(STEPS, 2, []);
+    expect(thread.variants).toEqual([
+      { group: "direction", subject: "Démo pour {societe}", body: "" },
+    ]);
     const chosen = templateFor(thread.step, thread.variants, "direction");
-    expect(chosen.subject, "le fil tient pour ce groupe").toBe("Démo pour {societe}");
-    // Le corps, lui, retombe sur le défaut de l'étape : rien n'est inventé.
-    expect(chosen.body).toBe("défaut 2");
-  });
-
-  it("un objet de variante de relance ne peut pas rouvrir un second fil", () => {
-    const thread = threadTemplate(
-      STEPS,
-      2,
-      [{ group: "direction", subject: "Un objet à elle", body: "relance" }],
-      FIRST,
-    );
-    expect(templateFor(thread.step, thread.variants, "direction").subject).toBe(
-      "Démo pour {societe}",
+    expect(chosen.subject).toBe("Démo pour {societe}");
+    expect(chosen.body, "le corps vient de l'étape, jamais vide").toBe(
+      "Corps par défaut de l'étape 2.",
     );
   });
 
-  it("un repli sur le défaut reste un repli, pour que l'aperçu le dise", () => {
-    const withDefault = [
-      { position: 1, subject: "Objet par défaut", body: "b" },
-      { position: 2, subject: "", body: "b2" },
-    ];
-    const thread = threadTemplate(
-      withDefault,
-      2,
-      [{ group: "commercial", subject: "", body: "relance Commercial" }],
-      FIRST,
-    );
-    const chosen = templateFor(thread.step, thread.variants, "commercial");
-    expect(chosen.subject).toBe("Objet par défaut");
-    expect(chosen.subjectFromStep, "l'objet vient du défaut, et l'écran le dit").toBe(true);
+  it("un objet personnalisé entre dans le gabarit, donc dans l'empreinte", () => {
+    const steps = [...STEPS];
+    steps[1] = { ...STEPS[1]!, subject: "Nouvelle conversation", subjectMode: "custom" };
+    const thread = threadTemplate(steps, 2, []);
+    expect(thread.step.subject).toBe("Nouvelle conversation");
   });
 
   it("l'étape 1 n'est pas touchée : ses variantes gardent leur objet", () => {
-    const thread = threadTemplate(STEPS, 1, FIRST, FIRST);
+    const thread = threadTemplate(STEPS, 1, FIRST);
     expect(templateFor(thread.step, thread.variants, "direction").subject).toBe(
       "Démo pour {societe}",
     );
@@ -284,22 +333,40 @@ describe("threadTemplate — la relance porte l'objet du fil de chaque groupe", 
 describe("firstVariantsOf", () => {
   it("lit les variantes de la plus petite position, et écarte un groupe inconnu", () => {
     const steps = [
-      { position: 2, variants: [{ group: "direction", subject: "s2", body: "b2" }] },
+      { position: 2, subject: "", variants: [{ group: "direction", subject: "s2", body: "b2" }] },
       {
         position: 1,
+        subject: "",
         variants: [
           { group: "direction", subject: "s1", body: "b1" },
           { group: "inconnu", subject: "x", body: "y" },
         ],
       },
     ];
-    expect(firstVariantsOf(steps)).toEqual([
-      { group: "direction", subject: "s1", body: "b1" },
-    ]);
+    expect(firstVariantsOf(steps)).toEqual([{ group: "direction", subject: "s1", body: "b1" }]);
   });
 
   it("rend une liste vide quand rien n'est chargé", () => {
-    expect(firstVariantsOf([{ position: 1 }])).toEqual([]);
+    expect(firstVariantsOf([{ position: 1, subject: "" }])).toEqual([]);
     expect(firstVariantsOf([])).toEqual([]);
+  });
+});
+
+describe("describeSubjectPlan — un repli ne passe jamais pour un choix", () => {
+  const STEPS = [
+    { position: 1, subject: "Démo", body: "b1" },
+    { position: 2, subject: "Perso", subjectMode: "custom", body: "b2" },
+  ];
+
+  it("nomme le mode, la variante et le repli", () => {
+    expect(describeSubjectPlan(subjectForGroup(STEPS, 1, null), null, false)).toBe(
+      "objet de l'étape 1",
+    );
+    expect(describeSubjectPlan(subjectForGroup(STEPS, 2, null), null, false)).toBe(
+      "objet personnalisé de cette étape",
+    );
+    expect(describeSubjectPlan(subjectForGroup(STEPS, 2, null), "direction", true)).toContain(
+      "rendait une chaîne vide",
+    );
   });
 });
