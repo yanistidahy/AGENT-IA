@@ -1,7 +1,8 @@
 "use client";
 
 import { Icon } from "@/components/ui/icon";
-import { FEED_KINDS, kindLabel, type TaskFilters } from "@/lib/domain/task-tabs";
+import { TASK_KINDS, TASK_KIND_LABELS } from "@/lib/domain/task-kind";
+import type { TaskFilters } from "@/lib/domain/task-tabs";
 import type { TaskPriority } from "@/lib/domain/types";
 
 /**
@@ -10,12 +11,16 @@ import type { TaskPriority } from "@/lib/domain/types";
  * **Le bouton « Filtres » dit combien il en cache.** Un filtre actif replié
  * derrière un bouton muet est un écran qui ment : la liste est filtrée et rien
  * ne dit par quoi (règle du jalon 21, reprise du jalon 31).
+ *
+ * Le choix de la personne **n'est pas ici** : il a sa propre rangée sous les
+ * onglets (jalon 105). C'est la question qu'on se pose en arrivant, pas un
+ * filtre qu'on déplie — et surtout, c'est elle qui décide de ce que les
+ * pastilles comptent.
  */
 interface TaskToolbarProps {
   readonly search: string;
   readonly filters: TaskFilters;
   readonly activeCount: number;
-  readonly owners: readonly string[];
   readonly open: boolean;
   readonly canStart: boolean;
   readonly onSearch: (value: string) => void;
@@ -34,7 +39,6 @@ export function TaskToolbar({
   search,
   filters,
   activeCount,
-  owners,
   open,
   canStart,
   onSearch,
@@ -96,18 +100,6 @@ export function TaskToolbar({
       {open && (
         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-card border border-line bg-surface px-3 py-2">
           <select
-            aria-label="Propriétaire"
-            className={CONTROL}
-            value={filters.owner ?? ""}
-            onChange={(event) => onFilter({ proprietaire: event.target.value })}
-          >
-            <option value="">Tous les propriétaires</option>
-            {owners.map((owner) => (
-              <option key={owner}>{owner}</option>
-            ))}
-          </select>
-
-          <select
             aria-label="Priorité"
             className={CONTROL}
             value={filters.priority ?? ""}
@@ -122,15 +114,15 @@ export function TaskToolbar({
           </select>
 
           <select
-            aria-label="Type de ligne"
+            aria-label="Type de tâche"
             className={CONTROL}
             value={filters.kind ?? ""}
             onChange={(event) => onFilter({ type: event.target.value })}
           >
             <option value="">Tous les types</option>
-            {FEED_KINDS.map((kind) => (
+            {TASK_KINDS.map((kind) => (
               <option key={kind} value={kind}>
-                {kindLabel(kind)}
+                {TASK_KIND_LABELS[kind]}
               </option>
             ))}
           </select>

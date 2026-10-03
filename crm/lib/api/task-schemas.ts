@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TASK_KINDS } from "../domain/task-kind";
 import { TASK_PRIORITIES } from "../domain/types";
 
 /** Schémas de validation des requêtes sur les tâches. */
@@ -38,7 +39,13 @@ export const createTaskSchema = z
     title: z.string().trim().min(1, "Décrivez la tâche"),
     due: dueValue,
     priority: z.enum(TASK_PRIORITIES, { error: "Priorité inconnue" }).optional(),
-    owner: z.string().trim().min(1, "Le propriétaire est obligatoire"),
+    owner: z.string().trim().min(1, "Un assigné est obligatoire"),
+    /**
+     * Le canal de la tâche (jalon 105). **Défaut `tache`** : une tâche dont on
+     * ne dit rien ne doit pas atterrir dans la file d'appels du matin, qui n'a
+     * de valeur que si tout ce qu'elle contient se traite au téléphone.
+     */
+    kind: z.enum(TASK_KINDS, { error: "Type de tâche inconnu" }).optional(),
     contactId: idValue.optional(),
     companyId: idValue.optional(),
     dealId: idValue.optional(),
@@ -53,6 +60,7 @@ export const updateTaskSchema = z
     due: dueValue.optional(),
     priority: z.enum(TASK_PRIORITIES, { error: "Priorité inconnue" }).optional(),
     owner: z.string().trim().min(1).optional(),
+    kind: z.enum(TASK_KINDS, { error: "Type de tâche inconnu" }).optional(),
     done: z.boolean().optional(),
     contactId: idValue.optional(),
     companyId: idValue.optional(),

@@ -228,6 +228,12 @@ const taskRow = z.object({
   due: day,
   priority: text,
   owner: text,
+  /**
+   * Le canal de la tâche (jalon 105). **Optionnel** : une sauvegarde prise
+   * avant ce jalon n'en porte pas, et la refuser rendrait le filet inutile au
+   * moment précis où l'on en a besoin (jalon 42).
+   */
+  kind: text.optional(),
   done: z.boolean(),
   auto: z.boolean().optional(),
   autoKey: z.string().nullable().optional(),

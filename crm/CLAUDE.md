@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 105 | **L'écran Tâches rangé en onglets** : six onglets mêlant trois natures d'objet deviennent **quatre questions sur une seule** — Aujourd'hui, Appels, À venir, Terminées —, plus un filtre par personne qui remplace le « Vos tâches » qui mentait ; les départs, les réponses et les prospects chauds passent en **bandeaux** menant là où le travail se fait ; une pastille et sa liste sortent désormais du **même appel** (`tabView`), donc aucun ordre d'appel ne peut les séparer ; le canal d'une tâche devient une colonne, saisie à la création, avec le téléphone composable et « Appel passé » qui **consigne autant qu'il coche** ; et une réponse relevée crée une tâche « Répondre à… », une seule, jamais recréée | **livré, à valider** |
 | 104 | **Une relance peut porter son propre objet** : un choix par étape — « Garder l'objet de l'étape 1 (même conversation) », le défaut, ou « Objet personnalisé (nouvelle conversation) » avec son champ éditable, ses variantes par groupe, ses puces « Insérer » et les replis neutres du jalon 101 ; une seule fonction (`subjectForGroup`) décide de l'objet de n'importe quelle étape pour n'importe quel groupe, et l'éditeur, l'aperçu, la composition, la resynchronisation, la carte de départ et les deux chemins d'envoi l'appellent ; la conséquence se lit **avant** de cliquer, le repli d'un objet personnalisé vide est l'objet du fil, et une campagne d'avant ce jalon rend un MIME identique à l'octet près | **livré, à valider** |
 | 103 | **L'objet du fil se décide groupe par groupe** : une relance hérite de l'objet de la variante d'étape 1 **du même groupe**, à défaut du défaut de l'étape 1 ; une seule fonction (`threadSubjectFor`) sert l'éditeur, l'aperçu, la composition, la resynchronisation, la réécriture, la carte et la validation ; un groupe qui porte l'objet du fil garde son fil même sans variante de relance ; et le champ verrouillé porte son geste — « Écrire l'objet dans l'étape 1 », sur le même groupe, curseur dans le champ | **livré, à valider** |
 | 102 | **La suite e2e redevient verte, et cesse de dépendre du jour** : trois échecs nommés avec leur fichier et leur ligne — deux défauts de test, un défaut du produit (le panneau vidéo masquait la destination du clic avec l'adresse de la vignette, deux faits indépendants) —, aucune assertion assouplie, et l'oracle du week-end devenu `isWeekend`, la fonction que le produit applique | **livré, à valider** |
@@ -15204,3 +15205,238 @@ jamais celui qu'on vient de taper.
 
 **Les chiffres de la recette viennent d'un semis de vérification**, pas de votre
 base — et l'item 6 compare deux binaires sur la même base, pas un déploiement.
+
+---
+
+## Jalon 105 — l'écran Tâches rangé en onglets
+
+### Le reproche, et ce qu'il visait
+
+Six onglets mêlaient **trois natures d'objet** : des tâches (qu'on coche), des
+départs composés (qu'on envoie), des signaux d'intérêt (qu'on rappelle). Trois
+natures dans une même rangée demandent de se rappeler, onglet par onglet, ce
+qu'on peut faire de ce qu'on y lit — et un écran dont chaque onglet appelle un
+geste différent n'a plus d'ordre de lecture.
+
+Et **« Vos tâches » mentait**. L'espace de travail a un seul mot de passe
+partagé (jalon 9), donc le produit ne sait pas qui est « vous » : l'onglet
+listait en réalité *toutes* les tâches dues, celles de Mohamed comprises. Le
+jalon 92 l'avait écrit dans sa propre documentation sans en tirer la
+conséquence.
+
+### Quatre onglets, une seule nature d'objet
+
+| Onglet | Retient | Trié par |
+|---|---|---|
+| **Aujourd'hui** (défaut) | à faire aujourd'hui ou en retard, tous types | échéance croissante |
+| **Appels** | les tâches d'appel qui restent à passer | échéance croissante |
+| **À venir** | échéance après aujourd'hui | échéance croissante |
+| **Terminées** | les tâches terminées | achèvement décroissant |
+
+Les trois onglets de travail **partitionnent** la population ; « Appels » est une
+vue transversale, et c'est voulu — une tâche d'appel due aujourd'hui est dans les
+deux. Le « + » du jalon 92 est conservé, **après** les quatre.
+
+**Le filtre par personne est une rangée à part**, sous les onglets : « Tous ·
+Yanis · Mohamed », dans l'URL, construit depuis la donnée (les assignés présents,
+réunis aux propriétaires de référence) plutôt qu'écrit en dur — une liste figée
+afficherait Mohamed après son départ et manquerait la troisième personne le jour
+où elle arrive.
+
+### L'invariant renforcé : la pastille et la liste sortent du même appel
+
+C'était déjà la règle du jalon 92 — « un prédicat par onglet, et c'est lui qui
+compte la pastille » — et elle ne suffisait pas. Deux fonctions partageant un
+prédicat laissent toujours la possibilité d'en appeler une sur un tableau et
+l'autre sur un autre, et c'est **précisément ce que le filtre par personne aurait
+produit** : compter sur toutes les tâches au-dessus d'une liste filtrée annonce le
+travail de quelqu'un d'autre.
+
+`tabView(rows, tab, person, now, filters, search)` rend donc **les deux**, à
+partir d'un tableau filtré une fois. Il n'existe plus d'ordre d'appel qui les
+sépare — c'est une propriété de la fonction, pas une discipline d'appelant.
+
+**Les filtres et la recherche s'appliquent après le comptage**, volontairement :
+une pastille qui suivrait la frappe ne dirait plus ce que l'onglet contient, et
+l'on ne saurait plus si l'onglet est vide ou si c'est le filtre qui le vide.
+
+### Ce qui n'est pas une tâche devient un bandeau
+
+| Bandeau | Compté par | Mène vers |
+|---|---|---|
+| « 14 mails prêts à partir » | `listDepartures()` — **la lecture de « Départs du jour »** | `/departs` |
+| « 1 réponse à traiter » | la dérivation du jalon 92, inchangée | `/emails?etat=repondu` |
+| « 20 prospects chauds » | `readHotProspects()` — **la même liste que le filtre** | `/contacts?chauds=1` |
+
+**Un bandeau à zéro ne s'affiche pas** : une ligne « 0 mail prêt à partir »
+permanente est du bruit, et l'on cesse alors de lire celle qui compte (jalon 62).
+La décision vit dans le domaine (`bannerText` rend `null`), donc elle se teste
+sans navigateur.
+
+**Le lien des prospects chauds et son compte sortent de la même fonction**, et
+c'est le point : `readHotProspects()` sert le nombre affiché *et* la clause de
+`/contacts?chauds=1`. Un lien qui annoncerait vingt prospects et en ouvrirait
+dix-huit ferait cesser de croire les deux (jalon 49).
+
+### Le canal d'une tâche devient une colonne
+
+`Task.kind` (migration `51_task_kind`) : `tache` | `appel` | `email` |
+`instagram`, défaut `tache`. L'onglet « Appels » lisait jusqu'ici l'**intitulé**,
+faute de colonne — et le jalon 92 en avait écrit le prix dans sa propre section
+« ce qui n'est pas fait » : *« Une tâche intitulée « Joindre Sophie » n'y entrera
+pas. »* Elle y entre maintenant si son type le dit.
+
+**Aucune colonne d'assignation n'a été ajoutée** : `Task.owner` porte cette
+information depuis le jalon 4, l'écran l'appelle « Assigné à », la base l'appelle
+`owner`. Une seconde colonne aurait eu à rester cohérente avec celle-ci, et un
+jour elle l'aurait contredite.
+
+**La reprise de l'existant est une transcription, pas une règle** : la migration
+applique une fois le même motif que l'affichage d'hier, en **mots entiers**
+(`\y` de PostgreSQL, l'équivalent du `\b` de `isCallTitle`). Vérifié par mesure :
+sur les huit tâches semées avant la migration, **zéro désaccord** entre le SQL de
+la migration et le prédicat TypeScript.
+
+### « Appel passé » consigne autant qu'il coche
+
+Deux écritures qui ne valent que prises ensemble, par **une seule route**
+(`POST /api/tasks/<id>/appel`) : cocher sans consigner perdrait le seul fait qui
+prouve l'appel, et c'est ce que le CRM existe pour empêcher. L'ordre n'est pas
+symétrique, comme l'envoi d'un email au jalon 32 — l'interaction part d'abord,
+l'achèvement ensuite : une tâche cochée dont l'interaction a échoué est un travail
+qu'on croit tracé et qui ne l'est pas, alors qu'une interaction consignée dont la
+tâche reste ouverte se recoche en un clic.
+
+Refusé quand la tâche n'est pas un appel ou n'a pas de contact : il n'y a alors
+rien à consigner sur personne, et le formulaire de création l'annonce **avant**
+qu'on enregistre une tâche d'appel sans fiche.
+
+**Le téléphone n'est un bouton que s'il est composable** (`dialHref`) : un champ
+libre peut porter « à demander au standard », et un lien `tel:` sur cette phrase
+ne composerait rien tout en ayant l'air d'un bouton.
+
+### Une réponse relevée devient une tâche, une seule
+
+L'onglet « Réponses des prospects » était une liste dérivée : élégante — elle se
+vidait quand on donnait suite — mais elle ne pouvait ni s'assigner, ni se
+planifier, ni se cocher, trois choses qu'on fait d'une réponse à traiter.
+
+`recordReply` crée donc une tâche « Répondre à … », de type **Email**, due
+**aujourd'hui**, rattachée au contact, assignée **au signataire de la boîte d'où
+le message est parti** — c'est lui que le prospect a lu.
+
+**L'idempotence est portée par la base** : `autoKey = reponse:<Message-ID de la
+réponse>`, unique depuis le jalon 8, donc un relevé qui repasse bute sur la
+contrainte plutôt que de l'éviter — et une course entre deux relevés ne peut pas
+la contourner. **La clé ne se libère jamais**, contrairement aux rappels : une
+relance peut se reposer, une réponse a eu lieu une fois. La libérer ferait
+recréer la tâche au relevé suivant, alors qu'on vient de la cocher.
+
+**Un défaut trouvé à la recette, pas à la lecture** : le signataire s'appelle
+« Yanis Tidahy » et un assigné s'appelle « Yanis ». Écrire le premier tel quel
+ajoutait **une personne de plus** au filtre — presque la même, à côté de la
+vraie — et la tâche n'apparaissait sous aucune des deux. `ownerMatches` (jalon 35,
+mots entiers) fait la correspondance, et c'est elle qu'on réemploie plutôt que
+d'en écrire une seconde.
+
+### Item 6 — ce que valent les clics des prospects chauds
+
+**Mesuré, et la règle n'a pas changé** : c'était la consigne, et c'est aussi la
+discipline du jalon 43, qui a instrumenté les ouvertures avant de décider quoi
+que ce soit.
+
+Deux formes de clic sont suspectes, chacune avec sa raison : **moins de deux
+minutes après l'envoi** — personne ne reçoit, lit et clique en deux minutes,
+c'est la signature d'une passerelle qui déréférence les liens à la livraison —
+et **plusieurs liens distincts dans la même seconde**, qui désigne un automate
+suivant tout ce qu'il trouve. La simultanéité se juge **par envoi**, pas par
+contact : deux messages lus dans la même seconde par deux collègues sont
+légitimes, c'est le même message suivi deux fois qui trahit.
+
+Sur un semis reproduisant la forme décrite — **vingt prospects chauds** :
+
+| | |
+|---|---|
+| prospects chauds au total | **20** |
+| dont sans aucun clic (réponse, passage en Qualifié) | 5 |
+| dont par un clic qu'aucun soupçon ne touche | 6 |
+| **dont QUE par un clic douteux** | **9** |
+| clics examinés | 19 — 5 à moins de 2 min, 8 simultanés, 6 solides |
+
+**Neuf des vingt ne reposent que sur un clic douteux**, soit 45 % du compte.
+C'est ce que le total perdrait si la règle changeait, et c'est le seul nombre qui
+décide. **Ces chiffres viennent du semis, pas de votre base** : le vôtre se lira
+sur votre propre déploiement, par la même fonction — `readHotProspects()` rend
+cet audit à côté du compte.
+
+### Jalon 105 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `51_task_kind` appliquée puis
+`migrate diff` **vide**), le serveur standalone de production, un **substitut
+IMAP** servant une vraie réponse, et un navigateur piloté — les huit items :
+
+- **1 · quatre onglets plus « + »** : `getByRole("tab")` en compte **exactement
+  4**, le « + » est atteignable, et les trois onglets retirés n'apparaissent plus
+  nulle part ; **chaque pastille égale la longueur de sa liste** sous « Tous »,
+  « Yanis » et « Mohamed » — mesuré au clic, onglet par onglet, et **0 désaccord**
+  sur le service ;
+- **2 · une tâche d'appel** créée par la route réelle (201) est dans
+  « Aujourd'hui » **et** « Appels » ; « Appel passé » → 200, `done=true`,
+  `doneAt` posé, et **les interactions de la fiche passent de 0 à 1** avec
+  `type: "call"` ;
+- **3 · le filtre par personne** : « Mohamed » rend 2 lignes dont **0 d'un autre
+  assigné**, l'URL porte `personne=Mohamed`, et **après rechargement** la puce
+  est encore active — c'est l'URL qui porte l'état, pas la mémoire de la page ;
+- **4 · le bandeau des départs** : file vide → **masqué** (mesuré sur le
+  service) ; 14 départs → « 14 mails prêts à partir », atteignable, et son lien
+  ouvre `/departs` ;
+- **5 · une réponse relevée** par le vrai relevé IMAP crée **une** tâche
+  « Répondre à Prospect16 », type `email`, échéance du jour, contact rattaché,
+  assignée à **Yanis** ; **le second relevé n'en crée pas une seconde** ;
+- **6 · la mesure** ci-dessus ;
+- **7 · rien n'est perdu** : **8 tâches avant la migration, 8 après**, chacune
+  visible dans le bon onglet (les quatre d'appel dans « Appels », la terminée
+  dans « Terminées », « Joindre Sophie » dans « Aujourd'hui ») ; et **0 désaccord**
+  entre le SQL de la migration et le prédicat TypeScript ;
+- **8 · e2e au clic** avec **`reachable()` et jamais `isVisible()`** ;
+  **garde statique éprouvée sur le défaut exact** — le comptage remis sur le
+  tableau non filtré : 2 tests de la garde et 2 de la suite unitaire tombent, en
+  le nommant ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1875 tests**) et
+  `npm run e2e` (**111 tests**, trente-deux fichiers) verts.
+
+**La garde du jalon 42 a fait son travail** : `Task.kind` absente de la
+sauvegarde, et deux tests sont tombés — une restauration aurait ramené toutes les
+tâches à `tache`, donc vidé l'onglet « Appels » sans que rien ne le dise. C'est la
+huitième fois que cette garde attrape une colonne (jalons 47, 48, 72, 94, 98, 99,
+100, 105).
+
+### Jalon 105 — ce qui n'est pas fait
+
+**La règle des prospects chauds n'a pas changé**, et c'était la consigne : les
+neuf prospects qui ne reposent que sur un clic douteux sont toujours comptés. Le
+geste suivant — relever le seuil, ou exiger un second signal — se décide avec ces
+chiffres en main, et sur les vôtres plutôt que sur un semis.
+
+**Le mode focus n'envoie plus de départ.** C'est voulu — la file a son bandeau et
+sa page, avec ses garde-fous et ses refus nommés (jalon 91) — mais quelqu'un qui
+validait ses brouillons depuis « Démarrer » devra passer par `/departs`.
+
+**L'onglet « Terminées » est borné aux soixante dernières.** On y vient vérifier
+ce qu'on a fait, pas relire le trimestre ; sans borne, une base d'un an ferait
+traverser des milliers de lignes à chaque affichage pour en montrer vingt.
+
+**Le filtre par personne ne connaît pas les tâches sans assigné.** Elles
+apparaissent sous « Tous » et sous aucune personne, ce qui est exact — mais rien à
+l'écran ne les signale comme à attribuer.
+
+**« Appels » reste transversal**, donc la somme des quatre pastilles dépasse le
+nombre de tâches. C'est le comportement voulu et il est testé, mais il surprend si
+l'on additionne.
+
+**Le type d'une tâche ne se change pas après coup depuis l'écran.** Le schéma et
+l'API l'acceptent (`PATCH { kind }`), aucun contrôle ne l'offre : une tâche mal
+typée se recrée.
+
+**Les chiffres de la recette viennent d'un semis de vérification**, pas de votre
+base.

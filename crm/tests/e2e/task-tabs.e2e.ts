@@ -4,56 +4,131 @@ import { prisma } from "../../lib/db";
 import { BASE_URL, chromiumPath, openBrowser, reachable, signIn, type Session } from "./browser";
 
 /**
- * **Les onglets, les filtres et « Démarrer » se cliquent.**
+ * **L'écran Tâches rangé, au clic.**
  *
- * Deux contrôles livrés dans ce projet rendaient correctement et ne faisaient
- * rien (jalons 56 et 60) : une lecture de code ne voit pas un `overflow-hidden`
- * posé deux composants plus haut. L'assertion qui compte est donc
- * **`reachable()`, jamais `isVisible()`** — celle-ci ne voit pas un ancêtre qui
- * rogne.
+ * Quatre choses ne se lisent pas dans un diff, et c'est la leçon du jalon 60 —
+ * un contrôle peut rendre correctement et ne rien faire :
  *
- * Ce test vérifie aussi ce qu'aucun test unitaire ne peut voir : qu'un onglet
- * enregistré par « + » **survive à un rechargement** et rende la même liste,
- * parce que sa requête vit dans l'URL.
+ * 1. il y a **exactement quatre onglets** plus « + », et chaque pastille égale
+ *    la longueur de sa liste — y compris après un changement de personne ;
+ * 2. le filtre par personne **écrit dans l'URL** et survit à un rechargement ;
+ * 3. une tâche d'appel porte son numéro composable et « Appel passé », et ce
+ *    bouton **consigne** l'appel autant qu'il coche la tâche ;
+ * 4. le bandeau des départs **apparaît avec son nombre** et mène à la file.
+ *
+ * L'assertion qui compte est **`reachable()`, jamais `isVisible()`** : celle-ci
+ * ne voit pas un ancêtre qui rogne.
  */
 
 const PASSWORD = process.env.E2E_PASSWORD ?? process.env.WORKSPACE_PASSWORD;
 const skip = chromiumPath() === null || PASSWORD === undefined;
 
-const TAG = "E2eTabs92";
-
-let browser: Browser | null = null;
-let session: Session | null = null;
+const P = "e2e105";
 
 async function wipe(): Promise<void> {
-  await prisma.task.deleteMany({ where: { title: { startsWith: TAG } } });
-  await prisma.taskTab.deleteMany({ where: { name: { startsWith: TAG } } });
+  await prisma.sequenceDeparture.deleteMany({
+    where: { enrollment: { sequence: { campaign: { name: { startsWith: P } } } } },
+  });
+  await prisma.sequenceEnrollment.deleteMany({
+    where: { sequence: { campaign: { name: { startsWith: P } } } },
+  });
+  await prisma.emailSequenceStep.deleteMany({
+    where: { sequence: { campaign: { name: { startsWith: P } } } },
+  });
+  await prisma.emailSequence.deleteMany({ where: { campaign: { name: { startsWith: P } } } });
+  await prisma.campaign.deleteMany({ where: { name: { startsWith: P } } });
+  await prisma.task.deleteMany({ where: { contactId: { startsWith: P } } });
+  await prisma.activity.deleteMany({ where: { contactId: { startsWith: P } } });
+  await prisma.contact.deleteMany({ where: { id: { startsWith: P } } });
+  await prisma.company.deleteMany({ where: { name: { startsWith: P } } });
+  await prisma.mailbox.deleteMany({ where: { slug: { startsWith: P } } });
 }
 
-describe.skipIf(skip)("l'écran Tâches se pilote au clic", () => {
+const PHONE = "06 55 44 33 22";
+
+describe.skipIf(skip)("l'écran Tâches, quatre onglets et une personne", () => {
+  let browser: Browser;
+  let session: Session;
+  let callTaskId = "";
+
   beforeAll(async () => {
     await wipe();
-    const now = Date.now();
+    const company = await prisma.company.create({
+      data: { name: `${P} Maison`, nameKey: `${P} maison`, domain: `${P}.test` },
+    });
+
+    await prisma.contact.create({
+      data: {
+        id: `${P}a`,
+        firstName: "Nina",
+        lastName: "Appel105",
+        email: `${P}a@${P}.test`,
+        phone: PHONE,
+        lifecycle: "Prospect",
+        companyId: company.id,
+        owner: "Yanis",
+        nameKey: "appel105 nina",
+      },
+    });
+    await prisma.contact.create({
+      data: {
+        id: `${P}b`,
+        firstName: "Paul",
+        lastName: "Autre105",
+        email: `${P}b@${P}.test`,
+        lifecycle: "Prospect",
+        companyId: company.id,
+        owner: "Mohamed",
+        nameKey: "autre105 paul",
+      },
+    });
+
+    const today = new Date();
+    const later = new Date(today.getTime() + 5 * 86_400_000);
+
+    /*
+      Une tâche d'appel due aujourd'hui pour Yanis — c'est elle qui doit
+      apparaître **dans deux onglets** —, une tâche à venir pour Mohamed, et une
+      terminée. Semées par Prisma pour ne dépendre d'aucun état laissé par une
+      autre recette (leçon du jalon 83 : partir de l'état de la production).
+    */
+    const call = await prisma.task.create({
+      data: {
+        title: `${P} appeler Nina`,
+        due: today,
+        priority: "haute",
+        owner: "Yanis",
+        kind: "appel",
+        contactId: `${P}a`,
+      },
+    });
+    callTaskId = call.id;
     await prisma.task.create({
       data: {
-        title: `${TAG} Appeler le prospect`,
-        due: new Date(now - 86_400_000),
-        owner: `${TAG}Owner`,
-        priority: "haute",
+        title: `${P} envoyer les CGV`,
+        due: later,
+        priority: "normale",
+        owner: "Mohamed",
+        kind: "email",
+        contactId: `${P}b`,
       },
     });
     await prisma.task.create({
       data: {
-        title: `${TAG} Préparer le devis`,
-        due: new Date(now),
-        owner: `${TAG}Owner`,
+        title: `${P} déjà faite`,
+        due: today,
         priority: "basse",
+        owner: "Mohamed",
+        kind: "tache",
+        done: true,
+        doneAt: today,
+        contactId: `${P}b`,
       },
     });
 
     browser = await openBrowser();
     session = await signIn(browser, PASSWORD ?? "");
-  });
+  }, 90_000);
 
   afterAll(async () => {
     await browser?.close();
@@ -61,158 +136,228 @@ describe.skipIf(skip)("l'écran Tâches se pilote au clic", () => {
     await prisma.$disconnect();
   });
 
-  it("chaque onglet est atteignable, et sa pastille égale sa liste", async () => {
-    const current = session;
-    expect(current).not.toBeNull();
-    if (current === null) return;
-    const { page } = current;
+  /** Les pastilles telles qu'elles sont rendues, onglet par onglet. */
+  async function badges(): Promise<Record<string, number>> {
+    const { page } = session;
+    const out: Record<string, number> = {};
+    for (const label of ["Aujourd'hui", "Appels", "À venir", "Terminées"]) {
+      const tab = page.getByRole("tab", { name: new RegExp(label.replace("'", "'?")) }).first();
+      const text = await tab.innerText();
+      out[label] = Number.parseInt(text.replace(/\D+/g, ""), 10);
+    }
+    return out;
+  }
 
-    await page.goto(`${BASE_URL}/taches`, { waitUntil: "networkidle" });
+  it("rend exactement quatre onglets, plus le « + »", async () => {
+    const { page } = session;
+    await page.goto(`${BASE_URL}/taches`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1500);
 
-    const tabs = ["Vos tâches", "Appels", "À envoyer", "Prospects chauds", "Réponses des prospects", "Toutes les tâches"];
-    for (const label of tabs) {
-      const pill = page.getByRole("tab").filter({ hasText: label }).first();
-      expect(await reachable(pill), `onglet ${label}`).toBe(true);
+    const tabs = page.getByRole("tab");
+    expect(await tabs.count(), "quatre onglets, ni cinq ni six").toBe(4);
+    expect(await tabs.first().innerText()).toContain("Aujourd'hui");
+
+    // Le « + » du jalon 92 est conservé, **après** les quatre.
+    const save = page.getByRole("button", { name: "Enregistrer cette vue comme onglet" });
+    await save.scrollIntoViewIfNeeded();
+    expect(await reachable(save), "le « + » est atteignable").toBe(true);
+
+    // Les trois onglets retirés ne doivent plus exister nulle part.
+    const text = await page.locator("main").innerText();
+    for (const gone of ["Vos tâches", "À envoyer", "Réponses des prospects", "Prospects chauds ("]) {
+      expect(text, `« ${gone} » a disparu de la rangée`).not.toContain(gone);
     }
 
-    /*
-      **La pastille et la liste, comparées à l'écran.** C'est l'assertion du
-      jalon : deux nombres justes chacun de son côté et affichés l'un au-dessus
-      de l'autre sont exactement le défaut qu'on ferme.
-    */
-    for (const label of tabs) {
-      const pill = page.getByRole("tab").filter({ hasText: label }).first();
-      const badge = Number.parseInt(((await pill.textContent()) ?? "").replace(/\D+/g, ""), 10);
-      await pill.click();
-      await page.waitForLoadState("networkidle");
-      await page.waitForTimeout(300);
+    expect(session.errors).toEqual([]);
+  }, 90_000);
 
-      const shown = await page.locator("main article").count();
-      if (Number.isNaN(badge)) continue;
-      /*
-        **La plage de pagination ne se lit que s'il y a des lignes.** Un onglet
-        vide ne rend aucune barre de pagination — c'est correct — et lire son
-        libellé d'abord faisait échouer ce test sur un onglet légitimement vide,
-        selon l'état de la base du jour. Une garde qui dépend du contenu de la
-        base ne garde rien.
-      */
-      if (badge === 0) {
-        expect(shown).toBe(0);
-        continue;
+  it("chaque pastille égale la longueur de sa liste, et suit la personne", async () => {
+    const { page } = session;
+
+    for (const [person, expectation] of [
+      ["tous", null],
+      ["Yanis", null],
+      ["Mohamed", null],
+    ] as const) {
+      void expectation;
+      const chip = page.locator(`[data-person="${person}"]`);
+      await chip.scrollIntoViewIfNeeded();
+      expect(await reachable(chip), `la puce « ${person} » est atteignable`).toBe(true);
+      await chip.click();
+      await page.waitForTimeout(900);
+
+      const counts = await badges();
+      for (const [label, count] of Object.entries(counts)) {
+        const tab = page.getByRole("tab", { name: new RegExp(label.replace("'", "'?")) }).first();
+        await tab.click();
+        await page.waitForTimeout(700);
+        const rendered = await page.locator("[data-task]").count();
+        /*
+          **L'invariant du jalon.** La pastille est calculée en amont par
+          `tabView()` et la liste vient du même appel : si elles divergeaient,
+          c'est ici que ça se verrait — et nulle part ailleurs, parce que deux
+          nombres justes chacun de son côté ne lèvent rien (jalons 49, 78).
+        */
+        expect(rendered, `${label}, personne ${person}`).toBe(count);
       }
-      const range = (await page.locator("main nav span.font-mono").first().textContent()) ?? "";
-      const total = Number.parseInt(range.split("de").pop()?.trim() ?? "0", 10);
-      expect(total, `onglet ${label} : pastille ${badge}`).toBe(badge);
     }
-    expect(current.errors).toEqual([]);
-  }, 90_000);
 
-  it("deux filtres qui masquent tout le disent, et « Retirer les filtres » rend la liste", async () => {
-    const current = session;
-    expect(current).not.toBeNull();
-    if (current === null) return;
-    const { page } = current;
+    expect(session.errors).toEqual([]);
+  }, 180_000);
 
-    await page.goto(`${BASE_URL}/taches?onglet=toutes`, { waitUntil: "networkidle" });
-    const before = await page.locator("main article").count();
-    expect(before).toBeGreaterThan(0);
+  it("le filtre par personne vit dans l'URL et survit au rechargement", async () => {
+    const { page } = session;
+    await page.goto(`${BASE_URL}/taches`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1200);
 
-    await page.goto(
-      `${BASE_URL}/taches?onglet=toutes&proprietaire=${TAG}Owner&priorite=normale`,
-      { waitUntil: "networkidle" },
-    );
+    const mohamed = page.locator('[data-person="Mohamed"]');
+    await mohamed.scrollIntoViewIfNeeded();
+    expect(await reachable(mohamed)).toBe(true);
+    await mohamed.click();
+    await page.waitForTimeout(900);
 
-    const message = page.getByText(/filtres actifs masquent/).first();
-    expect(await reachable(message)).toBe(true);
-    expect((await message.textContent()) ?? "").toMatch(/2 filtres actifs masquent \d+ tâches/);
+    expect(page.url(), "le choix est dans l'URL").toContain("personne=Mohamed");
 
-    const clear = page.getByRole("button", { name: "Retirer les filtres" });
-    expect(await reachable(clear)).toBe(true);
-    await clear.click();
-    // L'URL change sans nouvelle navigation : on attend la liste, pas le réseau.
-    await expect.poll(() => page.locator("main article").count(), { timeout: 15_000 }).toBe(before);
-    expect(current.errors).toEqual([]);
-  }, 90_000);
+    // **Rechargé**, pas re-cliqué : c'est l'URL qui doit porter l'état.
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1500);
+    expect(await mohamed.getAttribute("aria-pressed"), "la puce est encore active").toBe("true");
 
-  it("un onglet enregistré par « + » survit au rechargement et rend la même liste", async () => {
-    const current = session;
-    expect(current).not.toBeNull();
-    if (current === null) return;
-    const { page } = current;
+    // Et la liste ne porte que ses tâches : on lit les assignés rendus.
+    const rows = await page.locator("[data-task]").allInnerTexts();
+    for (const row of rows) expect(row).not.toContain("Yanis");
 
-    await page.goto(`${BASE_URL}/taches?onglet=toutes&proprietaire=${TAG}Owner`, {
-      waitUntil: "networkidle",
-    });
-    const expected = await page.locator("main article").count();
-    expect(expected).toBeGreaterThan(0);
+    expect(session.errors).toEqual([]);
+  }, 120_000);
 
-    const plus = page.getByRole("button", { name: "Enregistrer cette vue comme onglet" });
-    expect(await reachable(plus)).toBe(true);
-    await plus.click();
+  it("une tâche d'appel porte son numéro, et « Appel passé » consigne", async () => {
+    const { page } = session;
+    await page.goto(`${BASE_URL}/taches?personne=Yanis`, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1500);
 
-    const name = page.getByPlaceholder("Nom de l'onglet");
-    expect(await reachable(name)).toBe(true);
-    await name.fill(`${TAG} à moi`);
-    await page.getByRole("button", { name: "Enregistrer", exact: true }).click();
+    const card = page.locator(`[data-task="${callTaskId}"]`);
+    await card.scrollIntoViewIfNeeded();
+    expect(await reachable(card), "la carte de l'appel est atteignable").toBe(true);
+    expect(await card.getAttribute("data-kind")).toBe("appel");
 
-    const saved = page.getByRole("button", { name: `${TAG} à moi`, exact: true });
-    await saved.waitFor({ state: "attached", timeout: 15_000 });
-    expect(await reachable(saved)).toBe(true);
+    // Le numéro, composable d'un geste : un vrai `tel:`, pas un libellé.
+    const dial = card.locator("[data-dial]");
+    await dial.scrollIntoViewIfNeeded();
+    expect(await reachable(dial), "le bouton d'appel est atteignable").toBe(true);
+    expect(await dial.getAttribute("href")).toBe("tel:0655443322");
+    // 44 px de haut, comme toute cible tactile depuis le jalon 46.
+    const box = await dial.boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(30);
 
-    // Rechargement : l'onglet est en base, sa requête dans l'URL.
-    await page.goto(`${BASE_URL}/taches`, { waitUntil: "networkidle" });
-    const again = page.getByRole("button", { name: `${TAG} à moi`, exact: true });
-    expect(await reachable(again)).toBe(true);
+    const before = await prisma.activity.count({ where: { contactId: `${P}a`, type: "call" } });
+
+    const button = card.locator("[data-call-done]");
+    await button.scrollIntoViewIfNeeded();
+    expect(await reachable(button), "« Appel passé » est atteignable").toBe(true);
+    expect((await button.innerText()).trim()).toBe("Appel passé");
+    await button.click();
+    await page.waitForTimeout(3000);
+
     /*
-      **Le clic attend l'hydratation.** Un onglet cliqué avant que React ait
-      repris la page ne déclenche rien, et l'écran paraît mort — c'est le
-      flottement payé au jalon 81 sur la page de connexion. On reclique jusqu'à
-      ce que la requête enregistrée arrive dans l'URL.
+      **C'est la base qui le dit, pas l'écran.** Cocher sans consigner perdrait
+      le seul fait qui prouve l'appel, et un écran peut très bien afficher une
+      case cochée sans que rien ne soit parti.
     */
-    await expect
-      .poll(
-        async () => {
-          if (!page.url().includes("proprietaire=")) await again.click();
-          return page.url();
-        },
-        { timeout: 15_000 },
-      )
-      .toContain("proprietaire=");
-    await page.waitForLoadState("networkidle");
-    // La requête enregistrée est de retour dans l'URL : c'est elle qui rejoue la vue.
-    expect(page.url()).toContain("proprietaire=");
-    expect(await page.locator("main article").count()).toBe(expected);
-    expect(current.errors).toEqual([]);
-  }, 90_000);
+    const task = await prisma.task.findUniqueOrThrow({ where: { id: callTaskId } });
+    expect(task.done, "la tâche est terminée").toBe(true);
+    expect(task.doneAt).not.toBeNull();
+    const after = await prisma.activity.count({ where: { contactId: `${P}a`, type: "call" } });
+    expect(after, "l'appel est consigné dans l'historique").toBe(before + 1);
 
-  it("« Démarrer » ouvre la première ligne en focus, et « Quitter » revient", async () => {
-    const current = session;
-    expect(current).not.toBeNull();
-    if (current === null) return;
-    const { page } = current;
+    expect(session.errors).toEqual([]);
+  }, 120_000);
 
-    await page.goto(`${BASE_URL}/taches?onglet=toutes&proprietaire=${TAG}Owner`, {
-      waitUntil: "networkidle",
+  it("le bandeau des départs porte le nombre réel, et mène à la file", async () => {
+    const { page } = session;
+
+    /*
+      **Le compte est celui de toute la file**, c'est la règle : le bandeau
+      décrit les départs du CRM, pas ceux d'une campagne. Ce test ne suppose donc
+      pas une base vide — il mesure l'état de départ et vérifie l'écart, ce qui
+      est la seule assertion qui tienne quelle que soit l'histoire de la base
+      (même classe de fragilité que celle fermée au jalon 104 sur `mailbox-cap`).
+
+      Le cas « zéro départ, bandeau masqué » est vérifié ailleurs, où il peut
+      l'être honnêtement : par `bannerText()` dans la suite unitaire, et par la
+      recette, qui le mesure sur une file réellement vide avant de la remplir.
+    */
+    const already = await prisma.sequenceDeparture.count({ where: { status: "pending" } });
+
+    // Quatorze départs en attente, puis on relit l'écran.
+    const box = await prisma.mailbox.create({
+      data: {
+        slug: `${P}-box`,
+        label: "E2E 105",
+        position: 105,
+        active: true,
+        smtpFrom: `${P}@e2e.test`,
+        signName: "Yanis Tidahy",
+        imapCopyEnabled: false,
+      },
     });
+    const campaign = await prisma.campaign.create({
+      data: { name: `${P} campagne`, mailboxId: box.id, selection: "", mode: "manual" },
+    });
+    const sequence = await prisma.emailSequence.create({
+      data: { name: `${P} campagne`, campaignId: campaign.id, active: true },
+    });
+    const step = await prisma.emailSequenceStep.create({
+      data: {
+        sequenceId: sequence.id,
+        position: 1,
+        delayDays: 0,
+        brief: "",
+        mode: "manual",
+        subject: "Objet",
+        body: "Corps",
+      },
+    });
+    const day = new Date().toISOString().slice(0, 10);
+    /*
+      Deux inscrits et sept tours chacun : l'unicité d'une inscription est le
+      couple (séquence, contact), celle d'un départ le triplet (inscription,
+      étape, tour). Quatorze départs demandent donc de jouer sur le tour, pas
+      d'inventer quatorze contacts.
+    */
+    for (const contactId of [`${P}a`, `${P}b`]) {
+      const enrollment = await prisma.sequenceEnrollment.create({
+        data: { sequenceId: sequence.id, contactId, status: "active", lastStep: 0 },
+      });
+      for (let round = 1; round <= 7; round += 1) {
+        await prisma.sequenceDeparture.create({
+          data: {
+            enrollmentId: enrollment.id,
+            step: step.position,
+            round,
+            status: "pending",
+            subject: `Objet ${contactId}-${round}`,
+            body: "Corps",
+            auto: false,
+            day,
+          },
+        });
+      }
+    }
 
-    const start = page.getByRole("button", { name: "Démarrer" });
-    expect(await reachable(start)).toBe(true);
-    await start.click();
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(1800);
 
-    const quit = page.getByRole("button", { name: "Quitter" });
-    expect(await reachable(quit)).toBe(true);
-    const skipButton = page.getByRole("button", { name: "Passer" });
-    expect(await reachable(skipButton)).toBe(true);
+    const banner = page.locator("[data-banner='sends']");
+    await banner.scrollIntoViewIfNeeded();
+    expect(await reachable(banner), "le bandeau des départs est atteignable").toBe(true);
+    expect(await banner.innerText()).toContain(`${already + 14} mails prêts à partir`);
 
-    // On avance : le compteur suit, ce qui prouve que « Passer » fait avancer.
-    const counter = page.getByText(/^\d+ sur \d+$/).first();
-    expect(await reachable(counter)).toBe(true);
-    expect((await counter.textContent()) ?? "").toContain("1 sur");
-    await skipButton.click();
-    await expect.poll(() => counter.textContent(), { timeout: 10_000 }).toContain("2 sur");
+    const link = banner.getByRole("link", { name: /Départs du jour/ });
+    expect(await reachable(link), "le lien vers la file est atteignable").toBe(true);
+    await link.click();
+    await page.waitForURL(/\/departs/, { timeout: 20_000 });
+    expect(page.url()).toContain("/departs");
 
-    await quit.click();
-    expect(await reachable(page.getByRole("button", { name: "Démarrer" }))).toBe(true);
-    expect(current.errors).toEqual([]);
-  }, 90_000);
+    expect(session.errors).toEqual([]);
+  }, 180_000);
 });

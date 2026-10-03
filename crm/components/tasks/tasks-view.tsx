@@ -5,52 +5,55 @@ import { useCallback, useMemo, useState, useTransition } from "react";
 import { Drawer } from "@/components/ui/drawer";
 import { requestJson } from "@/lib/client/http";
 import { isTaskPriority } from "@/lib/domain/guards";
+import { isTaskKind } from "@/lib/domain/task-kind";
 import {
-  applyTaskFilters,
   activeFilterCount,
-  compareRows,
   emptyState,
-  isFeedKind,
   paginate,
-  rowsForTab,
-  tabCounts,
   tabLabel,
-  type FeedRow,
+  tabView,
+  ALL_PEOPLE,
   type TaskFilters,
+  type TaskRow,
   type TaskTabId,
 } from "@/lib/domain/task-tabs";
 import { FocusMode } from "./focus-mode";
+import { PersonFilter } from "./person-filter";
 import { TaskFullForm } from "./task-full-form";
 import { TaskRows } from "./task-rows";
 import { TaskTabBar } from "./task-tab-bar";
 import { TaskToolbar } from "./task-toolbar";
 
 /**
- * L'écran Tâches : des onglets, une barre d'outils, une liste paginée.
+ * L'écran Tâches : quatre onglets, un choix de personne, une liste paginée.
  *
- * **Un prédicat par onglet, et c'est lui qui compte la pastille.** Les nombres
- * des onglets viennent de `tabCounts()` et la liste de `rowsForTab()`, appliqués
- * au **même** tableau de lignes : une pastille ne peut pas contredire sa liste.
+ * **La pastille et la liste sortent du même appel.** `tabView()` rend les deux
+ * à partir d'un tableau filtré une fois par personne : il n'existe donc aucun
+ * ordre d'appel dans lequel elles pourraient diverger, là où deux fonctions
+ * séparées laissaient toujours la possibilité d'en appeler une sur un tableau
+ * et l'autre sur un autre (jalons 49, 78).
  *
- * Tout l'état — onglet, recherche, filtres, page — vit dans l'URL : la vue
- * survit à un rechargement, se met en favori, et un onglet enregistré n'est
+ * Tout l'état — onglet, personne, recherche, filtres, page — vit dans l'URL : la
+ * vue survit à un rechargement, se met en favori, et un onglet enregistré n'est
  * qu'une requête nommée (jalon 92).
  */
 interface TasksViewProps {
-  readonly rows: readonly FeedRow[];
+  readonly rows: readonly TaskRow[];
   readonly tab: TaskTabId;
-  readonly savedTabs: ReadonlyArray<{ readonly id: string; readonly name: string; readonly query: string }>;
-  readonly owners: readonly string[];
-  readonly targets: TaskTargets;
+  readonly savedTabs: ReadonlyArray<{
+    readonly id: string;
+    readonly name: string;
+    readonly query: string;
+  }>;
+  readonly people: readonly string[];
+  readonly contacts: ReadonlyArray<{
+    readonly id: string;
+    readonly label: string;
+    readonly search: string;
+  }>;
 }
 
-export interface TaskTargets {
-  readonly contacts: ReadonlyArray<{ readonly id: string; readonly label: string }>;
-  readonly companies: ReadonlyArray<{ readonly id: string; readonly label: string }>;
-  readonly deals: ReadonlyArray<{ readonly id: string; readonly label: string }>;
-}
-
-export function TasksView({ rows, tab, savedTabs, owners, targets }: TasksViewProps) {
+export function TasksView({ rows, tab, savedTabs, people, contacts }: TasksViewProps) {
   const router = useRouter();
   const params = useSearchParams();
   const [, startTransition] = useTransition();
@@ -61,15 +64,14 @@ export function TasksView({ rows, tab, savedTabs, owners, targets }: TasksViewPr
   const search = params.get("q") ?? "";
   const filtersOpen = params.get("filtres") === "1";
   const activeSaved = params.get("perso") ?? "";
+  const person = params.get("personne") ?? ALL_PEOPLE;
 
   const filters: TaskFilters = useMemo(() => {
-    const owner = params.get("proprietaire") ?? "";
     const priority = params.get("priorite") ?? "";
     const kind = params.get("type") ?? "";
     return {
-      ...(owner === "" ? {} : { owner }),
       ...(isTaskPriority(priority) ? { priority } : {}),
-      ...(isFeedKind(kind) ? { kind } : {}),
+      ...(isTaskKind(kind) ? { kind } : {}),
     };
   }, [params]);
 
@@ -87,20 +89,14 @@ export function TasksView({ rows, tab, savedTabs, owners, targets }: TasksViewPr
 
   /* La même horloge pour les pastilles et pour les listes, forcément. */
   const now = useMemo(() => new Date(), []);
-  const counts = useMemo(() => tabCounts(rows, now), [rows, now]);
-
-  const inTab = useMemo(
-    () => rowsForTab(rows, tab, now).sort(compareRows),
-    [rows, tab, now],
-  );
-  const shown = useMemo(
-    () => applyTaskFilters(inTab, filters, search),
-    [inTab, filters, search],
+  const view = useMemo(
+    () => tabView(rows, tab, person, now, filters, search),
+    [rows, tab, person, now, filters, search],
   );
 
-  const active = activeFilterCount(filters) + (search.trim() === "" ? 0 : 1);
-  const page = paginate(shown, Number.parseInt(params.get("page") ?? "1", 10) || 1);
-  const empty = emptyState(tab, inTab.length, shown.length, filters, search);
+  const active = activeFilterCount(filters, search);
+  const page = paginate(view.shown, Number.parseInt(params.get("page") ?? "1", 10) || 1);
+  const empty = emptyState(tab, person, view.inTab.length, view.shown.length, filters, search);
 
   const refresh = () => {
     setCreating(false);
@@ -142,20 +138,10 @@ export function TasksView({ rows, tab, savedTabs, owners, targets }: TasksViewPr
   };
 
   return (
-    <div className="px-6 py-6">
-      <header className="mb-4">
-        <h1 className="font-display text-2xl font-semibold tracking-tight">Tâches</h1>
-        <p className="mt-0.5 text-[13px] text-muted">
-          {activeSaved === ""
-            ? tabLabel(tab)
-            : (tabs.find((entry) => entry.id === activeSaved)?.name ?? tabLabel(tab))}
-          {page.total > 0 && ` · ${page.range}`}
-        </p>
-      </header>
-
+    <>
       <TaskTabBar
         tab={tab}
-        counts={counts}
+        counts={view.counts}
         savedTabs={tabs}
         activeSaved={activeSaved}
         onSelect={(next) => setParams({ onglet: next, page: null, perso: null })}
@@ -164,13 +150,26 @@ export function TasksView({ rows, tab, savedTabs, owners, targets }: TasksViewPr
         onDeleteSaved={(id) => void deleteTab(id)}
       />
 
+      <PersonFilter
+        people={people}
+        person={person}
+        onSelect={(next) => setParams({ personne: next, page: null })}
+      />
+
+      <p className="mb-3 text-[13px] text-muted">
+        {activeSaved === ""
+          ? tabLabel(tab)
+          : (tabs.find((entry) => entry.id === activeSaved)?.name ?? tabLabel(tab))}
+        {person !== ALL_PEOPLE && ` · ${person}`}
+        {page.total > 0 && ` · ${page.range}`}
+      </p>
+
       <TaskToolbar
         search={search}
         filters={filters}
         activeCount={active}
-        owners={owners}
         open={filtersOpen}
-        canStart={shown.length > 0}
+        canStart={view.shown.length > 0}
         onSearch={(value) => setParams({ q: value, page: null })}
         onFilter={(patch) => setParams({ ...patch, page: null })}
         onToggleFilters={() => setParams({ filtres: filtersOpen ? null : "1" })}
@@ -179,11 +178,15 @@ export function TasksView({ rows, tab, savedTabs, owners, targets }: TasksViewPr
       />
 
       {focus ? (
-        <FocusMode rows={shown} onQuit={() => setFocus(false)} onChanged={() => router.refresh()} />
+        <FocusMode
+          rows={view.shown}
+          onQuit={() => setFocus(false)}
+          onChanged={() => router.refresh()}
+        />
       ) : empty !== null ? (
         <div className="rounded-card border border-line bg-surface px-5 py-11 text-center shadow-card">
           <b className="mb-1.5 block font-display text-[15px]">
-            {empty.kind === "filtered" ? empty.message : "Aucune tâche dans cet onglet"}
+            {empty.kind === "filtered" ? empty.message : "Rien dans cet onglet"}
           </b>
           <span className="block text-[13px] text-muted">
             {empty.kind === "filtered"
@@ -193,9 +196,7 @@ export function TasksView({ rows, tab, savedTabs, owners, targets }: TasksViewPr
           {empty.kind === "filtered" && (
             <button
               type="button"
-              onClick={() =>
-                setParams({ q: null, proprietaire: null, priorite: null, type: null, page: null })
-              }
+              onClick={() => setParams({ q: null, priorite: null, type: null, page: null })}
               className="mt-4 inline-flex min-h-[44px] items-center rounded-control bg-brand px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-brand-d lg:min-h-0"
             >
               Retirer les filtres
@@ -229,12 +230,12 @@ export function TasksView({ rows, tab, savedTabs, owners, targets }: TasksViewPr
 
       <Drawer open={creating} title="Nouvelle tâche" onClose={() => setCreating(false)}>
         <TaskFullForm
-          owners={owners}
-          targets={targets}
+          people={people}
+          contacts={contacts}
           onCancel={() => setCreating(false)}
           onCreated={refresh}
         />
       </Drawer>
-    </div>
+    </>
   );
 }

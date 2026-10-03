@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { compareKeys, sortKey } from "../domain/sort-key";
 import { contactNameKey } from "./name-keys";
 import { prisma } from "../db";
+import { readHotProspects } from "./hot-prospects";
 import { ownerOrDefault, syncReminderTask } from "./automation";
 import { resolveCompanyLink } from "./company-resolve";
 import { toActivityType, toDealStatus, toLifecycle } from "../domain/guards";
@@ -417,8 +418,9 @@ export async function listContacts(
   now: Date = new Date(),
   filters: FilterState = {},
 ): Promise<ContactRecord[]> {
+  const hotIds = query.chauds === true ? (await readHotProspects(now)).ids : null;
   const rows = await prisma.contact.findMany({
-    where: contactsWhere(query, filters, now),
+    where: contactsWhere(query, filters, now, hotIds),
     include: contactInclude,
     orderBy: orderBy(query),
   });
@@ -468,8 +470,21 @@ function contactsWhere(
   query: ListContactsQuery,
   filters: FilterState,
   now: Date,
+  /**
+   * Les prospects chauds, **résolus par l'appelant** (jalon 105).
+   *
+   * Ce filtre dérive de trois tables — clics, réponses, affaires — donc il ne
+   * s'exprime pas en une clause. Les identifiants sont calculés une fois par
+   * `readHotProspects()`, la fonction qui sert aussi le compte affiché : la
+   * liste et son nombre ne peuvent donc pas diverger. `null` veut dire « on ne
+   * filtre pas là-dessus », `[]` veut dire « personne n'est chaud » — et les
+   * confondre ferait rendre tout le vivier là où il n'y a personne.
+   */
+  hotIds: readonly string[] | null = null,
 ): Prisma.ContactWhereInput {
   const and: Prisma.ContactWhereInput[] = [];
+
+  if (hotIds !== null) and.push({ id: { in: [...hotIds] } });
 
   // Travailler un compte plutôt qu'une personne : toutes les fiches d'une même
   // maison, quel que soit leur cycle de vie si l'appelant l'a demandé.

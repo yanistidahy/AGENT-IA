@@ -21,7 +21,7 @@ import type { ActivityType, TaskPriority } from "./types";
  */
 
 /** Familles de tâches automatiques. Le préfixe rend la clé lisible en base. */
-export const AUTO_KINDS = ["reminder", "stage", "stale"] as const;
+export const AUTO_KINDS = ["reminder", "stage", "stale", "reponse"] as const;
 export type AutoKind = (typeof AUTO_KINDS)[number];
 
 /**
@@ -36,6 +36,13 @@ export type AutoKind = (typeof AUTO_KINDS)[number];
  *
  * `stale:<dealId>` — une seule relance de réveil par affaire ; rouvrir le sujet
  * demande de terminer ou supprimer la précédente.
+ *
+ * `reponse:<Message-ID de la réponse>` — une tâche « Répondre à… » par réponse
+ * relevée (jalon 105). **C'est la seule famille dont la clé ne se libère
+ * jamais**, terminée comprise : les autres décrivent un état qui peut revenir
+ * (une relance se repose, une affaire se rendort), celle-ci décrit un fait qui a
+ * eu lieu une fois. La libérer ferait recréer la tâche au relevé suivant, alors
+ * qu'on vient de la cocher.
  */
 export function autoKey(kind: AutoKind, ...parts: readonly string[]): string {
   return [kind, ...parts].join(":");

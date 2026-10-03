@@ -340,12 +340,24 @@ model Activity {
 /// rejouer le même déclencheur ne peut pas créer une seconde tâche, la base le
 /// refuse. Voir lib/domain/automation.ts.
 model Task {
-  id        String    @id @default(cuid())
-  title     String
-  due       DateTime
-  priority  String    @default("normale")
-  owner     String
-  done      Boolean   @default(false)
+  id       String   @id @default(cuid())
+  title    String
+  due      DateTime
+  priority String   @default("normale")
+  /// **À qui la tâche est assignée.** C'est le champ d'assignation du jalon 4,
+  /// et il n'en existe pas d'autre : l'écran l'appelle « Assigné à », la base
+  /// l'appelle `owner`. Une seconde colonne aurait eu à rester cohérente avec
+  /// celle-ci, et un jour elle l'aurait contredite.
+  owner String
+  /// **Le canal de la tâche** (jalon 105) : `tache` | `appel` | `email` |
+  /// `instagram`.
+  ///
+  /// Jusqu'ici l'onglet « Appels » reconnaissait une tâche d'appel à son
+  /// intitulé, faute de colonne (jalon 92) — « Joindre Sophie » n'y entrait
+  /// donc pas. Le type est maintenant saisi à la création. Le défaut porte sur
+  /// la colonne, donc l'existant lit `tache` sauf ce que la migration a repris.
+  kind String  @default("tache")
+  done Boolean @default(false)
   doneAt    DateTime?
   createdAt DateTime  @default(now())
   auto      Boolean   @default(false)
