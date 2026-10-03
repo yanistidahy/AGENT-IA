@@ -1,28 +1,34 @@
 import { daysSince } from "./dates";
+import { TASK_KIND_LABELS, type TaskKind } from "./task-kind";
 import type { TaskPriority } from "./types";
 
 /**
- * **Un prédicat par onglet, et c'est lui qui compte la pastille.**
+ * **Quatre onglets, et une seule fonction qui rend la pastille *et* la liste.**
  *
- * L'écran Tâches range le travail du jour en onglets. La seule règle qui les
- * rende dignes de confiance est celle-ci : **la pastille et la liste sortent du
- * même prédicat**, appliqué au même tableau de lignes. Une pastille qui
- * annoncerait 7 au-dessus d'une liste de 5 ferait perdre la confiance dans les
- * deux — c'est l'écart que le jalon 49 a payé une fois entre une puce et sa
- * liste, et le jalon 78 une seconde fois entre une carte et son tableau.
+ * L'écran Tâches mélangeait trois choses dans six onglets : des tâches, des
+ * départs en attente et des signaux d'intérêt. Trois natures différentes dans
+ * une même rangée demandent de se rappeler, onglet par onglet, ce qu'on peut
+ * faire de ce qu'on y lit — cocher ? envoyer ? rappeler ? — et un écran dont
+ * chaque onglet appelle un geste différent n'a plus d'ordre de lecture.
  *
- * **Rien n'est écrit en base pour alimenter un onglet.** Il n'y a ni colonne
- * d'onglet, ni statut « traité », ni ligne de tâche dupliquée : les lignes sont
- * assemblées à la lecture depuis ce qui existe déjà (tâches, départs en
- * attente, réponses relevées, signaux d'intérêt), et l'appartenance à un onglet
- * est une **question posée aux données**, jamais un état qu'il faudrait tenir à
- * jour. Un état à tenir finit toujours par contredire ce qu'il décrit.
+ * **Ne restent donc que des tâches.** Ce qui n'en est pas devient un bandeau ou
+ * un lien, en tête d'écran, et mène là où le travail se fait : la file des
+ * départs, les réponses, le vivier. Le reste tient en quatre questions sur une
+ * seule nature d'objet.
  *
- * Module pur : aucune dépendance à Prisma, l'horloge est injectée. Les tests
- * couvrent les six onglets sans base.
+ * La règle qui rend ces onglets dignes de confiance n'a pas changé, et elle est
+ * **renforcée** : la pastille et la liste ne partagent plus seulement un
+ * prédicat, elles sortent du **même appel** — `tabView()` rend les deux, sur un
+ * tableau filtré une fois. Il n'existe donc plus d'ordre d'appel dans lequel
+ * elles pourraient diverger, là où deux fonctions séparées laissaient toujours
+ * la possibilité d'en appeler une sur un tableau et l'autre sur un autre (c'est
+ * l'écart que le jalon 49 a payé entre une puce et sa liste, et le jalon 78 entre
+ * une carte et son tableau).
+ *
+ * Module pur : l'horloge est injectée, rien ne touche Prisma.
  */
 
-export type TaskTabId = "vos" | "appels" | "envoyer" | "chauds" | "reponses" | "toutes";
+export type TaskTabId = "aujourdhui" | "appels" | "avenir" | "terminees";
 
 export interface TaskTabDefinition {
   readonly id: TaskTabId;
@@ -33,30 +39,20 @@ export interface TaskTabDefinition {
 
 export const TASK_TABS: readonly TaskTabDefinition[] = [
   {
-    id: "vos",
-    label: "Vos tâches",
-    rule: "les tâches à faire aujourd'hui ou en retard",
+    id: "aujourdhui",
+    label: "Aujourd'hui",
+    rule: "les tâches à faire aujourd'hui ou en retard, tous types confondus",
   },
-  { id: "appels", label: "Appels", rule: "les tâches d'appel à faire" },
+  { id: "appels", label: "Appels", rule: "les tâches d'appel qui restent à passer" },
+  { id: "avenir", label: "À venir", rule: "les tâches dont l'échéance est après aujourd'hui" },
   {
-    id: "envoyer",
-    label: "À envoyer",
-    rule: "les départs composés qui attendent votre clic",
+    id: "terminees",
+    label: "Terminées",
+    rule: "les tâches terminées, la plus récente d'abord",
   },
-  {
-    id: "chauds",
-    label: "Prospects chauds",
-    rule: "une réponse, un clic sur un de nos liens ou un passage en Qualifié, depuis moins de 14 jours",
-  },
-  {
-    id: "reponses",
-    label: "Réponses des prospects",
-    rule: "les réponses relevées dans la boîte et pas encore traitées",
-  },
-  { id: "toutes", label: "Toutes les tâches", rule: "tout ce qui n'est pas terminé" },
 ];
 
-export const DEFAULT_TAB: TaskTabId = "vos";
+export const DEFAULT_TAB: TaskTabId = "aujourdhui";
 
 export function isTaskTabId(value: string): value is TaskTabId {
   return TASK_TABS.some((tab) => tab.id === value);
@@ -70,174 +66,77 @@ export function tabRule(id: TaskTabId): string {
   return TASK_TABS.find((tab) => tab.id === id)?.rule ?? "";
 }
 
-/** La nature d'une ligne, qui décide de ce qu'on peut en faire. */
-export type FeedKind = "task" | "departure" | "reply" | "hot";
-
-export const FEED_KINDS: readonly FeedKind[] = ["task", "departure", "reply", "hot"];
-
-export function isFeedKind(value: string): value is FeedKind {
-  return FEED_KINDS.includes(value as FeedKind);
-}
-
-export function kindLabel(kind: FeedKind): string {
-  switch (kind) {
-    case "task":
-      return "Tâche";
-    case "departure":
-      return "Départ à envoyer";
-    case "reply":
-      return "Réponse relevée";
-    case "hot":
-      return "Signal d'intérêt";
-  }
-}
-
 /**
- * Le seul signal qui rende un prospect « chaud ».
+ * Une ligne de l'écran : **une tâche, et rien d'autre**.
  *
- * **L'ouverture du pixel n'en fait pas partie, et ce n'est pas un oubli.** Notre
- * suivi d'ouverture surestime par construction : Apple Mail charge les images à
- * la réception, que quiconque ait lu ou non, et Gmail les met en cache (jalons
- * 37 et 43). Une file de prospects chauds alimentée par des ouvertures ferait
- * appeler des gens qui n'ont rien fait, et elle ferait perdre confiance au seul
- * écran dont la valeur est de ne contenir que du vrai.
+ * Les champs dérivés sont calculés à la lecture par la couche de service ; les
+ * prédicats ne font que les lire. C'est ce qui permet de les tester sans base, et
+ * ce qui empêche un onglet de recomposer sa propre règle à partir de bribes.
  */
-export type HotSignalKind = "reply" | "click" | "qualified";
-
-export const HOT_WINDOW_DAYS = 14;
-
-export function describeHotSignal(kind: HotSignalKind): string {
-  switch (kind) {
-    case "reply":
-      return "a répondu";
-    case "click":
-      return "a cliqué sur un de nos liens";
-    case "qualified":
-      return "passé en Qualifié";
-  }
-}
-
-/**
- * Une ligne de l'écran, quelle que soit son origine.
- *
- * Les champs booléens sont **calculés à la lecture** par la couche de service,
- * depuis les données réelles ; les prédicats ne font que les lire. C'est ce qui
- * permet de les tester sans base, et ce qui empêche un onglet de recomposer sa
- * propre règle à partir de bribes.
- */
-export interface FeedRow {
-  /** Unique toutes origines confondues : `tache:<id>`, `depart:<id>`… */
+export interface TaskRow {
   readonly id: string;
-  readonly kind: FeedKind;
   readonly title: string;
-  readonly detail: string;
-  /** Échéance, quand la ligne en a une. Un départ ou une réponse n'en a pas. */
-  readonly due: Date | null;
+  readonly kind: TaskKind;
+  readonly due: Date;
   readonly done: boolean;
-  readonly priority: TaskPriority | null;
-  readonly owner: string;
+  readonly doneAt: Date | null;
+  readonly priority: TaskPriority;
+  /**
+   * **À qui la tâche est assignée.**
+   *
+   * C'est `Task.owner`, le champ qui porte cette information depuis le jalon 4 :
+   * aucune seconde colonne n'a été ajoutée. Un second champ d'assignation aurait
+   * eu à rester cohérent avec celui-ci, et un jour il l'aurait contredit —
+   * l'écran l'appelle « Assigné à », la base l'appelle `owner`, et il n'y a
+   * qu'une valeur.
+   */
+  readonly assignee: string;
   readonly contactId: string | null;
   readonly contactName: string;
-  /** Où mener au clic — la fiche, la file des départs. */
+  /** Le numéro saisi sur la fiche, tel quel — jamais réécrit (jalon 10). */
+  readonly contactPhone: string;
+  /** Ce qui rattache la tâche, quand ce n'est pas un contact. */
+  readonly detail: string;
   readonly href: string | null;
-  /** Une tâche d'appel, reconnue à son intitulé (voir `isCallTitle`). */
-  readonly isCall: boolean;
-  /** Un départ composé qui attend une validation humaine. */
-  readonly pendingSend: boolean;
-  /** Une réponse relevée à laquelle personne n'a encore donné suite. */
-  readonly unhandledReply: boolean;
-  /** Le signal d'intérêt, s'il y en a un de fiable. */
-  readonly hotSignal: HotSignalKind | null;
-  /**
-   * Cycle de vie terminal (`Perdu`, `Ancien Client`).
-   *
-   * Porté sur la ligne plutôt que laissé à la requête : un prospect chaud qui a
-   * dit non n'existe pas, et la règle doit tenir même si une lecture future
-   * oubliait de l'exclure en SQL (leçon du jalon 29, où un champ facultatif
-   * portant une règle d'affichage était une règle qu'on pouvait oublier).
-   */
-  readonly terminal: boolean;
-  /** L'instant qui date la ligne : échéance, composition, réponse, signal. */
-  readonly at: Date;
   /** Ce sur quoi la recherche porte, déjà plié (accents, casse). */
   readonly searchText: string;
 }
 
 /**
- * Une tâche d'appel, reconnue à son intitulé.
+ * Les quatre prédicats, et rien d'autre ne décide de ce qu'un onglet contient.
  *
- * **Il n'existe aucune colonne de canal sur `Task`**, et ce jalon n'en ajoute
- * pas : la consigne était de calculer les onglets à la lecture, pas d'écrire un
- * état pour les alimenter. On reconnaît donc des formes — celles que le produit
- * écrit lui-même (« Relancer X » vient d'une relance, « Appeler X » d'une
- * prochaine action) et celles qu'un humain tape. La liste est **étroite** : un
- * mot trop vague ferait entrer dans l'onglet des tâches qui n'ont rien à voir,
- * et un onglet qui ne tient pas sa promesse ne se rouvre pas.
+ * `« Aujourd'hui »` remplace `« Vos tâches »`, et le changement de nom répare un
+ * mensonge : l'espace de travail a **un seul mot de passe partagé** (jalon 9),
+ * donc le produit ne sait pas qui est « vous » — l'onglet listait en réalité
+ * *toutes* les tâches dues, celles de Mohamed comprises. Il dit maintenant ce
+ * qu'il fait, et le choix de la personne est un contrôle à part, explicite.
  */
-export function isCallTitle(title: string): boolean {
-  return /\b(appel|appeler|rappeler|t[ée]l[ée]phon)/i.test(title);
-}
-
-/**
- * Les six prédicats, et rien d'autre ne décide de ce qu'un onglet contient.
- *
- * `« Vos tâches »` ne filtre par personne : l'espace de travail a **un seul mot
- * de passe partagé** (jalon 9), donc le produit ne sait pas qui est « vous » et
- * inventer des comptes utilisateurs serait une autre décision. Ce qu'il sait,
- * c'est ce qui est dû — aujourd'hui ou en retard. Le propriétaire reste un
- * filtre de la barre d'outils, appuyé sur `Task.owner`, qui existe déjà.
- */
-export const TAB_PREDICATES: Record<TaskTabId, (row: FeedRow, now: Date) => boolean> = {
-  vos: (row, now) =>
-    row.kind === "task" && !row.done && row.due !== null && daysSince(row.due, now) >= 0,
-  appels: (row) => row.kind === "task" && !row.done && row.isCall,
-  envoyer: (row) => row.kind === "departure" && row.pendingSend,
-  chauds: (row, now) =>
-    row.kind === "hot" &&
-    row.hotSignal !== null &&
-    !row.terminal &&
-    daysSince(row.at, now) <= HOT_WINDOW_DAYS,
-  reponses: (row) => row.kind === "reply" && row.unhandledReply,
-  toutes: (row) => !row.done,
+const TAB_PREDICATES: Record<TaskTabId, (row: TaskRow, now: Date) => boolean> = {
+  // `daysSince >= 0` : l'échéance est aujourd'hui ou passée.
+  aujourdhui: (row, now) => !row.done && daysSince(row.due, now) >= 0,
+  appels: (row) => !row.done && row.kind === "appel",
+  avenir: (row, now) => !row.done && daysSince(row.due, now) < 0,
+  terminees: (row) => row.done,
 };
 
-/** La pastille d'un onglet : le prédicat, sur toutes les lignes. */
-export function countTab(rows: readonly FeedRow[], tab: TaskTabId, now: Date): number {
-  return rows.reduce((total, row) => (TAB_PREDICATES[tab](row, now) ? total + 1 : total), 0);
+/* ------------------------------------------------------- filtre par personne */
+
+/** « Tous » — la chaîne vide, pour qu'un paramètre absent vaille « tous ». */
+export const ALL_PEOPLE = "";
+
+/**
+ * Le filtre par personne, appliqué **avant** tout comptage comme avant toute
+ * liste.
+ *
+ * C'est la seule façon que la pastille décrive ce que la liste montrera : un
+ * comptage fait sur toutes les tâches au-dessus d'une liste filtrée par personne
+ * annoncerait le travail de quelqu'un d'autre.
+ */
+export function keptForPerson(row: TaskRow, person: string): boolean {
+  return person === ALL_PEOPLE || row.assignee === person;
 }
 
-export function tabCounts(rows: readonly FeedRow[], now: Date): Record<TaskTabId, number> {
-  const counts = {} as Record<TaskTabId, number>;
-  for (const tab of TASK_TABS) counts[tab.id] = countTab(rows, tab.id, now);
-  return counts;
-}
-
-/** La liste d'un onglet : **le même prédicat**, sur les mêmes lignes. */
-export function rowsForTab(rows: readonly FeedRow[], tab: TaskTabId, now: Date): FeedRow[] {
-  return rows.filter((row) => TAB_PREDICATES[tab](row, now));
-}
-
-/* ------------------------------------------------------------------ filtres */
-
-export interface TaskFilters {
-  readonly owner?: string;
-  readonly priority?: TaskPriority;
-  readonly kind?: FeedKind;
-}
-
-export function activeFilterCount(filters: TaskFilters): number {
-  return [filters.owner, filters.priority, filters.kind].filter(
-    (value) => value !== undefined && value !== "",
-  ).length;
-}
-
-export function describeFilters(filters: TaskFilters): string[] {
-  const parts: string[] = [];
-  if (filters.owner !== undefined && filters.owner !== "") parts.push(`propriétaire ${filters.owner}`);
-  if (filters.priority !== undefined) parts.push(`priorité ${filters.priority}`);
-  if (filters.kind !== undefined) parts.push(`type ${kindLabel(filters.kind)}`);
-  return parts;
-}
+/* ----------------------------------------------------------------- recherche */
 
 /** Plie ce qui ne veut rien dire pour une recherche : accents, casse, bords. */
 export function foldSearch(value: string): string {
@@ -248,21 +147,95 @@ export function foldSearch(value: string): string {
     .trim();
 }
 
-export function applyTaskFilters(
-  rows: readonly FeedRow[],
-  filters: TaskFilters,
-  search: string,
-): FeedRow[] {
+export interface TaskFilters {
+  readonly priority?: TaskPriority;
+  readonly kind?: TaskKind;
+}
+
+export function activeFilterCount(filters: TaskFilters, search: string): number {
+  return (
+    [filters.priority, filters.kind].filter((value) => value !== undefined).length +
+    (search.trim() === "" ? 0 : 1)
+  );
+}
+
+function matchesFilters(row: TaskRow, filters: TaskFilters, needle: string): boolean {
+  if (filters.priority !== undefined && row.priority !== filters.priority) return false;
+  if (filters.kind !== undefined && row.kind !== filters.kind) return false;
+  if (needle !== "" && !row.searchText.includes(needle)) return false;
+  return true;
+}
+
+/* -------------------------------------------------------------------- ordre */
+
+/**
+ * L'ordre d'affichage, et il dépend de l'onglet.
+ *
+ * Les onglets de travail trient par échéance croissante — le plus en retard
+ * d'abord, parce que c'est l'ordre dans lequel on traite une file. « Terminées »
+ * trie par date d'achèvement décroissante : on y vient pour vérifier ce qu'on
+ * vient de faire, pas pour relire le mois dernier. À défaut de `doneAt` — une
+ * tâche cochée avant que la colonne existe — l'échéance tient lieu de date.
+ */
+function compareInTab(a: TaskRow, b: TaskRow, tab: TaskTabId): number {
+  if (tab === "terminees") {
+    const left = (a.doneAt ?? a.due).getTime();
+    const right = (b.doneAt ?? b.due).getTime();
+    return right - left;
+  }
+  return a.due.getTime() - b.due.getTime();
+}
+
+/* ----------------------------------------------------------------- la vue */
+
+export interface TabView {
+  /** La pastille de chaque onglet, pour la personne choisie. */
+  readonly counts: Record<TaskTabId, number>;
+  /** Les lignes de l'onglet courant, triées, avant filtres et recherche. */
+  readonly inTab: readonly TaskRow[];
+  /** Les lignes réellement affichées, filtres et recherche appliqués. */
+  readonly shown: readonly TaskRow[];
+}
+
+/**
+ * **La pastille et la liste, en un seul appel.**
+ *
+ * Le filtre par personne est appliqué une fois, et les deux sorties en
+ * descendent. L'écran n'a donc aucun moyen de compter sur un tableau et de
+ * lister sur un autre — c'est une propriété de la fonction, pas une discipline
+ * d'appelant, et c'est ce que la garde statique vérifie.
+ *
+ * Filtres et recherche s'appliquent **après** le comptage, volontairement : une
+ * pastille qui suivrait la recherche en cours de frappe ne dirait plus ce que
+ * l'onglet contient, et on ne saurait plus si l'onglet est vide ou si c'est le
+ * filtre qui le vide (règle des puces du jalon 6, et état vide du jalon 92).
+ */
+export function tabView(
+  rows: readonly TaskRow[],
+  tab: TaskTabId,
+  person: string,
+  now: Date,
+  filters: TaskFilters = {},
+  search = "",
+): TabView {
+  const scoped = rows.filter((row) => keptForPerson(row, person));
+
+  const counts = {} as Record<TaskTabId, number>;
+  for (const definition of TASK_TABS) {
+    counts[definition.id] = scoped.reduce(
+      (total, row) => (TAB_PREDICATES[definition.id](row, now) ? total + 1 : total),
+      0,
+    );
+  }
+
+  const inTab = scoped
+    .filter((row) => TAB_PREDICATES[tab](row, now))
+    .sort((a, b) => compareInTab(a, b, tab));
+
   const needle = foldSearch(search);
-  return rows.filter((row) => {
-    if (filters.owner !== undefined && filters.owner !== "" && row.owner !== filters.owner) {
-      return false;
-    }
-    if (filters.priority !== undefined && row.priority !== filters.priority) return false;
-    if (filters.kind !== undefined && row.kind !== filters.kind) return false;
-    if (needle !== "" && !row.searchText.includes(needle)) return false;
-    return true;
-  });
+  const shown = inTab.filter((row) => matchesFilters(row, filters, needle));
+
+  return { counts, inTab, shown };
 }
 
 /* --------------------------------------------------------------- état vide */
@@ -275,13 +248,14 @@ export interface EmptyState {
 /**
  * **Un écran vide qui ne dit pas pourquoi est un écran qui ment.**
  *
- * Deux situations produisent zéro ligne et appellent deux gestes opposés :
- * l'onglet est réellement vide — rien à faire, et c'est une bonne nouvelle — ou
- * bien des filtres masquent du travail, et il faut les retirer. L'écran les
- * distingue, compte ce qui est masqué, et propose le geste.
+ * Trois situations produisent zéro ligne et appellent trois gestes différents :
+ * l'onglet est réellement vide — rien à faire, bonne nouvelle ; des filtres
+ * masquent du travail, il faut les retirer ; ou la personne choisie n'a rien,
+ * et c'est elle qu'il faut changer.
  */
 export function emptyState(
   tab: TaskTabId,
+  person: string,
   total: number,
   shown: number,
   filters: TaskFilters,
@@ -289,13 +263,16 @@ export function emptyState(
 ): EmptyState | null {
   if (shown > 0) return null;
 
-  const active = activeFilterCount(filters) + (search.trim() === "" ? 0 : 1);
+  const active = activeFilterCount(filters, search);
   if (total > 0 && active > 0) {
     const plural = active > 1 ? "filtres actifs masquent" : "filtre actif masque";
     const tasks = total > 1 ? "tâches" : "tâche";
+    return { kind: "filtered", message: `${active} ${plural} ${total} ${tasks}` };
+  }
+  if (person !== ALL_PEOPLE) {
     return {
-      kind: "filtered",
-      message: `${active} ${plural} ${total} ${tasks}`,
+      kind: "empty",
+      message: `Rien pour ${person} dans cet onglet — il retient ${tabRule(tab)}.`,
     };
   }
   return {
@@ -331,19 +308,49 @@ export function paginate<T>(rows: readonly T[], page: number, size = PAGE_SIZE):
   };
 }
 
-/* ------------------------------------------------------------------ ordre */
+/* ------------------------------------------------------------------ bandeaux */
 
 /**
- * L'ordre d'affichage : le plus urgent d'abord.
+ * Ce qui n'est pas une tâche, et qui cesse d'être un onglet.
  *
- * Une échéance dépassée passe devant un signal frais, et à égalité c'est la
- * date qui tranche. Les lignes sans échéance — départs, réponses, signaux —
- * sont classées par leur instant, le plus récent d'abord : une réponse d'hier
- * compte plus qu'une réponse de la semaine dernière.
+ * Les trois comptes viennent des mêmes lectures qu'avant : ce sont les onglets
+ * retirés, rendus en une ligne chacun, au-dessus de la file. Un bandeau à zéro
+ * **ne s'affiche pas** — une ligne « 0 mail prêt à partir » permanente est du
+ * bruit, et l'on cesse alors de lire celle qui compte (jalon 62).
  */
-export function compareRows(a: FeedRow, b: FeedRow): number {
-  if (a.due !== null && b.due !== null) return a.due.getTime() - b.due.getTime();
-  if (a.due !== null) return -1;
-  if (b.due !== null) return 1;
-  return b.at.getTime() - a.at.getTime();
+export interface TaskBanners {
+  /** Départs composés qui attendent une validation humaine. */
+  readonly pendingSends: number;
+  /** Réponses relevées auxquelles personne n'a encore donné suite. */
+  readonly unhandledReplies: number;
+  /** Prospects portant un signal d'intérêt fiable, dans la fenêtre. */
+  readonly hotProspects: number;
 }
+
+export function bannerText(banners: TaskBanners): {
+  readonly sends: string | null;
+  readonly replies: string | null;
+  readonly hot: string | null;
+} {
+  return {
+    sends:
+      banners.pendingSends === 0
+        ? null
+        : `${banners.pendingSends} mail${banners.pendingSends > 1 ? "s" : ""} prêt${
+            banners.pendingSends > 1 ? "s" : ""
+          } à partir`,
+    replies:
+      banners.unhandledReplies === 0
+        ? null
+        : `${banners.unhandledReplies} réponse${banners.unhandledReplies > 1 ? "s" : ""} à traiter`,
+    hot:
+      banners.hotProspects === 0
+        ? null
+        : `${banners.hotProspects} prospect${banners.hotProspects > 1 ? "s" : ""} chaud${
+            banners.hotProspects > 1 ? "s" : ""
+          }`,
+  };
+}
+
+/** Le libellé d'un type, réexporté pour que l'écran n'ait qu'un import. */
+export { TASK_KIND_LABELS };

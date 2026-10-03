@@ -191,6 +191,19 @@ export const listContactsQuerySchema = z.object({
    */
   societe: z.string().optional(),
   /**
+   * Les prospects portant un **signal d'intérêt fiable** (jalon 105) :
+   * `?chauds=1`.
+   *
+   * La liste et le compte affiché en tête de l'écran Tâches sortent de la
+   * **même** fonction (`readHotProspects`) : un lien qui annoncerait vingt
+   * prospects et en ouvrirait dix-huit ferait cesser de croire les deux — c'est
+   * l'écart payé au jalon 49 entre une puce et sa liste.
+   */
+  chauds: z
+    .union([z.boolean(), z.string()])
+    .transform((value) => value === true || value === "1" || value === "true")
+    .optional(),
+  /**
    * L'appartenance à un **filtre personnalisé**, par identifiant (jalon 79).
    *
    * C'est un filtre comme les autres — il se croise avec le cycle de vie, le

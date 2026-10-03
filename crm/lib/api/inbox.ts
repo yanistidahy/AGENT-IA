@@ -3,7 +3,7 @@ import { ImapFlow } from "imapflow";
 import { prisma } from "../db";
 import { anyOursMissing } from "../domain/message-id";
 import { configOf } from "./mail";
-import { listMailboxes, mailboxPassword, type Mailbox } from "./mailboxes";
+import { listMailboxes, mailboxPassword, ownerMatches, type Mailbox } from "./mailboxes";
 import { describeImapError, imapMissingFields, readImapConfig } from "./imap";
 import { classify, type InboxHeaders } from "../domain/inbox-replies";
 import { BLOCK_LABELS } from "../domain/sequence-rules";
@@ -11,6 +11,8 @@ import { ANSWERED_OUTCOMES } from "../domain/status";
 import { REAL_ACTIVITY } from "./real-activity";
 import { logActivity } from "./activities";
 import { ownerOrDefault } from "./automation";
+import { autoKey } from "../domain/automation";
+import { contactTitle } from "../domain/contact-identity";
 
 /**
  * Le relevé de la boîte de réception — la détection automatique des réponses.
@@ -212,6 +214,8 @@ interface SentRow {
   readonly subject: string;
   /** Le destinataire : c'est lui qu'on nomme quand la fiche manque. */
   readonly toAddress: string;
+  /** Qui signait — l'assigné de la tâche « Répondre à… » (jalon 105). */
+  readonly signatoryName: string;
 }
 
 /**
@@ -425,6 +429,11 @@ export async function pollInbox(now = new Date()): Promise<PollReport> {
       sentAt: true,
       subject: true,
       toAddress: true,
+      // Le signataire de la boîte d'envoi : c'est à lui que la tâche
+      // « Répondre à… » est assignée (jalon 105). Le nom est **copié sur
+      // l'envoi** depuis le jalon 54, donc lisible sans rejoindre la boîte —
+      // et juste même si la boîte a été renommée depuis.
+      signatoryName: true,
     },
   });
   if (sends.length === 0) {
@@ -611,6 +620,8 @@ async function recordReply(
     return { created: false, alreadyLogged: false, unlinked: true, repaired: false, sequencesStopped: 0 };
   }
 
+  await createReplyTask(headers.messageId, send, now);
+
   const stopped = await stopSequences(send.contactId);
   return {
     created: manual === null,
@@ -619,6 +630,97 @@ async function recordReply(
     repaired: existing !== null && manual === null,
     sequencesStopped: stopped,
   };
+}
+
+/**
+ * Le nom d'un signataire, rendu dans le vocabulaire des assignés.
+ *
+ * « Yanis Tidahy » devient « Yanis » s'il existe un assigné de ce nom, et reste
+ * tel quel sinon — mieux vaut un nom inconnu du filtre qu'une tâche assignée à
+ * personne. Le rapprochement se fait en **mots entiers** (`ownerMatches`,
+ * jalon 35), la même règle qui choisit déjà la boîte d'un contact : deux copies
+ * de cette comparaison divergeraient.
+ */
+async function resolveAssignee(name: string): Promise<string> {
+  const clean = name.trim();
+  if (clean === "") return ownerOrDefault(prisma, "");
+
+  const owners = await prisma.settingsList.findMany({
+    where: { kind: "owners" },
+    orderBy: { position: "asc" },
+    select: { value: true },
+  });
+  const match = owners.find((owner) => ownerMatches(clean, owner.value));
+  return match?.value ?? clean;
+}
+
+/**
+ * **Une réponse devient une tâche, et c'est tout ce qu'elle devient.**
+ *
+ * L'onglet « Réponses des prospects » du jalon 92 était une liste dérivée : elle
+ * se vidait quand on donnait suite, ce qui est élégant, mais elle ne pouvait ni
+ * s'assigner, ni se planifier, ni se cocher — trois choses qu'on fait d'une
+ * réponse à traiter. Elle laisse donc place à une vraie tâche, plus un bandeau
+ * qui compte celles auxquelles personne n'a encore répondu.
+ *
+ * **L'idempotence est portée par la base, pas par une vérification** :
+ * `autoKey` est unique (jalon 8), et la clé est le `Message-ID` de la réponse —
+ * donc un relevé qui repasse bute sur la contrainte plutôt que de l'éviter. Une
+ * course entre deux relevés ne peut pas la contourner non plus.
+ *
+ * Et **la clé ne se libère jamais**, contrairement aux rappels : une tâche de
+ * réponse cochée ne doit pas revenir au relevé suivant. C'est la différence
+ * entre un état qui peut se reproduire et un fait qui a eu lieu une fois.
+ */
+async function createReplyTask(replyMessageId: string, send: SentRow, now: Date): Promise<void> {
+  if (send.contactId === null) return;
+
+  const contact = await prisma.contact.findUnique({
+    where: { id: send.contactId },
+    select: { firstName: true, lastName: true, owner: true },
+  });
+  if (contact === null) return;
+
+  /*
+    **Assignée au signataire de la boîte d'où le message est parti.** C'est lui
+    que le prospect a lu et à qui il écrit : faire porter la réponse au
+    propriétaire de la fiche enverrait quelqu'un d'autre reprendre une
+    conversation qu'il n'a pas eue. À défaut de signataire — un envoi d'avant le
+    jalon 54 — on retombe sur le propriétaire de la fiche, puis sur le défaut.
+
+    **Et le signataire est rendu dans le vocabulaire des assignés.** Un
+    signataire s'appelle « Yanis Tidahy », un assigné s'appelle « Yanis » :
+    écrire le premier tel quel ajouterait une personne de plus au filtre de
+    l'écran Tâches — presque la même, à côté de la vraie, et la tâche
+    n'apparaîtrait sous aucune des deux. `ownerMatches` fait cette
+    correspondance en **mots entiers** depuis le jalon 35 (« Marc » ne
+    correspond pas à « Marceau »), et c'est elle qu'on réemploie plutôt que d'en
+    écrire une seconde.
+  */
+  const assignee = await resolveAssignee(
+    send.signatoryName !== "" ? send.signatoryName : contact.owner,
+  );
+
+  try {
+    await prisma.task.create({
+      data: {
+        title: `Répondre à ${contactTitle(contact)}`,
+        // Due aujourd'hui : une réponse qui attend demain est une réponse qu'on
+        // a laissée refroidir.
+        due: now,
+        priority: "haute",
+        owner: assignee,
+        kind: "email",
+        contactId: send.contactId,
+        auto: true,
+        autoKey: autoKey("reponse", replyMessageId),
+      },
+    });
+  } catch (error) {
+    // La clé existe déjà : la tâche a été créée par un relevé précédent, et
+    // c'est exactement ce que la contrainte est là pour garantir.
+    console.error("[inbox] tâche de réponse déjà créée :", error);
+  }
 }
 
 /**

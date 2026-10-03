@@ -1,9 +1,11 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { toTaskPriority } from "../domain/guards";
+import { DEFAULT_TASK_KIND, toTaskKind } from "../domain/task-kind";
 import { taskTarget, type TaskTargetType } from "../domain/tasks";
 import type { TaskPriority } from "../domain/types";
 import { clearReminderAfterTask } from "./automation";
+import { logActivity } from "./activities";
 import type { CreateTaskInput, ListTasksQuery, UpdateTaskInput } from "./task-schemas";
 import { contactTitle } from "../domain/contact-identity";
 
@@ -138,6 +140,7 @@ export async function createTask(input: CreateTaskInput): Promise<TaskRecord> {
       due: input.due,
       priority: input.priority ?? "normale",
       owner: input.owner,
+      kind: input.kind ?? DEFAULT_TASK_KIND,
       contactId: input.contactId ?? null,
       companyId: input.companyId ?? null,
       dealId: input.dealId ?? null,
@@ -167,6 +170,7 @@ export async function updateTask(
   if (input.due !== undefined) data.due = input.due;
   if (input.priority !== undefined) data.priority = input.priority;
   if (input.owner !== undefined) data.owner = input.owner;
+  if (input.kind !== undefined) data.kind = input.kind;
   if (input.done !== undefined) {
     data.done = input.done;
     data.doneAt = input.done ? new Date() : null;
@@ -210,4 +214,65 @@ export async function deleteTask(id: string): Promise<boolean> {
 /** Nombre de tâches en retard — alimente la pastille du rail. */
 export async function countOverdueTasks(now: Date): Promise<number> {
   return prisma.task.count({ where: { done: false, due: { lt: now } } });
+}
+
+/**
+ * **« Appel passé » : deux écritures, un seul geste.**
+ *
+ * Cocher une tâche d'appel sans rien consigner perdrait le seul fait qui compte
+ * — qu'on a bien appelé — et c'est exactement ce que le CRM existe pour
+ * empêcher. L'interaction et l'achèvement partent donc **ensemble** :
+ * `logActivity` ouvre sa propre transaction (elle écrit l'interaction, avance
+ * `lastContact` et peut créer la tâche de prochaine action, jalon 4), et la
+ * tâche n'est cochée qu'après son succès.
+ *
+ * L'ordre n'est pas symétrique, comme l'envoi d'un email au jalon 32 : une tâche
+ * cochée dont l'interaction a échoué est un travail qu'on croit tracé et qui ne
+ * l'est pas ; une interaction consignée dont la tâche reste ouverte se recoche
+ * en un clic.
+ *
+ * Refusé quand la tâche n'est pas un appel ou n'a pas de contact : il n'y a
+ * alors rien à consigner sur personne, et inventer une interaction sur une
+ * société serait écrire un fait qui n'a pas eu lieu.
+ */
+export interface CallDoneResult {
+  readonly ok: boolean;
+  readonly message: string;
+}
+
+export async function markCallDone(id: string, now = new Date()): Promise<CallDoneResult | null> {
+  const task = await prisma.task.findUnique({
+    where: { id },
+    select: { id: true, kind: true, done: true, owner: true, contactId: true, autoKey: true },
+  });
+  if (task === null) return null;
+
+  if (toTaskKind(task.kind) !== "appel") {
+    return { ok: false, message: "Cette tâche n'est pas un appel." };
+  }
+  if (task.contactId === null) {
+    return {
+      ok: false,
+      message:
+        "Cette tâche n'est rattachée à aucun contact : il n'y a pas d'historique où consigner l'appel.",
+    };
+  }
+  if (task.done) {
+    return { ok: false, message: "Cet appel est déjà marqué comme passé." };
+  }
+
+  await logActivity({
+    type: "call",
+    date: now,
+    owner: task.owner,
+    contactId: task.contactId,
+    notes: "Appel passé depuis l'écran Tâches.",
+  });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.task.update({ where: { id }, data: { done: true, doneAt: now } });
+    await clearReminderAfterTask(tx, { autoKey: task.autoKey, contactId: task.contactId });
+  });
+
+  return { ok: true, message: "Appel consigné et tâche terminée." };
 }
