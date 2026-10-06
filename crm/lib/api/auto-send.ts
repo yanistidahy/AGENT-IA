@@ -4,6 +4,7 @@ import "server-only";
 import { prisma } from "../db";
 import { contactTitle } from "../domain/contact-identity";
 import { sendDeparture } from "./departures";
+import { SENDING_ENROLLMENT_STATUS } from "../domain/reply-stop";
 import {
   DEFAULT_AUTO_SEND,
   MAX_FAILURES,
@@ -94,7 +95,12 @@ async function queue(
       status: "pending",
       subject: { not: "" },
       body: { not: "" },
-      enrollment: { status: "active", sequence: { active: true } },
+      /*
+        **Le statut d'inscription vient du domaine** (jalon 106) : la même
+        constante borne la file de l'écran et refuse l'envoi. Une chaîne écrite
+        en dur ici se serait désaccordée du jour où la règle changerait.
+      */
+      enrollment: { status: SENDING_ENROLLMENT_STATUS, sequence: { active: true } },
     },
     orderBy: { createdAt: "asc" },
     select: {

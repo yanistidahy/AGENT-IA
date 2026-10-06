@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 106 | **Une réponse arrête les relances, par tous les chemins** : vérification des quatre chemins, cas par cas, qui a trouvé **un défaut réel et l'a pris en flagrant délit** — une relance est réellement partie à une fiche dont l'inscription portait déjà « Le contact a répondu ». Deux causes, mesurées : la borne de recherche était **exclusive sur une date à la seconde** (envoi à `15:46:31.398`, réponse datée `15:46:31`, soit 398 ms avant l'envoi auquel elle répond), et le **fait relevé** (`EmailReply`) n'était lu par aucun chemin d'envoi. Plus deux états que l'envoi ne regardait pas : une inscription arrêtée et un départ écarté restaient envoyables par leur identifiant. Un seul prédicat de domaine (`lib/domain/reply-stop.ts`) sert désormais la composition, la file, l'envoi manuel et l'ordonnanceur, et une garde statique échoue si un chemin cesse de l'appeler | **livré, à valider** |
 | 105 | **L'écran Tâches rangé en onglets** : six onglets mêlant trois natures d'objet deviennent **quatre questions sur une seule** — Aujourd'hui, Appels, À venir, Terminées —, plus un filtre par personne qui remplace le « Vos tâches » qui mentait ; les départs, les réponses et les prospects chauds passent en **bandeaux** menant là où le travail se fait ; une pastille et sa liste sortent désormais du **même appel** (`tabView`), donc aucun ordre d'appel ne peut les séparer ; le canal d'une tâche devient une colonne, saisie à la création, avec le téléphone composable et « Appel passé » qui **consigne autant qu'il coche** ; et une réponse relevée crée une tâche « Répondre à… », une seule, jamais recréée | **livré, à valider** |
 | 104 | **Une relance peut porter son propre objet** : un choix par étape — « Garder l'objet de l'étape 1 (même conversation) », le défaut, ou « Objet personnalisé (nouvelle conversation) » avec son champ éditable, ses variantes par groupe, ses puces « Insérer » et les replis neutres du jalon 101 ; une seule fonction (`subjectForGroup`) décide de l'objet de n'importe quelle étape pour n'importe quel groupe, et l'éditeur, l'aperçu, la composition, la resynchronisation, la carte de départ et les deux chemins d'envoi l'appellent ; la conséquence se lit **avant** de cliquer, le repli d'un objet personnalisé vide est l'objet du fil, et une campagne d'avant ce jalon rend un MIME identique à l'octet près | **livré, à valider** |
 | 103 | **L'objet du fil se décide groupe par groupe** : une relance hérite de l'objet de la variante d'étape 1 **du même groupe**, à défaut du défaut de l'étape 1 ; une seule fonction (`threadSubjectFor`) sert l'éditeur, l'aperçu, la composition, la resynchronisation, la réécriture, la carte et la validation ; un groupe qui porte l'objet du fil garde son fil même sans variante de relance ; et le champ verrouillé porte son geste — « Écrire l'objet dans l'étape 1 », sur le même groupe, curseur dans le champ | **livré, à valider** |
@@ -15439,4 +15440,147 @@ l'API l'acceptent (`PATCH { kind }`), aucun contrôle ne l'offre : une tâche ma
 typée se recrée.
 
 **Les chiffres de la recette viennent d'un semis de vérification**, pas de votre
+base.
+
+---
+
+## Jalon 106 — une réponse arrête les relances, par tous les chemins
+
+Vérification demandée, pas une fonctionnalité. **Elle a trouvé un défaut réel et
+l'a pris en flagrant délit** : une relance est réellement partie à une fiche dont
+l'inscription portait déjà « Le contact a répondu ».
+
+### Les quatre chemins, avec leur fichier et leur ligne
+
+| Chemin | Où la réponse est vérifiée |
+|---|---|
+| **composition** (passage quotidien, « Écrire les mails ») | `lib/api/departures.ts:424` → `nextStep` → `lib/domain/sequence-rules.ts:175` |
+| **plan de composition** (ce que l'écran annonce) | `lib/api/departures.ts:728`, la même ancre que l'écriture |
+| **listage dans « Départs du jour »** | `lib/api/departures.ts:994` — **aucune vérification de lecture**, voir ci-dessous |
+| **envoi manuel** (clic sur la carte) | `lib/api/departures.ts:1375`, décideur `"human"` |
+| **envoi automatique** (ordonnanceur) | `lib/api/auto-send.ts:233` → **la même** `sendDeparture`, décideur `"scheduler"` |
+
+Les trois chemins d'écriture passent donc par une seule règle, et le `replied`
+de `nextStep` est **terminal** : il arrête l'inscription, il ne la met pas en
+pause. Le listage, lui, ne décide rien — il lisait simplement `status in
+(pending, failed)`, et il était juste par **coïncidence** : les chemins qui
+arrêtent une inscription écartent ses départs en attente. Un départ resté
+`pending` sous une inscription arrêtée s'y serait affiché avec un bouton
+« Envoyer ».
+
+### Le défaut, mesuré avant d'être corrigé
+
+Même base, même état, même écart, le correctif mis puis retiré :
+
+| | avant le correctif | après |
+|---|---|---|
+| envoi forcé du départ d'étape 2, inscription `stopped` « Le contact a répondu » | **`true` — « Étape 2 envoyée à Nina R106 »** | `false` — le refus nommé |
+| envois à cette fiche en base | **1 → 2** | 1 → 1 |
+| départ / inscription après | `sent` / `active` | `skipped` / `stopped` |
+
+**Deux causes, chacune avec son nombre.**
+
+**1 · La borne était exclusive sur une date à la seconde.** L'interaction
+« Répondu » est datée de l'en-tête `Date:` du message reçu, qui n'a pas de
+millisecondes (RFC 5322) ; nos horodatages en ont. Mesuré : envoi à
+`15:46:31.398`, réponse datée `15:46:31` — **398 ms avant l'envoi auquel elle
+répond**. `date > lastSentAt` ne la voyait donc pas, `nextStep` recevait
+`repliedAt: null`, et la relance partait.
+
+Le correctif n'est pas une tolérance arbitraire mais la granularité de la
+source : la borne est tronquée à la seconde (`replyFloor`) et la comparaison
+devient `>=`. Reculer d'une minute « pour être sûr » ferait au contraire compter
+comme réponse une interaction antérieure à l'envoi.
+
+**2 · Le fait relevé n'était lu par aucun chemin d'envoi.** `EmailReply` est la
+trace du relevé, clavetée sur le `Message-ID` de la réponse ; les quatre chemins
+re-déduisaient la réponse de `Activity.outcome`, qui n'en est qu'un reflet — et
+qui n'est pas écrit du tout quand la fiche n'est pas rattachée (jalon 45).
+`repliedAfter` lit désormais les deux et garde la plus récente (`latestReply`).
+
+**Et deux états que l'envoi ne regardait pas** : seul `sent` refusait. Une
+inscription **arrêtée** et un départ **écarté** restaient envoyables par leur
+identifiant. « Retiré de la file » doit vouloir dire « ne part pas », pas « ne
+s'affiche plus ».
+
+### Un seul prédicat, dans le domaine
+
+`lib/domain/reply-stop.ts`, pur : `replyFloor`, `latestReply`,
+`enrollmentBlocksSend`, `departureBlocksSend`, `stateRefusal` et
+`SENDING_ENROLLMENT_STATUS`. La composition, le plan, la file, l'envoi manuel et
+l'ordonnanceur l'appellent ; la file et l'ordonnanceur lisent la **même
+constante** d'état que l'envoi, là où l'ordonnanceur portait une chaîne écrite en
+dur.
+
+`tests/reply-stop-source.test.ts` ferme les trois rechutes, et a été **éprouvée
+sur les trois défauts exacts** : borne remise à `gt: since`, lecture d'`EmailReply`
+retirée, verdict d'état retiré de `sendDeparture`. Chaque fois un test tombe en
+nommant le défaut.
+
+### Les six cas, et ce qu'ils font aujourd'hui
+
+| Cas | Aujourd'hui |
+|---|---|
+| **a** · réponse rapprochée par `In-Reply-To` / `References` | **arrête** : interaction « Répondu », inscription `stopped` « Le contact a répondu », départ en attente `skipped`, tâche « Répondre à… » créée |
+| **b** · réponse avec un nouvel objet, même adresse | **n'arrête pas.** Sans `In-Reply-To` ni `References` citant un de nos `Message-ID`, le message est classé `unrelated` : le rapprochement est exact, ou il n'a pas lieu (jalon 41). Un message qui change d'objet *et* ne cite aucun fil est un message neuf, pas une réponse — et deviner sur l'adresse arrêterait la mauvaise séquence |
+| **c** · réponse d'un collègue, autre adresse du même domaine | **arrête, s'il répond dans le fil.** Le rapprochement se fait sur *nos* `Message-ID`, pas sur l'expéditeur : la réponse est imputée au contact de l'envoi d'origine, son inscription s'arrête. S'il écrit un message neuf, rien n'arrête — même raison qu'en (b) |
+| **d** · réponse automatique d'absence | **n'arrête pas, délibérément.** `Auto-Submitted` (RFC 3834) et `X-Autoreply` l'écartent **avant** le rapprochement, et l'ordre compte : un « absent du bureau » recopie fidèlement `In-Reply-To`, donc il correspondrait parfaitement |
+| **e** · départ d'étape 2 déjà composé et en attente | **arrête.** Le relevé écarte les départs en attente (`skipped`, « Le contact a répondu »), ils quittent la file ; et depuis ce jalon l'envoi les refuse même appelé par identifiant |
+| **f** · autres contacts de la même maison, même campagne | **non arrêtés — confirmé.** `stopSequences` filtre sur `contactId` seul : le collègue reste `active` à l'étape où il en était, et son départ reste en file. Mesuré |
+
+### Jalon 106 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (`migrate diff` **vide** — aucune migration : la
+règle est du code pur), le serveur standalone de production, un **puits SMTP
+réel** et un **relevé IMAP réel** (substitut versionné du dépôt) :
+
+- **l'étape 1 part pour de vrai** : deux messages dans le puits, `Message-ID`
+  relus en base ;
+- **l'étape 2 est composée avant la réponse** (cas e) : 2 départs `pending`,
+  2 listés dans « Départs du jour », 2 inscriptions actives ;
+- **le relevé rapproche la réponse** : 1 examiné, 1 rapprochée, 1 séquence
+  arrêtée, verdict `reply`, aucune erreur ;
+- **après** : 0 départ composé, **0 composable au plan**, **1 seul** départ
+  listé (celui du collègue), le départ de la répondante `skipped` / « Le contact
+  a répondu », son inscription `stopped` / « Le contact a répondu », **l'envoi
+  forcé refusé**, et **1 seul envoi** à cette fiche en base — l'étape 1 ;
+- **le correctif de lecture, isolé** : états remis à `active` / `pending` pour
+  neutraliser le garde-fou d'état, la réponse datée 398 ms avant l'envoi est vue,
+  l'envoi refuse « Le contact a répondu » et l'inscription s'arrête ;
+- **le défaut reproduit sur le code d'avant**, même base et même état : l'envoi
+  réussissait, 1 → 2 envois ;
+- **cas (f)** : le collègue reste `active` ;
+- **la tâche du jalon 105** est créée une fois, assignée dans le vocabulaire des
+  assignés ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1895 tests**) et
+  `npm run e2e` (**111 tests**, trente-deux fichiers) verts, l'e2e sur le binaire
+  standalone portant le correctif.
+
+### Jalon 106 — ce qui n'est pas fait
+
+**Le cas (b) reste ouvert, et c'est une décision, pas un oubli** : une réponse
+qui ne cite aucun de nos `Message-ID` n'est pas détectée. Le rapprochement par
+adresse d'expéditeur arrêterait des séquences sur des messages qui n'en sont pas,
+et une fausse correspondance coûte plus qu'une réponse manquée (jalon 41). Le
+rempart restant est la saisie à la main, qui arrête aussi — par la même règle.
+
+**Le cas (d) non plus n'est pas « arrêté », et c'est voulu** : une absence du
+bureau n'est pas une réponse. Si le prospect répond ensuite lui-même, le relevé
+suivant le voit.
+
+**Une réponse relevée sans fiche rattachée n'arrête toujours rien.** `recordReply`
+sort en `unlinked` avant `stopSequences` (jalon 45) : la ligne `EmailReply` existe
+mais ne porte pas de `contactId`, donc `repliedAfter` ne peut pas la voir. Le
+bandeau rouge de `/accueil` la nomme et le rattrapage de `/reglages` la rattache ;
+le relevé suivant arrête alors la séquence. **C'est le seul chemin par lequel une
+réponse réellement reçue peut encore laisser partir une relance**, et il est
+signalé plutôt que silencieux.
+
+**Aucune reprise de données.** Les relances déjà parties à des fiches qui avaient
+répondu ne se rattrapent pas. Sur la base de recette, le défaut demandait un
+écart inférieur à la seconde entre l'envoi et la réponse, ou un appel par
+identifiant sur un départ écarté : rare, mais l'un des deux a suffi à faire
+partir un message.
+
+**Les chiffres ci-dessus viennent d'un semis de vérification**, pas de votre
 base.

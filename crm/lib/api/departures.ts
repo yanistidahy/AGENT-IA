@@ -32,6 +32,12 @@ import {
 } from "../domain/sequence-rules";
 import { replyAnchor } from "../domain/campaign-reset";
 import {
+  SENDING_ENROLLMENT_STATUS,
+  latestReply,
+  replyFloor,
+  stateRefusal,
+} from "../domain/reply-stop";
+import {
   droppedSentences,
   subjectFallbacks,
   toStepMode,
@@ -166,18 +172,34 @@ function dayKey(now: Date): string {
  * devenait inéligible à vie, c'est-à-dire la moitié d'un CRM. Ce n'est pas ce
  * qu'« arrêter sur réponse » veut dire, c'est « ne pas relancer quelqu'un qui
  * vient de répondre ».
+ *
+ * **Deux sources, et la borne est à la seconde** (jalon 106). L'interaction
+ * consignée est un reflet de la réponse ; `EmailReply` en est la trace relevée,
+ * et elle existe même quand l'interaction n'a pas pu être écrite. Les lire
+ * toutes les deux ferme le chemin par lequel une relance est réellement partie à
+ * quelqu'un qui venait de répondre. Voir `lib/domain/reply-stop.ts` pour les
+ * deux défauts mesurés et leurs nombres.
  */
 async function repliedAfter(contactId: string, since: Date | null): Promise<Date | null> {
-  const answer = await prisma.activity.findFirst({
-    where: {
-      ...REAL_ACTIVITY,
-      contactId,
-      outcome: { in: [...ANSWERED_OUTCOMES] }, ...(since === null ? {} : { date: { gt: since } }),
-    },
-    orderBy: { date: "desc" },
-    select: { date: true },
-  });
-  return answer?.date ?? null;
+  const floor = replyFloor(since);
+  const [answer, recorded] = await Promise.all([
+    prisma.activity.findFirst({
+      where: {
+        ...REAL_ACTIVITY,
+        contactId,
+        outcome: { in: [...ANSWERED_OUTCOMES] },
+        ...(floor === null ? {} : { date: { gte: floor } }),
+      },
+      orderBy: { date: "desc" },
+      select: { date: true },
+    }),
+    prisma.emailReply.findFirst({
+      where: { contactId, ...(floor === null ? {} : { receivedAt: { gte: floor } }) },
+      orderBy: { receivedAt: "desc" },
+      select: { receivedAt: true },
+    }),
+  ]);
+  return latestReply(answer?.date ?? null, recorded?.receivedAt ?? null);
 }
 
 export interface ComposeReport {
@@ -970,9 +992,18 @@ export async function listDepartures(
   const rows = await prisma.sequenceDeparture.findMany({
     where: {
       status: { in: ["pending", "failed"] },
-      ...(scope.campaignId === undefined
-        ? {}
-        : { enrollment: { sequence: { campaignId: scope.campaignId } } }),
+      /*
+        **Seules les inscriptions actives s'affichent** (jalon 106). Les chemins
+        qui arrêtent une inscription écartent ses départs en attente, si bien que
+        la file était juste par cette coïncidence plutôt que par règle. Un départ
+        resté `pending` sous une inscription arrêtée s'y serait affiché avec un
+        bouton « Envoyer » que le serveur refuse désormais, et c'est la même
+        constante du domaine qui décide ici et à l'envoi.
+      */
+      enrollment: {
+        status: SENDING_ENROLLMENT_STATUS,
+        ...(scope.campaignId === undefined ? {} : { sequence: { campaignId: scope.campaignId } }),
+      },
     },
     orderBy: [{ createdAt: "asc" }],
     include: {
@@ -1309,6 +1340,25 @@ export async function sendDeparture(
 
   if (departure === null) return { ok: false, message: "Départ introuvable." };
   if (departure.status === "sent") return { ok: false, message: "Ce départ est déjà parti." };
+
+  /*
+    **Un départ écarté et une inscription arrêtée ne partent plus** (jalon 106).
+
+    Les deux états portent une décision déjà prise (réponse relevée, fiche
+    close, retrait à la main), et aucun des deux n'était vérifié ici : seul
+    `sent` refusait. `readDepartures` ne montrant ni l'un ni l'autre, personne ne
+    cliquait ; mais la fonction est appelable par identifiant, et la vérification
+    l'a prise en flagrant délit : une relance est réellement partie à une fiche
+    dont l'inscription portait déjà « Le contact a répondu ». Le verdict vient du
+    domaine, donc les trois chemins qui passent ici disent le même refus.
+  */
+  const state = stateRefusal(
+    departure.enrollment.status,
+    departure.enrollment.stopReason,
+    departure.status,
+  );
+  if (state !== null) return { ok: false, message: state };
+
   if (!departure.enrollment.sequence.active) {
     const name = departure.enrollment.sequence.campaign?.name ?? departure.enrollment.sequence.name;
     return {
