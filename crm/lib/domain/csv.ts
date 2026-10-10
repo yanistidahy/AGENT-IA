@@ -264,7 +264,41 @@ export function looksLikeHeader(row: readonly string[]): boolean {
  * guillemet ou un saut de ligne.
  */
 export function toCsv(rows: readonly (readonly string[])[]): string {
-  return rows.map((row) => row.map(escapeCell).join(";")).join("\r\n");
+  return rows.map((row) => row.map((value) => escapeCell(neutralize(value))).join(";")).join("\r\n");
+}
+
+/**
+ * Les quatre caractères qui font d'une cellule une formule.
+ *
+ * `=` et `+` ouvrent un calcul, `-` aussi (`-2+3`), et `@` appelle une fonction
+ * dans les versions anciennes. Tableur-dépendant dans le détail, identique dans
+ * le principe : la cellule cesse d'être du texte.
+ */
+const FORMULA_STARTS = ["=", "+", "-", "@"] as const;
+
+/**
+ * Une cellule qui commence par `=`, `+`, `-` ou `@` est désamorcée.
+ *
+ * **Les noms et les sociétés viennent d'un import**, donc d'un fichier que nous
+ * n'avons pas écrit : une société nommée `=HYPERLINK("http://…";"Facture")` ou
+ * `=cmd|…!A1` devient, à l'ouverture, une formule que le tableur exécute avec
+ * les droits de celui qui l'ouvre (CWE-1236). Ce n'est pas une hypothèse de
+ * laboratoire : c'est le mode d'attaque ordinaire d'un fichier de prospection
+ * acheté ou reçu.
+ *
+ * Le préfixe est une apostrophe, la convention la plus portable. **Le prix est
+ * dit plutôt que caché** : la cellule affiche alors une apostrophe de tête dans
+ * un tableur qui lit un CSV, et un réimport relit l'apostrophe. C'est le bon
+ * sens de l'erreur — un nom légèrement abîmé contre une formule exécutée — et
+ * cela ne touche que des valeurs qui sont déjà des défauts de donnée.
+ *
+ * Le `+` couvre un cas réel et fréquent : un téléphone saisi `+33 6 …`. Il
+ * s'affichera `'+33 6 …`, ce qui reste lisible et composable à la main.
+ */
+export function neutralize(value: string): string {
+  if (value === "") return value;
+  const first = value.slice(0, 1);
+  return FORMULA_STARTS.some((start) => start === first) ? `'${value}` : value;
 }
 
 function escapeCell(value: string): string {

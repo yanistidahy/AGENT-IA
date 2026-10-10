@@ -1,42 +1,50 @@
 import { toCsv } from "../domain/csv";
+import { ACTIVITY_LABELS } from "../domain/types";
+import { groupLabel } from "../domain/contact-group";
+import { resolveDisplayStatus } from "../domain/contact-status";
+import {
+  EXPORT_HEADERS,
+  contactMeans,
+  formatDayFr,
+  recordLink,
+  stepLabel,
+  yesNo,
+} from "../domain/contact-export";
+import { extraOf, type ContactExportExtra } from "./contact-export";
 import type { CompanyRecord } from "./companies";
 import type { ContactRecord } from "./contacts";
 
 /**
  * Exports CSV.
  *
- * Les en-têtes sont exactement les alias reconnus à l'import : un export
- * réimporté doit repasser sans retouche. C'est la seule garantie qui rend
- * l'export utile au-delà de l'archivage.
+ * Les quinze premières colonnes de contact sont exactement les alias reconnus à
+ * l'import : un export réimporté repasse sans retouche. **Les dérivées suivent**
+ * (jalon 108) et l'import les ignore : voir `lib/domain/contact-export.ts` pour
+ * l'écart entre les deux blocs, et pourquoi le mélanger aurait cassé la
+ * promesse sans rien dire.
  */
 
-function formatDay(date: Date | null): string {
-  if (date === null) return "";
-  return date.toISOString().slice(0, 10);
+export interface ContactsCsvContext {
+  /** L'origine servie, pour la colonne « Lien vers la fiche ». */
+  readonly origin: string;
+  readonly extras: ReadonlyMap<string, ContactExportExtra>;
 }
 
-export function contactsToCsv(contacts: readonly ContactRecord[]): string {
-  const rows: string[][] = [
-    [
-      "Prénom",
-      "Nom",
-      "Fonction",
-      "Département",
-      "Email",
-      "Téléphone",
-      "LinkedIn",
-      "Cycle de vie",
-      "Source",
-      "Propriétaire",
-      "Société",
-      "Site",
-      "Dernier contact",
-      "Prochaine relance",
-      "Notes",
-    ],
-  ];
+export function contactsToCsv(
+  contacts: readonly ContactRecord[],
+  context: ContactsCsvContext,
+): string {
+  const rows: string[][] = [[...EXPORT_HEADERS]];
 
   for (const contact of contacts) {
+    const extra = extraOf(context.extras, contact.id);
+    /*
+      **Le statut vient de la fonction qui décide de celui de l'écran.** Un
+      libellé recomposé ici aurait fini par contredire la colonne Statut de
+      `/contacts` — c'est l'écart que le jalon 27 a mesuré sur 110 fiches, et la
+      garde `status-single-source` ferme le chemin par lequel il est arrivé.
+    */
+    const status = resolveDisplayStatus(contact);
     rows.push([
       contact.firstName,
       contact.lastName,
@@ -50,9 +58,21 @@ export function contactsToCsv(contacts: readonly ContactRecord[]): string {
       contact.owner,
       contact.company?.name ?? "",
       contact.website,
-      formatDay(contact.lastContact),
-      formatDay(contact.nextReminder),
+      formatDayFr(contact.lastContact),
+      formatDayFr(contact.nextReminder),
       contact.notes,
+      contact.instagram,
+      groupLabel(contact.contactGroup, contact.groupSetBy),
+      status.label,
+      // Le vocabulaire des canaux est celui de la chronologie des fiches : un
+      // second jeu de libellés ferait lire « DM » ici et « Instagram » là.
+      contact.lastChannel === null ? "" : ACTIVITY_LABELS[contact.lastChannel],
+      extra.campaign,
+      stepLabel(extra.lastStep, extra.totalSteps),
+      yesNo(extra.replied),
+      yesNo(extra.hot),
+      contactMeans(contact),
+      recordLink(context.origin, contact.id),
     ]);
   }
 
