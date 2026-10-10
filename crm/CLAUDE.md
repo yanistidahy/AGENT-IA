@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 108 | **L'export des contacts dit où en est chaque prospect** : l'export du jalon 3 est **étendu, pas doublé** — dix colonnes dérivées après les quinze colonnes de saisie, dont le statut affiché, le dernier canal, la campagne en cours, « a répondu », « prospect chaud » et les moyens de contact disponibles. Chacune vient de la fonction qui la décide déjà ailleurs (`resolveDisplayStatus`, `readHotProspects`, `latestReply`, `groupLabel`, `ACTIVITY_LABELS`) : aucune seconde définition de statut. Dates en JJ/MM/AAAA, BOM UTF-8, point-virgule, et **toute cellule qui ouvrirait une formule est désamorcée** dans l'écrivain CSV, donc sur les deux exports. Un défaut de ma propre première version, mesuré puis corrigé : `nextUrl.origin` exportait `http://0.0.0.0:3312`, un lien que personne ne peut ouvrir | **livré, à valider** |
 | 106 | **Une réponse arrête les relances, par tous les chemins** : vérification des quatre chemins, cas par cas, qui a trouvé **un défaut réel et l'a pris en flagrant délit** — une relance est réellement partie à une fiche dont l'inscription portait déjà « Le contact a répondu ». Deux causes, mesurées : la borne de recherche était **exclusive sur une date à la seconde** (envoi à `15:46:31.398`, réponse datée `15:46:31`, soit 398 ms avant l'envoi auquel elle répond), et le **fait relevé** (`EmailReply`) n'était lu par aucun chemin d'envoi. Plus deux états que l'envoi ne regardait pas : une inscription arrêtée et un départ écarté restaient envoyables par leur identifiant. Un seul prédicat de domaine (`lib/domain/reply-stop.ts`) sert désormais la composition, la file, l'envoi manuel et l'ordonnanceur, et une garde statique échoue si un chemin cesse de l'appeler | **livré, à valider** |
 | 105 | **L'écran Tâches rangé en onglets** : six onglets mêlant trois natures d'objet deviennent **quatre questions sur une seule** — Aujourd'hui, Appels, À venir, Terminées —, plus un filtre par personne qui remplace le « Vos tâches » qui mentait ; les départs, les réponses et les prospects chauds passent en **bandeaux** menant là où le travail se fait ; une pastille et sa liste sortent désormais du **même appel** (`tabView`), donc aucun ordre d'appel ne peut les séparer ; le canal d'une tâche devient une colonne, saisie à la création, avec le téléphone composable et « Appel passé » qui **consigne autant qu'il coche** ; et une réponse relevée crée une tâche « Répondre à… », une seule, jamais recréée | **livré, à valider** |
 | 104 | **Une relance peut porter son propre objet** : un choix par étape — « Garder l'objet de l'étape 1 (même conversation) », le défaut, ou « Objet personnalisé (nouvelle conversation) » avec son champ éditable, ses variantes par groupe, ses puces « Insérer » et les replis neutres du jalon 101 ; une seule fonction (`subjectForGroup`) décide de l'objet de n'importe quelle étape pour n'importe quel groupe, et l'éditeur, l'aperçu, la composition, la resynchronisation, la carte de départ et les deux chemins d'envoi l'appellent ; la conséquence se lit **avant** de cliquer, le repli d'un objet personnalisé vide est l'objet du fil, et une campagne d'avant ce jalon rend un MIME identique à l'octet près | **livré, à valider** |
@@ -15584,3 +15585,165 @@ partir un message.
 
 **Les chiffres ci-dessus viennent d'un semis de vérification**, pas de votre
 base.
+
+---
+
+## Jalon 108 — l'export des contacts dit où en est chaque prospect
+
+### Un export existait, et il porte une promesse testée
+
+Première vérification avant d'écrire : `lib/api/csv-export.ts` exporte les
+contacts depuis le jalon 3, `/api/contacts/export` le sert avec les filtres de
+l'écran, et le bouton est sur `/contacts` depuis la même époque. **Il est donc
+étendu, pas doublé** — et son contrat ne se laisse pas étendre naïvement :
+
+> Les en-têtes sont exactement les alias reconnus à l'import : un export
+> réimporté doit repasser sans retouche.
+
+`csv-export.test.ts` l'imposait par `mapping.ignored === []`. Les dix colonnes
+demandées sont **dérivées** : aucune n'a d'alias à l'import, et les mêler aux
+quinze premières aurait cassé la promesse sans rien dire.
+
+D'où **deux blocs**, et l'écart entre eux est la décision de ce jalon :
+
+| Bloc | Contenu | L'import |
+|---|---|---|
+| `IMPORT_HEADERS` | les quinze colonnes de saisie, **en-têtes inchangés** | les relit toutes |
+| `DERIVED_HEADERS` | ce que le CRM sait et qui ne se ressaisit pas | les ignore, et le dit |
+
+La promesse se **déplace** plutôt que de disparaître : le test exige désormais
+que les quinze premières fassent l'aller-retour **et** que ce que l'import
+ignore soit exactement le second bloc, ni plus ni moins.
+
+### Le piège qui a décidé des libellés
+
+`statut` et `etape` sont tous deux des **alias de `lifecycle`** dans la table
+d'import. Une colonne nommée « Statut » aurait donc été relue comme un cycle de
+vie, et un réimport aurait écrit « Jamais contacté » dans le champ qui porte
+« Client ». Les libellés sont donc « **Statut de relance** » et « **Étape de
+séquence** » — le vocabulaire que le produit emploie déjà, et qui ne normalise
+vers aucun alias. Un test passe chaque libellé dérivé dans `mapHeaders` et exige
+qu'aucun ne soit reconnu.
+
+### Aucune seconde définition de statut
+
+C'était la consigne, et c'est ce que la garde impose. Chaque colonne dérivée
+vient de la fonction qui la décide déjà ailleurs :
+
+| Colonne | Source |
+|---|---|
+| Statut de relance | `resolveDisplayStatus` — le libellé que la colonne Statut de `/contacts` affiche |
+| Groupe de fonction | `groupLabel` (jalon 94), « Non classé » compris |
+| Dernier canal | `ACTIVITY_LABELS` — le vocabulaire de la chronologie des fiches |
+| A répondu | `latestReply` (jalon 106) : l'interaction consignée **et** la détection du relevé |
+| Prospect chaud | `readHotProspects` (jalon 105) — le même ensemble que `/contacts?chauds=1` |
+| Campagne en cours | `SENDING_ENROLLMENT_STATUS` (jalon 106) : seule une inscription active est « en cours » |
+| « Jamais contactés » | la requête traverse `parseContactsQuery` puis `listContacts`, donc le chemin de la page |
+
+**Pourquoi pas `readReplyFacts`**, qui porte déjà « a répondu » (jalon 39) ?
+Parce qu'elle est **ancrée au premier envoi** : elle mesure ce que les emails
+produisent, et une réponse antérieure à notre premier message n'y compte pas, à
+juste titre. Ici la question est autre — « cette personne nous a-t-elle
+répondu ? » — et cet ancrage répondrait « non » pour quelqu'un qui a répondu à un
+message écrit à la main depuis sa fiche. La raison est écrite sur place pour
+qu'on ne « simplifie » pas vers la mauvaise définition.
+
+### L'injection de formule est désamorcée dans l'écrivain
+
+Une cellule qui commence par `=`, `+`, `-` ou `@` est préfixée d'une apostrophe,
+**dans `toCsv`** — donc sur l'export des contacts, sur celui des sociétés, et
+sur toute colonne ajoutée demain. Les noms et les sociétés viennent d'un import,
+c'est-à-dire d'un fichier que nous n'avons pas écrit : une société nommée
+`=HYPERLINK(…)` ou `=cmd|…!A1` devient sinon une formule que le tableur exécute
+avec les droits de celui qui l'ouvre (CWE-1236).
+
+**Le prix est dit plutôt que caché** : la cellule affiche une apostrophe de tête,
+et un réimport la relit. C'est le bon sens de l'erreur — un nom légèrement abîmé
+contre une formule exécutée — et cela ne touche que des valeurs qui sont déjà des
+défauts de donnée. Le `+` couvre un cas réel et fréquent, le téléphone saisi
+`+33 6 …`, qui reste lisible et composable.
+
+### Les dates passent en JJ/MM/AAAA
+
+L'export écrivait de l'ISO, qu'Excel français affiche **en texte** : on ne peut
+alors ni trier ni filtrer par mois, c'est-à-dire exactement ce qu'on vient faire
+dans un tableur. Le réimport n'en souffre pas — l'import accepte les deux
+formats depuis le jalon 3, et traite le format français explicitement parce que
+`new Date("11/02/2026")` lit un mois américain et décale la date de neuf mois en
+silence. Les composantes sont lues en temps **local** : une date rendue en UTC
+recule d'un jour tous les soirs.
+
+### Un défaut de ma propre première version, mesuré puis corrigé
+
+La colonne « Lien vers la fiche » partait de `request.nextUrl.origin`. Le serveur
+standalone se lie à `0.0.0.0` : le fichier exportait donc
+`http://0.0.0.0:3312/contacts?fiche=…`, **un lien que personne ne peut ouvrir**,
+et derrière le proxy de Railway le même défaut aurait rendu l'origine interne du
+conteneur. `originFromHeaders` va désormais du plus proche du navigateur au plus
+lointain : `x-forwarded-*`, puis l'hôte demandé, puis l'adresse publique réglée,
+puis l'origine de la requête en dernier recours. Trouvé à la recette, pas à la
+lecture — et l'e2e le fixe (`expect(link).not.toContain("0.0.0.0")`).
+
+### Jalon 108 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (aucune migration : les colonnes dérivées sont
+toutes calculées), le serveur standalone de production, et un **navigateur
+piloté qui clique puis relit le fichier téléchargé** — les sept items :
+
+- **1 · « Jamais contactés »** : 2 lignes exportées = 2 comptées par le même
+  prédicat en SQL, et pour chacune **0 envoi, 0 interaction, 0 réponse** ;
+  « A répondu » vaut « non » et le statut « Jamais contacté » sur les deux ;
+- **2 · sans filtre** : 5 lignes exportées = 5 contacts en base, et au
+  navigateur le nombre de lignes égale **le compte affiché en tête de l'écran** ;
+- **3 · celle qui a répondu** : « A répondu » = oui, **détectée par le relevé
+  seul** (0 interaction consignée — donc seule la lecture d'`EmailReply` peut la
+  voir), et **absente** de l'export « Jamais contactés » ;
+- **4 · Excel français** : BOM UTF-8 présent, point-virgule, 25 colonnes,
+  **une valeur par colonne sur chaque ligne**, « Dermoplänt Épicé » et
+  « Étape de séquence » intacts après le téléchargement ;
+- **5 · la société hostile** : `'=HYPERLINK("http://mal.test";"Facture à
+  régler")` — texte, pas formule ; le téléphone `'+33 6 11 22 33 44` aussi ;
+- **6 · au clic**, avec **`reachable()` et jamais `isVisible()`** : le bouton est
+  atteignable, le téléchargement est relu, et le lien du fichier **ouvre bien la
+  fiche** (le tiroir porte le nom de la ligne) ;
+- **7 · les chiffres sont ceux d'un semis**, voir ci-dessous ;
+- **accord avec l'écran voisin** : les lignes marquées « Prospect chaud = oui »
+  (2) sont exactement celles que `/contacts?chauds=1` rend (2), mêmes adresses ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**1941 tests**) et
+  `npm run e2e` (**116 tests**, trente-trois fichiers) verts.
+
+`tests/contact-export-source.test.ts` ferme les quatre façons de défaire ce jalon
+sans qu'aucun test ne rougisse — un second export, un statut recomposé, une
+seconde lecture des contacts, une écriture — et a été **éprouvée sur les quatre
+défauts exacts** : chaque fois un test tombe en nommant le défaut. L'e2e a été
+éprouvé de la même façon, binaire reconstruit, sur la neutralisation retirée et
+sur l'origine remise à `nextUrl.origin`.
+
+### Jalon 108 — ce qui n'est pas fait
+
+**Les chiffres ci-dessus viennent d'un semis de vérification, pas de votre
+base.** Cinq fiches construites pour couvrir les cinq formes du test : une jamais
+contactée, une qui a répondu, une chaude par un clic, une inscrite à une
+campagne, une société nommée comme une formule. **Vos nombres sont ceux de votre
+déploiement** : le fichier téléchargé depuis `/contacts` les porte, et le compte
+affiché en tête de l'écran est celui du fichier — c'est l'invariant que l'e2e
+vérifie.
+
+**La colonne Instagram n'est pas relue à l'import.** C'est un champ de saisie,
+mais `instagram` n'a pas d'alias dans `CONTACT_COLUMNS` : il part donc dans le
+bloc dérivé, et un aller-retour export → import ne le réécrit pas. L'ajouter au
+vocabulaire de l'import changerait ce que fait un fichier existant au réimport,
+ce qui est une autre décision que celle de ce jalon.
+
+**Un contact inscrit à deux campagnes à la fois n'en montre qu'une** : la plus
+récente. Empiler deux noms dans une case contredirait « une valeur par
+colonne » ; le tableau des inscrits de chaque campagne porte le détail.
+
+**Le statut exporté est celui de l'écran, pas un vocabulaire d'export.** Il n'y
+a donc pas de libellé « Client » dans cette colonne — « Client » est un cycle de
+vie, et il est déjà porté par la colonne « Cycle de vie ». Inventer un second
+vocabulaire aurait été la seconde définition que ce jalon s'interdit.
+
+**L'apostrophe de désamorçage est visible** dans un tableur qui lit un CSV — voir
+plus haut. Un fichier `.xlsx` permettrait de marquer la cellule comme texte sans
+rien ajouter à sa valeur ; c'est un autre format, et un autre jalon.
