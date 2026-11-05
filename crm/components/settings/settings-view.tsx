@@ -10,6 +10,7 @@ import { ListEditor } from "./list-editor";
 import { PilotageForm } from "./pilotage-form";
 import { RelancesForm } from "./relances-form";
 import { TargetsForm } from "./targets-form";
+import type { WeeklyTargets } from "@/lib/domain/pilotage";
 import { SequenceEditor, type SequenceEditable } from "./sequence-editor";
 import { TagsEditor } from "./tags-editor";
 import { MaintenancePanel } from "./maintenance-panel";
@@ -49,8 +50,8 @@ interface SettingsViewProps {
   readonly limits: SendLimits;
   readonly dailyCap: number;
   readonly delays: ReminderDelays;
-  /** Objectifs hebdomadaires de « Ma performance ». `0` = pas d'objectif. */
-  readonly targets: { readonly calls: number; readonly emails: number };
+  /** Cibles hebdomadaires du pilotage. `0` = pas de cible. */
+  readonly targets: WeeklyTargets;
   /** Fenêtre de l'avertissement « collègue déjà écrit », en jours. */
   readonly colleagueWarningDays: number;
   readonly lists: Record<SettingsListKind, readonly string[]>;
@@ -218,10 +219,10 @@ export function SettingsView({
       </Section>
 
       <Section
-        title="Objectifs hebdomadaires"
-        hint="la progression s'affiche sur « Ma performance »"
+        title="Cibles hebdomadaires"
+        hint="l'avancement de la semaine s'affiche sur Pilotage"
       >
-        <TargetsForm calls={targets.calls} emails={targets.emails} onSaved={refresh} />
+        <TargetsForm targets={targets} onSaved={refresh} />
       </Section>
 
       <Section title="Étapes du pipeline" hint="l'ordre ici est l'ordre des colonnes du Kanban">

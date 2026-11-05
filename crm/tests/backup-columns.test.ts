@@ -47,6 +47,7 @@ const BACKED_UP: ReadonlyArray<{ model: string; key: string }> = [
   { model: "CustomFilter", key: "customFilters" },
   { model: "CustomFilterMember", key: "customFilterMembers" },
   { model: "TaskTab", key: "taskTabs" },
+  { model: "OutreachEvent", key: "outreachEvents" },
 ];
 
 /**

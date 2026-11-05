@@ -14,6 +14,7 @@ import { DealForm, type DealFormOptions } from "./deal-form";
 import { DealCloseActions } from "./deal-close-actions";
 import { PostWinSequence } from "./post-win-sequence";
 import { PromoteContact } from "./promote-contact";
+import { OutreachBox } from "@/components/outreach/outreach-box";
 import { RecordPanel } from "@/components/activities/record-panel";
 import type { SequenceOption } from "@/components/activities/run-sequence";
 import type { Alert } from "@/lib/domain/types";
@@ -198,6 +199,26 @@ export function DealDrawer({
 
           <PromoteContact deal={deal} onChanged={onChanged} />
           <PostWinSequence deal={deal} sequences={sequences} onChanged={onChanged} />
+
+          {/*
+            **Les trois consignations du jalon 109, depuis l'affaire aussi.**
+
+            Elles portent sur la **personne**, parce que c'est elle qui teste la
+            démonstration et qui donne un retour : le journal de prospection
+            compte des personnes contactées, et attribuer une démo à une affaire
+            sans contact rendrait le chiffre inattribuable. Une affaire sans
+            contact rattaché le dit donc, et renvoie au geste qui le répare,
+            plutôt que d'afficher trois boutons qui écriraient dans le vide.
+          */}
+          {deal.contact === null ? (
+            <p className="mt-5 rounded-card border border-dashed border-line px-3.5 py-3 text-[12.5px] leading-relaxed text-muted">
+              Aucun contact n'est rattaché à cette affaire : « Démo envoyée », « Démo testée » et
+              « Retour reçu » se consignent sur la personne. Rattachez un contact depuis sa fiche
+              pour pouvoir les poser.
+            </p>
+          ) : (
+            <OutreachBox contactId={deal.contact.id} />
+          )}
 
           <RecordPanel
             link={{ dealId: deal.id }}

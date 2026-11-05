@@ -33,6 +33,10 @@ export function CompanyForm({ company, industries, onCancel, onSaved }: CompanyF
       industry: text("industry"),
       loc: text("loc"),
       desc: String(form.get("desc") ?? ""),
+      // **Vide vaut « non renseigné », pas zéro.** Zéro affirmerait un site
+      // sans visite ; `null` dit qu'on ne sait pas, et le segment range alors
+      // la société dans « non renseigné » au lieu de la compter comme petite.
+      monthlyVisitors: text("monthlyVisitors") === "" ? null : Number(text("monthlyVisitors")),
     };
 
     setBusy(true);
@@ -89,6 +93,20 @@ export function CompanyForm({ company, industries, onCancel, onSaved }: CompanyF
         </Field>
         <Field label="Localisation" errors={fields.loc}>
           <input name="loc" defaultValue={company?.loc ?? ""} className={CONTROL} />
+        </Field>
+        <Field label="Visiteurs mensuels" errors={fields.monthlyVisitors}>
+          <input
+            name="monthlyVisitors"
+            type="number"
+            min={0}
+            placeholder="non renseigné"
+            defaultValue={company?.monthlyVisitors ?? ""}
+            className={CONTROL}
+          />
+          <span className="mt-1 block text-[11.5px] text-muted">
+            Décide du segment sur Pilotage : petite marque de 2 000 à 10 000, grande marque à
+            partir de 15 000. Laissé vide, la société compte en « non renseigné ».
+          </span>
         </Field>
       </div>
 

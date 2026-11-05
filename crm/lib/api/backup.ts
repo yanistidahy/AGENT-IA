@@ -33,6 +33,7 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     customFilters,
     customFilterMembers,
     taskTabs,
+    outreachEvents,
   ] = await Promise.all([
     prisma.stage.findMany({ orderBy: { position: "asc" } }),
     prisma.company.findMany(),
@@ -50,6 +51,7 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     prisma.customFilter.findMany(),
     prisma.customFilterMember.findMany(),
     prisma.taskTab.findMany(),
+    prisma.outreachEvent.findMany({ orderBy: { occurredAt: "asc" } }),
   ]);
 
   return {
@@ -71,6 +73,7 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     customFilters,
     customFilterMembers,
     taskTabs,
+    outreachEvents,
   };
 }
 
@@ -135,6 +138,8 @@ const companyRow = z.object({
    * ancienne ne peut pas porter une colonne qui n'existait pas.
    */
   nameKey: optionalText,
+  /** Le segment du pilotage se lit ici : l'effacer viderait les deux tableaux. */
+  monthlyVisitors: z.number().int().nullable().optional(),
 });
 
 const contactRow = z.object({
@@ -270,6 +275,9 @@ const settingsRow = z.object({
 
   /* — objectifs hebdomadaires (jalon 40) — */
   objectifAppelsSemaine: z.number().int().optional(),
+  cibleMessagesSemaine: z.number().int().optional(),
+  cibleDemosSemaine: z.number().int().optional(),
+  cibleQualifieesSemaine: z.number().int().optional(),
   objectifEmailsSemaine: z.number().int().optional(),
 
   /* — messagerie : envoi (jalons 32 à 35) — */
@@ -419,6 +427,31 @@ const taskTabRow = z.object({
   createdAt: day,
 });
 
+/**
+ * Le journal d'événements : **la mesure du produit, et rien ne la reconstitue**.
+ *
+ * Les faits sources — envois, réponses, interactions — sont sauvegardés eux
+ * aussi, donc une reprise pourrait en réécrire une partie. Mais pas tout : une
+ * démo envoyée, testée, un retour reçu sont saisis à la main et n'ont aucune
+ * autre trace. Les perdre à une restauration serait l'incident du jalon 42 sur
+ * la donnée la plus chère de ce jalon.
+ */
+const outreachEventRow = z.object({
+  id: z.string(),
+  contactId: z.string(),
+  companyId: z.string().nullable().optional(),
+  campaignId: z.string().nullable().optional(),
+  channel: z.string(),
+  type: z.string(),
+  occurredAt: day,
+  owner: optionalText,
+  source: optionalText,
+  externalId: z.string().nullable().optional(),
+  replyCategory: optionalText,
+  detail: optionalText,
+  createdAt: day,
+});
+
 const customFilterMemberRow = z.object({
   id: z.string(),
   filterId: z.string(),
@@ -446,6 +479,7 @@ export const backupSchema = z.object({
   customFilters: z.array(customFilterRow).optional(),
   customFilterMembers: z.array(customFilterMemberRow).optional(),
   taskTabs: z.array(taskTabRow).optional(),
+  outreachEvents: z.array(outreachEventRow).optional(),
 });
 
 export type BackupPayload = z.infer<typeof backupSchema>;
@@ -539,6 +573,31 @@ export async function restoreBackup(payload: BackupPayload): Promise<RestoreResu
         if (payload.taskTabs !== undefined) {
           await tx.taskTab.deleteMany();
           await tx.taskTab.createMany({ data: payload.taskTabs });
+        }
+        /*
+          Les événements viennent après les contacts, les sociétés et les
+          campagnes : la clé étrangère l'impose. Un événement dont la fiche n'est
+          plus dans la sauvegarde est écarté plutôt que de faire échouer la
+          restauration entière — la règle des appartenances ci-dessus. La
+          campagne, elle, n'est pas sauvegardée : la référence est donc remise à
+          `null` plutôt que de pointer dans le vide.
+        */
+        if (payload.outreachEvents !== undefined) {
+          const knownContacts = new Set(payload.contacts.map((contact) => contact.id));
+          const knownCompanies = new Set(payload.companies.map((company) => company.id));
+          await tx.outreachEvent.deleteMany();
+          await tx.outreachEvent.createMany({
+            data: payload.outreachEvents
+              .filter((event) => knownContacts.has(event.contactId))
+              .map((event) => ({
+                ...event,
+                companyId:
+                  event.companyId != null && knownCompanies.has(event.companyId)
+                    ? event.companyId
+                    : null,
+                campaignId: null,
+              })),
+          });
         }
         if (payload.settings != null) {
           await tx.settings.create({ data: payload.settings });

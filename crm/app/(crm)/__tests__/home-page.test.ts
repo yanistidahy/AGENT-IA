@@ -145,18 +145,29 @@ async function renderHome(): Promise<string> {
 
 describe("centre de pilotage", () => {
   /**
-   * L'écran suit l'état de la base. Sans affaire, trois cartes de revenu à 0 €
-   * n'apprennent rien : elles cèdent la place aux indicateurs de prospection, et
-   * le bloc « Affaires en sommeil » disparaît au lieu d'afficher un vide.
+   * **L'accueil n'affiche plus aucun indicateur** (jalon 109).
+   *
+   * Les pastilles de revenu, les cartes de prospection, l'entonnoir et « Ma
+   * semaine » vivaient ici ; ils sont sur `/pilotage`, qui les lit dans le
+   * journal des événements. Le test vérifie leur **absence** plutôt que de
+   * disparaître avec eux : un chiffre qui revient par inadvertance sur cet
+   * écran redeviendrait une seconde addition, et c'est exactement ce que le
+   * jalon a payé pour supprimer.
    */
-  it("sans affaire, montre la prospection et pas le revenu", async () => {
+  it("n'affiche plus aucun indicateur, et renvoie le travail du jour", async () => {
     const html = await renderHome();
 
-    expect(html).toContain("Contactés cette semaine");
-    expect(html).toContain("Taux de réponse");
-    expect(html).toContain("Jamais contactés");
-    expect(html).not.toContain("Affaires en sommeil");
-    expect(html).not.toContain("en pipeline pondéré");
+    expect(html).toContain("À traiter maintenant");
+    for (const gone of [
+      "Contactés cette semaine",
+      "Taux de réponse",
+      "Jamais contactés",
+      "Entonnoir de prospection",
+      "Ma semaine",
+      "en pipeline pondéré",
+    ]) {
+      expect(html, gone).not.toContain(gone);
+    }
   });
 
   beforeEach(() => {
@@ -211,7 +222,6 @@ describe("centre de pilotage", () => {
 
     for (const block of [
       "À traiter maintenant",
-      "Ma semaine",
       "dernière touche",
       "Relances à venir",
       "Activité récente",
@@ -297,39 +307,16 @@ describe("bandeau de sauvegarde", () => {
 });
 
 /**
- * Le tableau de bord refondu.
+ * La file du jour.
  *
- * Trois choses doivent tenir ensemble et venir de la base : l'entonnoir, qui est
- * l'ancre visuelle ; l'anneau, qui mesure la journée ; et les cartes, qui
- * doivent enseigner plutôt qu'afficher un tiret.
+ * Ce qui reste de l'accueil après le jalon 109 : l'anneau, qui mesure la
+ * journée de travail, et ce qu'il annonce quand la file est vide. L'entonnoir
+ * et les cartes d'indicateurs sont partis sur `/pilotage`.
  */
 describe("cockpit", () => {
   beforeEach(() => {
     backupAgeHours = 10;
     vi.resetModules();
-  });
-
-  it("dessine l'entonnoir avec les nombres de la base", async () => {
-    const html = await renderHome();
-
-    expect(html).toContain("Entonnoir de prospection");
-    // `contact.count` renvoie 18, `deal.count` 24 : les bandes portent ces
-    // valeurs, pas une illustration.
-    expect(html).toContain("18 contacts");
-    expect(html).toContain("24 affaires");
-  });
-
-  it("mène chaque bande vers sa vue filtrée", async () => {
-    const html = await renderHome();
-
-    for (const href of [
-      "/contacts?lifecycle=all&amp;followUp=contacted",
-      "/contacts?lifecycle=all&amp;followUp=recent",
-      "/contacts?lifecycle=all&amp;followUp=answered",
-      "/affaires?status=all",
-    ]) {
-      expect(html, href).toContain(href);
-    }
   });
 
   it("montre l'anneau et son libellé accessible", async () => {
@@ -341,13 +328,6 @@ describe("cockpit", () => {
     // Deux marques posées aujourd'hui, aucune ligne restante dans ce jeu vide :
     // la file est terminée, et l'écran doit le dire au lieu de hausser les épaules.
     expect(html).toContain("élément(s) traité(s)");
-  });
-
-  it("explique une carte vide au lieu d'afficher un tiret muet", async () => {
-    const html = await renderHome();
-
-    expect(html).toContain("Taux de réponse");
-    expect(html).toContain("renseignez le résultat de vos échanges");
   });
 
   it("annonce ce que demain apporte quand la file est vide", async () => {

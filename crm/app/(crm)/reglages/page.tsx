@@ -29,6 +29,7 @@ import { CostPanel } from "@/components/settings/cost-panel";
 import { OpenAuditPanel } from "@/components/settings/open-audit-panel";
 import { readOpenAudit } from "@/lib/api/open-audit";
 import { DEFAULT_MODELS } from "@/lib/domain/model-pricing";
+import { DEFAULT_TARGETS } from "@/lib/domain/pilotage";
 import { DeployCard } from "@/components/settings/deploy-card";
 import { readLogoPanelState } from "@/lib/api/logo-panel";
 import { readVideoPanelState } from "@/lib/api/video-panel";
@@ -167,8 +168,9 @@ export default async function ReglagesPage() {
       delays={delays}
       colleagueWarningDays={settingsRow?.colleagueWarningDays ?? 30}
       targets={{
-        calls: settingsRow?.objectifAppelsSemaine ?? 0,
-        emails: settingsRow?.objectifEmailsSemaine ?? 0,
+        messages: settingsRow?.cibleMessagesSemaine ?? DEFAULT_TARGETS.messages,
+        demos: settingsRow?.cibleDemosSemaine ?? DEFAULT_TARGETS.demos,
+        qualified: settingsRow?.cibleQualifieesSemaine ?? DEFAULT_TARGETS.qualified,
       }}
       tags={tags}
       lists={{

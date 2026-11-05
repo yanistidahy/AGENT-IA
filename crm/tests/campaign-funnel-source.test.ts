@@ -62,13 +62,18 @@ describe("l'entonnoir d'une campagne est celui de /emails, borné", () => {
     expect(campaigns).toContain("readReplyFacts");
   });
 
-  it("readFunnelFacts accepte une portée, donc sert les deux écrans", () => {
+  it("readFunnelFacts accepte une portée, et reste la seule addition", () => {
     const stats = sourceOf("lib/api/email-stats.ts");
     expect(stats).toMatch(/export\s+async\s+function\s+readFunnelFacts/);
     expect(stats).toMatch(/sequenceId\?:\s*string/);
-    // /emails l'appelle aussi : si `readEmailStats` cessait de passer par elle,
-    // la campagne et la page des emails redeviendraient deux additions.
-    expect(stats).toMatch(/readEmailStats[\s\S]*readFunnelFacts/);
+    // Au jalon 109, `/emails` a perdu son entonnoir : il ne reste qu'un
+    // appelant, la page d'une campagne. La garde porte donc sur ce qui peut
+    // encore diverger — une seconde addition écrite dans `campaigns.ts`, que
+    // les trois tests ci-dessus interdisent — et non plus sur un second
+    // appelant qui n'existe plus. `readEmailStats` est supprimée : l'exiger
+    // ici ferait échouer la garde sur une fonction qu'on a eu raison de
+    // retirer.
+    expect(stats).not.toMatch(/readEmailStats/);
   });
 });
 

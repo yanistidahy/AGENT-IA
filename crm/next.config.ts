@@ -40,6 +40,27 @@ const nextConfig: NextConfig = {
    * nécessaire — chaque requête peut désormais coûter cette mémoire.
    */
   experimental: { middlewareClientMaxBodySize: REQUEST_BODY_LIMIT },
+
+  /**
+   * **Les deux écrans de mesure retirés au jalon 109 mènent au seul qui reste.**
+   *
+   * `/performance` et `/rapports` sont dans des favoris et dans des liens
+   * échangés ; les laisser rendre une 404 ferait croire à une panne alors que
+   * la mesure a simplement déménagé. La redirection est déclarée ici plutôt que
+   * dans le middleware pour qu'elle s'applique **avant** le verrou d'espace :
+   * un visiteur non connecté arrive sur `/login?next=/pilotage`, donc à
+   * l'endroit qu'il voulait, et non sur l'ancien.
+   *
+   * `permanent: false` — un 308 est mis en cache par le navigateur sans date de
+   * péremption. Ces chemins pourraient resservir ; une redirection définitive
+   * serait alors impossible à défaire sur les machines qui l'ont apprise.
+   */
+  async redirects() {
+    return [
+      { source: "/performance", destination: "/pilotage", permanent: false },
+      { source: "/rapports", destination: "/pilotage", permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;

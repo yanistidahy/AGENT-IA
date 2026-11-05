@@ -28,7 +28,9 @@ export interface NavGroup {
 
 export const NAV_GROUPS: readonly NavGroup[] = [
   {
-    title: "Pilotage",
+    // Nommé « Pilotage » jusqu'au jalon 109, où ce mot est devenu le nom d'un
+    // écran : deux « Pilotage » dans le même rail auraient fait chercher.
+    title: "Le travail du jour",
     entries: [
       {
         label: "Accueil",
@@ -95,22 +97,16 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     title: "Analyse",
     entries: [
       {
+        label: "Pilotage",
+        href: "/pilotage",
+        icon: "chart",
+        desc: "Messages, réponses, démos : un seul tableau de bord, sur un seul journal.",
+      },
+      {
         label: "Emails",
         href: "/emails",
         icon: "mail",
-        desc: "Envois par semaine, par signataire, réponses et ouvertures estimées.",
-      },
-      {
-        label: "Ma performance",
-        href: "/performance",
-        icon: "chart",
-        desc: "Mon rythme par canal, ce qu'il produit, et sa régularité.",
-      },
-      {
-        label: "Rapports",
-        href: "/rapports",
-        icon: "chart",
-        desc: "Entonnoir, prévisions, performance par propriétaire.",
+        desc: "Ce qui est parti, et qui n'a pas encore répondu.",
       },
       {
         label: "Réglages",

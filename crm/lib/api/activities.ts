@@ -7,6 +7,12 @@ import type { CreateActivityInput, ListActivitiesQuery } from "./activity-schema
 import { ownerOrDefault, syncReminderTask, type AutoTaskOutcome } from "./automation";
 import { taskInclude, toTaskRecord, type TaskRecord } from "./tasks";
 import { contactTitle } from "../domain/contact-identity";
+import { ANSWERED_OUTCOMES } from "../domain/status";
+import {
+  categoryForOutcome,
+  eventForActivity,
+  recordOutreachEvent,
+} from "./outreach-events";
 
 /**
  * Accès aux interactions.
@@ -156,6 +162,61 @@ export async function logActivity(input: CreateActivityInput): Promise<LogActivi
       },
       include: activityInclude,
     });
+
+    /*
+      **L'événement de prospection s'écrit ici, dans la même transaction**
+      (jalon 109). Une interaction consignée sans son événement produirait un
+      tableau de bord qui ignore du travail réel, et l'écart ne se verrait nulle
+      part. `eventForActivity` rend `null` pour un email — l'envoi est déjà
+      compté par le journal des envois — et pour une note, qui n'est pas une
+      touche. Voir `lib/api/outreach-events.ts` pour la règle du double compte.
+    */
+    if (contactId !== null) {
+      const contactCompany =
+        companyId ??
+        (await tx.contact.findUnique({ where: { id: contactId }, select: { companyId: true } }))
+          ?.companyId ??
+        null;
+      const shape = eventForActivity(input.type);
+      if (shape !== null) {
+        await recordOutreachEvent(tx, {
+          contactId,
+          companyId: contactCompany,
+          channel: shape.channel,
+          type: shape.type,
+          occurredAt: input.date,
+          owner: input.owner,
+          source: "crm",
+          externalId: `activity:${activity.id}`,
+          detail: shape.detail,
+        });
+      }
+      if ((ANSWERED_OUTCOMES as readonly string[]).includes(input.outcome ?? "")) {
+        await recordOutreachEvent(tx, {
+          contactId,
+          companyId: contactCompany,
+          channel: input.type === "call" ? "call" : input.type === "email" ? "email" : "other",
+          type: "reply_received",
+          occurredAt: input.date,
+          owner: input.owner,
+          source: "crm",
+          externalId: `activity-reply:${activity.id}`,
+          replyCategory: categoryForOutcome(input.outcome ?? ""),
+        });
+      }
+      if (input.outcome === "meeting") {
+        await recordOutreachEvent(tx, {
+          contactId,
+          companyId: contactCompany,
+          channel: "other",
+          type: "meeting_booked",
+          occurredAt: input.date,
+          owner: input.owner,
+          source: "crm",
+          externalId: `activity-meeting:${activity.id}`,
+        });
+      }
+    }
 
     let reminderTask: AutoTaskOutcome | null = null;
 

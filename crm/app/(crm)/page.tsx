@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { AlertList } from "@/components/activities/alert-list";
 import { ActivityFeed, RiskDeals } from "@/components/dashboard/feed-and-risks";
-import { DashboardHeader } from "@/components/dashboard/header";
 import { StaleContacts, toStaleSort } from "@/components/dashboard/stale-contacts";
 import { Upcoming } from "@/components/dashboard/upcoming";
 import { readAlerts } from "@/lib/api/alerts";
@@ -23,20 +22,12 @@ import {
 import type { BudgetState } from "@/lib/domain/model-pricing";
 import { describeAge } from "@/lib/domain/snapshots";
 import { RecommendationCard } from "@/components/recommendations/recommendation-card";
-import {
-  readActionQueue,
-  readFunnel,
-  readProspecting,
-  readTomorrow,
-  readWeek,
-} from "@/lib/api/dashboard";
+import { readActionQueue, readTomorrow } from "@/lib/api/dashboard";
 import { ActionQueue } from "@/components/dashboard/queue/action-queue";
-import { ProspectingFunnel } from "@/components/dashboard/funnel";
 import { BackupBanner } from "@/components/dashboard/backup-banner";
 import { CollapsibleBlock } from "@/components/ui/collapsible-block";
 import { readQueueProgress } from "@/lib/api/queue";
 import { listSequences } from "@/lib/api/sequences";
-import { ProspectingCards, WeekCard } from "@/components/dashboard/prospecting";
 import { listOwners } from "@/lib/api/reference";
 import { staleDealsWithoutTask } from "@/lib/api/automation";
 import { WakeStaleDeals } from "@/components/activities/wake-stale";
@@ -139,24 +130,24 @@ export default async function HomePage({
 
   const [data, alerts] = await Promise.all([readDashboard(renderedAt), readAlerts(renderedAt)]);
 
-  const [actions, prospecting, week, owners, recommendations, funnel, tomorrow, sequences] =
-    await Promise.all([
-      readActionQueue(data.settings, renderedAt),
-      readProspecting(renderedAt),
-      readWeek(renderedAt),
-      listOwners(),
-      listRecommendations({ scope: "open" }, renderedAt),
-      readFunnel(renderedAt),
-      readTomorrow(renderedAt),
-      listSequences(),
-    ]);
+  const [actions, owners, recommendations, tomorrow, sequences] = await Promise.all([
+    readActionQueue(data.settings, renderedAt),
+    listOwners(),
+    listRecommendations({ scope: "open" }, renderedAt),
+    readTomorrow(renderedAt),
+    listSequences(),
+  ]);
 
   // Lu **après** la file : la taille du jour se fige sur ce qui reste à traiter
   // maintenant, et cette lecture écrit la ligne du jour si elle manque.
   const queueProgress = await readQueueProgress(actions.length, renderedAt);
 
-  // L'écran suit l'état de la base : sans affaire, les cartes de revenu ne
-  // disent rien qu'on ne sache déjà, et cèdent la place à la prospection.
+  // **Aucun indicateur n'est affiché ici depuis le jalon 109** : les pastilles
+  // de revenu, les cartes de prospection, l'entonnoir et « Ma semaine » sont
+  // partis sur `/pilotage`, qui les lit dans le journal des événements. Ce qui
+  // reste est du travail : la file du jour, les relances, les alertes et les
+  // bandeaux. `hasDeals` ne sert plus qu'à décider si le bloc « Affaires en
+  // sommeil » a un sens — un bloc d'affaires sans affaire n'en a aucun.
   const hasDeals = data.openCount > 0 || data.monthRevenue > 0;
 
   // Affaires en sommeil qui n'ont pas encore de tâche de réveil ouverte. Rien
@@ -192,19 +183,6 @@ export default async function HomePage({
         </Block>
       )}
 
-      {!hasDeals && <ProspectingCards metrics={prospecting} />}
-
-      {hasDeals && (
-      <DashboardHeader
-        now={renderedAt}
-        pipelineValue={data.pipelineValue}
-        weightedValue={data.weightedValue}
-        monthRevenue={data.monthRevenue}
-        objective={data.settings.objectifMensuel}
-        openCount={data.openCount}
-      />
-      )}
-
       {/* La file porte son propre en-tête : l'anneau d'avancement mesure ce
           qu'elle contient, et il avance de façon optimiste au fil des actions —
           il doit donc vivre dans le même composant client qu'elle. */}
@@ -220,22 +198,6 @@ export default async function HomePage({
           tomorrow={tomorrow}
         />
       </section>
-
-      <CollapsibleBlock
-        id="funnel"
-        title="Entonnoir de prospection"
-        hint="chaque bande s'ouvre sur la liste correspondante"
-      >
-        <ProspectingFunnel data={funnel} />
-      </CollapsibleBlock>
-
-      <CollapsibleBlock
-        id="week"
-        title="Ma semaine"
-        hint="le second chiffre est celui qui dit si j'ai prospecté"
-      >
-        <WeekCard week={week} />
-      </CollapsibleBlock>
 
       <CollapsibleBlock
         id="stale"
