@@ -142,7 +142,28 @@ export async function readPilotage(): Promise<PilotageData> {
       qualified: settings?.cibleQualifieesSemaine ?? DEFAULT_TARGETS.qualified,
     },
     campaigns,
-    owners: owners.map((owner) => owner.value),
+    /*
+      **Les propriétaires du menu : la liste des réglages, plus ceux que le
+      journal porte réellement.**
+
+      La liste des réglages est le vocabulaire (celui des tâches, jalon 105) ;
+      mais un événement peut porter un nom qui en a été retiré, ou qui n'y a
+      jamais été ajouté. Ne proposer que la liste laisserait des lignes
+      inatteignables par le filtre — un filtre qui ne peut pas atteindre une
+      partie des données ment sur ce qu'il couvre.
+    */
+    owners: mergeOwners(
+      owners.map((owner) => owner.value),
+      rows.map((row) => row.owner),
+    ),
     companiesWithoutVisitors: withoutVisitors,
   };
+}
+
+/** La liste des réglages d'abord, puis les noms du journal qu'elle ignore. */
+function mergeOwners(listed: readonly string[], seen: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const name of listed) if (name !== "" && !out.includes(name)) out.push(name);
+  const extra = [...new Set(seen)].filter((name) => name !== "" && !out.includes(name)).sort();
+  return [...out, ...extra];
 }

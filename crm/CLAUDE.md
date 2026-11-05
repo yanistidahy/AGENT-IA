@@ -8565,6 +8565,18 @@ npm run build && npm start &          # ou E2E_BASE_URL=…
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers E2E_PASSWORD=… npm run e2e
 ```
 
+**`DATABASE_URL` doit désigner la base que le serveur sert.** La plupart de ces
+fichiers posent leurs propres fiches avec le client Prisma, **dans le processus
+de test** : si la variable du test et celle du serveur ne pointent pas la même
+base, les fiches sont écrites d'un côté et cherchées de l'autre, et l'échec
+ressemble à une page cassée. Mesuré au jalon 109 : cinq tests rouges sur deux
+fichiers, aucun défaut de produit, deux bases.
+
+```bash
+DATABASE_URL=postgresql://…/la_base_du_serveur \
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers E2E_PASSWORD=… npm run e2e
+```
+
 ### Jalon 60 — ce qui est vérifié
 
 Contre un vrai PostgreSQL 16 (`migrate diff` **vide**), le serveur standalone de
