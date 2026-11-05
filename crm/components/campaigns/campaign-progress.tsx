@@ -1,4 +1,4 @@
-import { FunnelRow } from "@/components/emails/funnel-row";
+import { FunnelRow } from "@/components/campaigns/funnel-row";
 import type { CampaignFunnel } from "@/lib/api/campaigns";
 
 /**

@@ -2,6 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { prisma } from "../db";
 import { classifyOpenHit, countsAsOpen } from "../domain/open-tracking";
+import { recordOutreachEvent } from "./outreach-events";
 
 /**
  * Le journal des emails réellement partis, et le suivi d'ouverture.
@@ -134,13 +135,44 @@ export async function recordClick(
   try {
     const send = await prisma.emailSend.findUnique({
       where: { trackToken: token },
-      select: { id: true },
+      select: {
+        id: true,
+        contactId: true,
+        campaignId: true,
+        contact: { select: { companyId: true, owner: true } },
+      },
     });
     if (send === null) return;
 
     await prisma.emailLinkClick.create({
       data: { emailSendId: send.id, kind, at: now },
     });
+
+    /*
+      **Un clic sur le lien de la démonstration vaut « démo testée »**
+      (jalon 109) — et le piège est dans les noms. `demo` est le lien de **prise
+      de rendez-vous** ; `video` est la démonstration elle-même. C'est donc
+      `video` qui dit que le prospect a testé, et prendre `demo` au mot aurait
+      compté une réservation de créneau comme un essai du produit.
+
+      L'identifiant est déterministe : recliquer n'ajoute pas une seconde démo
+      testée, alors que le clic lui-même n'est pas dédupliqué — on veut le
+      compte des clics d'un côté, le fait « testée » de l'autre.
+    */
+    if (kind === "video" && send.contactId !== null) {
+      await recordOutreachEvent(prisma, {
+        contactId: send.contactId,
+        companyId: send.contact?.companyId ?? null,
+        campaignId: send.campaignId === "" ? null : send.campaignId,
+        channel: "email",
+        type: "demo_tested",
+        occurredAt: now,
+        owner: send.contact?.owner ?? "",
+        source: "crm",
+        externalId: `demo-tested:${send.id}`,
+        detail: "Clic sur le lien de la démonstration",
+      });
+    }
   } catch (error) {
     console.error("[suivi] clic non consigné", error);
   }
@@ -176,6 +208,21 @@ export interface RecordSendInput {
  * colonne de tri qui ment est pire qu'une colonne absente.
  */
 export async function recordSend(input: RecordSendInput, now: Date): Promise<string> {
+  /*
+    **Le `message_sent` du journal d'événements naît ici** (jalon 109), avec la
+    ligne d'envoi et dans la même transaction : c'est elle qui porte la campagne
+    et le signataire, et une ligne d'envoi sans son événement ferait un tableau
+    de bord qui ignore un message réellement parti.
+
+    L'interaction jumelle que `sendEmailToContact` consigne juste après n'en
+    écrit **pas** un second : `eventForActivity` rend `null` pour un email,
+    précisément pour que l'email ne soit compté qu'une fois.
+  */
+  const contact = await prisma.contact.findUnique({
+    where: { id: input.contactId },
+    select: { companyId: true, owner: true },
+  });
+
   const [send] = await prisma.$transaction([
     prisma.emailSend.create({
       data: {
@@ -205,6 +252,19 @@ export async function recordSend(input: RecordSendInput, now: Date): Promise<str
       data: { emailCount: { increment: 1 }, lastEmailAt: now },
     }),
   ]);
+
+  await recordOutreachEvent(prisma, {
+    contactId: input.contactId,
+    companyId: contact?.companyId ?? null,
+    campaignId: input.campaignId === "" ? null : input.campaignId,
+    channel: "email",
+    type: "message_sent",
+    occurredAt: now,
+    owner: contact?.owner ?? "",
+    source: "crm",
+    externalId: `send:${send.id}`,
+    detail: input.subject,
+  });
 
   return send.id;
 }

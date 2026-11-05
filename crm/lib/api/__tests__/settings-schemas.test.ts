@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { backupSchema, BACKUP_VERSION } from "../backup";
-import { parsePeriod } from "../reports";
 import { updateListSchema, updateSettingsSchema, updateStagesSchema } from "../settings";
 import { toStaleSort } from "../../../components/dashboard/stale-contacts";
 
@@ -61,22 +60,6 @@ describe("updateListSchema", () => {
 
   it("accepte une liste vidée", () => {
     expect(updateListSchema.safeParse({ kind: "owners", values: [] }).success).toBe(true);
-  });
-});
-
-describe("parsePeriod", () => {
-  it("lit « all » comme « depuis le début »", () => {
-    expect(parsePeriod("all")).toBeNull();
-  });
-
-  it("accepte les trois fenêtres proposées", () => {
-    expect(parsePeriod("30")).toBe(30);
-    expect(parsePeriod("365")).toBe(365);
-  });
-
-  it("retombe sur 90 jours pour une valeur absente ou fantaisiste", () => {
-    expect(parsePeriod(undefined)).toBe(90);
-    expect(parsePeriod("42")).toBe(90);
   });
 });
 

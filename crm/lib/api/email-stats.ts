@@ -1,72 +1,26 @@
 import "server-only";
 import { prisma } from "../db";
-import { readReplyFacts, replyDates } from "./email-replies";
-import { buildFunnel, type FunnelInput, type FunnelStep } from "../domain/email-funnel";
-import { historyDepth, type HistoryDepth } from "../domain/email-history";
-import { readTrackingConfig } from "./email-sends";
-import { trackingGap, type TrackingGap } from "../domain/open-tracking";
-import {
-  byDay,
-  bySequence,
-  byWeek,
-  signatoryLines,
-  type Bucket,
-  type SignatoryLine,
-} from "../domain/email-stats";
+import { readReplyFacts } from "./email-replies";
+import type { FunnelInput } from "../domain/email-funnel";
 
 /**
- * Ce que les emails ont produit, en chiffres.
+ * Les faits d'envoi, lus une seule fois.
  *
- * **L'ordre d'affichage est un jugement, et il est porté ici** : les réponses
- * et les rendez-vous passent avant le taux d'ouverture. Les deux premiers sont
- * des faits saisis à la main ; le troisième est une estimation qu'on sait
- * fausse dans un sens connu.
+ * Ce module portait aussi, jusqu'au jalon 109, les statistiques de l'écran
+ * « Emails » — entonnoir, taux d'ouverture, courbes par jour et par semaine,
+ * tableau par signataire. Cet écran a été retiré : un seul tableau de bord
+ * subsiste, `/pilotage`, et il lit le **journal des événements de prospection**,
+ * pas ces additions. Ce qui reste ici est ce qui sert encore :
  *
- * Depuis le jalon 39, les quatre nombres sortent d'ici **déjà rangés en
- * entonnoir** : la page ne recompose aucun taux et ne choisit aucun
- * dénominateur. Un écran qui calculerait ses propres pourcentages finirait par
- * en afficher d'autres que ceux du domaine — et personne ne saurait lequel des
- * deux fait foi.
+ * - `readFunnelFacts`, l'entonnoir **d'une campagne** (`/campagnes/<id>`), qui
+ *   n'a pas été retiré et qui reste la seule addition de cet entonnoir ;
+ * - `readEmailHealth`, les deux nombres opérationnels de `/emails` : combien de
+ *   messages sont partis, et combien n'ont pas été copiés dans « Envoyés ».
+ *
+ * **Les ouvertures ne sont plus un indicateur.** Elles continuent d'être
+ * enregistrées (rien n'est supprimé en base) et restent visibles ligne à ligne
+ * dans le tableau des inscrits d'une campagne ; elles ne pilotent plus rien.
  */
-
-export interface EmailStats {
-  /** Messages partis sur la fenêtre. */
-  readonly total: number;
-  readonly windowDays: number;
-  /** Combien d'histoire existe, et donc quel graphique a le droit de s'afficher. */
-  readonly depth: HistoryDepth;
-  /** Écrit → ouvert → répondu → rendez-vous, en personnes. */
-  readonly funnel: readonly FunnelStep[];
-  readonly perDay: readonly Bucket[];
-  readonly perWeek: readonly Bucket[];
-  readonly perSequence: readonly Bucket[];
-  /**
-   * Par signataire : envois, personnes, réponses.
-   *
-   * Ils sont deux depuis le jalon 35 ; un chiffre global ne dit plus qui écrit
-   * ni ce que chacun obtient.
-   */
-  readonly perSignatory: readonly SignatoryLine[];
-  /** Envois dont la copie IMAP a échoué — visible, jamais avalé. */
-  readonly copyFailures: number;
-  /**
-   * Ce que l'estimation d'ouverture vaut, en deux nombres.
-   *
-   * `unaudited` compte les envois dont le compteur est non nul mais dont aucun
-   * chargement n'est détaillé : ils précèdent le tri du jalon 43, donc leur
-   * chiffre n'a été ni confirmé ni infirmé. **Le dire est la seule façon
-   * honnête d'afficher le taux tant qu'ils pèsent dessus.**
-   */
-  readonly openTrust: { readonly unaudited: number; readonly tracked: number };
-  /**
-   * Pourquoi le suivi ne mesure rien, quand c'est le cas. `null` = il mesure.
-   *
-   * Sans cette valeur, « Ont ouvert 0 » se lit « personne n'a ouvert », alors
-   * qu'il peut vouloir dire « aucun message n'a jamais porté de pixel ».
-   */
-  readonly trackingGap: TrackingGap;
-}
-
 export const EMAIL_WINDOW_DAYS = 90;
 const WINDOW_DAYS = EMAIL_WINDOW_DAYS;
 
@@ -195,43 +149,29 @@ export async function readFunnelFacts(scope: FunnelScope): Promise<FunnelFacts> 
   };
 }
 
-export async function readEmailStats(now = new Date()): Promise<EmailStats> {
+/**
+ * Ce que `/emails` a besoin de savoir, et rien de plus.
+ *
+ * Deux comptes, pas une lecture de toutes les lignes : la page affiche le
+ * journal des envois (paginé par `readSentEmails`) et la file « sans
+ * réponse » ; elle n'a plus aucune série à tracer. Les envois non copiés
+ * restent annoncés parce que c'est un **fait opérationnel** — le message est
+ * parti, la copie IMAP a échoué —, pas un indicateur de performance.
+ */
+export interface EmailHealth {
+  readonly total: number;
+  readonly windowDays: number;
+  readonly copyFailures: number;
+}
+
+export async function readEmailHealth(now = new Date()): Promise<EmailHealth> {
   const since = new Date(now);
   since.setDate(since.getDate() - WINDOW_DAYS);
 
-  const { input, unaudited, sends, firstSend } = await readFunnelFacts({ since });
-  const facts = await readReplyFacts(firstSend);
-  // L'état du suivi est lu **ici** plutôt que déduit des envois : un CRM sans
-  // adresse publique et un CRM dont tout le monde a décoché la case rendent la
-  // même page, et ce ne sont pas les mêmes gestes.
-  const tracking = await readTrackingConfig();
+  const [total, copyFailures] = await Promise.all([
+    prisma.emailSend.count({ where: { sentAt: { gte: since } } }),
+    prisma.emailSend.count({ where: { sentAt: { gte: since }, copyStatus: "failed" } }),
+  ]);
 
-  const dates = sends.map((send) => send.sentAt);
-  const depth = historyDepth(dates, now);
-
-  return {
-    total: sends.length,
-    windowDays: WINDOW_DAYS,
-    depth,
-    funnel: buildFunnel(input),
-    // Les deux graphiques suivent l'histoire disponible : `dailyDays` et
-    // `weeklyWeeks` valent 0 quand la série ne porte pas encore de quoi
-    // affirmer quoi que ce soit, et la page rend alors la phrase qui dit
-    // quand ils reviendront.
-    perDay: depth.daily ? byDay(dates, now, depth.dailyDays) : [],
-    perWeek: depth.weekly ? byWeek(dates, now, depth.weeklyWeeks) : [],
-    perSequence: bySequence(sends),
-    perSignatory: signatoryLines(sends, replyDates(facts)),
-    copyFailures: sends.filter((send) => send.copyStatus === "failed").length,
-    // Les deux nombres comptent des **envois**, pas des personnes : « 1 envoi
-    // sur 1 » alors que trois messages sont suivis serait faux dans le sens qui
-    // dramatise.
-    openTrust: { unaudited, tracked: sends.filter((send) => send.tracked).length },
-    trackingGap: trackingGap({
-      baseUrl: tracking.baseUrl,
-      enabled: tracking.enabled,
-      messages: sends.length,
-      tracked: sends.filter((send) => send.tracked).length,
-    }),
-  };
+  return { total, windowDays: WINDOW_DAYS, copyFailures };
 }

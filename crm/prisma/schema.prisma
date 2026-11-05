@@ -53,6 +53,14 @@ model Company {
   desc      String   @default("")
   createdAt DateTime @default(now())
 
+  /// **Visiteurs mensuels de la boutique**, pour le segment du pilotage.
+  ///
+  /// `null` veut dire « non renseigné », et c'est un état à part entière : un
+  /// `0` se lirait comme une boutique sans trafic, ce qui est une mesure, alors
+  /// que l'absence est une ignorance. Les deux segments du jalon 109 se lisent
+  /// de ce nombre — petites marques 2 000 à 10 000, grandes 15 000 et plus.
+  monthlyVisitors Int?
+
   /// Miroir normalisé (minuscules, sans accents) des champs cherchables.
   /// Écrit par l'application à chaque écriture — voir lib/domain/text.ts.
   /// Permet à « zenith » de trouver « Zénith » sans extension PostgreSQL.
@@ -67,6 +75,7 @@ model Company {
 
   contacts   Contact[]
   deals      Deal[]
+  outreach   OutreachEvent[]
   research   CompanyResearch?
   activities Activity[]
   tasks      Task[]
@@ -197,6 +206,7 @@ model Contact {
   emailReplies  EmailReply[]
   enrollments   SequenceEnrollment[]
   customFilters CustomFilterMember[]
+  outreach      OutreachEvent[]
   /// La recherche d'une fiche **sans société** — voir `CompanyResearch`.
   research      CompanyResearch?     @relation("ContactResearch")
 
@@ -399,10 +409,20 @@ model Settings {
   relanceApresInstagram Int @default(4)
   relanceApresNote      Int @default(7)
 
-  /// Objectifs hebdomadaires de « Ma performance ». `0` = pas d'objectif —
-  /// sans objectif, l'écran n'affiche pas de progression plutôt qu'un « 4 sur 0 ».
+  /// Objectifs hebdomadaires de « Ma performance », **l'écran retiré au jalon
+  /// 109**. Les colonnes restent : les supprimer serait une perte irréversible
+  /// pour un gain nul, et la sauvegarde continue de les porter. Plus aucun écran
+  /// ne les lit ni ne les écrit — les cibles du pilotage sont les trois
+  /// suivantes.
   objectifAppelsSemaine Int @default(0)
   objectifEmailsSemaine Int @default(0)
+
+  /// **Les cibles hebdomadaires du pilotage** (jalon 109), semaine lundi →
+  /// dimanche à Paris. `0` = pas de cible : l'écran n'affiche alors aucune barre
+  /// plutôt qu'un « 4 sur 0 », la convention du plafond mensuel (jalon 36).
+  cibleMessagesSemaine  Int @default(100)
+  cibleDemosSemaine     Int @default(10)
+  cibleQualifieesSemaine Int @default(5)
 
   /// Fenêtre de l'avertissement « un collègue a déjà été écrit », en jours.
   /// Ce n'est pas un blocage : deux personnes d'une même maison comparent
@@ -1673,6 +1693,7 @@ model Campaign {
   sequence EmailSequence?
 
   jobs CompositionJob[]
+  outreach OutreachEvent[]
 
   @@map("campaigns")
 }
@@ -1786,4 +1807,76 @@ model CustomFilterMember {
   @@unique([filterId, contactId])
   @@index([contactId])
   @@map("custom_filter_members")
+}
+
+/// **Le journal des événements de prospection : la seule source du pilotage.**
+///
+/// Les mesures du produit vivaient jusqu'ici dans quatre endroits qui ne se
+/// parlaient pas — `/performance` comptait les interactions, `/emails` les
+/// envois, `/rapports` les affaires, l'accueil ses propres agrégats — et chacun
+/// portait sa définition. Quatre réponses à « combien de messages cette
+/// semaine », toutes justes isolément, aucune comparable.
+///
+/// Une ligne par **événement**, et tout chiffre du tableau de bord se lit ici.
+/// C'est aussi ce qui permettra à la synchronisation lemlist d'alimenter le
+/// pilotage sans rien réécrire : elle posera des lignes de `source: "lemlist"`
+/// avec leur `externalId`, et la contrainte d'unicité fera la déduplication.
+model OutreachEvent {
+  id String @id @default(cuid())
+
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  /// Recopiée au moment de l'écriture plutôt que jointe à la lecture : le
+  /// segment du pilotage se lit sur la société, et une fiche peut changer de
+  /// maison après coup sans que l'histoire mesurée ait à bouger.
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  /// `null` pour tout ce qui part à la main, hors campagne.
+  campaignId String?
+  campaign   Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  /// `email` | `linkedin_invite` | `linkedin_message` | `whatsapp` | `call` | `other`
+  channel String
+
+  /// `message_sent` | `linkedin_invite_sent` | `linkedin_invite_accepted` |
+  /// `reply_received` | `bounce` | `demo_sent` | `demo_tested` |
+  /// `feedback_received` | `meeting_booked` | `meeting_held` | `trial_started` |
+  /// `customer_won`
+  type String
+
+  /// L'instant du fait, **pas** celui de l'écriture : une reprise d'historique
+  /// et une synchronisation posent des lignes datées d'hier.
+  occurredAt DateTime
+
+  /// Le vocabulaire des assignés de tâche (`Yanis`, `Mohamed`), pas un second.
+  owner String @default("")
+
+  /// `crm` | `lemlist` | `manual`
+  source String @default("crm")
+
+  /// L'identifiant chez la source, pour que deux synchronisations ne comptent
+  /// pas deux fois. `null` sur tout ce que le CRM produit lui-même : en
+  /// PostgreSQL deux `null` ne se heurtent pas sur une contrainte d'unicité,
+  /// donc la déduplication ne s'applique qu'à ce qui porte un identifiant.
+  externalId String?
+
+  /// La catégorie d'une réponse (`reply_received` seulement), vide tant que
+  /// personne ne l'a posée. **Jamais devinée** : une réponse non catégorisée se
+  /// compte comme telle.
+  replyCategory String @default("")
+
+  /// De quoi relire la ligne six mois plus tard — l'objet du message, le canal
+  /// d'origine quand il n'entre pas dans les six, le motif.
+  detail String @default("")
+
+  createdAt DateTime @default(now())
+
+  @@unique([source, externalId])
+  @@index([occurredAt])
+  @@index([type, occurredAt])
+  @@index([contactId, type])
+  @@index([campaignId])
+  @@map("outreach_events")
 }

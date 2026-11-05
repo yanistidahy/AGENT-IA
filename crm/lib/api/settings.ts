@@ -3,6 +3,7 @@ import { prisma } from "../db";
 import { DEFAULT_REMINDER_DELAYS } from "../domain/automation";
 import { SETTINGS_LIST_KINDS, type SettingsListKind } from "../domain/types";
 import { MIN_OUTPUT_TOKENS } from "../domain/model-budget";
+import { DEFAULT_TARGETS } from "../domain/pilotage";
 import { DEFAULT_MODELS, isKnownModel } from "../domain/model-pricing";
 
 /** Réglages : seuils de pilotage, listes éditables, étapes du pipeline. */
@@ -34,6 +35,13 @@ export const updateSettingsSchema = z
     relanceApresNote: delayField,
     /** Objectifs hebdomadaires de « Ma performance ». `0` = pas d'objectif. */
     objectifAppelsSemaine: z.number().int().min(0).max(1000).optional(),
+    /**
+     * Les trois cibles hebdomadaires du pilotage (jalon 109). `0` coupe la
+     * barre de progression plutôt que d'afficher « 4 sur 0 ».
+     */
+    cibleMessagesSemaine: z.number().int().min(0).max(10_000).optional(),
+    cibleDemosSemaine: z.number().int().min(0).max(1000).optional(),
+    cibleQualifieesSemaine: z.number().int().min(0).max(1000).optional(),
     /**
      * Fenêtre de l'avertissement « un collègue a déjà été écrit », en jours.
      * `0` le coupe — sans cette convention on ne pourrait plus le désactiver.
@@ -122,6 +130,11 @@ export async function updateSettings(
     relanceApresNote:
       input.relanceApresNote ?? current?.relanceApresNote ?? DEFAULT_REMINDER_DELAYS.note,
     objectifAppelsSemaine: input.objectifAppelsSemaine ?? current?.objectifAppelsSemaine ?? 0,
+    cibleMessagesSemaine:
+      input.cibleMessagesSemaine ?? current?.cibleMessagesSemaine ?? DEFAULT_TARGETS.messages,
+    cibleDemosSemaine: input.cibleDemosSemaine ?? current?.cibleDemosSemaine ?? DEFAULT_TARGETS.demos,
+    cibleQualifieesSemaine:
+      input.cibleQualifieesSemaine ?? current?.cibleQualifieesSemaine ?? DEFAULT_TARGETS.qualified,
     colleagueWarningDays:
       input.colleagueWarningDays ?? current?.colleagueWarningDays ?? 30,
     objectifEmailsSemaine: input.objectifEmailsSemaine ?? current?.objectifEmailsSemaine ?? 0,

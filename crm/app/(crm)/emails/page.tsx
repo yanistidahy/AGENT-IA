@@ -1,32 +1,28 @@
-import { EMAIL_WINDOW_DAYS, readEmailStats } from "@/lib/api/email-stats";
-import { readDmLift } from "@/lib/api/dm-lift";
-import { DmLiftBlock } from "@/components/emails/dm-lift-block";
+import Link from "next/link";
+import { readEmailHealth } from "@/lib/api/email-stats";
 import { parseSentQuery, readSentEmails, readSilentContacts } from "@/lib/api/email-list";
 import { listOwners } from "@/lib/api/reference";
-import { EmptyChart } from "@/components/charts/empty-chart";
-import { FunnelRow } from "@/components/emails/funnel-row";
-import { describeTrackingGap } from "@/lib/domain/open-tracking";
 import { SentTable } from "@/components/emails/sent-table";
 import { NoReplyBlock } from "@/components/emails/no-reply-block";
-import { EmailCharts } from "@/components/emails/email-charts";
-import { SignatoryTable } from "@/components/emails/signatory-table";
 
 export const dynamic = "force-dynamic";
 
 /**
- * La section « Emails ».
+ * La section « Emails » — le journal, et la file de travail.
  *
- * **L'ordre de la page est son argument.** Le reproche auquel elle répond était
- * une affaire de proportions : quatre cartes, puis deux graphiques presque vides
- * occupant le reste de l'écran — onze messages envoyés, et une page qui montrait
- * surtout du vide. La substance passe donc devant, et les graphiques ne
- * s'affichent que lorsqu'ils portent quelque chose :
+ * **Ce que ce jalon a retiré, et pourquoi.** La page portait un entonnoir, un
+ * taux d'ouverture avec ses deux avertissements, la comparaison DM + email, un
+ * tableau par signataire et deux graphiques. C'étaient des mesures, et les
+ * mesures vivent désormais à un seul endroit : `/pilotage`, qui les lit dans le
+ * journal des événements de prospection. Deux écrans qui comptent les mêmes
+ * envois finissent par afficher deux nombres, et c'est l'écart que ce jalon
+ * ferme.
  *
- * 1. **l'entonnoir** — les quatre nombres lus comme une suite, avec la chute ;
- * 2. **ce qui est parti**, et **qui n'a pas répondu**, côte à côte : le journal
- *    et la file de travail, qui sont les deux raisons d'ouvrir cette page ;
- * 3. **par signataire**, depuis qu'ils sont deux ;
- * 4. **les graphiques en dernier**, et seulement quand l'histoire existe.
+ * Il reste les deux raisons d'ouvrir cette page, et elles ne sont pas des
+ * mesures : **ce qui est parti** (le journal, filtrable et trié) et **qui n'a
+ * pas encore répondu** (la file de relance, qui écrit). Plus le bandeau des
+ * copies IMAP ratées : un message parti sans copie dans « Envoyés » est un fait
+ * opérationnel à réparer, pas un indicateur.
  *
  * Composant serveur de bout en bout, sauf le bloc « sans réponse » — il écrit.
  */
@@ -37,72 +33,44 @@ export default async function EmailsPage({
 }) {
   const query = parseSentQuery(await searchParams);
 
-  const [stats, list, silent, owners, lift] = await Promise.all([
-    readEmailStats(),
+  const [health, list, silent, owners] = await Promise.all([
+    readEmailHealth(),
     readSentEmails(query),
     readSilentContacts(),
     listOwners(),
-    // Même fenêtre que les statistiques d'envoi : deux périodes différentes sur
-    // le même écran feraient comparer des choses qui ne se comparent pas.
-    readDmLift(EMAIL_WINDOW_DAYS),
   ]);
 
-  if (stats.total === 0) {
+  if (health.total === 0) {
     return (
       <div className="px-6 py-5">
-        <Header windowDays={stats.windowDays} spanDays={0} />
-        <EmptyChart
-          title="Aucun email envoyé"
-          reason={`Aucun message n'est parti depuis ce CRM sur les ${stats.windowDays} derniers jours.`}
-          action="Ouvrez une fiche contact et cliquez « Rédiger un email »"
-          href="/contacts"
-        />
+        <Header windowDays={health.windowDays} />
+        <section className="rounded-card border border-line bg-surface px-4 py-6">
+          <h2 className="font-display text-[15px] font-semibold">Aucun email envoyé</h2>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
+            Aucun message n'est parti depuis ce CRM sur les {health.windowDays} derniers jours.
+            Ce n'est pas un résultat : il n'y a rien à compter.
+          </p>
+          <Link
+            href="/contacts"
+            className="mt-3 inline-flex rounded-control bg-brand px-3 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-brand-d"
+          >
+            Ouvrir une fiche et rédiger un email
+          </Link>
+        </section>
       </div>
     );
   }
 
   return (
     <div className="px-6 py-5">
-      <Header windowDays={stats.windowDays} spanDays={stats.depth.spanDays} />
+      <Header windowDays={health.windowDays} total={health.total} />
 
-      <section className="mb-4">
-        <FunnelRow steps={stats.funnel} />
-        {/*
-          **Pourquoi le chiffre ne peut pas monter**, quand c'est le cas.
-          « Ont ouvert 0 » se lit « personne n'a ouvert » ; il peut vouloir dire
-          « aucun message n'a jamais porté de pixel ». L'avertissement existait
-          dans Réglages, c'est-à-dire pas là où l'on constate l'absence.
-        */}
-        {stats.trackingGap !== null && (
-          <p className="mt-2 rounded-control border border-[#F0DFB8] bg-gold-l px-3.5 py-2 text-[12px] leading-relaxed text-[#9A6410]">
-            <strong>Le suivi d'ouverture ne mesure rien.</strong>{" "}
-            {describeTrackingGap(stats.trackingGap)}
-          </p>
-        )}
-        {stats.openTrust.unaudited > 0 && (
-          // **Le taux d'ouverture est plus faux que « surestimé » sur ces
-          // envois-là** : leurs chargements n'ont jamais été enregistrés un par
-          // un, donc ni notre propre copie dans « Envoyés », ni les rechargements
-          // d'un même client n'en ont été retirés. Le dire ici, sous le chiffre,
-          // plutôt que de laisser croire qu'il a été trié.
-          <p className="mt-2 rounded-control border border-[#F0DFB8] bg-gold-l px-3.5 py-2 text-[12px] leading-relaxed text-[#9A6410]">
-            <strong>
-              L'estimation d'ouverture n'est pas vérifiable sur {stats.openTrust.unaudited} envoi
-              {stats.openTrust.unaudited > 1 ? "s" : ""} sur {stats.openTrust.tracked}.
-            </strong>{" "}
-            Leurs chargements de pixel précèdent le tri : notre propre copie dans « Envoyés » y
-            comptait comme une ouverture, et un client qui rechargeait l'image comptait autant de
-            fois. Le détail est dans Réglages → Messagerie.
-          </p>
-        )}
-      </section>
-
-      {stats.copyFailures > 0 && (
+      {health.copyFailures > 0 && (
         <p className="mb-4 rounded-control border border-[#F0DFB8] bg-gold-l px-3.5 py-2.5 text-[12.5px] leading-relaxed text-[#9A6410]">
           <strong>
-            {stats.copyFailures} message{stats.copyFailures > 1 ? "s" : ""} n'
-            {stats.copyFailures > 1 ? "ont" : "a"} pas été copié
-            {stats.copyFailures > 1 ? "s" : ""} dans « Envoyés ».
+            {health.copyFailures} message{health.copyFailures > 1 ? "s" : ""} n'
+            {health.copyFailures > 1 ? "ont" : "a"} pas été copié
+            {health.copyFailures > 1 ? "s" : ""} dans « Envoyés ».
           </strong>{" "}
           Ils sont bien partis — seule la copie IMAP a échoué. La cause figure dans Réglages →
           Messagerie.
@@ -116,39 +84,28 @@ export default async function EmailsPage({
         <NoReplyBlock rows={silent} owners={owners} defaultOwner={owners[0] ?? ""} />
       </section>
 
-      {/* La comparaison qui décide de la stratégie : elle passe **avant** les
-          graphiques, comme l'entonnoir — les faits d'abord, la forme ensuite. */}
-      <section className="mb-4">
-        <DmLiftBlock lift={lift} />
-      </section>
-
-      <section className="mb-4">
-        <SignatoryTable lines={stats.perSignatory} />
-      </section>
-
-      <EmailCharts stats={stats} />
+      <p className="text-[12.5px] text-muted">
+        Les chiffres — messages, réponses, taux, démos — sont sur{" "}
+        <Link href="/pilotage" className="underline hover:text-brand-d">
+          Pilotage
+        </Link>
+        , qui les lit dans le journal des événements de prospection.
+      </p>
     </div>
   );
 }
 
-function Header({
-  windowDays,
-  spanDays,
-}: {
-  readonly windowDays: number;
-  readonly spanDays: number;
-}) {
+function Header({ windowDays, total }: { readonly windowDays: number; readonly total?: number }) {
   return (
     <header className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
       <h1 className="font-display text-xl font-semibold tracking-tight">Emails</h1>
       <p className="text-[12.5px] text-muted">
-        Ce qui est parti depuis ce CRM sur les {windowDays} derniers jours, et ce que cela a
-        produit.
-        {spanDays > 0 && (
+        Ce qui est parti depuis ce CRM sur les {windowDays} derniers jours, et qui n'a pas encore
+        répondu.
+        {total !== undefined && total > 0 && (
           <>
             {" "}
-            <span className="tabular-nums">{spanDays}</span> jour{spanDays > 1 ? "s" : ""}{" "}
-            d'activité mesurée.
+            <span className="tabular-nums">{total}</span> message{total > 1 ? "s" : ""} au journal.
           </>
         )}
       </p>
