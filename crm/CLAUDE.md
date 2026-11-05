@@ -15983,7 +15983,20 @@ Chromium réel sur le serveur standalone de production :
 - **au clic, avec `reachable()`** : barre de filtres, six pastilles, entonnoir,
   bascule nombres/pourcentages, graphique, tableaux, et les anciennes adresses
   qui atterrissent sur `/pilotage` ; aucune erreur de console ;
-- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (1957 tests) verts.
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (1957 tests) et
+  `npm run e2e` (**130 tests, 35 fichiers**) verts.
+
+**Cinq tests de navigateur rouges d'abord, et aucun n'était un défaut du
+produit** — c'est la leçon de méthode de ce jalon. Deux venaient de ma propre
+recette : j'avais rejoué une restauration sur la base de test, ce qui avait
+orphelin les envois (voir plus bas), et la fiche de démonstration n'avait donc
+plus de clic. Deux autres attendaient dans la base des fiches de la recette du
+jalon 108 — une société accentuée, une société nommée comme une formule — que
+mon jeu de données n'avait pas. **Un seul était un vrai défaut, et il était
+dans mon test** : il lisait le compte de la première cellule et cliquait le
+premier lien, qui n'appartiennent pas à la même ligne dès qu'une ligne n'a pas
+de lien (« Hors campagne » n'en a pas). Corrigé en ne regardant que les
+cellules qui en portent un.
 
 **Les chiffres relevés ne sont pas ceux de la production.** Sur la base
 fabriquée pour cette recette — 12 sociétés, 24 contacts, 22 envois sur six
@@ -16023,6 +16036,19 @@ après deux campagnes successives est attribuée à la dernière. C'est le choix
 plus défendable sur les faits dont on dispose ; ce n'est pas une certitude, et
 c'est pour cela qu'elle vit dans le domaine et non en base — la changer ne
 demandera pas de réécrire une ligne.
+
+**Une restauration orpheline le journal des envois — défaut antérieur, trouvé
+ici.** `email_sends` ne fait pas partie de la sauvegarde, mais `restoreBackup`
+supprime et recrée tous les contacts ; `EmailSend.contactId` étant en
+`SetNull`, **chaque envoi perd sa personne**. Mesuré en rejouant une
+restauration sur la base de recette : les 22 envois sont restés, tous avec
+`contactId` nul. Les événements, eux, sont sauvegardés et reviennent intacts —
+le tableau de bord garde donc son histoire. Ce qui est perdu, c'est la
+possibilité de la **re-dériver** : une reprise lancée après une restauration ne
+retrouve plus que 11 des 33 événements, les envois n'ayant plus personne à qui
+être attribués. Le défaut date du jalon 37, pas de celui-ci ; le réparer
+demande de sauvegarder les envois, donc les campagnes, les séquences et les
+boîtes. C'est un jalon à soi seul, et il mérite d'être posé.
 
 **Une restauration perd le rattachement aux campagnes.** Les campagnes ne font
 pas partie de la sauvegarde JSON (elles traînent derrière elles les boîtes, les

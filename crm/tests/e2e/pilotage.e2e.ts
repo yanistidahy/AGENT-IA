@@ -103,10 +103,19 @@ describeBrowser("le pilotage", () => {
     expect(await page.locator("[data-row]").count()).toBe(shown);
 
     await page.goto(`${BASE_URL}/pilotage`, { waitUntil: "domcontentloaded" });
-    const cell = page.locator('[data-cell="messages"] a').first();
-    const cellCount = Number(
-      await page.locator('[data-cell="messages"]').first().getAttribute("data-count"),
-    );
+    /*
+      **La cellule et son compte doivent être ceux de la *même* ligne.**
+
+      Toutes les cellules ne portent pas de lien — une ligne « Hors campagne »
+      n'en a pas, parce qu'il n'y a pas de campagne à filtrer. Prendre « le
+      premier compte » et « le premier lien » séparément les appariait alors
+      sur deux lignes différentes, et le test échouait en annonçant un écart
+      qui n'existait pas. C'était un défaut du test, pas du produit : corrigé
+      en ne regardant que les cellules **qui portent un lien**.
+    */
+    const cellWithLink = page.locator('[data-cell="messages"]:has(a)').first();
+    const cellCount = Number(await cellWithLink.getAttribute("data-count"));
+    const cell = cellWithLink.locator("a");
     // Les tableaux sont en bas de l'écran : on descend d'abord, comme un
     // humain. `reachable()` interroge le point au centre de l'élément, donc un
     // élément hors du cadre n'est pas atteignable — et c'est exact : il faut
