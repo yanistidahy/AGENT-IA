@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { requestJson } from "@/lib/client/http";
+import { NOT_BACKED_UP } from "@/lib/domain/backup-coverage";
 
 /**
  * Sauvegarde et restauration complètes.
@@ -10,14 +11,20 @@ import { requestJson } from "@/lib/client/http";
  * explicite, et le serveur exécute l'opération dans une transaction : un fichier
  * refusé ne supprime rien.
  */
-function isCounts(value: unknown): value is { counts: Record<string, number> } {
+interface RestoreReport {
+  readonly counts: Record<string, number>;
+  readonly skipped?: Record<string, number>;
+  readonly warnings?: readonly string[];
+}
+
+function isCounts(value: unknown): value is RestoreReport {
   return typeof value === "object" && value !== null && "counts" in value;
 }
 
 export function BackupPanel({ onRestored }: { onRestored: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [report, setReport] = useState<Record<string, number> | null>(null);
+  const [report, setReport] = useState<RestoreReport | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [file, setFile] = useState<File | null>(null);
 
@@ -44,7 +51,7 @@ export function BackupPanel({ onRestored }: { onRestored: () => void }) {
     setBusy(false);
     setConfirming(false);
     if (result.ok) {
-      setReport(result.data.counts);
+      setReport(result.data);
       onRestored();
     } else {
       setError(result.message);
@@ -97,13 +104,37 @@ export function BackupPanel({ onRestored }: { onRestored: () => void }) {
       )}
 
       {report !== null && (
-        <p className="mt-2.5 rounded-control border border-[#B9E7DC] bg-win-l px-3 py-2 text-[12.5px] text-win-d">
-          Restauration terminée :{" "}
-          {Object.entries(report)
-            .map(([label, count]) => `${count} ${label}`)
-            .join(" · ")}
-          .
-        </p>
+        <>
+          <p className="mt-2.5 rounded-control border border-[#B9E7DC] bg-win-l px-3 py-2 text-[12.5px] text-win-d">
+            Restauration terminée :{" "}
+            {Object.entries(report.counts)
+              .map(([label, count]) => `${count} ${label}`)
+              .join(" · ")}
+            .
+          </p>
+          {/* Ce que la restauration n'a pas su replacer. Avant le jalon 110 ces
+              lignes étaient écartées en silence. */}
+          {report.skipped !== undefined && Object.keys(report.skipped).length > 0 && (
+            <p
+              data-restore-skipped
+              className="mt-2 rounded-control border border-[#F0DFB8] bg-gold-l px-3 py-2 text-[12.5px] leading-relaxed text-[#9A6410]"
+            >
+              <strong>Lignes non replacées :</strong>{" "}
+              {Object.entries(report.skipped)
+                .map(([label, count]) => `${count} ${label}`)
+                .join(" · ")}
+              . Leur fiche d'origine ne figure pas dans ce fichier.
+            </p>
+          )}
+          {(report.warnings ?? []).map((warning) => (
+            <p
+              key={warning}
+              className="mt-2 rounded-control border border-[#F0DFB8] bg-gold-l px-3 py-2 text-[12.5px] leading-relaxed text-[#9A6410]"
+            >
+              {warning}
+            </p>
+          ))}
+        </>
       )}
 
       {error !== null && (
@@ -111,6 +142,27 @@ export function BackupPanel({ onRestored }: { onRestored: () => void }) {
           {error}
         </p>
       )}
+
+      {/*
+        **Ce qu'une restauration ne rend pas, écrit avant de cliquer.**
+
+        La liste vient de `lib/domain/backup-coverage.ts`, la même que celle du
+        test de couverture : une table ajoutée sans décision fait échouer la
+        suite, et une table écartée apparaît ici avec sa conséquence. Une
+        promesse de sauvegarde qu'on ne peut pas lire n'en est pas une.
+      */}
+      <details data-not-backed-up className="mt-3 border-t border-line pt-3">
+        <summary className="cursor-pointer text-[12.5px] font-semibold">
+          Ce qu&apos;une restauration ne rend pas ({NOT_BACKED_UP.length})
+        </summary>
+        <ul className="mt-2 grid gap-1.5">
+          {NOT_BACKED_UP.map((table) => (
+            <li key={table.model} className="text-[12px] leading-relaxed text-muted">
+              <strong className="text-ink">{table.label}</strong> — {table.consequence}
+            </li>
+          ))}
+        </ul>
+      </details>
     </section>
   );
 }
