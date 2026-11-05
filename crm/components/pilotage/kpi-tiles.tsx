@@ -82,12 +82,19 @@ function TileCard({
     "block rounded-card border border-line bg-surface px-3.5 py-3 transition-colors";
 
   if (tile.metric === null) {
-    return <div className={shell}>{body}</div>;
+    // Un taux n'ouvre pas de liste : il n'a pas de « personnes derrière lui »,
+    // il a un numérateur et un dénominateur, qui ont chacun la leur.
+    return (
+      <div data-tile={tile.label} className={shell}>
+        {body}
+      </div>
+    );
   }
 
   return (
     <Link
       href={href(tile.metric)}
+      data-tile={tile.label}
       data-kpi={tile.metric}
       data-count={tile.actual ?? ""}
       className={`${shell} hover:border-brand hover:bg-brand-l/40 focus-visible:ring-2 focus-visible:ring-brand focus-visible:outline-none`}

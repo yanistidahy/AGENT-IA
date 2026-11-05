@@ -17,6 +17,7 @@ import {
   metricResult,
   rateLabel,
   replyRate,
+  slice,
   uncategorisedReplies,
   weeklySeries,
   type Breakdown,
@@ -53,14 +54,20 @@ export default async function PilotagePage({
 
   const data = await readPilotage();
   const all = applyFilters(data.rows, query.filters);
-  const rows = all.filter(
-    (row) =>
-      row.occurredAt.getTime() >= period.start.getTime() &&
-      row.occurredAt.getTime() < period.end.getTime(),
-  );
+  const rows = slice(all, period);
 
   const metric = (key: Metric) => metricResult(all, rows, period, key);
   const week = metric("messages");
+  /*
+    **La cible ne s'affiche que sur la semaine en cours.**
+
+    Elle est hebdomadaire : la comparer au mois écoulé ou à une plage libre de
+    trois jours donnerait un pourcentage qui ne veut rien dire — « 310 % de la
+    cible » sur un mois, « 12 % » sur deux jours. Hors de la semaine courante,
+    la pastille garde son chiffre et perd sa barre, ce qui est le fait.
+  */
+  const weekly = query.periodKey === "semaine";
+  const targetOf = (value: number) => (weekly ? value : null);
   const sort = sortOf(params);
   const dir = dirOf(params);
 
@@ -70,7 +77,7 @@ export default async function PilotagePage({
       label: "Messages envoyés",
       value: String(week.count),
       actual: week.count,
-      target: data.targets.messages,
+      target: targetOf(data.targets.messages),
     },
     {
       metric: "new_contacted",
@@ -100,14 +107,14 @@ export default async function PilotagePage({
       label: "Démos envoyées",
       value: String(metric("demos_sent").count),
       actual: metric("demos_sent").count,
-      target: data.targets.demos,
+      target: targetOf(data.targets.demos),
     },
     {
       metric: "qualified",
       label: "Démos qualifiées",
       value: String(metric("qualified").count),
       actual: metric("qualified").count,
-      target: data.targets.qualified,
+      target: targetOf(data.targets.qualified),
     },
   ];
 

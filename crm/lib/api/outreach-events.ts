@@ -193,14 +193,16 @@ async function countsByType(): Promise<BackfillCounts> {
  * | `reply_received` | `activities` à issue de réponse | toute réponse relevée consigne une interaction (jalon 41) : lire aussi `email_replies` doublerait chaque réponse |
  * | `meeting_booked` | interactions à issue « RDV obtenu » | c'est la définition de `metAt` (jalon 39) |
  * | `meeting_held` | interactions de type réunion ou démo | un rendez-vous tenu est un fait consigné |
+ * | `demo_tested` | clics sur le lien de la démonstration | même identifiant que le chemin vivant, donc aucun doublon |
  * | `customer_won` | affaires gagnées | `closedAt` est la date du fait |
  *
  * Les cinq types restants — `bounce`, `linkedin_invite_sent`,
- * `linkedin_invite_accepted`, `demo_sent`, `demo_tested`, `feedback_received`,
+ * `linkedin_invite_accepted`, `demo_sent`, `feedback_received`,
  * `trial_started` — **n'ont aucune source dans l'historique**, et c'est dit
  * plutôt que rempli : les rebonds ne sont pas stockés (le relevé les écarte,
- * jalon 41) et les quatre autres sont des notions que ce jalon introduit.
- * Leur compte de reprise est donc zéro, ce qui est le fait.
+ * jalon 41), les invitations LinkedIn ne l'ont jamais été comme telles, et les
+ * trois dernières sont des notions que ce jalon introduit. Leur compte de
+ * reprise est donc zéro, ce qui est le fait — et non une estimation.
  *
  * Idempotent : rejouer la reprise ne crée rien, parce que chaque ligne reprise
  * porte un `externalId` déterministe dérivé de sa source.
@@ -232,6 +234,53 @@ export async function backfillOutreachEvents(): Promise<BackfillReport> {
       source: "crm",
       externalId: `send:${send.id}`,
       detail: send.subject,
+    });
+  }
+
+  /*
+    **Les clics déjà enregistrés comptent, eux aussi.**
+
+    Le chemin vivant écrit « démo testée » au clic sur le lien de la
+    démonstration (`recordClick`, jalon 92 pour le clic, 109 pour l'événement).
+    Les clics d'avant ce jalon seraient restés muets : une démo réellement
+    testée la semaine dernière aurait manqué au tableau de bord, et l'écart
+    n'aurait eu aucun endroit où se voir.
+
+    L'identifiant est **exactement celui du chemin vivant**
+    (`demo-tested:<envoi>`) : reprendre un clic déjà consigné ne crée rien, et
+    deux clics du même destinataire ne font pas deux démos testées — il a testé
+    une fois. `kind: "video"` et non `"demo"` : voir le piège des noms dans
+    `recordClick`, où `demo` est le lien de prise de rendez-vous.
+  */
+  const videoClicks = await prisma.emailLinkClick.findMany({
+    where: { kind: "video" },
+    orderBy: { at: "asc" },
+    select: {
+      at: true,
+      emailSend: {
+        select: {
+          id: true,
+          contactId: true,
+          campaignId: true,
+          contact: { select: { companyId: true, owner: true } },
+        },
+      },
+    },
+  });
+  for (const click of videoClicks) {
+    const send = click.emailSend;
+    if (send === null || send.contactId === null) continue;
+    await recordOutreachEvent(prisma, {
+      contactId: send.contactId,
+      companyId: send.contact?.companyId ?? null,
+      campaignId: send.campaignId === "" ? null : send.campaignId,
+      channel: "email",
+      type: "demo_tested",
+      occurredAt: click.at,
+      owner: send.contact?.owner ?? "",
+      source: "crm",
+      externalId: `demo-tested:${send.id}`,
+      detail: "Clic sur le lien de la démonstration",
     });
   }
 

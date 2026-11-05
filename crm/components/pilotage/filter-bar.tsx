@@ -2,8 +2,12 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CHANNEL_LABELS, OUTREACH_CHANNELS } from "@/lib/domain/outreach";
-import { SEGMENTS, SEGMENT_LABELS } from "@/lib/domain/pilotage";
-import { PERIOD_KEYS, PERIOD_LABELS } from "@/lib/api/pilotage";
+import {
+  PERIOD_KEYS,
+  PERIOD_LABELS,
+  SEGMENTS,
+  SEGMENT_LABELS,
+} from "@/lib/domain/pilotage";
 
 /**
  * La barre de filtres du pilotage.

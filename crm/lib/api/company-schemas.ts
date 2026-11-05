@@ -9,6 +9,12 @@ export const createCompanySchema = z.object({
   industry: z.string().trim().optional(),
   loc: z.string().trim().optional(),
   desc: z.string().optional(),
+  /**
+   * Visiteurs mensuels du site de la marque — la seule donnée qui décide du
+   * segment (`segmentOf`, jalon 109). `null` vaut « non renseigné », et ce
+   * n'est pas zéro : zéro affirmerait un site sans visite.
+   */
+  monthlyVisitors: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
 });
 
 export type CreateCompanyInput = z.infer<typeof createCompanySchema>;
@@ -21,6 +27,12 @@ export const updateCompanySchema = z
     industry: z.string().trim().optional(),
     loc: z.string().trim().optional(),
     desc: z.string().optional(),
+    /**
+     * Visiteurs mensuels du site de la marque — la seule donnée qui décide du
+     * segment (`segmentOf`, jalon 109). `null` vaut « non renseigné », et ce
+     * n'est pas zéro : zéro affirmerait un site sans visite.
+     */
+    monthlyVisitors: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "Aucun champ à mettre à jour",

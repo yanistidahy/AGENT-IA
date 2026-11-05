@@ -6,6 +6,7 @@ import {
   applyFilters,
   isMetric,
   metricResult,
+  slice,
   type Metric,
 } from "@/lib/domain/pilotage";
 
@@ -36,11 +37,7 @@ export default async function PilotageListPage({
 
   const data = await readPilotage();
   const all = applyFilters(data.rows, query.filters);
-  const rows = all.filter(
-    (row) =>
-      row.occurredAt.getTime() >= period.start.getTime() &&
-      row.occurredAt.getTime() < period.end.getTime(),
-  );
+  const rows = slice(all, period);
   const result = metricResult(all, rows, period, metric);
 
   const back = new URLSearchParams();

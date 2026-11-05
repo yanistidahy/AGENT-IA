@@ -4,11 +4,13 @@ import { prisma } from "../db";
 import { readEventRows } from "./outreach-events";
 import {
   DEFAULT_TARGETS,
+  PERIOD_KEYS,
   customPeriod,
   parisMonth,
   parisWeek,
   type EventRow,
   type Period,
+  type PeriodKey,
   type PilotageFilters,
   type WeeklyTargets,
 } from "../domain/pilotage";
@@ -25,16 +27,6 @@ import { OUTREACH_CHANNELS } from "../domain/outreach";
  * une pastille annonce 23 au-dessus d'une liste de 21 — l'écart payé aux jalons
  * 49, 78 et 105.
  */
-
-export const PERIOD_KEYS = ["semaine", "semaine-1", "mois", "libre"] as const;
-export type PeriodKey = (typeof PERIOD_KEYS)[number];
-
-export const PERIOD_LABELS: Record<PeriodKey, string> = {
-  semaine: "Cette semaine",
-  "semaine-1": "La semaine dernière",
-  mois: "Ce mois",
-  libre: "Période choisie",
-};
 
 const querySchema = z.object({
   periode: z.enum(PERIOD_KEYS).optional(),

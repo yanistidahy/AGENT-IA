@@ -33,7 +33,6 @@ export function FunnelView({
   readonly toggleHref: string;
   readonly href: (metric: Metric) => string;
 }) {
-  const base = steps[0]?.contactIds.length ?? 0;
   const empty = steps.every((step) => step.contactIds.length === 0);
 
   return (
@@ -58,7 +57,10 @@ export function FunnelView({
         <ol className="space-y-1.5">
           {steps.map((step) => {
             const count = step.contactIds.length;
-            const width = base === 0 ? 0 : Math.max(2, Math.round((count / base) * 100));
+            // La largeur vient de la **part calculée par le domaine**, jamais
+            // d'une division écrite ici : deux divisions finissent par ne plus
+            // dire la même chose, et la garde statique interdit la seconde.
+            const width = step.share === null ? 0 : Math.max(2, Math.round(step.share * 100));
             const metric = DRILL[step.stage];
             const shown = asShare ? rateLabel(step.share) : String(count);
 

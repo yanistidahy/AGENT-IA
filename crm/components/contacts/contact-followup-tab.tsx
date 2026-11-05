@@ -6,6 +6,7 @@ import { Eyebrow, StatusTag } from "@/components/ui/primitives";
 import type { ContactDealSummary } from "@/lib/api/contacts";
 import { money } from "@/lib/format";
 import { LinkDeal, type LinkableDeal } from "./link-deal";
+import { OutreachBox } from "@/components/outreach/outreach-box";
 
 /**
  * L'onglet « Suivi » : ce qui est engagé et ce qui reste à faire.
@@ -79,6 +80,9 @@ export function FollowUpTab({
 
       <LinkDeal contactId={contactId} deals={linkableDeals} onChanged={onChanged} />
       <EnrollBox contactId={contactId} onChanged={onChanged} />
+      {/* Les trois consignations du jalon 109 et le classement des réponses :
+          ils appartiennent au suivi, à côté de la séquence qui les provoque. */}
+      <OutreachBox contactId={contactId} />
     </>
   );
 }

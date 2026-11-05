@@ -110,6 +110,13 @@ export function CompanyDrawer({
             <Row label="Secteur">{company.industry || "—"}</Row>
             <Row label="Taille">{company.size || "—"}</Row>
             <Row label="Localisation">{company.loc || "—"}</Row>
+            {/* « Non renseigné » et non « 0 » : le segment du pilotage se lit
+                ici, et un zéro affirmerait un site sans visite. */}
+            <Row label="Visiteurs / mois">
+              {company.monthlyVisitors === null
+                ? "non renseigné"
+                : company.monthlyVisitors.toLocaleString("fr-FR")}
+            </Row>
             <Row label="Créée le">{formatDate(company.createdAt)}</Row>
           </dl>
 

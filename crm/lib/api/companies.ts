@@ -50,6 +50,8 @@ export interface CompanyRecord {
   readonly industry: string;
   readonly loc: string;
   readonly desc: string;
+  /** Visiteurs mensuels — `null` = non renseigné, ce qui n'est pas zéro. */
+  readonly monthlyVisitors: number | null;
   readonly createdAt: Date;
   readonly contacts: readonly CompanyContactSummary[];
   readonly deals: readonly CompanyDealSummary[];
@@ -108,6 +110,7 @@ function toRecord(row: CompanyRow): CompanyRecord {
     industry: row.industry,
     loc: row.loc,
     desc: row.desc,
+    monthlyVisitors: row.monthlyVisitors,
     createdAt: row.createdAt,
     contacts: row.contacts.map((contact) => ({
       id: contact.id,
@@ -287,6 +290,7 @@ export async function createCompany(input: CreateCompanyInput): Promise<CompanyR
       industry: input.industry ?? "",
       loc: input.loc ?? "",
       desc: input.desc ?? "",
+      monthlyVisitors: input.monthlyVisitors ?? null,
       searchText: companySearchText(input),
       nameKey: companyNameKey(input.name),
     },
@@ -319,6 +323,7 @@ export async function updateCompany(
   if (input.industry !== undefined) data.industry = input.industry;
   if (input.loc !== undefined) data.loc = input.loc;
   if (input.desc !== undefined) data.desc = input.desc;
+  if (input.monthlyVisitors !== undefined) data.monthlyVisitors = input.monthlyVisitors;
 
   const updated = await prisma.company.update({ where: { id }, data, include: companyInclude });
   const row = await prisma.company.update({

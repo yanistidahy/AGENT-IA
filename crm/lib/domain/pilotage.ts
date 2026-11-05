@@ -81,9 +81,40 @@ export interface Period {
   readonly label: string;
 }
 
+/**
+ * Les périodes proposées par la barre de filtres.
+ *
+ * Ce vocabulaire vit dans le **domaine** et non dans le service : la barre de
+ * filtres est un composant client, et importer un module marqué `server-only`
+ * depuis le navigateur fait échouer le build (la garde du jalon 2). Le défaut a
+ * d'ailleurs été attrapé exactement comme cela.
+ */
+export const PERIOD_KEYS = ["semaine", "semaine-1", "mois", "libre"] as const;
+export type PeriodKey = (typeof PERIOD_KEYS)[number];
+
+export const PERIOD_LABELS: Record<PeriodKey, string> = {
+  semaine: "Cette semaine",
+  "semaine-1": "La semaine dernière",
+  mois: "Ce mois",
+  libre: "Période choisie",
+};
+
 export function inPeriod(at: Date, period: Period): boolean {
   const time = at.getTime();
   return time >= period.start.getTime() && time < period.end.getTime();
+}
+
+/**
+ * Les lignes de la période.
+ *
+ * Elle vit ici et non dans la page pour que **aucun chiffre ne se calcule hors
+ * du domaine** — y compris celui-là, qui décide quelles lignes comptent.
+ * `tests/pilotage-source.test.ts` échoue si une page se remet à filtrer :
+ * deux bornages, même écrits avec le même prédicat, laissent la possibilité
+ * d'en appliquer un à la pastille et l'autre à la liste.
+ */
+export function slice(rows: readonly EventRow[], period: Period): EventRow[] {
+  return rows.filter((row) => inPeriod(row.occurredAt, period));
 }
 
 /**
@@ -527,11 +558,58 @@ export function keepRow(row: EventRow, filters: PilotageFilters): boolean {
   return true;
 }
 
+/**
+ * **La campagne d'une réponse est celle du message auquel elle répond.**
+ *
+ * Le journal porte les faits bruts : un envoi connaît sa campagne, une réponse
+ * non — elle naît d'une interaction consignée, et une démo testée à la main
+ * n'appartient à rien. Sans attribution, le tableau « Campagnes côte à côte »
+ * afficherait **0 réponse et 0 %** sur chaque campagne : non pas « rien à
+ * convertir », mais un échec affirmé là où la donnée n'était simplement pas
+ * rattachée. C'est précisément le mensonge que la règle du jalon 20 interdit.
+ *
+ * La règle est donc explicite et unique : un événement sans campagne reçoit
+ * celle du **dernier message parti à cette personne avant lui**. C'est une
+ * attribution, pas un fait : elle vit dans le domaine et **jamais en base**,
+ * pour que le journal reste relisable et qu'un changement de règle n'exige pas
+ * de réécrire des lignes.
+ *
+ * Les lignes sont supposées triées par date croissante, comme `readEventRows`
+ * les rend ; une ligne antérieure au premier message reste hors campagne, ce
+ * qui est le fait.
+ */
+export function attributeCampaigns(rows: readonly EventRow[]): EventRow[] {
+  const last = new Map<string, { id: string; name: string }>();
+  const out: EventRow[] = [];
+  for (const row of [...rows].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())) {
+    if (row.campaignId !== null) {
+      last.set(row.contactId, { id: row.campaignId, name: row.campaignName });
+      out.push(row);
+      continue;
+    }
+    const known = last.get(row.contactId);
+    // Un envoi sans campagne reste sans campagne : il a été écrit hors de
+    // toute campagne, et le lui en attribuer une gonflerait ses chiffres.
+    if (known === undefined || SENT_TYPES.includes(row.type)) {
+      out.push(row);
+      continue;
+    }
+    out.push({ ...row, campaignId: known.id, campaignName: known.name });
+  }
+  return out;
+}
+
+/**
+ * Le filtrage, **et l'attribution de campagne avant lui**.
+ *
+ * Les deux écrans passent par cette seule fonction : ils ne peuvent donc pas
+ * attribuer différemment, ni filtrer sur un tableau que l'autre n'a pas vu.
+ */
 export function applyFilters(
   rows: readonly EventRow[],
   filters: PilotageFilters,
 ): EventRow[] {
-  return rows.filter((row) => keepRow(row, filters));
+  return attributeCampaigns(rows).filter((row) => keepRow(row, filters));
 }
 
 /** Le pourcentage affiché, ou le tiret quand il n'y a rien à convertir. */
@@ -605,11 +683,19 @@ export interface MetricResult {
   readonly byPerson: boolean;
 }
 
-function firstRowPerContact(rows: readonly EventRow[], ids: readonly string[]): EventRow[] {
+/**
+ * Une ligne par personne, prise dans le vivier donné, dans l'ordre d'apparition.
+ *
+ * Le vivier est choisi par appel : pour « ont répondu » ce sont les réponses,
+ * pour « contactées » les messages. Ouvrir « ont répondu » sur le premier
+ * message de chacun afficherait une liste juste dont chaque ligne parlerait
+ * d'autre chose que du chiffre cliqué.
+ */
+function firstRowPerContact(pool: readonly EventRow[], ids: readonly string[]): EventRow[] {
   const wanted = new Set(ids);
   const seen = new Set<string>();
   const picked: EventRow[] = [];
-  for (const row of rows) {
+  for (const row of pool) {
     if (!wanted.has(row.contactId) || seen.has(row.contactId)) continue;
     seen.add(row.contactId);
     picked.push(row);
@@ -617,22 +703,33 @@ function firstRowPerContact(rows: readonly EventRow[], ids: readonly string[]): 
   return picked;
 }
 
+/** Les trois types qui composent une démo qualifiée. */
+const QUALIFYING: readonly OutreachType[] = ["demo_sent", "demo_tested", "feedback_received"];
+
 export function metricResult(
   allRows: readonly EventRow[],
   rows: readonly EventRow[],
   period: Period,
   metric: Metric,
 ): MetricResult {
-  const person = (ids: readonly string[]): MetricResult => ({
+  const label = METRIC_LABELS[metric];
+
+  /**
+   * **Le nombre est la longueur de la liste, par construction.**
+   *
+   * `count` n'est jamais calculé à part : il vaut `picked.length`. C'est ce qui
+   * rend l'item 6 du test d'acceptation vrai sans avoir à y penser — une
+   * pastille et sa liste ne peuvent pas différer, puisqu'il n'y a qu'un seul
+   * nombre. Les jalons 49, 78 et 105 ont payé trois fois pour l'avoir écrit
+   * autrement.
+   */
+  const byPeople = (pool: readonly EventRow[], ids: readonly string[]): MetricResult => {
+    const picked = firstRowPerContact(pool, ids);
+    return { metric, label, rows: picked, count: picked.length, byPerson: true };
+  };
+  const byEvents = (picked: readonly EventRow[]): MetricResult => ({
     metric,
-    label: METRIC_LABELS[metric],
-    rows: firstRowPerContact(rows.length > 0 ? rows : allRows, ids),
-    count: ids.length,
-    byPerson: true,
-  });
-  const events = (picked: readonly EventRow[]): MetricResult => ({
-    metric,
-    label: METRIC_LABELS[metric],
+    label,
     rows: picked,
     count: picked.length,
     byPerson: false,
@@ -640,38 +737,30 @@ export function metricResult(
 
   switch (metric) {
     case "messages":
-      return events(messagesSent(rows));
+      return byEvents(messagesSent(rows));
     case "contacted":
-      return person(peopleMessaged(rows));
-    case "new_contacted": {
-      const ids = newlyContacted(allRows, period);
-      // La liste vient de l'histoire : une personne contactée pour la première
-      // fois dans la période peut l'avoir été hors du filtre de canal courant.
-      return {
-        metric,
-        label: METRIC_LABELS[metric],
-        rows: firstRowPerContact(allRows, ids),
-        count: ids.length,
-        byPerson: true,
-      };
-    }
+      return byPeople(messagesSent(rows), peopleMessaged(rows));
+    case "new_contacted":
+      // Le vivier est l'histoire entière : le premier message d'une personne
+      // contactée pour la première fois dans la période peut être parti par un
+      // canal que le filtre courant écarte, et la ligne doit tout de même
+      // pouvoir se montrer.
+      return byPeople(messagesSent(allRows), newlyContacted(allRows, period));
     case "replies":
-      return person(peopleReplied(rows));
+      return byPeople(replies(rows), peopleReplied(rows));
     case "positive":
-      return person(peoplePositive(rows));
+      return byPeople(positiveReplies(rows), peoplePositive(rows));
     case "demos_sent":
-      return events(demosSent(rows));
+      return byEvents(demosSent(rows));
     case "demos_tested":
-      return events(demosTested(rows));
-    case "qualified": {
-      const ids = qualifiedDemos(allRows, period);
-      return {
-        metric,
-        label: METRIC_LABELS[metric],
-        rows: firstRowPerContact(allRows, ids),
-        count: ids.length,
-        byPerson: true,
-      };
-    }
+      return byEvents(demosTested(rows));
+    case "qualified":
+      // La qualification se juge sur l'histoire (une démo envoyée la semaine
+      // dernière, un retour reçu cette semaine qualifient cette semaine-ci),
+      // donc le vivier l'est aussi.
+      return byPeople(
+        allRows.filter((row) => QUALIFYING.includes(row.type)),
+        qualifiedDemos(allRows, period),
+      );
   }
 }

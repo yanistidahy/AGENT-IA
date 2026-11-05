@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 109 | **« Pilotage » : un seul tableau de bord, sur un seul journal** : « Ma performance », « Rapports », l'entonnoir et les statistiques d'« Emails » et les pastilles de l'accueil sont **supprimés** — dix-neuf fichiers, deux routes redirigées en 307 —, et **aucune ligne d'envoi, de réponse, de clic, d'interaction ou de tâche n'a été touchée** (comptes relevés avant la migration et après la reprise, identiques). À la place, une table d'événements de prospection, une ligne par fait, unique par `(source, externalId)` pour la synchronisation lemlist à venir ; **chaque chiffre vient d'une fonction de `lib/domain/pilotage.ts`**, et une garde statique échoue si une page se remet à compter. Deux règles qui structurent tout : les emails se comptent dans le journal des envois et les autres canaux dans les interactions, **jamais les deux** (sinon chaque email vaudrait deux messages) ; et une pastille et la liste qu'elle ouvre sortent du **même appel**, le nombre affiché étant la longueur de cette liste. Les ouvertures ne sont plus un indicateur | **livré, à valider** |
 | 108 | **L'export des contacts dit où en est chaque prospect** : l'export du jalon 3 est **étendu, pas doublé** — dix colonnes dérivées après les quinze colonnes de saisie, dont le statut affiché, le dernier canal, la campagne en cours, « a répondu », « prospect chaud » et les moyens de contact disponibles. Chacune vient de la fonction qui la décide déjà ailleurs (`resolveDisplayStatus`, `readHotProspects`, `latestReply`, `groupLabel`, `ACTIVITY_LABELS`) : aucune seconde définition de statut. Dates en JJ/MM/AAAA, BOM UTF-8, point-virgule, et **toute cellule qui ouvrirait une formule est désamorcée** dans l'écrivain CSV, donc sur les deux exports. Un défaut de ma propre première version, mesuré puis corrigé : `nextUrl.origin` exportait `http://0.0.0.0:3312`, un lien que personne ne peut ouvrir | **livré, à valider** |
 | 106 | **Une réponse arrête les relances, par tous les chemins** : vérification des quatre chemins, cas par cas, qui a trouvé **un défaut réel et l'a pris en flagrant délit** — une relance est réellement partie à une fiche dont l'inscription portait déjà « Le contact a répondu ». Deux causes, mesurées : la borne de recherche était **exclusive sur une date à la seconde** (envoi à `15:46:31.398`, réponse datée `15:46:31`, soit 398 ms avant l'envoi auquel elle répond), et le **fait relevé** (`EmailReply`) n'était lu par aucun chemin d'envoi. Plus deux états que l'envoi ne regardait pas : une inscription arrêtée et un départ écarté restaient envoyables par leur identifiant. Un seul prédicat de domaine (`lib/domain/reply-stop.ts`) sert désormais la composition, la file, l'envoi manuel et l'ordonnanceur, et une garde statique échoue si un chemin cesse de l'appeler | **livré, à valider** |
 | 105 | **L'écran Tâches rangé en onglets** : six onglets mêlant trois natures d'objet deviennent **quatre questions sur une seule** — Aujourd'hui, Appels, À venir, Terminées —, plus un filtre par personne qui remplace le « Vos tâches » qui mentait ; les départs, les réponses et les prospects chauds passent en **bandeaux** menant là où le travail se fait ; une pastille et sa liste sortent désormais du **même appel** (`tabView`), donc aucun ordre d'appel ne peut les séparer ; le canal d'une tâche devient une colonne, saisie à la création, avec le téléphone composable et « Appel passé » qui **consigne autant qu'il coche** ; et une réponse relevée crée une tâche « Répondre à… », une seule, jamais recréée | **livré, à valider** |
@@ -15747,3 +15748,282 @@ vocabulaire aurait été la seconde définition que ce jalon s'interdit.
 **L'apostrophe de désamorçage est visible** dans un tableur qui lit un CSV — voir
 plus haut. Un fichier `.xlsx` permettrait de marquer la cellule comme texte sans
 rien ajouter à sa valeur ; c'est un autre format, et un autre jalon.
+
+## Jalon 109 — « Pilotage » : un seul tableau de bord, sur un seul journal
+
+### Ce qui a été retiré, fichier par fichier
+
+Quatre surfaces de mesure coexistaient, chacune avec ses propres additions. Le
+reproche était juste : **elles pouvaient diverger, donc elles divergeaient**, et
+plus personne ne savait laquelle croire.
+
+| Retiré | Ce que c'était |
+|---|---|
+| `app/(crm)/performance/page.tsx` | « Ma performance » |
+| `app/(crm)/rapports/page.tsx` | « Rapports » |
+| `components/performance/` (5 fichiers) | cartes, filtres, barres empilées, régularité, tableau par propriétaire |
+| `components/reports/` (2 fichiers) | blocs prospection et flux commercial |
+| `components/charts/` (3 fichiers) | barres, courbe, entonnoir, état vide — SVG écrits à la main |
+| `components/dashboard/{header,prospecting,funnel,kpi-card}.tsx` | pastilles de revenu, cartes de prospection, entonnoir, « Ma semaine » |
+| `components/emails/{email-charts,signatory-table,dm-lift-block}.tsx` | graphiques, tableau par signataire, comparaison DM + email |
+| `lib/api/{reports,performance,dm-lift}.ts` | trois services d'agrégation |
+| `lib/domain/{performance,dm-lift,funnel,kpi-delta}.ts` | leurs règles de calcul |
+| `readEmailStats`, `readProspecting`, `readFunnel`, `readWeek` | les quatre lectures de statistiques |
+
+`/performance` et `/rapports` **redirigent en 307** vers `/pilotage`. La
+redirection est déclarée dans `next.config.ts` et non dans le middleware, pour
+qu'elle s'applique **avant** le verrou d'espace : un visiteur non connecté
+arrive sur `/login?next=/pilotage`, donc à l'endroit qu'il voulait. `permanent:
+false` — un 308 se met en cache sans péremption, et ces chemins pourraient
+resservir.
+
+**Ce qui est resté, et pourquoi :** `readFunnelFacts` sert encore l'entonnoir
+**d'une campagne**, qui n'a pas été retiré — le module reste, amputé de
+`readEmailStats`, et `FunnelRow` déménage dans `components/campaigns/`, son seul
+appelant. `lib/api/prospecting.ts` reste aussi : le **conseil** le lit
+(`briefing.ts`, `reads-crm.ts`), et ce n'est pas un écran de mesure. Tous les
+bandeaux opérationnels sont intacts — réponses non rapprochées, sauvegarde en
+retard, planificateur muet, relevé en panne, plafond d'envoi, budget. Un
+bandeau n'est pas un indicateur : c'est une panne à réparer.
+
+**Aucune ligne n'a été supprimée en base.** Les comptes des six tables de faits
+ont été relevés sur une base migrée jusqu'au jalon 108, puis après les deux
+migrations de ce jalon, puis après la reprise : **identiques les trois fois**
+(22 envois, 2 réponses relevées, 3 clics, 8 interactions, 3 tâches, 1 affaire).
+Les deux anciennes colonnes d'objectifs hebdomadaires ne sont pas supprimées non
+plus : leur écran est parti, les supprimer est irréversible et ne rapporte rien.
+
+### Le journal des événements de prospection
+
+```
+prisma/migrations/52_outreach_events/   table + visiteurs mensuels, rien de supprimé
+prisma/migrations/53_pilotage_targets/  trois cibles hebdomadaires
+lib/domain/outreach.ts                  le vocabulaire : 6 canaux, 12 types, 7 catégories
+lib/domain/pilotage.ts                  toutes les définitions, pures
+lib/api/outreach-events.ts              l'unique écrivain, la reprise, la lecture
+lib/api/manual-events.ts                les trois consignations à la main
+lib/api/reply-category.ts               classer une réponse
+lib/api/pilotage.ts                     ce que l'écran reçoit : des lignes, aucune addition
+app/(crm)/pilotage/                     l'écran, et la liste derrière chaque nombre
+components/pilotage/                    pastilles, graphique, entonnoir, tableaux, filtres
+tests/pilotage-source.test.ts           la garde : aucun chiffre calculé hors du domaine
+```
+
+`OutreachEvent` porte une ligne par fait : contact, société, campagne
+(nullable), canal, type, instant, propriétaire, source, `externalId`.
+**`@@unique([source, externalId])`** est la déduplication de la synchronisation
+lemlist à venir : deux passages posant le même identifiant produisent une ligne,
+et `recordOutreachEvent` **avale la `P2002`** au lieu de lever. C'est la posture
+d'`autoKey` (jalon 8) — la base tranche, pas une vérification applicative que
+deux appels simultanés contournent.
+
+**Les six canaux sont exactement ceux de lemlist** (`email`,
+`linkedin_invite`, `linkedin_message`, `whatsapp`, `call`, `other`). Instagram,
+qui est un vrai canal du produit depuis le jalon 48, tombe donc dans `other`
+**en le disant** dans `detail`. Ajouter un septième canal que la synchronisation
+ne connaît pas se paierait au jalon suivant.
+
+#### La règle qui structure tout le module : aucun double compte
+
+Un email envoyé depuis le CRM laisse **deux** traces depuis le jalon 32 : une
+ligne dans `email_sends` et une interaction de type `email`. Écrire un événement
+des deux côtés doublerait chaque message envoyé — faux de 100 %, sans qu'aucun
+test ne rougisse.
+
+**Les emails viennent du journal des envois, les autres canaux des
+interactions.** `eventForActivity` rend `null` pour `email` et pour `note` (une
+note n'est pas une touche), et un test unitaire fixe ces deux refus.
+
+Le même raisonnement a fait **retirer une source** de la reprise que j'avais
+d'abord écrite : lire `email_replies` **et** les interactions à issue de réponse
+aurait écrit deux `reply_received` pour une seule réponse, puisque toute réponse
+relevée consigne déjà une interaction (jalon 41). Les interactions sont donc la
+seule source des réponses, dans le chemin vivant comme dans la reprise.
+
+#### La reprise, source par source
+
+| Type | Source | Compte obtenu |
+|---|---|---|
+| `message_sent` | `email_sends` à fiche connue, plus les interactions d'appel, LinkedIn et DM | 25 |
+| `reply_received` | interactions à issue de réponse (`ANSWERED_OUTCOMES`) | 4 |
+| `meeting_booked` | interactions à issue « RDV obtenu » | 1 |
+| `meeting_held` | interactions de type réunion ou démo | 1 |
+| `demo_tested` | clics sur le lien de la démonstration, dédoublonnés par envoi | 1 |
+| `customer_won` | affaires gagnées à contact connu | 1 |
+
+Chaque compte a été recoupé contre une requête SQL sur la table source :
+**six sur six**. Les deux réponses relevées dans `email_replies` ne sont
+volontairement pas comptées (voir ci-dessus) ; le clic de type `demo` ne compte
+pas non plus — `demo` est le lien de **prise de rendez-vous**, `video` est la
+démonstration elle-même, et prendre le premier au mot aurait compté une
+réservation de créneau comme un essai du produit. L'envoi orphelin (fiche
+supprimée) ne produit aucun événement : il n'y a personne à qui l'attribuer.
+Rejouée, la reprise écrit **zéro** — chaque ligne reprise porte un `externalId`
+déterministe.
+
+Les cinq types sans source dans l'historique — `bounce`,
+`linkedin_invite_sent`, `linkedin_invite_accepted`, `demo_sent`,
+`feedback_received`, `trial_started` — valent **zéro, et c'est dit** plutôt que
+rempli d'une estimation.
+
+### Les définitions, une fonction chacune
+
+| Chiffre | Règle | Pourquoi |
+|---|---|---|
+| Messages envoyés | `message_sent` + `linkedin_invite_sent`, **en événements** | trois relances sont trois touches : du travail fourni trois fois |
+| Nouvelles personnes | celles dont le **premier** message tombe dans la période | demande l'histoire entière, sinon une fiche approchée en septembre paraîtrait neuve |
+| Réponses | personnes ayant répondu | relancer trois fois quelqu'un qui répond une fois ne fait pas trois réponses |
+| Taux de réponse | personnes qui ont répondu / personnes **contactées dans la période** | une relance est une tentative ; `null` sur zéro contacté |
+| Démo envoyée | `demo_sent` | consigné à la main |
+| Démo testée | `demo_tested` | un clic sur le lien de la démonstration, ou la main |
+| Démo qualifiée | envoyée **et** testée **et** retour reçu, datée du **dernier** des trois | dater de l'envoi ferait changer le chiffre d'une semaine déjà close |
+| Réponse positive | catégorie `interested`, et elle seule | « pas maintenant » est une réponse, pas un succès |
+
+**Les ouvertures n'apparaissent nulle part.** Elles continuent d'être
+enregistrées — rien n'est supprimé en base, et elles restent lisibles ligne à
+ligne sur une campagne —, mais elles surestiment par construction (jalons 37 et
+43) et ne pilotent plus rien. La garde statique échoue si `openCount` ou
+`firstOpenAt` réapparaît dans un fichier du pilotage.
+
+**Les catégories de réponse se saisissent, jamais ne se devinent.** Sept
+valeurs, posées à la main sur la réponse depuis la fiche. Les réponses non
+classées sont **comptées comme telles** : elles entrent dans les réponses et
+dans le taux, dans aucune catégorie, et l'écran dit combien il en reste à
+classer. Pour les réponses reprises, la catégorie est une **traduction** de
+l'issue choisie à la main dans le formulaire d'interaction — `later` devient
+« pas maintenant » —, et `replied` reste sans catégorie : le relevé IMAP ne lit
+que des en-têtes, il sait qu'il y a une réponse et rien de plus.
+
+**La campagne d'une réponse est celle du message auquel elle répond.** Le
+journal porte les faits bruts, et une réponse naît d'une interaction qui ne
+connaît aucune campagne. Sans attribution, « Campagnes côte à côte » affichait
+**0 réponse et 0 %** sur chaque ligne : non pas « rien à convertir », mais un
+échec affirmé là où la donnée n'était pas rattachée — exactement le mensonge que
+la règle du jalon 20 interdit. `attributeCampaigns` donne donc à un événement
+sans campagne celle du dernier message parti à cette personne avant lui. C'est
+une **attribution, pas un fait** : elle vit dans le domaine et jamais en base,
+et elle est appliquée **dans `applyFilters`**, la seule porte que les deux écrans
+franchissent — deux attributions écrites séparément finiraient par différer.
+
+Le segment vient d'un champ **visiteurs mensuels** sur la société : petite
+marque de 2 000 à 10 000, grande marque à partir de 15 000. Le creux entre
+10 000 et 15 000 n'est rangé dans aucun des deux — forcer ces marques
+inventerait une appartenance que personne n'a décidée. `null` vaut « non
+renseigné », et ce n'est pas zéro : zéro affirmerait un site sans visite.
+L'écran dit combien de sociétés n'ont pas le chiffre.
+
+### Un nombre, et la liste qu'il ouvre
+
+`metricResult` rend les deux : la pastille affiche `rows.length`, le clic ouvre
+`rows`. **`count` n'est jamais calculé à part** — il vaut la longueur de la
+liste, donc aucun ordre d'appel ne peut les séparer. C'est l'écart payé trois
+fois (jalons 49, 78, 105), fermé par construction et non par vigilance.
+
+La page `/pilotage/liste` **refait exactement le même chemin** : mêmes filtres,
+même période, même appel. Et la liste ouverte parle du chiffre cliqué — « ont
+répondu » montre des réponses, pas les premiers messages de ces personnes.
+
+### La garde statique
+
+`tests/pilotage-source.test.ts` lit la source à l'exécution et échoue si un
+écran du pilotage additionne (`.reduce(`), dédoublonne (`new Set(`), interroge
+la base (`prisma.`), borne lui-même la période (`.filter(` dans une page) ou
+compose un pourcentage (`* 100` dans une page). Les vues ont droit à de la
+géométrie — une largeur de barre est du dessin, pas un chiffre —, et la largeur
+de l'entonnoir vient d'ailleurs de la part calculée par le domaine.
+
+Elle vérifie aussi que les anciens écrans n'existent plus **sur le disque**, que
+les deux redirections sont déclarées, et qu'aucune ouverture n'entre dans le
+pilotage. **Éprouvée en réintroduisant les deux défauts exacts** — un
+`all.filter(...)` et un `rows.reduce(...)` dans la page — : deux tests tombent
+en nommant le fichier et le motif.
+
+### Jalon 109 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16**, sur une base construite migration par
+migration jusqu'au jalon 108, puis migrée, peuplée, reprise, et cliquée dans un
+Chromium réel sur le serveur standalone de production :
+
+- **migrations fidèles au schéma** : les deux SQL écrits à la main appliqués à
+  la main, puis `migrate diff` renvoyant « This is an empty migration » ;
+- **rien n'est supprimé** : 22 envois, 2 réponses relevées, 3 clics, 8
+  interactions, 3 tâches, 1 affaire — identiques avant la migration, après la
+  migration et après la reprise ;
+- **reprise recoupée** : les six types comptés contre une requête SQL sur la
+  table source, six égalités ; rejouée, **zéro écriture** ;
+- **trois relances, un contact** : 3 messages, 1 personne contactée, 1 nouvelle
+  personne — les trois chiffres distincts sur la même fiche ;
+- **démo qualifiée** : « Démo envoyée » saisie + le clic réel sur le lien de la
+  démonstration + « Retour reçu » → la pastille passe de 0 à 1 ; « Retour reçu »
+  retiré → retour à 0. Et **annuler « Démo testée » ne retire pas le clic** :
+  l'annulation ne supprime que les lignes de source `manual` ;
+- **cible hebdomadaire** : 100 → 20 dans `/reglages` déplace la pastille
+  (« / 20 ») **et** la ligne du graphique (`data-target-line="20"`) ;
+- **un nombre = sa liste** : vérifié au clic sur cinq pastilles, une marche de
+  l'entonnoir et une cellule de tableau, en comptant les lignes **dans le DOM** —
+  le flux RSC répète le balisage dans la page, donc tout comptage au `grep`
+  double ;
+- **dédoublonnage lemlist** : deux insertions de `(lemlist, lml-42)` → la
+  contrainte refuse la seconde, une seule ligne en base, et
+  `recordOutreachEvent` rend `false` au lieu de lever ;
+- **période vide** : une plage libre de 2024 affiche « Aucune donnée sur cette
+  période » et **aucune pastille** — jamais un zéro qui ressemble à un résultat ;
+- **au clic, avec `reachable()`** : barre de filtres, six pastilles, entonnoir,
+  bascule nombres/pourcentages, graphique, tableaux, et les anciennes adresses
+  qui atterrissent sur `/pilotage` ; aucune erreur de console ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (1957 tests) verts.
+
+**Les chiffres relevés ne sont pas ceux de la production.** Sur la base
+fabriquée pour cette recette — 12 sociétés, 24 contacts, 22 envois sur six
+semaines —, la semaine du 2 au 8 novembre 2026 affiche 18 messages, 10 nouvelles
+personnes, 13 personnes contactées, 4 réponses (31 %), 2 réponses positives, et
+un entonnoir 13 → 4 → 2 → 1 démo testée → 1 client. Les deux campagnes rendent
+33 % et 29 % de taux de réponse, les petites marques 40 % contre 50 % aux
+grandes. Ce sont des fiches inventées : seule la base de Yanis dira ce que
+l'écran vaut.
+
+### Jalon 109 — ce qui ne l'est pas
+
+**Le produit n'a pas de thème sombre, et ce jalon ne lui en donne pas un.**
+Seule la coquille du conseil est sombre (jalon 15) ; les douze autres écrans
+sont clairs, et leurs contrastes sont mesurés dans ce fichier pour un fond
+blanc. L'écran a donc été vérifié sous les **deux préférences système**
+(`prefers-color-scheme`), où il reste identique et atteignable — ce qui est la
+vérité, pas la promesse. Livrer un vrai thème sombre demanderait de redéfinir
+les jetons de `@theme`, de remesurer les quatorze paires de contraste et de
+reprendre chaque écran : c'est un jalon, pas une case à cocher dans celui-ci.
+
+**Les invitations LinkedIn n'ont pas encore de chemin d'écriture.**
+`linkedin_invite_sent` et `linkedin_invite_accepted` existent dans le
+vocabulaire parce que la synchronisation lemlist les apportera, et parce que
+« messages envoyés » les compte déjà. Aujourd'hui, rien dans le CRM ne les
+écrit : une invitation consignée comme interaction LinkedIn devient un
+`message_sent` de canal `linkedin_message`. Le compte est donc juste, la
+distinction invitation/message ne l'est pas encore.
+
+**`trial_started` n'a aucune source.** La marche « essai démarré » de
+l'entonnoir affiche donc toujours zéro, en gris et sans lien — elle est là parce
+que le propriétaire du produit l'a demandée dans l'entonnoir, et elle attend un
+geste qui l'écrive.
+
+**L'attribution de campagne est une règle, pas une mesure.** Une réponse arrivée
+après deux campagnes successives est attribuée à la dernière. C'est le choix le
+plus défendable sur les faits dont on dispose ; ce n'est pas une certitude, et
+c'est pour cela qu'elle vit dans le domaine et non en base — la changer ne
+demandera pas de réécrire une ligne.
+
+**Une restauration perd le rattachement aux campagnes.** Les campagnes ne font
+pas partie de la sauvegarde JSON (elles traînent derrière elles les boîtes, les
+séquences, les étapes et les variantes) ; un événement restauré pointant vers
+une campagne inexistante violerait la clé étrangère, donc `restoreBackup` pose
+`campaignId: null`. Les **33 événements** d'une base restaurée reviennent donc
+tous, avec leur canal, leur type, leur date et leur personne — mais « Campagnes
+côte à côte » les range tous sous « Hors campagne », ce qui affirme quelque
+chose de faux. Vérifié et mesuré : export, suppression des 33 lignes,
+restauration, 33 lignes de retour, toutes sans campagne. Le réparer demande de
+sauvegarder les campagnes, ce qui est un jalon à soi seul.
+
+**La reprise écrit ligne par ligne**, sans lot. À vingt-deux envois c'est
+instantané ; à cent mille, la requête HTTP dépasserait le délai du proxy. C'est
+la limite nommée au jalon 12 pour le rattrapage des statuts, et elle vaut ici
+pour les mêmes raisons.
