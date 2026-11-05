@@ -15986,17 +15986,24 @@ Chromium réel sur le serveur standalone de production :
 - `npm run build`, `npx tsc --noEmit`, `npx vitest run` (1957 tests) et
   `npm run e2e` (**130 tests, 35 fichiers**) verts.
 
-**Cinq tests de navigateur rouges d'abord, et aucun n'était un défaut du
+**Six tests de navigateur rouges d'abord, et aucun n'était un défaut du
 produit** — c'est la leçon de méthode de ce jalon. Deux venaient de ma propre
 recette : j'avais rejoué une restauration sur la base de test, ce qui avait
 orphelin les envois (voir plus bas), et la fiche de démonstration n'avait donc
 plus de clic. Deux autres attendaient dans la base des fiches de la recette du
 jalon 108 — une société accentuée, une société nommée comme une formule — que
-mon jeu de données n'avait pas. **Un seul était un vrai défaut, et il était
-dans mon test** : il lisait le compte de la première cellule et cliquait le
-premier lien, qui n'appartiennent pas à la même ligne dès qu'une ligne n'a pas
-de lien (« Hors campagne » n'en a pas). Corrigé en ne regardant que les
-cellules qui en portent un.
+mon jeu de données n'avait pas. **Les deux derniers étaient de vrais défauts,
+et ils étaient dans mes tests** :
+
+- l'un lisait le compte de la **première cellule** et cliquait le **premier
+  lien**, qui n'appartiennent pas à la même ligne dès qu'une ligne n'a pas de
+  lien (« Hors campagne » n'en a pas) ;
+- l'autre **cliquait une bascule sans regarder où elle était**. Au premier
+  passage les trois faits étaient absents, donc le clic les posait ; au second,
+  « Démo envoyée » était déjà posée et le clic la **retirait**. C'est le piège
+  propre aux interrupteurs, et un test qui ne passe qu'une fois ne prouve rien :
+  il part maintenant d'un état qu'il a lui-même établi, et il passe deux fois
+  de suite.
 
 **Les chiffres relevés ne sont pas ceux de la production.** Sur la base
 fabriquée pour cette recette — 12 sociétés, 24 contacts, 22 envois sur six

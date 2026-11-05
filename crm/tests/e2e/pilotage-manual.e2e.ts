@@ -27,6 +27,33 @@ if (!available) {
   console.warn("[e2e] consignations manuelles ignorées : Chromium, E2E_PASSWORD ou E2E_CONTACT_CLICKED manquant");
 }
 
+/** Ouvre la fiche sur son onglet « Suivi », là où vivent les trois bascules. */
+async function openFollowUp(page: Session["page"], contactId: string): Promise<void> {
+  await page.goto(`${BASE_URL}/contacts?lifecycle=all&fiche=${contactId}`, {
+    waitUntil: "domcontentloaded",
+  });
+  await page.getByRole("tab", { name: /Suivi/ }).click();
+  await page.locator("[data-outreach-box]").scrollIntoViewIfNeeded();
+}
+
+/**
+ * Pose une bascule à l'état voulu, **en regardant d'abord où elle est**.
+ *
+ * Cliquer sans regarder retire ce qui était déjà posé : c'est le piège propre
+ * aux interrupteurs, et il a rendu ce test rouge au second passage.
+ */
+async function setToggle(page: Session["page"], type: string, want: boolean): Promise<void> {
+  const button = page.locator(`[data-manual="${type}"]`);
+  await expect
+    .poll(async () => button.getAttribute("data-on"), { timeout: 15_000 })
+    .toMatch(/^[01]$/);
+  const wanted = want ? "1" : "0";
+  if ((await button.getAttribute("data-on")) === wanted) return;
+  await button.scrollIntoViewIfNeeded();
+  await button.click();
+  await expect.poll(async () => button.getAttribute("data-on"), { timeout: 15_000 }).toBe(wanted);
+}
+
 async function qualifiedCount(session: Session): Promise<number> {
   const { page } = session;
   await page.goto(`${BASE_URL}/pilotage`, { waitUntil: "domcontentloaded" });
@@ -49,12 +76,16 @@ describeBrowser("consigner une démo à la main", () => {
 
   it("qualifie la fiche avec les trois faits, et la déqualifie en retirant le retour", async () => {
     const { page } = session;
-    const before = await qualifiedCount(session);
 
-    await page.goto(`${BASE_URL}/contacts?lifecycle=all&fiche=${contactId}`, {
-      waitUntil: "domcontentloaded",
-    });
-    await page.getByRole("tab", { name: /Suivi/ }).click();
+    // **Partir d'un état connu.** Un interrupteur se renverse : cliquer sans
+    // regarder l'état le **retire** quand il était déjà posé. Le test tombait
+    // ainsi au second passage — défaut du test, pas du produit, et le piège
+    // propre aux bascules.
+    await openFollowUp(page, contactId);
+    for (const type of ["demo_sent", "feedback_received"]) await setToggle(page, type, false);
+
+    const before = await qualifiedCount(session);
+    await openFollowUp(page, contactId);
 
     const box = page.locator("[data-outreach-box]");
     await box.scrollIntoViewIfNeeded();
@@ -71,25 +102,15 @@ describeBrowser("consigner une démo à la main", () => {
       const button = page.locator(`[data-manual="${type}"]`);
       await button.scrollIntoViewIfNeeded();
       expect(await reachable(button), type).toBe(true);
-      await button.click();
-      await expect
-        .poll(async () => button.getAttribute("data-on"), { timeout: 15_000 })
-        .toBe("1");
+      await setToggle(page, type, true);
     }
 
     expect(await qualifiedCount(session)).toBe(before + 1);
 
     // Retirer le retour retire la qualification — par construction, pas par une
     // seconde règle : `qualifiedAt` exige les trois.
-    await page.goto(`${BASE_URL}/contacts?lifecycle=all&fiche=${contactId}`, {
-      waitUntil: "domcontentloaded",
-    });
-    await page.getByRole("tab", { name: /Suivi/ }).click();
-    const feedback = page.locator('[data-manual="feedback_received"]');
-    await feedback.scrollIntoViewIfNeeded();
-    await expect.poll(async () => feedback.getAttribute("data-on"), { timeout: 15_000 }).toBe("1");
-    await feedback.click();
-    await expect.poll(async () => feedback.getAttribute("data-on"), { timeout: 15_000 }).toBe("0");
+    await openFollowUp(page, contactId);
+    await setToggle(page, "feedback_received", false);
 
     expect(await qualifiedCount(session)).toBe(before);
   });
@@ -100,10 +121,7 @@ describeBrowser("consigner une démo à la main", () => {
    */
   it("ne retire pas une démo testée par un vrai clic", async () => {
     const { page } = session;
-    await page.goto(`${BASE_URL}/contacts?lifecycle=all&fiche=${contactId}`, {
-      waitUntil: "domcontentloaded",
-    });
-    await page.getByRole("tab", { name: /Suivi/ }).click();
+    await openFollowUp(page, contactId);
 
     const tested = page.locator('[data-manual="demo_tested"]');
     await tested.scrollIntoViewIfNeeded();
@@ -120,10 +138,7 @@ describeBrowser("consigner une démo à la main", () => {
     const target = process.env.E2E_CONTACT_REPLIED ?? "";
     if (target === "") return;
 
-    await page.goto(`${BASE_URL}/contacts?lifecycle=all&fiche=${target}`, {
-      waitUntil: "domcontentloaded",
-    });
-    await page.getByRole("tab", { name: /Suivi/ }).click();
+    await openFollowUp(page, target);
 
     const select = page.locator("[data-reply] [data-category]").first();
     await select.scrollIntoViewIfNeeded();
