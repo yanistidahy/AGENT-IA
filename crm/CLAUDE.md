@@ -16044,6 +16044,17 @@ plus défendable sur les faits dont on dispose ; ce n'est pas une certitude, et
 c'est pour cela qu'elle vit dans le domaine et non en base — la changer ne
 demandera pas de réécrire une ligne.
 
+**Un avertissement d'hydratation vu une fois, jamais reproduit.** Sur l'un des
+passages complets de la suite de navigateur, la page a journalisé une erreur
+React 418 — « le HTML rendu par le serveur ne correspond pas au client ».
+Elle n'est réapparue ni au passage suivant (35 fichiers, 130 tests verts), ni
+en rouvrant une à une les six pages de la session sur **la base exacte** qui
+l'avait produite, ni en relançant le fichier seul. Je ne sais donc pas la
+nommer, et je préfère l'écrire que la taire : la cause la plus probable est une
+navigation déclenchée par le test avant la fin de l'hydratation — la suite
+clique vite et n'attend que `domcontentloaded`. Si elle revient, c'est par là
+qu'il faut commencer.
+
 **Une restauration orpheline le journal des envois — défaut antérieur, trouvé
 ici.** `email_sends` ne fait pas partie de la sauvegarde, mais `restoreBackup`
 supprime et recrée tous les contacts ; `EmailSend.contactId` étant en
