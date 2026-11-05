@@ -363,6 +363,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 110 | **Une sauvegarde qui rend les envois avec leurs contacts** : inventaire d'abord — 47 modèles, 17 sauvegardés, **30 non couverts** —, puis la cause nommée. La restauration **garde** les identifiants (`createMany` porte `id`) ; le défaut n'était donc pas une régénération mais un trou de couverture : `contact.deleteMany()` déclenche les cascades et les `SetNull` de tables absentes du fichier, et rien ne les rend ensuite. Quatorze tables entrent dans la sauvegarde, dont le journal des envois, les réponses, les clics, les campagnes, les inscriptions et les **départs composés** (du texte payé au modèle). Mesuré : base vidée entièrement puis restaurée, **129 rattachements identiques ligne à ligne**, et la reprise du jalon 109 rejouée re-dérive **33 événements contre 11 avant**. Une ligne non replaçable est désormais **comptée et dite** ; la garde passe des colonnes aux **tables**, donc une table nouvelle ne peut plus entrer sans décision écrite | **livré, à valider** |
 | 109 | **« Pilotage » : un seul tableau de bord, sur un seul journal** : « Ma performance », « Rapports », l'entonnoir et les statistiques d'« Emails » et les pastilles de l'accueil sont **supprimés** — dix-neuf fichiers, deux routes redirigées en 307 —, et **aucune ligne d'envoi, de réponse, de clic, d'interaction ou de tâche n'a été touchée** (comptes relevés avant la migration et après la reprise, identiques). À la place, une table d'événements de prospection, une ligne par fait, unique par `(source, externalId)` pour la synchronisation lemlist à venir ; **chaque chiffre vient d'une fonction de `lib/domain/pilotage.ts`**, et une garde statique échoue si une page se remet à compter. Deux règles qui structurent tout : les emails se comptent dans le journal des envois et les autres canaux dans les interactions, **jamais les deux** (sinon chaque email vaudrait deux messages) ; et une pastille et la liste qu'elle ouvre sortent du **même appel**, le nombre affiché étant la longueur de cette liste. Les ouvertures ne sont plus un indicateur | **livré, à valider** |
 | 108 | **L'export des contacts dit où en est chaque prospect** : l'export du jalon 3 est **étendu, pas doublé** — dix colonnes dérivées après les quinze colonnes de saisie, dont le statut affiché, le dernier canal, la campagne en cours, « a répondu », « prospect chaud » et les moyens de contact disponibles. Chacune vient de la fonction qui la décide déjà ailleurs (`resolveDisplayStatus`, `readHotProspects`, `latestReply`, `groupLabel`, `ACTIVITY_LABELS`) : aucune seconde définition de statut. Dates en JJ/MM/AAAA, BOM UTF-8, point-virgule, et **toute cellule qui ouvrirait une formule est désamorcée** dans l'écrivain CSV, donc sur les deux exports. Un défaut de ma propre première version, mesuré puis corrigé : `nextUrl.origin` exportait `http://0.0.0.0:3312`, un lien que personne ne peut ouvrir | **livré, à valider** |
 | 106 | **Une réponse arrête les relances, par tous les chemins** : vérification des quatre chemins, cas par cas, qui a trouvé **un défaut réel et l'a pris en flagrant délit** — une relance est réellement partie à une fiche dont l'inscription portait déjà « Le contact a répondu ». Deux causes, mesurées : la borne de recherche était **exclusive sur une date à la seconde** (envoi à `15:46:31.398`, réponse datée `15:46:31`, soit 398 ms avant l'envoi auquel elle répond), et le **fait relevé** (`EmailReply`) n'était lu par aucun chemin d'envoi. Plus deux états que l'envoi ne regardait pas : une inscription arrêtée et un départ écarté restaient envoyables par leur identifiant. Un seul prédicat de domaine (`lib/domain/reply-stop.ts`) sert désormais la composition, la file, l'envoi manuel et l'ordonnanceur, et une garde statique échoue si un chemin cesse de l'appeler | **livré, à valider** |
@@ -16083,3 +16084,166 @@ sauvegarder les campagnes, ce qui est un jalon à soi seul.
 instantané ; à cent mille, la requête HTTP dépasserait le délai du proxy. C'est
 la limite nommée au jalon 12 pour le rattrapage des statuts, et elle vaut ici
 pour les mêmes raisons.
+
+## Jalon 110 — une sauvegarde qui rend les envois avec leurs contacts
+
+### L'inventaire, avant d'écrire quoi que ce soit
+
+47 modèles au schéma. **17 sauvegardés, 30 non couverts.** Et deux pertes de
+nature différente, qu'il faut distinguer pour comprendre le défaut :
+
+| Ce que faisait une restauration | Tables concernées |
+|---|---|
+| **Détruisait les lignes** par cascade depuis les contacts, sociétés ou affaires | inscriptions, départs composés, passages d'étape, domaines refusés, recherche en cache et ses faits et sources |
+| **Orphelinait les lignes** par `SetNull` : la ligne survit, son rattachement non | `email_sends.contactId`, `email_replies.contactId`, `conversations.dealId` |
+| **Laissait un trou** sur une base vide : la table n'est simplement jamais rendue | campagnes, séquences d'emails, étapes, variantes, signataires, agents, clics, chargements de pixel, et vingt autres |
+
+La troisième ligne est la plus grave et la moins visible : une sauvegarde sert
+à **repartir de rien**. Sur une base vide, tout ce qui n'est pas dans le
+fichier reste vide pour toujours.
+
+### La cause : une couverture, pas des identifiants
+
+La question posée était la bonne : la restauration recrée-t-elle les contacts
+avec de nouveaux identifiants ? **Non.** `restoreBackup` les recrée avec les
+leurs — `tx.contact.createMany({ data: payload.contacts })`, et `contactRow`
+porte `id: z.string()`. Les identifiants survivent ; c'est vérifiable et c'est
+vérifié.
+
+Le défaut était donc ailleurs, et la nuance décide du correctif : la
+suppression (`tx.contact.deleteMany()`) **déclenche les cascades et les
+`SetNull` avant** que les contacts ne soient recréés. Une table absente du
+fichier subit la cascade et n'est jamais rendue. On ne répare donc pas
+relation par relation — on **couvre**.
+
+### Quatorze tables entrent dans la sauvegarde
+
+`Campaign`, `EmailSequence`, `EmailSequenceStep`, `EmailStepVariant`,
+`SequenceEnrollment`, `SequenceDeparture`, `EmailSend`, `EmailReply`,
+`EmailOpenHit`, `EmailLinkClick`, `Signatory`, `DomainRejection`,
+`DealStageVisit`, `Agent`.
+
+Quatre décisions d'ordre, et chacune a une raison :
+
+- **les boîtes avant les campagnes.** `Campaign.mailboxId` est en `Restrict` :
+  une campagne dont la boîte n'existe pas encore fait échouer toute la
+  restauration. Le bloc des boîtes a donc été déplacé avant ;
+- **les agents et les boîtes par `upsert`, jamais par suppression.**
+  `AgentPhoto` tient à `Agent` par une cascade et les portraits ne sont pas
+  sauvegardés : vider la table les détruirait, c'est-à-dire **créerait une
+  perte là où il n'y en avait pas** ;
+- **les chargements de pixel entrent aussi**, bien qu'ils ne soient plus un
+  indicateur depuis le jalon 109. Ils tiennent par cascade à un envoi qui est
+  désormais supprimé puis recréé : les laisser dehors aurait, là encore, créé
+  une perte nouvelle ;
+- **l'histoire se supprime d'abord, enfants en tête**, avant de toucher aux
+  contacts. Sans cela la cascade décide à notre place, et c'est exactement ce
+  qui orphelinait les envois.
+
+### Une ligne non replacée se compte, elle ne se tait plus
+
+Une inscription dont la fiche ne figure pas dans le fichier ne peut pas être
+recréée : la clé étrangère l'interdit, et l'inventer serait pire. Avant ce
+jalon, ces lignes étaient écartées **en silence** (les appartenances aux
+filtres, les événements). Elles sont désormais comptées par nature et le
+compte rendu les nomme : « 3 inscriptions non replacées ».
+
+Quand la clé est **facultative**, la ligne est détachée plutôt que perdue : un
+envoi orphelin est un fait du produit depuis le jalon 39, pas une anomalie.
+
+### Un fichier d'avant ce jalon reste restaurable, et le dit
+
+C'est la règle du jalon 53 : une section absente ne vide pas la table. Un
+fichier plus ancien ne porte ni envois, ni campagnes, ni inscriptions — la
+restauration le laisse donc faire ce qu'elle faisait avant, **et l'annonce** :
+les envois perdront leur contact, les inscriptions tomberont avec les fiches.
+Se taire là-dessus reproduirait le défaut à l'identique.
+
+Un raffinement vérifié : quand le fichier ne porte pas les campagnes, les
+campagnes **encore en base** sont lues pour décider si le journal garde son
+rattachement. Mesuré sur la recette : 22 événements sur 33 conservent leur
+campagne, au lieu de basculer tous sous « Hors campagne ».
+
+### La garde passe des colonnes aux tables
+
+`tests/backup-columns.test.ts` comparait les **colonnes** des tables qu'on lui
+désignait. Il ne pouvait pas voir le défaut de ce jalon : une table qu'on ne
+lui désigne pas n'est pas comparée. C'est exactement par là qu'`email_sends`
+est passé.
+
+La règle est désormais : **tout modèle du schéma est déclaré**, dans
+`BACKED_UP_TABLES` ou dans `NOT_BACKED_UP` avec sa conséquence écrite
+(`lib/domain/backup-coverage.ts`). Une table ajoutée sans décision fait échouer
+le test en la nommant.
+
+**Éprouvée sur une table jetable** : un modèle `Jetable110` ajouté au schéma
+fait tomber la garde avec le message « Ces tables ne sont ni sauvegardées ni
+écartées : Jetable110 », et le geste à faire.
+
+La liste des exclusions n'est pas qu'un test : `/reglages` l'affiche, sous
+« Ce qu'une restauration ne rend pas », avec pour chaque table ce que
+l'utilisateur perdra. Une liste qui ne sert qu'à un test finit par mentir.
+
+### Jalon 110 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16**, sur une base construite migration par
+migration, puis peuplée (26 contacts, 22 envois, 2 réponses, 3 clics, 3
+chargements, 10 inscriptions, 3 départs, 2 campagnes, 33 événements) :
+
+- **empreinte relationnelle de 129 lignes** relevée avant — une ligne par
+  rattachement, jamais un total —, base **entièrement vidée** (`truncate` de
+  toutes les tables), restauration, nouvelle empreinte : **identique ligne à
+  ligne, zéro différence** ;
+- **aucune ligne non replacée**, aucun avertissement, sur un fichier pris sur
+  cette base même ;
+- **la reprise du jalon 109 rejouée après la restauration re-dérive 33
+  événements** — contre 11 avant ce jalon, et c'était la mesure du défaut ;
+- **aucun secret dans le fichier** : les trois valeurs de la recette
+  (`SMTP_PASSWORD`, `SMTP_PASSWORD_PRINCIPALE`, `CRON_SECRET`) et le mot de
+  passe de l'espace cherchés littéralement dans le JSON → **0 occurrence**, et
+  aucune clé nommée `password`, `secret` ou `apiKey`. La boîte d'envoi ne porte
+  que son hôte, son port, son utilisateur et sa signature ;
+- **la garde éprouvée** sur une table jetable, qui la fait tomber en la nommant ;
+- **taille du fichier** sur cette base : **53 986 octets** au format du jalon
+  109, **80 007 octets** avec l'histoire de prospection — +48 %, pour 22 envois
+  et 63 lignes d'histoire. Le fichier reste du JSON indenté, lisible à l'œil ;
+- **au clic, dans un vrai Chromium** : téléchargement depuis `/reglages`, le
+  fichier porte bien les sept sections de l'histoire, le repli « Ce qu'une
+  restauration ne rend pas » est atteignable (`reachable()`, jamais
+  `isVisible()`), et la restauration par le bouton rend « 22 envois · 33
+  événements » sans aucune ligne écartée ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (1984 tests) verts.
+
+**Les chiffres viennent d'une base fabriquée pour la recette**, pas de la
+production : 26 contacts inventés, 22 envois qui ne sont jamais partis.
+
+### Jalon 110 — ce qui ne l'est pas
+
+**Les fichiers binaires restent dehors** : logo des emails, vidéo de
+démonstration, portraits des agents. C'était le périmètre annoncé. Un logo se
+retéléverse en un geste ; les y mettre ferait grossir la sauvegarde d'un ordre
+de grandeur (227 Ko pour un seul portrait) pour une donnée qu'on peut reposer.
+Conséquence réelle : après une restauration sur une base vide, le rail et les
+emails reprennent le tracé de repli jusqu'au prochain téléversement.
+
+**Les conversations du conseil ne sont pas sauvegardées**, et c'est le plus
+gros manque restant. Elles peuvent peser lourd — chaque message porte ses blocs
+sérialisés — et elles ne sont pas de la donnée de prospection. Mais ce sont des
+échanges que quelqu'un a eus, et les perdre n'est pas rien. C'est écrit dans
+`NOT_BACKED_UP` et affiché dans `/reglages`.
+
+**Les recommandations du conseil non plus** : un constat écarté peut donc
+revenir une fois après une restauration. La fenêtre de silence du jalon 14 est
+portée par la ligne, et la ligne n'est pas sauvegardée.
+
+**Le cache de recherche web est perdu**, donc repayé à l'API à la prochaine
+demande. Aucun fait n'est inventé entre-temps — la carte dit simplement qu'elle
+n'a pas encore cherché.
+
+**La restauration tient toujours dans une requête HTTP.** À 22 envois c'est
+instantané ; à cent mille lignes, le fichier lui-même poserait problème avant
+la transaction. C'est la limite nommée au jalon 12, et elle n'a pas bougé.
+
+**Le format reste du JSON indenté, en mémoire, en une fois.** Un export qui
+dépasserait la mémoire du conteneur échouerait franchement plutôt que de
+produire un fichier tronqué — mais il échouerait. Le seuil n'a pas été mesuré.

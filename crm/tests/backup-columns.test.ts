@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { backupSchema } from "@/lib/api/backup";
+import {
+  BACKED_UP_TABLES,
+  NOT_BACKED_UP,
+  declaredModels,
+} from "@/lib/domain/backup-coverage";
 
 /**
  * **Une colonne absente de la sauvegarde est une colonne effacée.**
@@ -29,26 +34,15 @@ import { backupSchema } from "@/lib/api/backup";
 const ROOT = join(__dirname, "..");
 const SCHEMA = readFileSync(join(ROOT, "prisma/schema.prisma"), "utf8");
 
-/** Les modèles Prisma que la sauvegarde prétend porter, et leur clé de payload. */
-const BACKED_UP: ReadonlyArray<{ model: string; key: string }> = [
-  { model: "Stage", key: "stages" },
-  { model: "Company", key: "companies" },
-  { model: "Contact", key: "contacts" },
-  { model: "Deal", key: "deals" },
-  { model: "Activity", key: "activities" },
-  { model: "Task", key: "tasks" },
-  { model: "Sequence", key: "sequences" },
-  { model: "SequenceStep", key: "sequenceSteps" },
-  { model: "SettingsList", key: "settingsLists" },
-  { model: "Settings", key: "settings" },
-  { model: "RoleAngle", key: "roleAngles" },
-  { model: "RoleAngleLabel", key: "roleAngleLabels" },
-  { model: "Mailbox", key: "mailboxes" },
-  { model: "CustomFilter", key: "customFilters" },
-  { model: "CustomFilterMember", key: "customFilterMembers" },
-  { model: "TaskTab", key: "taskTabs" },
-  { model: "OutreachEvent", key: "outreachEvents" },
-];
+/**
+ * Les modèles sauvegardés et leur clé de payload viennent de
+ * `lib/domain/backup-coverage.ts` : **une seule liste**, lue par le test, par
+ * l'écran des réglages et par la documentation de la restauration. Recopier
+ * les noms ici en ferait une seconde source de vérité, donc une occasion de
+ * diverger — le défaut que ce fichier existe pour empêcher.
+ */
+const BACKED_UP = BACKED_UP_TABLES;
+
 
 /**
  * Les colonnes scalaires d'un modèle Prisma.
@@ -131,5 +125,91 @@ describe("la sauvegarde porte toutes les colonnes", () => {
     // Une relation n'est pas une colonne, mais sa clé étrangère en est une.
     expect(prismaColumns("Deal")).not.toContain("stage");
     expect(prismaColumns("Deal")).toContain("stageId");
+  });
+});
+
+/**
+ * **Une table absente de la sauvegarde est une table perdue.**
+ *
+ * La garde des colonnes (ci-dessus) ne voyait pas ce cas : elle vérifie les
+ * tables qu'on lui désigne, et se tait sur celles qu'on ne lui désigne pas.
+ * C'est exactement par là que `email_sends` est passé — jamais sauvegardé,
+ * donc jamais comparé, pendant que la restauration supprimait les contacts et
+ * laissait chaque envoi orphelin (mesuré au jalon 109 : 33 événements
+ * re-dérivables avant une restauration, 11 après).
+ *
+ * La règle est donc : **tout modèle du schéma est déclaré**, sauvegardé ou
+ * explicitement écarté avec sa conséquence écrite. Ajouter une table sans
+ * choisir fait échouer ce test en la nommant.
+ */
+describe("la sauvegarde couvre toutes les tables", () => {
+  function prismaModels(): readonly string[] {
+    return [...SCHEMA.matchAll(/^model (\w+) \{/gm)].map((match) => match[1] ?? "");
+  }
+
+  it("aucun modèle du schéma n'est laissé sans décision", () => {
+    const declared = new Set(declaredModels());
+    const undeclared = prismaModels().filter((model) => !declared.has(model));
+
+    expect(
+      undeclared,
+      `Ces tables ne sont ni sauvegardées ni écartées : ${undeclared.join(", ")}. ` +
+        `Ajoutez-les à BACKED_UP_TABLES dans lib/domain/backup-coverage.ts — avec ` +
+        `leur schéma Zod et leur restauration dans lib/api/backup.ts — ou à ` +
+        `NOT_BACKED_UP en écrivant ce qu'une restauration fera perdre.`,
+    ).toEqual([]);
+  });
+
+  it("ne déclare aucune table qui n'existe pas", () => {
+    // Sans quoi la liste vieillirait en silence après un renommage de modèle.
+    const models = new Set(prismaModels());
+    const ghosts = declaredModels().filter((model) => !models.has(model));
+    expect(ghosts, `déclarés mais absents du schéma : ${ghosts.join(", ")}`).toEqual([]);
+  });
+
+  it("ne déclare pas deux fois le même modèle", () => {
+    const seen = declaredModels();
+    expect(new Set(seen).size, "un modèle est à la fois sauvegardé et écarté").toBe(seen.length);
+  });
+
+  it("chaque table écartée dit ce qu'elle fait perdre", () => {
+    for (const table of NOT_BACKED_UP) {
+      expect(table.label.length, table.model).toBeGreaterThan(3);
+      // Une conséquence, pas une justification technique : c'est ce que
+      // l'utilisateur lit dans /reglages avant de cliquer.
+      expect(table.consequence.length, table.model).toBeGreaterThan(20);
+    }
+  });
+
+  it("chaque table sauvegardée porte bien une clé dans le fichier", () => {
+    const payload = (backupSchema as unknown as { shape: Record<string, unknown> }).shape;
+    for (const table of BACKED_UP_TABLES) {
+      expect(payload[table.key], `clé « ${table.key} » absente de backupSchema`).toBeDefined();
+    }
+  });
+
+  /**
+   * Garde-fou du garde-fou : la liste doit réellement couvrir l'histoire de
+   * prospection, qui est la raison d'être du jalon 110. Un retrait silencieux
+   * de l'une de ces tables rouvrirait exactement le même trou.
+   */
+  it("couvre l'histoire de prospection, nommément", () => {
+    const saved = new Set(BACKED_UP_TABLES.map((table) => table.model));
+    for (const model of [
+      "Campaign",
+      "EmailSequence",
+      "EmailSequenceStep",
+      "EmailStepVariant",
+      "SequenceEnrollment",
+      "SequenceDeparture",
+      "EmailSend",
+      "EmailReply",
+      "EmailLinkClick",
+      "OutreachEvent",
+      "Task",
+      "Mailbox",
+    ]) {
+      expect(saved.has(model), `${model} doit être sauvegardé`).toBe(true);
+    }
   });
 });

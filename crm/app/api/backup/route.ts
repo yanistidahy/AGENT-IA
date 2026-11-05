@@ -33,7 +33,13 @@ export async function POST(request: Request) {
   try {
     const result = await restoreBackup(parsed.data);
     if (!result.ok) return badRequest(result.message);
-    return jsonOk({ counts: result.counts });
+    // `skipped` et `warnings` remontent jusqu'à l'écran : une ligne qu'une
+    // restauration n'a pas su replacer se dit, elle ne se devine pas.
+    return jsonOk({
+      counts: result.counts,
+      skipped: result.skipped,
+      warnings: result.warnings,
+    });
   } catch (error) {
     return serverError("POST /api/backup", error);
   }

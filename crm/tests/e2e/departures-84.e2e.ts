@@ -154,6 +154,13 @@ describe.skipIf(skip)("la file du matin, jalon 84", () => {
       "La séquence de cette campagne est inactive",
       "Samedi ou dimanche : rien n'est composé.",
       "Campagne archivée : elle n'envoie plus.",
+      // Sixième issue du produit, oubliée de cette liste jusqu'au jalon 110 :
+      // elle sort de `compose-now.ts:223` quand plus personne n'est éligible.
+      // Le test tombait sur une base où tous les inscrits avaient reçu leur
+      // message — c'est-à-dire sur un produit qui nommait correctement son
+      // empêchement. L'assertion exige « une issue nommée » : encore
+      // faut-il les énumérer toutes.
+      "Rien à écrire : tout le monde a déjà reçu son message",
     ];
     const matched = OUTCOMES.filter((outcome) => panel.includes(outcome));
     expect(matched, `aucune issue nommée dans le panneau : ${panel.slice(-400)}`).not.toEqual([]);
