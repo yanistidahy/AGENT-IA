@@ -210,6 +210,54 @@ async function createContact(activity: LemlistActivity, owners: readonly string[
   return { contactId: created.id, companyId: created.companyId };
 }
 
+/* ------------------------------------------------------- la réparation ----- */
+
+/**
+ * **Une ligne déjà importée se corrige, elle ne se duplique pas.**
+ *
+ * La date d'un événement est celle de l'activité chez lemlist, et elle l'a
+ * toujours été : `readLemlistActivity` lit `createdAt` et **refuse l'activité**
+ * si cette date est illisible, plutôt que de retomber sur l'instant de
+ * l'import. Il n'y a donc jamais eu de chemin qui datait un événement de sa
+ * synchronisation — le jalon 113 l'a vérifié ligne à ligne.
+ *
+ * Reste qu'une ligne en base peut porter une date fausse pour trois raisons qui
+ * n'ont rien à voir avec notre code : lemlist corrige l'horodatage d'une
+ * activité, une ligne a été écrite à la main (une recette, une reprise), ou une
+ * version future de ce module s'est trompée. Dans ces trois cas, **le passage
+ * suivant doit réparer** au lieu de regarder ailleurs : sans cela une ligne
+ * fausse est définitive, puisque la contrainte d'unicité empêche de la
+ * réécrire.
+ *
+ * On ne corrige que ce que lemlist fait autorité sur : l'instant du fait, et le
+ * nom de la campagne (qui se renomme). On ne touche **ni le contact ni le
+ * type** : un rapprochement tranché à la main ne doit pas être défait par une
+ * synchronisation, et un type qui changerait déplacerait un fait d'un
+ * indicateur à un autre sans que personne l'ait demandé.
+ *
+ * Rend `true` quand quelque chose a réellement changé — un `update`
+ * inconditionnel compterait une réparation à chaque passage sur chaque ligne.
+ */
+async function repairEvent(activity: LemlistActivity): Promise<boolean> {
+  const known = await prisma.outreachEvent.findUnique({
+    where: { source_externalId: { source: "lemlist", externalId: activity.externalId } },
+    select: { id: true, occurredAt: true, extCampaignName: true },
+  });
+  if (known === null) return false;
+
+  const patch: { occurredAt?: Date; extCampaignName?: string } = {};
+  if (known.occurredAt.getTime() !== activity.occurredAt.getTime()) {
+    patch.occurredAt = activity.occurredAt;
+  }
+  if (activity.campaignName !== "" && known.extCampaignName !== activity.campaignName) {
+    patch.extCampaignName = activity.campaignName;
+  }
+  if (Object.keys(patch).length === 0) return false;
+
+  await prisma.outreachEvent.update({ where: { id: known.id }, data: patch });
+  return true;
+}
+
 /* --------------------------------------------------------- l'application ----- */
 
 export interface ApplyReport {
@@ -219,6 +267,11 @@ export interface ApplyReport {
   readonly unreadable: number;
   /** Déjà en base : la contrainte d'unicité a fait son travail. */
   readonly duplicates: number;
+  /**
+   * Déjà en base, **et corrigé** : la date ou le nom de campagne que lemlist
+   * rend maintenant ne sont plus ceux qu'on avait écrits. Voir `repairEvent`.
+   */
+  readonly repaired: number;
   /** Laissées de côté, faute de savoir à qui les attribuer. */
   readonly ambiguous: number;
   readonly contactsCreated: number;
@@ -251,6 +304,7 @@ export async function applyActivities(raws: readonly unknown[]): Promise<ApplyRe
 
   let unreadable = 0;
   let duplicates = 0;
+  let repaired = 0;
   let ambiguous = 0;
   let contactsCreated = 0;
   let companiesCreated = 0;
@@ -315,8 +369,12 @@ export async function applyActivities(raws: readonly unknown[]): Promise<ApplyRe
       detail: mapping.detail,
     });
 
-    if (created) bump(written, mapping.type);
-    else duplicates += 1;
+    if (created) {
+      bump(written, mapping.type);
+    } else {
+      duplicates += 1;
+      if (await repairEvent(activity)) repaired += 1;
+    }
 
     if (mapping.type === "other") {
       await noteIssue(
@@ -331,6 +389,7 @@ export async function applyActivities(raws: readonly unknown[]): Promise<ApplyRe
     received: raws.length,
     unreadable,
     duplicates,
+    repaired,
     ambiguous,
     contactsCreated,
     companiesCreated,
@@ -451,7 +510,9 @@ export async function syncLemlist(): Promise<SyncOutcome> {
   return {
     ok: true,
     status: "connected",
-    message: `${report.received} activités lues, ${total} événements écrits, ${report.duplicates} déjà connus.${truncatedNote}`,
+    message: `${report.received} activités lues, ${total} événements écrits, ${report.duplicates} déjà connus${
+      report.repaired > 0 ? `, dont ${report.repaired} dont la date a été corrigée` : ""
+    }.${truncatedNote}`,
     report,
     fullHistory,
   };

@@ -514,57 +514,16 @@ export function breakdown(
 
 /* ------------------------------------------------------- dans le temps ---- */
 
-export interface WeekPoint {
-  readonly weekStart: Date;
-  readonly label: string;
-  /** Messages par canal, dans l'ordre de `OUTREACH_CHANNELS`. */
-  readonly byChannel: Record<OutreachChannel, number>;
-  readonly total: number;
-}
+/*
+  **La série hebdomadaire a été retirée au jalon 113.**
 
-/**
- * Les messages par semaine et par canal, sur les `weeks` dernières semaines.
- *
- * **Les semaines vides restent dessinées** : c'est elles qu'on veut voir sur un
- * graphique de régularité (la règle du jalon 59), et une série qui saute les
- * creux ferait d'une interruption un trait continu.
- */
-export function weeklySeries(
-  rows: readonly EventRow[],
-  now: Date,
-  weeks: number,
-): WeekPoint[] {
-  const points: WeekPoint[] = [];
-  for (let back = weeks - 1; back >= 0; back -= 1) {
-    const week = parisWeek(now, back);
-    const inside = messagesSent(rows).filter((row) => inPeriod(row.occurredAt, week));
-    const byChannel = {
-      email: 0,
-      linkedin_invite: 0,
-      linkedin_message: 0,
-      whatsapp: 0,
-      call: 0,
-      other: 0,
-    } satisfies Record<OutreachChannel, number>;
-    for (const row of inside) byChannel[row.channel] += 1;
-    points.push({
-      weekStart: week.start,
-      label: weekLabel(week.start),
-      byChannel,
-      total: inside.length,
-    });
-  }
-  return points;
-}
+  `WeekPoint`, `weeklySeries` et `weekLabel` dessinaient douze semaines fixes
+  dont dix vides, en barres empilées, sans survol ni clic. Elles vivent
+  désormais dans `lib/domain/timeline.ts`, qui sait aussi le jour et le mois,
+  retire la course de zéros du début, et fait sortir la valeur d'un point de
+  `metricResult` — donc de la même fonction que la liste qu'il ouvre.
+*/
 
-/** « 3 nov. » — le lundi de la semaine, en français, lu à Paris. */
-export function weekLabel(monday: Date): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    timeZone: "Europe/Paris",
-    day: "numeric",
-    month: "short",
-  }).format(monday);
-}
 
 /* ------------------------------------------------- la clé de campagne ----- */
 

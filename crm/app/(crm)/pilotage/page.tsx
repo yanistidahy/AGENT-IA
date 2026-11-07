@@ -1,7 +1,9 @@
 import { FilterBar } from "@/components/pilotage/filter-bar";
 import { ManualCounter } from "@/components/pilotage/manual-counter";
 import { KpiTiles, type Tile } from "@/components/pilotage/kpi-tiles";
-import { WeeklyChart } from "@/components/pilotage/weekly-chart";
+import { TimelineToolbar } from "@/components/pilotage/timeline-toolbar";
+import { TimelineChart } from "@/components/pilotage/timeline-chart";
+import { WeekPaceStrip } from "@/components/pilotage/week-pace";
 import { FunnelView } from "@/components/pilotage/funnel-view";
 import {
   BREAKDOWN_COLUMNS,
@@ -20,17 +22,31 @@ import {
   replyRate,
   slice,
   uncategorisedReplies,
-  weeklySeries,
   type Breakdown,
   type Metric,
   campaignKey,
   campaignLabel,
 } from "@/lib/domain/pilotage";
+import {
+  GRANULARITY_LABELS,
+  bucketsBetween,
+  buildSeries,
+  channelsWithData,
+  peakOf,
+  rangeNote,
+  timelineMetricLabel,
+  timelineRange,
+  toGranularity,
+  toTimelineMetric,
+  toTimelineView,
+  trimLeadingEmpty,
+  weekPace,
+  weeklyTargetFor,
+} from "@/lib/domain/timeline";
 
 export const dynamic = "force-dynamic";
 
 /** Douze semaines : un trimestre, assez pour voir une tendance sans la noyer. */
-const WEEKS = 12;
 
 /**
  * **Pilotage — un seul tableau de bord, sur un seul journal.**
@@ -52,6 +68,11 @@ export default async function PilotagePage({
 }) {
   const params = await searchParams;
   const query = parsePilotageQuery(params);
+  /** Un paramètre d'URL, en une valeur. Les trois réglages du graphique y vivent. */
+  const readOne = (key: string): string => {
+    const value = params[key];
+    return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
+  };
   const now = new Date();
   const period = periodOf(query, now);
 
@@ -173,6 +194,58 @@ export default async function PilotagePage({
     return `/pilotage?${next.toString()}`;
   };
 
+  /*
+    **Le graphique « Dans le temps », refondu au jalon 113.**
+
+    Tout est calculé ici, côté serveur, par les fonctions de
+    `lib/domain/timeline.ts` : la vue ne reçoit que des coordonnées et des
+    liens. La valeur d'un point sort de `metricResult`, la même fonction que la
+    liste qu'il ouvre — c'est ce qui rend l'item 3 du test d'acceptation vrai
+    par construction plutôt que par vigilance.
+  */
+  const granularity = toGranularity(readOne("pas"));
+  const view = toTimelineView(readOne("vue"));
+  const timelineMetric = toTimelineMetric(readOne("metric"));
+  const weeklyTarget = weeklyTargetFor(timelineMetric, data.targets);
+
+  const range = timelineRange(all, period, query.periodKey === "libre", now);
+  const series = trimLeadingEmpty(
+    buildSeries(
+      all,
+      bucketsBetween(range.from, range.to, granularity),
+      timelineMetric,
+      granularity,
+      weeklyTarget,
+    ),
+  );
+  const timelineChannels = channelsWithData(series);
+  const timelinePoints = series.map((point) => ({
+    key: point.bucket.key,
+    short: point.bucket.short,
+    exact: point.bucket.exact,
+    total: point.total,
+    target: point.target,
+    previous: point.previous,
+    byChannel: point.byChannel,
+    bySource: point.bySource,
+    href: listHref(timelineMetric, {
+      periode: "libre",
+      du: point.bucket.fromKey,
+      au: point.bucket.toKey,
+    }),
+    channelHref: Object.fromEntries(
+      timelineChannels.map((channel) => [
+        channel,
+        listHref(timelineMetric, {
+          periode: "libre",
+          du: point.bucket.fromKey,
+          au: point.bucket.toKey,
+          canal: channel,
+        }),
+      ]),
+    ),
+  }));
+
   const uncategorised = uncategorisedReplies(rows).length;
 
   return (
@@ -221,11 +294,18 @@ export default async function PilotagePage({
             <KpiTiles tiles={tiles} href={(key) => listHref(key)} />
           </section>
 
-          <section className="mb-4">
-            <WeeklyChart
-              points={weeklySeries(all, now, WEEKS)}
-              target={data.targets.messages}
+          <section className="mb-4 space-y-3">
+            <TimelineToolbar />
+            <TimelineChart
+              points={timelinePoints}
+              view={view}
+              channels={timelineChannels}
+              peak={peakOf(series, view, timelineChannels)}
+              metricLabel={timelineMetricLabel(timelineMetric)}
+              granularityLabel={GRANULARITY_LABELS[granularity]}
+              rangeNote={rangeNote(series, range.note)}
             />
+            <WeekPaceStrip pace={weekPace(all, now, data.targets.messages)} />
           </section>
 
           <section className="mb-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">

@@ -22,7 +22,6 @@ import {
   replyRate,
   segmentOf,
   uncategorisedReplies,
-  weeklySeries,
   type EventRow,
   type Metric,
 } from "../pilotage";
@@ -458,22 +457,15 @@ describe("regroupements", () => {
   });
 });
 
-describe("série hebdomadaire", () => {
-  const now = new Date("2026-11-05T13:00:00Z");
-
-  it("dessine aussi les semaines vides", () => {
-    const points = weeklySeries([row("a", "message_sent", "2026-11-02T09:00:00Z")], now, 4);
-    expect(points).toHaveLength(4);
-    expect(points.slice(0, 3).every((point) => point.total === 0)).toBe(true);
-    expect(points.at(-1)?.total).toBe(1);
-    expect(points.at(-1)?.byChannel.email).toBe(1);
-  });
-
-  it("va du plus ancien au plus récent", () => {
-    const points = weeklySeries([], now, 3);
-    expect(points[0]!.weekStart.getTime()).toBeLessThan(points[2]!.weekStart.getTime());
-  });
-});
+/*
+  **La série hebdomadaire a disparu au jalon 113**, avec `weeklySeries`,
+  `WeekPoint`, `weekLabel` et `components/pilotage/weekly-chart.tsx`. Ses deux
+  tests vivent désormais dans `lib/domain/__tests__/timeline.test.ts`, sur les
+  fonctions qui l'ont remplacée — et l'un des deux a changé de sens exprès :
+  « dessine aussi les semaines vides » affirmait la course de zéros du début,
+  que le jalon 113 retire précisément parce qu'elle réglait l'échelle sur du
+  vide. Les zéros **de l'intérieur** restent, et `trimLeadingEmpty` le vérifie.
+*/
 
 describe("cibles hebdomadaires", () => {
   it("part sur 100 messages, 10 démos, 5 qualifiées", () => {

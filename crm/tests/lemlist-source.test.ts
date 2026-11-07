@@ -150,21 +150,42 @@ describe("les ouvertures entrent et ne comptent pas", () => {
    * promesse : c'est vérifiable sur le fichier.
    */
   it("aucune fonction du pilotage ne sélectionne un type hors indicateur", () => {
-    const pilotage = read("lib/domain/pilotage.ts");
-    for (const type of NON_KPI_TYPES) {
-      expect(pilotage, `pilotage.ts nomme ${type}`).not.toContain(`"${type}"`);
+    for (const file of ["lib/domain/pilotage.ts", "lib/domain/timeline.ts"]) {
+      const source = read(file);
+      for (const type of NON_KPI_TYPES) {
+        expect(source, `${file} nomme ${type}`).not.toContain(`"${type}"`);
+      }
     }
   });
 
-  it("les pages de pilotage ne les nomment pas non plus", () => {
+  /**
+   * **Le même contrôle sur les vues, en nommant ce qu'on interdit vraiment.**
+   *
+   * `other` est à la fois un **type** hors indicateur et un **canal** du jalon
+   * 109 : les deux unions partagent cette valeur. Chercher la chaîne nue
+   * accusait donc `timeline-plot.tsx` d'un péché qu'il ne commet pas — il
+   * déclare la couleur du canal « Autre ». Ce qu'il faut interdire n'est pas la
+   * chaîne, c'est la **sélection par type** : une comparaison ou une
+   * affectation de `type`. Les deux autres valeurs ne collisionnent avec rien
+   * et restent cherchées telles quelles.
+   */
+  it("les pages de pilotage ne sélectionnent aucun de ces types", () => {
     const files = [
       ...walk(path.join(ROOT, "app/(crm)/pilotage")),
       ...walk(path.join(ROOT, "components/pilotage")),
     ];
     for (const file of files) {
       const source = readFileSync(file, "utf8");
+      const name = path.relative(ROOT, file);
       for (const type of NON_KPI_TYPES) {
-        expect(source, `${path.relative(ROOT, file)} nomme ${type}`).not.toContain(`"${type}"`);
+        // `type === "x"`, `type: "x"`, `type !== "x"` : toutes les formes par
+        // lesquelles une vue choisirait les lignes qui comptent.
+        expect(source, `${name} sélectionne sur ${type}`).not.toMatch(
+          new RegExp(`\\btype\\s*(===|!==|:)\\s*["']${type}["']`),
+        );
+        if (type !== "other") {
+          expect(source, `${name} nomme ${type}`).not.toContain(`"${type}"`);
+        }
       }
     }
   });
