@@ -3,6 +3,7 @@ import { compareKeys, sortKey } from "../domain/sort-key";
 import { companyNameKey } from "./name-keys";
 import type { FilterState } from "../domain/column-filters";
 import { searchText, searchTerm } from "../domain/text";
+import { cleanNiche, nicheSuggestions } from "../domain/company-profile";
 import { columnsWhere, derivedFilters } from "./column-filters";
 import {
   COMPANY_DB_COLUMNS,
@@ -52,6 +53,16 @@ export interface CompanyRecord {
   readonly desc: string;
   /** Visiteurs mensuels — `null` = non renseigné, ce qui n'est pas zéro. */
   readonly monthlyVisitors: number | null;
+  /** La niche, en texte libre. Vide = non renseignée (jalon 113 v2). */
+  readonly niche: string;
+  /**
+   * Qui a posé chacune des deux valeurs : `crm`, `lemlist`, ou vide.
+   *
+   * Lues par l'écran pour dire d'où vient un chiffre, et par la
+   * synchronisation pour ne jamais écraser une saisie — voir `syncMayWrite`.
+   */
+  readonly nicheSource: string;
+  readonly visitorsSource: string;
   readonly createdAt: Date;
   readonly contacts: readonly CompanyContactSummary[];
   readonly deals: readonly CompanyDealSummary[];
@@ -111,6 +122,9 @@ function toRecord(row: CompanyRow): CompanyRecord {
     loc: row.loc,
     desc: row.desc,
     monthlyVisitors: row.monthlyVisitors,
+    niche: row.niche,
+    nicheSource: row.nicheSource,
+    visitorsSource: row.visitorsSource,
     createdAt: row.createdAt,
     contacts: row.contacts.map((contact) => ({
       id: contact.id,
@@ -254,6 +268,21 @@ function sortCompanies(
 }
 
 /** Secteurs réellement présents, avec leur nombre de sociétés. */
+/**
+ * Les niches déjà en usage, pour les suggestions du champ.
+ *
+ * Regroupées par clé pliée — casse et accents —, et le libellé proposé est la
+ * variante la plus fréquente : proposer « bijoux » à quelqu'un qui a toujours
+ * écrit « Bijoux » le pousserait à créer la variante qu'on cherche à éviter.
+ */
+export async function listNiches(): Promise<readonly string[]> {
+  const rows = await prisma.company.findMany({
+    where: { NOT: { niche: "" } },
+    select: { niche: true },
+  });
+  return nicheSuggestions(rows.map((row) => row.niche)).map((entry) => entry.label);
+}
+
 export async function listIndustries(): Promise<ReadonlyArray<{ value: string; count: number }>> {
   const rows = await prisma.company.groupBy({
     by: ["industry"],
@@ -291,6 +320,15 @@ export async function createCompany(input: CreateCompanyInput): Promise<CompanyR
       loc: input.loc ?? "",
       desc: input.desc ?? "",
       monthlyVisitors: input.monthlyVisitors ?? null,
+      niche: cleanNiche(input.niche ?? ""),
+      /*
+        **Une valeur saisie ici est marquée `crm`, et c'est ce qui la protège.**
+        La synchronisation lemlist ne réécrit que ce qu'elle a posé elle-même,
+        ou ce qui est vide (`syncMayWrite`) : sans cette marque, une correction
+        tapée à 10 h 02 serait remplacée au relevé de 10 h 15.
+      */
+      nicheSource: cleanNiche(input.niche ?? "") === "" ? "" : "crm",
+      visitorsSource: (input.monthlyVisitors ?? null) === null ? "" : "crm",
       searchText: companySearchText(input),
       nameKey: companyNameKey(input.name),
     },
@@ -323,7 +361,15 @@ export async function updateCompany(
   if (input.industry !== undefined) data.industry = input.industry;
   if (input.loc !== undefined) data.loc = input.loc;
   if (input.desc !== undefined) data.desc = input.desc;
-  if (input.monthlyVisitors !== undefined) data.monthlyVisitors = input.monthlyVisitors;
+  if (input.monthlyVisitors !== undefined) {
+    data.monthlyVisitors = input.monthlyVisitors;
+    data.visitorsSource = input.monthlyVisitors === null ? "" : "crm";
+  }
+  if (input.niche !== undefined) {
+    const niche = cleanNiche(input.niche);
+    data.niche = niche;
+    data.nicheSource = niche === "" ? "" : "crm";
+  }
 
   const updated = await prisma.company.update({ where: { id }, data, include: companyInclude });
   const row = await prisma.company.update({

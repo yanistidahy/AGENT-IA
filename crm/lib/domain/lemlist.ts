@@ -71,6 +71,13 @@
  */
 
 import type { OutreachChannel, OutreachType } from "./outreach";
+import {
+  cleanNiche,
+  NICHE_VARIABLES,
+  pickVariable,
+  readVisitorCount,
+  VISITORS_VARIABLES,
+} from "./company-profile";
 
 /* ------------------------------------------------- le vocabulaire source --- */
 
@@ -474,6 +481,48 @@ export interface LemlistActivity {
   /** `sendUserName` — le nom lemlist de l'expéditeur, pas encore un propriétaire. */
   readonly sendUserName: string;
   readonly subject: string;
+  /**
+   * **La niche, lue dans les variables personnalisées du lead** (jalon 113 v2).
+   *
+   * Vide quand aucune des variables acceptées n'est remplie. Le nom de la
+   * variable est comparé **sans casse ni accents** (`pickVariable`) : une
+   * variable lemlist est nommée à la main, et `Niche`, `NICHE` et `niche`
+   * existent tous dans un vrai compte.
+   */
+  readonly niche: string;
+  /**
+   * **Le trafic mensuel**, lu de la même façon et converti en nombre.
+   *
+   * `null` quand la variable est absente ou illisible — « à voir », « gros
+   * site », « ?». Jamais zéro : zéro rangerait la marque dans « Moins de
+   * 2 000 » sur la foi d'un point d'interrogation. Voir `readVisitorCount`,
+   * qui lit `8000`, `8 000`, `8k`, `8K` et quelques formes de plus.
+   */
+  readonly visitors: number | null;
+  /**
+   * **L'étape de séquence, en rang affiché — donc à partir de 1.**
+   *
+   * lemlist émet `sequenceStep` **indexé à zéro** : c'est écrit dans la
+   * documentation de `GET /activities`, et la conversion est faite ici, une
+   * fois, parce qu'un décalage d'une unité sur un écran « résultats par étape »
+   * attribuerait à l'étape 2 ce que l'étape 3 a produit — une erreur invisible
+   * qui ferait retirer la mauvaise relance.
+   *
+   * `null` pour une activité hors séquence : la documentation prévient que le
+   * champ n'est pas toujours là, et « hors séquence » est le fait, pas un repli.
+   */
+  readonly stepIndex: number | null;
+  /**
+   * La nature de l'étape — `email`, `linkedin_invite`, `call`…
+   *
+   * **L'objet Activity de lemlist ne porte pas le type de l'étape** : vérifié
+   * champ par champ contre le schéma publié, il porte `stepId`, `sequenceStep`,
+   * `totalSequenceStep` et `journeyDepth`, et rien qui nomme la nature du pas.
+   * On la déduit donc du type de l'activité elle-même, ce qui est exact par
+   * construction : un `emailsSent` ne peut venir que d'une étape email, un
+   * `linkedinInviteDone` que d'une étape d'invitation. Vide hors séquence.
+   */
+  readonly stepType: string;
 }
 
 /** Lit une chaîne d'un objet non typé, sans jamais lever. */
@@ -592,6 +641,29 @@ export function readLemlistActivity(raw: unknown): LemlistActivity | null {
     return "";
   };
 
+  /*
+    **Les variables du lead, à plat et en texte.**
+
+    `pickVariable` compare des noms pliés — minuscules, sans accents ni
+    séparateurs —, donc la carte qu'on lui passe doit être du texte. Une
+    variable lemlist peut arriver en nombre (`8000` sans guillemets) : on la
+    rend en chaîne plutôt que de l'ignorer, et `readVisitorCount` la relit.
+  */
+  const flatVars: Record<string, string> = {};
+  for (const [name, value] of Object.entries(vars)) {
+    if (typeof value === "string") flatVars[name] = value;
+    else if (typeof value === "number" && Number.isFinite(value)) flatVars[name] = String(value);
+  }
+
+  /*
+    **`sequenceStep` est indexé à zéro.** La conversion en rang affiché a lieu
+    ici, une seule fois. Une valeur non entière ou négative est refusée plutôt
+    que corrigée : on ne sait pas ce qu'elle voulait dire.
+  */
+  const rawStep = source["sequenceStep"];
+  const stepIndex =
+    typeof rawStep === "number" && Number.isInteger(rawStep) && rawStep >= 0 ? rawStep + 1 : null;
+
   const email = normaliseEmail(pick("leadEmail", "email"));
   return {
     externalId,
@@ -609,6 +681,12 @@ export function readLemlistActivity(raw: unknown): LemlistActivity | null {
     campaignName: pick("campaignName"),
     sendUserName: pick("sendUserName", "userName"),
     subject: pick("subject"),
+    niche: cleanNiche(pickVariable(flatVars, NICHE_VARIABLES)),
+    visitors: readVisitorCount(pickVariable(flatVars, VISITORS_VARIABLES)),
+    stepIndex,
+    // La nature de l'étape se déduit du canal de l'activité : hors séquence,
+    // il n'y a pas d'étape, donc rien à nommer.
+    stepType: stepIndex === null ? "" : mapLemlistType(rawType).channel,
   };
 }
 

@@ -61,6 +61,26 @@ model Company {
   /// de ce nombre — petites marques 2 000 à 10 000, grandes 15 000 et plus.
   monthlyVisitors Int?
 
+  /// **La niche de la marque**, en texte libre — « bijoux », « soins visage ».
+  ///
+  /// Texte libre et non liste fermée : personne ne connaît la liste des niches
+  /// avant de prospecter, et une liste fermée se contourne en tapant « Autre ».
+  /// Le champ propose en revanche les valeurs déjà en usage, et le regroupement
+  /// de l'onglet Segments plie casse et accents (`lib/domain/company-profile.ts`),
+  /// de sorte que « Bijoux » et « bijoux » restent une seule niche.
+  niche String @default("")
+
+  /// **Qui a posé la niche**, et **qui a posé le trafic** : `crm`, `lemlist`,
+  /// ou vide quand on ne sait pas.
+  ///
+  /// Ces deux colonnes existent pour une seule règle : une valeur tapée à la
+  /// main n'est jamais écrasée par la synchronisation lemlist. Sans elles la
+  /// règle serait inapplicable — un 8 000 saisi et un 8 000 importé seraient
+  /// indiscernables, et il faudrait choisir entre tout écraser et ne plus rien
+  /// importer. Voir `syncMayWrite`.
+  nicheSource     String @default("")
+  visitorsSource  String @default("")
+
   /// Miroir normalisé (minuscules, sans accents) des champs cherchables.
   /// Écrit par l'application à chaque écriture — voir lib/domain/text.ts.
   /// Permet à « zenith » de trouver « Zénith » sans extension PostgreSQL.
@@ -1893,6 +1913,21 @@ model OutreachEvent {
   /// personne ne l'a posée. **Jamais devinée** : une réponse non catégorisée se
   /// compte comme telle.
   replyCategory String @default("")
+
+  /// **L'étape de séquence qui a produit le fait**, chez la source.
+  ///
+  /// `stepIndex` est le rang affiché par lemlist (1 pour la première étape) et
+  /// `null` pour tout ce qui ne vient pas d'une séquence : le CRM, le compteur
+  /// manuel, et les activités lemlist hors campagne. `stepType` dit la nature
+  /// de l'étape (`email`, `linkedinInvite`, `call`…) telle que lemlist la nomme,
+  /// vide quand l'activité ne la porte pas.
+  ///
+  /// Les deux servent l'onglet Campagnes, qui montre le résultat **par étape** :
+  /// savoir que la relance 3 ne produit rien est ce qui permet de la retirer, et
+  /// un total de campagne ne le dit pas. `null` et vide ne sont pas des erreurs
+  /// — ils se lisent « hors séquence », ce qui est le fait.
+  stepIndex Int?
+  stepType  String @default("")
 
   /// De quoi relire la ligne six mois plus tard — l'objet du message, le canal
   /// d'origine quand il n'entre pas dans les six, le motif.

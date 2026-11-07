@@ -212,9 +212,17 @@ describeBrowser("les événements lemlist dans /pilotage", () => {
       waitUntil: "domcontentloaded",
     });
 
-    const tile = page.locator('[data-kpi="messages"]');
-    expect(await reachable(tile)).toBe(true);
-    const shown = Number(await tile.getAttribute("data-count"));
+    /*
+      **Carte d'objectif depuis le jalon 113 v2**, et non plus pastille : les
+      messages de la semaine sont devenus « valeur sur cible ». L'invariant
+      vérifié n'a pas changé — le nombre affiché est la longueur de la liste
+      qu'il ouvre, filtre de campagne lemlist compris —, seul le hameçon a suivi.
+    */
+    const card = page.locator('[data-objective="messages"]');
+    await card.scrollIntoViewIfNeeded();
+    expect(await reachable(card)).toBe(true);
+    const shown = Number(await card.locator("[data-objective-value]").innerText());
+    const tile = card.locator("a").first();
     await tile.click();
     await page.waitForURL((url) => url.pathname.startsWith("/pilotage/liste"), {
       timeout: 15_000,

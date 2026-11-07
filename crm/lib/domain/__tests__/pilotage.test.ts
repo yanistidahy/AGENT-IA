@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALL_OPEN,
   DEFAULT_TARGETS,
   FUNNEL_STAGES,
-  LARGE_MIN,
   METRICS,
   NO_FILTER,
-  SMALL_RANGE,
   applyFilters,
   breakdown,
   customPeriod,
@@ -20,7 +19,6 @@ import {
   qualifiedDemos,
   rateLabel,
   replyRate,
-  segmentOf,
   uncategorisedReplies,
   type EventRow,
   type Metric,
@@ -60,41 +58,26 @@ function row(
     owner: "Yanis",
     source: "crm",
     replyCategory: "",
-    segment: "unknown",
+    size: "unknown",
+    niche: "",
+    stepIndex: null,
+    stepType: "",
     group: "Non classé",
     ...extra,
   };
 }
 
-/* ------------------------------------------------------- les segments ----- */
+/* ------------------------------------------------------- les tranches ----- */
 
-describe("segment d'une marque", () => {
-  it("range selon les visiteurs mensuels, bornes comprises", () => {
-    expect(segmentOf(SMALL_RANGE.min)).toBe("small");
-    expect(segmentOf(SMALL_RANGE.max)).toBe("small");
-    expect(segmentOf(LARGE_MIN)).toBe("large");
-    expect(segmentOf(250_000)).toBe("large");
-  });
+/*
+  **Les tranches de taille ont déménagé au jalon 113 v2.**
 
-  /**
-   * **Le creux entre 10 000 et 15 000 n'est rangé nulle part.**
-   *
-   * Les deux segments demandés laissent un intervalle vide. Forcer ces marques
-   * dans l'un des deux inventerait une appartenance que personne n'a décidée ;
-   * « non renseigné » dit la vérité, et le tableau par segment les montre sous
-   * ce nom au lieu de les faire disparaître.
-   */
-  it("ne force pas le creux de 10 000 à 15 000 dans un segment", () => {
-    expect(segmentOf(12_000)).toBe("unknown");
-    expect(segmentOf(1_500)).toBe("unknown");
-  });
-
-  it("distingue « non renseigné » de zéro", () => {
-    expect(segmentOf(null)).toBe("unknown");
-    // Zéro est une mesure, pas une absence : elle tombe hors de la plage basse.
-    expect(segmentOf(0)).toBe("unknown");
-  });
-});
+  Elles vivaient ici avec trois valeurs, et rangeaient l'intervalle 10 000 à
+  15 000 dans « non renseigné » faute d'un brief qui le nomme. Le prototype
+  validé en nomme cinq : la règle et ses tests sont désormais dans
+  `size-buckets.test.ts`, avec la règle d'échantillon que les quatre onglets
+  lisent aussi.
+*/
 
 /* ------------------------------------------------------- les périodes ----- */
 
@@ -366,23 +349,23 @@ describe("filtres", () => {
       campaignId: "k1",
       campaignName: "Novembre",
       owner: "Yanis",
-      segment: "small",
+      size: "small",
     }),
     row("b", "message_sent", "2026-11-02T09:00:00Z", {
       campaignId: "k2",
       campaignName: "Décembre",
       owner: "Mohamed",
-      segment: "large",
+      size: "large",
       channel: "linkedin_invite",
     }),
   ];
 
-  it("croise les quatre axes, et laisse tout passer à vide", () => {
-    const none = { campaignId: NO_FILTER, channel: NO_FILTER, owner: NO_FILTER, segment: NO_FILTER };
+  it("croise les sept axes, et laisse tout passer à vide", () => {
+    const none = ALL_OPEN;
     expect(applyFilters(rows, none)).toHaveLength(2);
     expect(applyFilters(rows, { ...none, owner: "Yanis" })).toHaveLength(1);
     expect(applyFilters(rows, { ...none, channel: "linkedin_invite" })).toHaveLength(1);
-    expect(applyFilters(rows, { ...none, segment: "large", owner: "Yanis" })).toHaveLength(0);
+    expect(applyFilters(rows, { ...none, size: "large", owner: "Yanis" })).toHaveLength(0);
   });
 });
 
@@ -402,7 +385,7 @@ describe("attribution de campagne", () => {
       // Le filtre compare désormais la **clé** de campagne, préfixée par son
       // outil (jalon 111) : c'est elle que le regroupement produit, et un
       // filtre qui comparerait l'identifiant brut ne retiendrait rien.
-      { campaignId: "crm:k1", channel: NO_FILTER, owner: NO_FILTER, segment: NO_FILTER },
+      { ...ALL_OPEN, campaignId: "crm:k1" },
     );
     expect(rows).toHaveLength(2);
     expect(rows[1]!.type).toBe("reply_received");
@@ -415,7 +398,7 @@ describe("attribution de campagne", () => {
         row("a", "reply_received", "2026-11-01T10:00:00Z"),
         row("a", "message_sent", "2026-11-02T09:00:00Z", { campaignId: "k1", campaignName: "Nov" }),
       ],
-      { campaignId: NO_FILTER, channel: NO_FILTER, owner: NO_FILTER, segment: NO_FILTER },
+      ALL_OPEN,
     );
     expect(rows[0]!.campaignId).toBeNull();
   });
@@ -427,7 +410,7 @@ describe("attribution de campagne", () => {
         row("a", "message_sent", "2026-11-02T09:00:00Z", { campaignId: "k1", campaignName: "Nov" }),
         row("a", "message_sent", "2026-11-03T09:00:00Z"),
       ],
-      { campaignId: NO_FILTER, channel: NO_FILTER, owner: NO_FILTER, segment: NO_FILTER },
+      ALL_OPEN,
     );
     expect(rows[1]!.campaignId).toBeNull();
   });

@@ -2,12 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CHANNEL_LABELS, OUTREACH_CHANNELS } from "@/lib/domain/outreach";
-import {
-  PERIOD_KEYS,
-  PERIOD_LABELS,
-  SEGMENTS,
-  SEGMENT_LABELS,
-} from "@/lib/domain/pilotage";
+import { PERIOD_KEYS, PERIOD_LABELS, sourceLabel } from "@/lib/domain/pilotage";
 
 /**
  * La barre de filtres du pilotage.
@@ -24,9 +19,15 @@ import {
 export function FilterBar({
   campaigns,
   owners,
+  niches,
+  groups,
+  sources,
 }: {
   readonly campaigns: readonly { readonly id: string; readonly name: string }[];
   readonly owners: readonly string[];
+  readonly niches: readonly { readonly key: string; readonly label: string; readonly count: number }[];
+  readonly groups: readonly string[];
+  readonly sources: readonly string[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -50,7 +51,7 @@ export function FilterBar({
   return (
     <div
       data-filter-bar
-      className="mb-4 flex flex-wrap items-end gap-2 rounded-card border border-line bg-surface px-3.5 py-3"
+      className="mb-4 flex flex-wrap items-end gap-2 rounded-board border border-line bg-surface px-3.5 py-3"
     >
       <Field label="Période">
         <select
@@ -138,21 +139,78 @@ export function FilterBar({
         </select>
       </Field>
 
-      <Field label="Segment">
+      <Field label="Niche">
         <select
-          value={value("segment")}
-          data-filter="segment"
-          onChange={(event) => write({ segment: event.target.value })}
+          value={value("niche")}
+          data-filter="niche"
+          onChange={(event) => write({ niche: event.target.value })}
           className={SELECT}
         >
-          <option value="">Tous</option>
-          {SEGMENTS.map((segment) => (
-            <option key={segment} value={segment}>
-              {SEGMENT_LABELS[segment]}
+          <option value="">Toutes</option>
+          {niches.map((niche) => (
+            <option key={niche.key} value={niche.key}>
+              {niche.label} ({niche.count})
             </option>
           ))}
         </select>
       </Field>
+
+      <Field label="Fonction">
+        <select
+          value={value("fonction")}
+          data-filter="fonction"
+          onChange={(event) => write({ fonction: event.target.value })}
+          className={SELECT}
+        >
+          <option value="">Toutes</option>
+          {groups.map((group) => (
+            <option key={group} value={group}>
+              {group}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      {/*
+        **L'origine, et c'est le filtre qu'on cherche en premier devant un total
+        qui surprend.** Trois chemins écrivent des messages depuis le jalon 112 —
+        le CRM, lemlist, le compteur manuel — et « ça vient d'où ? » est la
+        première question posée à un chiffre inattendu.
+      */}
+      <Field label="Origine">
+        <select
+          value={value("origine")}
+          data-filter="origine"
+          onChange={(event) => write({ origine: event.target.value })}
+          className={SELECT}
+        >
+          <option value="">Toutes</option>
+          {sources.map((source) => (
+            <option key={source} value={source}>
+              {sourceLabel(source)}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      {/*
+        **La tranche de taille n'est pas dans la barre**, et c'est volontaire :
+        le prototype ne la demande pas, et l'onglet « Segments » est l'écran qui
+        la pose. Le filtre existe tout de même (`taille=` dans l'URL), parce que
+        les liens de cet onglet doivent pouvoir ouvrir la liste d'une tranche.
+        Quand il est posé, la barre le dit et sait le retirer — un filtre actif
+        invisible est un filtre dont on accuse les chiffres.
+      */}
+      {value("taille") !== "" && (
+        <button
+          type="button"
+          data-filter-clear="taille"
+          onClick={() => write({ taille: "" })}
+          className="h-9 rounded-control border border-brand bg-brand-l px-2.5 text-[12.5px] font-medium text-brand-d"
+        >
+          Tranche filtrée · retirer
+        </button>
+      )}
     </div>
   );
 }

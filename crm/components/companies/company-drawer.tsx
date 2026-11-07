@@ -8,6 +8,7 @@ import { Eyebrow, LifecycleTag, StatusTag } from "@/components/ui/primitives";
 import type { CompanyRecord } from "@/lib/api/companies";
 import { deleteCompany } from "@/lib/client/crm-api";
 import { formatDate, money } from "@/lib/format";
+import { valueSourceLabel } from "@/lib/domain/company-profile";
 import { RecordPanel } from "@/components/activities/record-panel";
 import type { SequenceOption } from "@/components/activities/run-sequence";
 import { CompanyForm } from "./company-form";
@@ -16,6 +17,7 @@ import { contactTitle } from "@/lib/domain/contact-identity";
 interface CompanyDrawerProps {
   readonly company: CompanyRecord | null;
   readonly industries: readonly string[];
+  readonly niches: readonly string[];
   readonly owners: readonly string[];
   readonly sequences: readonly SequenceOption[];
   readonly onClose: () => void;
@@ -25,6 +27,7 @@ interface CompanyDrawerProps {
 export function CompanyDrawer({
   company,
   industries,
+  niches,
   owners,
   sequences,
   onClose,
@@ -79,6 +82,7 @@ export function CompanyDrawer({
         <CompanyForm
           company={company}
           industries={industries}
+          niches={niches}
           onCancel={() => setEditing(false)}
           onSaved={() => {
             setEditing(false);
@@ -110,12 +114,36 @@ export function CompanyDrawer({
             <Row label="Secteur">{company.industry || "—"}</Row>
             <Row label="Taille">{company.size || "—"}</Row>
             <Row label="Localisation">{company.loc || "—"}</Row>
-            {/* « Non renseigné » et non « 0 » : le segment du pilotage se lit
-                ici, et un zéro affirmerait un site sans visite. */}
+            {/*
+              **Les deux champs du pilotage, avec leur provenance.**
+
+              « Non renseigné » et non « 0 » : la tranche de taille se lit ici,
+              et un zéro affirmerait un site sans visite. La provenance est
+              affichée parce qu'elle décide d'un comportement — une valeur
+              « saisi dans le CRM » ne sera jamais écrasée par la
+              synchronisation lemlist, une valeur importée le sera. Sans
+              l'afficher, cette règle serait invisible et on en accuserait le
+              relevé.
+            */}
+            <Row label="Niche">
+              {company.niche === "" ? (
+                "non renseignée"
+              ) : (
+                <span data-company-niche-value>
+                  {company.niche}
+                  <Source source={company.nicheSource} />
+                </span>
+              )}
+            </Row>
             <Row label="Visiteurs / mois">
-              {company.monthlyVisitors === null
-                ? "non renseigné"
-                : company.monthlyVisitors.toLocaleString("fr-FR")}
+              {company.monthlyVisitors === null ? (
+                "non renseigné"
+              ) : (
+                <span>
+                  {company.monthlyVisitors.toLocaleString("fr-FR")}
+                  <Source source={company.visitorsSource} />
+                </span>
+              )}
             </Row>
             <Row label="Créée le">{formatDate(company.createdAt)}</Row>
           </dl>
@@ -253,5 +281,15 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       </dt>
       <dd className="font-medium break-words">{children}</dd>
     </>
+  );
+}
+
+/** D'où vient une valeur de profil — en petit, à côté d'elle. */
+function Source({ source }: { readonly source: string }) {
+  if (source === "") return null;
+  return (
+    <span data-value-source={source} className="ml-1.5 text-[11.5px] text-muted">
+      ({valueSourceLabel(source)})
+    </span>
   );
 }

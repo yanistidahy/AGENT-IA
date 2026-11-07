@@ -2,9 +2,12 @@ import { parisDayRange } from "./mailbox-cap";
 import { parisWall } from "./auto-send";
 import {
   isPositiveReply,
+  OUTREACH_CHANNELS,
   type OutreachChannel,
   type OutreachType,
 } from "./outreach";
+import { nicheKey, NO_NICHE, NO_NICHE_LABEL } from "./company-profile";
+import { SIZE_LABELS, type SizeBucket } from "./size-buckets";
 
 /**
  * **Une définition, une fonction, et aucun chiffre calculé ailleurs.**
@@ -26,33 +29,16 @@ import {
 
 /* ------------------------------------------------------- la ligne lue ----- */
 
-/** Un segment de marque, déduit des visiteurs mensuels de la société. */
-export const SEGMENTS = ["small", "large", "unknown"] as const;
-export type Segment = (typeof SEGMENTS)[number];
+/*
+  **Les tranches de taille ont quitté ce fichier au jalon 113 v2.**
 
-export const SEGMENT_LABELS: Record<Segment, string> = {
-  small: "Petites marques (2 000 à 10 000 visiteurs)",
-  large: "Grandes marques (15 000 visiteurs et plus)",
-  unknown: "Non renseigné",
-};
-
-/**
- * Les bornes du brief, **et l'intervalle entre les deux n'est pas un segment**.
- *
- * 10 000 à 15 000 visiteurs n'appartient à aucune des deux populations
- * décrites : les ranger dans l'une gonflerait un segment d'après une règle que
- * personne n'a posée. Ils comptent donc comme « non renseigné » — ce qui est le
- * fait : on ne sait pas dans quel segment ils tombent.
- */
-export const SMALL_RANGE = { min: 2_000, max: 10_000 } as const;
-export const LARGE_MIN = 15_000;
-
-export function segmentOf(monthlyVisitors: number | null): Segment {
-  if (monthlyVisitors === null) return "unknown";
-  if (monthlyVisitors >= LARGE_MIN) return "large";
-  if (monthlyVisitors >= SMALL_RANGE.min && monthlyVisitors <= SMALL_RANGE.max) return "small";
-  return "unknown";
-}
+  `SEGMENTS`, `SEGMENT_LABELS`, `SMALL_RANGE`, `LARGE_MIN` et `segmentOf`
+  vivaient ici avec trois valeurs, et rangeaient l'intervalle 10 000 à 15 000
+  dans « non renseigné » faute de brief. Le prototype validé nomme maintenant
+  cinq tranches : elles sont dans `lib/domain/size-buckets.ts`, avec la règle
+  d'échantillon que les quatre onglets lisent aussi. Une seule fonction décide
+  d'une tranche, et c'est ce que `no-duplicate-thresholds` exige.
+*/
 
 /** Une ligne du journal, telle que le pilotage la lit. */
 export interface EventRow {
@@ -89,9 +75,25 @@ export interface EventRow {
    */
   readonly source: string;
   readonly replyCategory: string;
-  readonly segment: Segment;
-  /** Le groupe de fonction du contact (jalon 94), pour le tableau par segment. */
+  /** La tranche de taille de la marque — `lib/domain/size-buckets.ts`. */
+  readonly size: SizeBucket;
+  /**
+   * **La niche de la marque**, recopiée à la lecture.
+   *
+   * Vide quand elle n'est pas renseignée, et le tableau « Par niche » en fait
+   * une ligne nommée : masquer les non renseignés ferait d'un tableau partiel
+   * un tableau qui a l'air complet.
+   */
+  readonly niche: string;
+  /** Le groupe de fonction du contact (jalon 94), pour le tableau par niche. */
   readonly group: string;
+  /**
+   * L'étape de séquence chez la source — `null` hors séquence. L'onglet
+   * Campagnes montre le résultat par étape ; un total de campagne ne dit pas
+   * laquelle des quatre relances ne sert à rien.
+   */
+  readonly stepIndex: number | null;
+  readonly stepType: string;
 }
 
 /* ------------------------------------------------------- les périodes ----- */
@@ -399,6 +401,19 @@ export interface FunnelStep {
   readonly contactIds: readonly string[];
   /** Part des personnes contactées, `null` quand il n'y a rien à convertir. */
   readonly share: number | null;
+  /**
+   * **Le passage depuis la marche précédente**, et c'est une autre question que
+   * `share`.
+   *
+   * « 4 % des contactés ont testé la démo » dit où l'on en est ; « 80 % de ceux
+   * qui ont reçu la démo l'ont testée » dit **quelle marche coince**. Les deux
+   * se lisent sur le même entonnoir, d'où la bascule du prototype, et les
+   * calculer tous les deux ici empêche la vue d'en improviser un.
+   *
+   * `null` sur la première marche (il n'y a pas de précédente) et sur un
+   * dénominateur nul — la règle du jalon 20.
+   */
+  readonly passage: number | null;
 }
 
 /**
@@ -424,12 +439,112 @@ export function funnel(allRows: readonly EventRow[], rows: readonly EventRow[], 
     customer: byType("customer_won"),
   };
 
-  return FUNNEL_STAGES.map((stage) => ({
-    stage,
-    label: FUNNEL_LABELS[stage],
-    contactIds: stages[stage],
-    share: base === 0 ? null : stages[stage].length / base,
-  }));
+  return FUNNEL_STAGES.map((stage, index) => {
+    const previous = index === 0 ? null : stages[FUNNEL_STAGES[index - 1]!];
+    const from = previous === null ? 0 : previous.length;
+    return {
+      stage,
+      label: FUNNEL_LABELS[stage],
+      contactIds: stages[stage],
+      share: base === 0 ? null : stages[stage].length / base,
+      passage: previous === null || from === 0 ? null : stages[stage].length / from,
+    };
+  });
+}
+
+/* ------------------------------------------- les invitations LinkedIn ----- */
+
+/**
+ * **Les invitations LinkedIn acceptées, sur celles envoyées.**
+ *
+ * Un chiffre à part parce qu'il ne se lit pas comme les autres : une invitation
+ * acceptée n'est pas une réponse, c'est une porte qui s'ouvre, et la mélanger au
+ * taux de réponse ferait monter ce dernier sans qu'un seul message ait été lu.
+ *
+ * Les deux nombres sont des **événements** et non des personnes : on peut
+ * inviter la même personne sur deux comptes, et le taux qui compte est bien
+ * « combien de mes invitations passent ». `null` sur zéro envoi — pas « 0 % »,
+ * qui affirmerait un refus.
+ */
+export interface InviteAcceptance {
+  readonly sent: readonly EventRow[];
+  readonly accepted: readonly EventRow[];
+  readonly rate: number | null;
+}
+
+export function inviteAcceptance(rows: readonly EventRow[]): InviteAcceptance {
+  const sent = rows.filter((row) => row.type === "linkedin_invite_sent");
+  const accepted = rows.filter((row) => row.type === "linkedin_invite_accepted");
+  return {
+    sent,
+    accepted,
+    rate: sent.length === 0 ? null : accepted.length / sent.length,
+  };
+}
+
+/* ------------------------------------------- le taux, canal par canal ----- */
+
+export interface ChannelSplit {
+  readonly channel: OutreachChannel;
+  readonly rate: number | null;
+  /** Les personnes touchées par ce canal : le dénominateur du taux. */
+  readonly contacted: number;
+  readonly messages: number;
+}
+
+/**
+ * **Le taux de réponse, décomposé par canal.**
+ *
+ * Un taux global de 9 % peut cacher 2 % par email et 24 % en DM, et c'est la
+ * seule décomposition qui change ce qu'on fera demain. Chaque ligne appelle
+ * `replyRate` — la même fonction que le taux global —, donc les deux veulent
+ * dire la même chose ; écrire la division ici en ferait une seconde définition.
+ *
+ * Les canaux sans aucune ligne sont retirés : « email 0 sur 0, — » occupe une
+ * ligne pour dire qu'il n'y a rien à dire.
+ */
+export function channelSplit(rows: readonly EventRow[]): ChannelSplit[] {
+  const out: ChannelSplit[] = [];
+  for (const channel of OUTREACH_CHANNELS) {
+    const scoped = rows.filter((row) => row.channel === channel);
+    if (scoped.length === 0) continue;
+    out.push({
+      channel,
+      rate: replyRate(scoped),
+      contacted: peopleMessaged(scoped).length,
+      messages: messagesSent(scoped).length,
+    });
+  }
+  return out;
+}
+
+/* ----------------------------------------- la phrase d'un objectif -------- */
+
+/**
+ * **Ce qu'il reste à faire, ou de combien l'objectif est dépassé.**
+ *
+ * Deux phrases, et le prototype les veut toutes les deux parce qu'elles ne
+ * servent pas le même moment de la semaine. En dessous : « Il en manque 8 »,
+ * c'est-à-dire un nombre d'actes, pas un pourcentage — « 92 % de l'objectif »
+ * ne dit pas quoi faire cet après-midi. Au-dessus : « Objectif atteint ×3,5 »,
+ * qui reconnaît le dépassement au lieu d'afficher une barre pleine muette.
+ *
+ * `target` à zéro veut dire « pas d'objectif » (la convention de `progress`) et
+ * rend la chaîne vide : inventer un reste à faire sur un objectif absent serait
+ * un reproche sans fondement.
+ */
+export function objectiveLabel(actual: number, target: number, horizon = "d'ici dimanche"): string {
+  if (target <= 0) return "";
+  if (actual >= target) {
+    const ratio = actual / target;
+    // Un dépassement de moins de 5 % ne mérite pas un « ×1,0 » qui ressemble à
+    // une erreur d'affichage : on dit simplement que c'est atteint.
+    if (ratio < 1.05) return "Objectif atteint";
+    const shown = String(Math.round(ratio * 10) / 10).replace(".", ",");
+    return `Objectif atteint ×${shown}`;
+  }
+  const missing = target - actual;
+  return `Il en manque ${missing} ${horizon}`;
 }
 
 /* ----------------------------------------------------- les objectifs ------ */
@@ -460,21 +575,41 @@ export function progress(actual: number, target: number): number | null {
 export interface Breakdown {
   readonly key: string;
   readonly label: string;
+  /** Les personnes du seau : le nombre **est** leur nombre, et le `n` du taux. */
+  readonly people: readonly string[];
   readonly contacted: number;
   readonly messages: number;
   readonly replies: number;
   readonly replyRate: number | null;
   readonly demos: number;
   readonly qualified: number;
+  /**
+   * Les lignes du seau, et l'histoire de ses personnes.
+   *
+   * Elles voyagent avec la ligne pour que l'appelant n'ait pas à refiltrer :
+   * c'est ce qui permet au tableau par niche d'ajouter une tendance et à celui
+   * des campagnes d'ajouter le détail par étape **sans recompter** les six
+   * colonnes communes. Sans elles, chaque tableau regrouperait de son côté, et
+   * c'est précisément ainsi qu'une seconde définition de « taux de réponse »
+   * s'installe.
+   */
+  readonly rows: readonly EventRow[];
+  readonly history: readonly EventRow[];
 }
 
 /**
- * Le même jeu de colonnes, quel que soit l'axe de regroupement.
+ * **Le même jeu de colonnes, quel que soit l'axe de regroupement.**
  *
- * Campagne, segment, groupe de fonction : une seule fonction les calcule, donc
- * « taux de réponse » veut dire la même chose dans les trois tableaux. Chaque
- * ligne appelle les mêmes définitions que les pastilles — il n'y a pas un
- * comptage « pour le tableau » et un autre « pour la pastille ».
+ * Campagne, niche, tranche, groupe de fonction : une seule fonction les
+ * calcule, donc « taux de réponse » veut dire la même chose dans tous les
+ * tableaux. Chaque ligne appelle les mêmes définitions que les pastilles — il
+ * n'y a pas un comptage « pour le tableau » et un autre « pour la pastille ».
+ *
+ * Elle avait cessé d'être appelée quand les tableaux du jalon 109 ont été
+ * remplacés par ceux du prototype, et les deux nouveaux rederivaient les six
+ * mêmes colonnes chacun de son côté. Ils passent de nouveau par ici : une
+ * fonction tombée en désuétude qu'on garde est une invitation à en écrire une
+ * seconde.
  */
 export function breakdown(
   allRows: readonly EventRow[],
@@ -498,15 +633,19 @@ export function breakdown(
     // la ligne d'à côté.
     const ids = new Set(scoped.map((row) => row.contactId));
     const history = allRows.filter((row) => ids.has(row.contactId));
+    const people = peopleMessaged(scoped);
     lines.push({
       key,
       label: bucket.label,
-      contacted: peopleMessaged(scoped).length,
+      people,
+      contacted: people.length,
       messages: messagesSent(scoped).length,
       replies: peopleReplied(scoped).length,
       replyRate: replyRate(scoped),
       demos: demosSent(scoped).length,
       qualified: qualifiedDemos(history, period).length,
+      rows: scoped,
+      history,
     });
   }
   return lines;
@@ -568,16 +707,66 @@ export function campaignLabel(row: EventRow): string {
   return "Hors campagne";
 }
 
+/* --------------------------------------------- les autres axes ------------ */
+
+/**
+ * **La niche d'une ligne, en clé et en libellé.**
+ *
+ * La clé plie casse et accents, le libellé garde ce qui a été tapé : c'est ce
+ * qui permet à « Bijoux » et « bijoux » de faire une seule ligne de tableau
+ * sans que l'une des deux orthographes s'affiche à la place de l'autre.
+ *
+ * Une niche absente devient une ligne nommée, jamais un vide : « 40 personnes
+ * sans niche » est une information actionnable — il y a quarante fiches à
+ * compléter —, alors qu'une ligne vide se lit comme un défaut d'affichage.
+ */
+export function nicheOf(row: EventRow): { readonly key: string; readonly label: string } {
+  const key = nicheKey(row.niche);
+  if (key === "") return { key: NO_NICHE, label: NO_NICHE_LABEL };
+  return { key, label: row.niche.trim() };
+}
+
+/** La tranche de taille d'une ligne, en clé et en libellé. */
+export function sizeOf(row: EventRow): { readonly key: string; readonly label: string } {
+  return { key: row.size, label: SIZE_LABELS[row.size] };
+}
+
 /* ------------------------------------------------------- les filtres ------ */
 
+/**
+ * **Les sept filtres, et ils voyagent tous dans l'URL.**
+ *
+ * `""` vaut « tous » pour chacun — c'est `NO_FILTER`. Quatre sont arrivés au
+ * jalon 113 v2 : la niche et le groupe de fonction, que le prototype demande
+ * dans la barre, et l'origine, qui répond à la première question qu'on se pose
+ * devant un total surprenant (« ça vient de lemlist ou du compteur ? »). La
+ * taille reste un filtre bien que la barre ne la montre pas : l'onglet
+ * « Segments » en a besoin pour que le clic sur une marche de mini-entonnoir
+ * ouvre la liste de **cette** tranche, et un lien ne peut porter qu'un filtre
+ * qui existe.
+ */
 export interface PilotageFilters {
   readonly campaignId: string;
   readonly channel: string;
   readonly owner: string;
-  readonly segment: string;
+  readonly size: string;
+  readonly niche: string;
+  readonly group: string;
+  readonly source: string;
 }
 
 export const NO_FILTER = "";
+
+/** Tous les filtres ouverts : le point de départ, écrit une fois. */
+export const ALL_OPEN: PilotageFilters = {
+  campaignId: NO_FILTER,
+  channel: NO_FILTER,
+  owner: NO_FILTER,
+  size: NO_FILTER,
+  niche: NO_FILTER,
+  group: NO_FILTER,
+  source: NO_FILTER,
+};
 
 /**
  * Le filtrage, **une seule fois**, pour que le nombre et la liste qu'il ouvre
@@ -592,7 +781,13 @@ export function keepRow(row: EventRow, filters: PilotageFilters): boolean {
   if (filters.campaignId !== NO_FILTER && campaignKey(row) !== filters.campaignId) return false;
   if (filters.channel !== NO_FILTER && row.channel !== filters.channel) return false;
   if (filters.owner !== NO_FILTER && row.owner !== filters.owner) return false;
-  if (filters.segment !== NO_FILTER && row.segment !== filters.segment) return false;
+  if (filters.size !== NO_FILTER && row.size !== filters.size) return false;
+  // La niche se compare sur sa **clé** et non sur le libellé : « Bijoux » et
+  // « bijoux » sont une seule niche, et un filtre sensible à la casse couperait
+  // le tableau en deux lignes dont une seule s'ouvrirait.
+  if (filters.niche !== NO_FILTER && nicheOf(row).key !== filters.niche) return false;
+  if (filters.group !== NO_FILTER && row.group !== filters.group) return false;
+  if (filters.source !== NO_FILTER && row.source !== filters.source) return false;
   return true;
 }
 

@@ -31,7 +31,9 @@ if (!available) {
 }
 
 async function openChart(page: Page, query = ""): Promise<void> {
-  await page.goto(`${BASE_URL}/pilotage${query}`, { waitUntil: "domcontentloaded" });
+  // L'onglet « Dans le temps » depuis le jalon 113 v2 : le graphique a quitté
+  // la vue d'ensemble pour son propre écran.
+  await page.goto(`${BASE_URL}/pilotage/temps${query}`, { waitUntil: "domcontentloaded" });
   const chart = page.locator("[data-timeline]");
   await chart.scrollIntoViewIfNeeded();
   expect(await reachable(chart)).toBe(true);
@@ -50,9 +52,14 @@ describeBrowser("le graphique dans le temps", () => {
     await browser?.close();
   });
 
-  it("ouvre sa barre d'outils, son tracé et sa bande de cadence", async () => {
+  it("ouvre ses onglets, sa barre d'outils, son tracé et sa bande de cadence", async () => {
     const { page } = session;
     await openChart(page);
+
+    expect(await reachable(page.locator("[data-board-tabs]"))).toBe(true);
+    expect(
+      await page.locator('[data-board-tab="/pilotage/temps"]').getAttribute("data-active"),
+    ).toBe("1");
 
     for (const hook of [
       "[data-timeline-toolbar]",
@@ -95,26 +102,45 @@ describeBrowser("le graphique dans le temps", () => {
   }, 90_000);
 
   /**
-   * **Le survol dit quelque chose, et le focus clavier dit la même chose.**
-   * Un graphique dont l'information n'existe qu'au survol est un graphique que
-   * personne ne lit au clavier.
+   * **Le panneau de détail est sous le tracé, et il est toujours là.**
+   *
+   * C'était une infobulle flottante au jalon 113. Trois raisons l'ont déplacée,
+   * et les trois se vérifient ici : elle se posait en travers du graphique
+   * qu'on lit, elle ne survivait pas à un doigt sur un écran tactile, et elle
+   * ne pouvait pas porter le lien « Voir les N messages » — or c'est pour ce
+   * lien qu'on s'arrête sur une barre. Toujours présente, parce qu'un bloc qui
+   * apparaît au survol pousse la page et fait perdre la barre visée.
    */
-  it("montre une infobulle au survol et au focus, avec les dates exactes", async () => {
+  it("remplit un panneau de détail sous le tracé, au survol comme au focus", async () => {
     const { page } = session;
     await openChart(page, "?pas=semaine&vue=total&metric=messages");
+
+    /*
+      Présent **avant** tout survol, et portant la dernière période. La souris
+      est d'abord ramenée dans un coin : Playwright garde sa position d'un test
+      à l'autre, et un curseur resté sur une barre ferait lire l'état survolé
+      là où l'on veut vérifier l'état au repos. Défaut du test, pas du produit.
+    */
+    await page.mouse.move(0, 0);
+    const panel = page.locator("[data-timeline-detail]");
+    await panel.scrollIntoViewIfNeeded();
+    expect(await reachable(panel)).toBe(true);
+    expect(await panel.getAttribute("data-detail-default")).toBe("1");
 
     const bar = page.locator("[data-timeline-bar]").last();
     await bar.scrollIntoViewIfNeeded();
     await bar.hover();
 
-    const tip = page.locator("[data-timeline-tooltip]");
-    await expect.poll(async () => (await tip.count()) > 0, { timeout: 15_000 }).toBe(true);
     const dates = await page.locator("[data-tooltip-dates]").innerText();
     // « lun. 2 nov. – dim. 8 nov. » : les deux bornes, pas « semaine du 2 ».
     expect(dates).toMatch(/\p{L}+\.? \d+ \p{L}+\.? – \p{L}+\.? \d+ \p{L}+\.?/u);
     expect(Number(await page.locator("[data-tooltip-total]").innerText())).toBeGreaterThanOrEqual(0);
     // L'origine des faits : trois chemins écrivent des messages.
     expect(await page.locator("[data-tooltip-sources]").count()).toBeGreaterThanOrEqual(0);
+
+    // Et le lien, qui est la raison du déplacement.
+    const link = page.locator("[data-detail-link]");
+    expect(await reachable(link)).toBe(true);
 
     // Le même contenu au clavier : chaque barre est un lien, donc focalisable.
     await page.mouse.move(0, 0);
@@ -123,6 +149,28 @@ describeBrowser("le graphique dans le temps", () => {
       .poll(async () => (await page.locator("[data-tooltip-dates]").count()) > 0, { timeout: 10_000 })
       .toBe(true);
   }, 120_000);
+
+  /**
+   * **La cible est un trait rouge en pointillés, et les barres ne sont jamais
+   * rouges.** Un trait rouge marque un seuil ; une barre rouge juge le travail
+   * de la semaine, et peindre en rouge la moitié d'une série ferait fermer
+   * l'écran.
+   */
+  it("trace la cible en pointillés rouges, et garde les barres neutres", async () => {
+    const { page } = session;
+    await openChart(page, "?pas=semaine&vue=total&metric=messages");
+
+    const target = page.locator("[data-target-line] line").first();
+    expect(await page.locator("[data-target-line]").count()).toBeGreaterThan(0);
+    expect(await target.getAttribute("stroke")).toContain("--color-danger");
+    expect(await target.getAttribute("stroke-dasharray")).not.toBe(null);
+
+    // Aucune barre peinte avec le rouge du seuil.
+    const fills = await page.locator("[data-timeline-bar] rect").evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute("fill") ?? ""),
+    );
+    for (const fill of fills) expect(fill).not.toContain("--color-danger");
+  }, 90_000);
 
   /** Item 4, première moitié : masquer un canal change les lignes. */
   it("masque un canal depuis la légende", async () => {
@@ -191,6 +239,64 @@ describeBrowser("le graphique dans le temps", () => {
     expect(rows, `${shown} annoncés, ${rows} lignes`).toBe(shown);
     // Le lien portait bien une plage libre, donc la liste est celle du seau.
     expect(page.url()).toContain("periode=libre");
+  }, 120_000);
+
+  /**
+   * **Au doigt, la barre sélectionne la période ; elle ne part pas.**
+   *
+   * Le brief demande deux choses qui se contredisent sur un écran tactile : que
+   * le clic remplisse le panneau de détail, et que la barre ouvre la liste.
+   * L'arbitrage est que le doigt **sélectionne** et que « Voir les N messages »,
+   * dans le panneau, ouvre la liste. Sans lui, un utilisateur tactile ne
+   * pourrait jamais lire le détail d'une période : il n'a pas de survol, et son
+   * tap partirait.
+   */
+  it("au doigt, sélectionne la période au lieu de naviguer", async () => {
+    const page = await browser.newPage({
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      isMobile: true,
+      storageState: await session.page.context().storageState(),
+    });
+    try {
+      await page.goto(`${BASE_URL}/pilotage/temps?pas=semaine&vue=total&metric=messages`, {
+        waitUntil: "domcontentloaded",
+      });
+      const bars = page.locator("[data-timeline-bar]");
+      const total = await bars.count();
+      let chosen = -1;
+      for (let index = total - 1; index >= 0; index -= 1) {
+        if (Number(await bars.nth(index).getAttribute("data-total")) > 0) {
+          chosen = index;
+          break;
+        }
+      }
+      expect(chosen, "aucune barre non nulle").toBeGreaterThanOrEqual(0);
+
+      const bar = bars.nth(chosen);
+      await bar.scrollIntoViewIfNeeded();
+      await bar.locator("a").first().tap();
+
+      // On reste sur le graphique, et le panneau porte désormais cette période.
+      expect(new URL(page.url()).pathname, "le tap a navigué").toBe("/pilotage/temps");
+      await expect
+        .poll(
+          async () =>
+            page.locator("[data-timeline-detail]").getAttribute("data-detail-default"),
+          { timeout: 10_000 },
+        )
+        .toBe("0");
+
+      // Et c'est le lien du panneau qui ouvre la liste.
+      const link = page.locator("[data-detail-link]");
+      await link.scrollIntoViewIfNeeded();
+      await link.tap();
+      await page.waitForURL((url) => url.pathname.startsWith("/pilotage/liste"), {
+        timeout: 15_000,
+      });
+    } finally {
+      await page.close();
+    }
   }, 120_000);
 
   /** Item 7 : 390 px, sans défilement horizontal **de la page**. */

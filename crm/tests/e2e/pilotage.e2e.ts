@@ -3,22 +3,23 @@ import type { Browser } from "playwright-core";
 import { BASE_URL, chromiumPath, openBrowser, reachable, signIn, type Session } from "./browser";
 
 /**
- * **Le pilotage, cliqué pour de vrai.**
+ * **Onglet « Vue d'ensemble », cliqué pour de vrai.**
  *
- * Trois choses qu'aucun test unitaire ne peut voir, et c'est pour elles que ce
+ * Quatre choses qu'aucun test unitaire ne peut voir, et c'est pour elles que ce
  * fichier existe :
  *
- * 1. **les pastilles et les filtres sont atteignables** — `reachable()`, jamais
+ * 1. **les cartes et les filtres sont atteignables** — `reachable()`, jamais
  *    `isVisible()` : la seconde ne voit pas un ancêtre qui rogne, et c'est
  *    exactement le défaut du jalon 60 ;
- * 2. **un nombre et la liste qu'il ouvre comptent la même chose** — le compte
- *    lu sur la pastille et le nombre de lignes de la page ouverte sont relevés
- *    dans le DOM, pas dans le HTML brut (le flux RSC y répète le balisage, ce
- *    qui double tout comptage fait au `grep`) ;
- * 3. **l'écran tient en clair comme en sombre** — le produit n'a qu'un thème
- *    clair (voir CLAUDE.md) ; on vérifie donc sous les deux préférences du
- *    système que le texte reste atteignable, au lieu d'affirmer un thème sombre
- *    qui n'existe pas.
+ * 2. **un nombre et la liste qu'il ouvre comptent la même chose** — relevé dans
+ *    le DOM, pas dans le HTML brut (le flux RSC y répète le balisage, ce qui
+ *    double tout comptage fait au `grep`) ;
+ * 3. **l'entonnoir bascule entre nombres et passage**, et le passage n'est pas
+ *    la part des contactés — ce sont deux questions différentes ;
+ * 4. **l'écran tient en clair comme en sombre** — le produit n'a qu'un thème
+ *    clair (voir CLAUDE.md) ; on vérifie sous les deux préférences du système
+ *    que le texte reste atteignable, au lieu d'affirmer un thème sombre qui
+ *    n'existe pas.
  */
 
 const password = process.env.E2E_PASSWORD ?? "";
@@ -29,7 +30,7 @@ if (!available) {
   console.warn("[e2e] pilotage ignoré : ni Chromium ni E2E_PASSWORD");
 }
 
-describeBrowser("le pilotage", () => {
+describeBrowser("la vue d'ensemble", () => {
   let browser: Browser;
   let session: Session;
 
@@ -42,106 +43,116 @@ describeBrowser("le pilotage", () => {
     await browser?.close();
   });
 
-  it("ouvre l'écran avec sa barre de filtres et ses six pastilles", async () => {
+  it("ouvre ses onglets, sa barre de filtres et ses sept cartes", async () => {
     const { page } = session;
     await page.goto(`${BASE_URL}/pilotage`, { waitUntil: "domcontentloaded" });
 
     expect(await reachable(page.locator("h1"))).toBe(true);
+    expect(await reachable(page.locator("[data-board-tabs]"))).toBe(true);
     expect(await reachable(page.locator("[data-filter-bar]"))).toBe(true);
-    for (const filter of ["periode", "campagne", "canal", "proprietaire", "segment"]) {
+
+    // Les sept filtres du prototype. La tranche de taille n'y est pas : c'est
+    // l'onglet « Segments » qui la pose, et son absence ici est voulue.
+    for (const filter of ["periode", "campagne", "canal", "proprietaire", "niche", "fonction", "origine"]) {
       expect(await reachable(page.locator(`[data-filter="${filter}"]`)), filter).toBe(true);
     }
+    expect(await page.locator('[data-filter="taille"]').count()).toBe(0);
 
-    const tiles = page.locator("[data-tile]");
-    expect(await tiles.count()).toBe(6);
-    for (let index = 0; index < 6; index += 1) {
-      expect(await reachable(tiles.nth(index)), `pastille ${index}`).toBe(true);
+    // Trois cartes d'objectif, quatre indicateurs.
+    expect(await page.locator("[data-objective]").count()).toBe(3);
+    expect(await page.locator("[data-kpi]").count()).toBe(4);
+    for (const metric of ["messages", "demos_sent", "qualified"]) {
+      const card = page.locator(`[data-objective="${metric}"]`);
+      expect(await reachable(card), metric).toBe(true);
     }
-    // Cinq des six ouvrent une liste : le taux de réponse n'a pas de personnes
-    // derrière lui, il a deux chiffres qui ont chacun la leur.
-    expect(await page.locator("[data-kpi]").count()).toBe(5);
-  });
+  }, 90_000);
 
   /**
-   * **L'item 6 du test d'acceptation, vérifié au clic.**
+   * **Chaque taux porte son `n`, et c'est la promesse centrale du jalon.**
    *
-   * On lit le nombre sur la pastille, on clique, on compte les lignes. Les deux
-   * viennent du même appel (`metricResult`) : le test le prouve en les
-   * comparant sur l'écran plutôt qu'en relisant le code.
+   * « 12 % » affiché pareil sur neuf personnes et sur trois cents est la façon
+   * la plus courante de tromper quelqu'un avec un chiffre exact.
    */
-  it("ouvre derrière chaque pastille une liste de la même longueur", async () => {
+  it("affiche le n et la fiabilité sous le taux de réponse", async () => {
+    const { page } = session;
+    await page.goto(`${BASE_URL}/pilotage`, { waitUntil: "domcontentloaded" });
+
+    const card = page.locator('[data-kpi="reply_rate"]');
+    await card.scrollIntoViewIfNeeded();
+    expect(await reachable(card)).toBe(true);
+
+    const sample = await card.locator("[data-sample]").innerText();
+    expect(sample, "le n n'est pas écrit").toMatch(/\d+ sur \d+ personnes?/);
+
+    const chip = card.locator("[data-reliability]");
+    expect(await reachable(chip)).toBe(true);
+    const state = await chip.getAttribute("data-reliability");
+    expect(["unusable", "weak", "solid"]).toContain(state);
+    // Le mot, pas seulement la teinte : un daltonien ne distingue pas l'ambre
+    // du vert.
+    expect(await chip.innerText()).toMatch(/interpréter|faible|fiable/);
+  }, 90_000);
+
+  /**
+   * **L'invariant du jalon 109, vérifié au clic.** Le nombre est lu sur la
+   * carte, puis les lignes de la liste sont comptées. Les deux viennent du même
+   * appel ; le test le prouve sur l'écran plutôt qu'en relisant le code.
+   */
+  it("ouvre derrière chaque objectif une liste de la même longueur", async () => {
     const { page } = session;
 
-    for (const metric of ["messages", "new_contacted", "replies", "demos_sent", "qualified"]) {
+    for (const metric of ["messages", "demos_sent", "qualified"]) {
       await page.goto(`${BASE_URL}/pilotage`, { waitUntil: "domcontentloaded" });
-      const tile = page.locator(`[data-kpi="${metric}"]`);
-      if ((await tile.count()) === 0) continue;
+      const card = page.locator(`[data-objective="${metric}"]`);
+      if ((await card.count()) === 0) continue;
 
-      const shown = Number(await tile.getAttribute("data-count"));
-      expect(await reachable(tile), metric).toBe(true);
-      await tile.click();
+      const shown = Number(await card.locator("[data-objective-value]").innerText());
+      await card.scrollIntoViewIfNeeded();
+      const link = card.locator("a").first();
+      expect(await reachable(link), metric).toBe(true);
+      await link.click();
       await page.waitForURL((url) => url.pathname.startsWith("/pilotage/liste"), {
         timeout: 15_000,
       });
 
       const announced = Number(await page.locator("[data-list-count]").innerText());
       const rows = await page.locator("[data-row]").count();
-      expect(announced, `${metric} : la liste annonce le compte de la pastille`).toBe(shown);
+      expect(announced, `${metric} : la liste annonce autre chose que la carte`).toBe(shown);
       expect(rows, `${metric} : ${shown} annoncés, ${rows} lignes`).toBe(shown);
     }
-  });
+  }, 120_000);
 
-  it("ouvre aussi la liste derrière une marche de l'entonnoir et une cellule de tableau", async () => {
+  it("ouvre aussi la liste derrière une marche de l'entonnoir", async () => {
     const { page } = session;
     await page.goto(`${BASE_URL}/pilotage`, { waitUntil: "domcontentloaded" });
 
     const stage = page.locator('[data-funnel-stage="contacted"]');
-    const shown = Number(await stage.getAttribute("data-count"));
     /*
-      **On descend d'abord, comme un humain.** C'est déjà la règle appliquée à
-      la cellule de tableau plus bas, et elle vaut ici pour la même raison :
-      `reachable()` interroge le point au centre de l'élément, donc un élément
-      hors du cadre n'est pas atteignable — et c'est exact.
-
-      Ce test passait sans défiler tant que l'entonnoir tenait dans le premier
-      écran. Le compteur du jalon 112, posé au-dessus, l'a poussé dessous, et
-      la garde a fait son travail : elle a signalé un élément réellement hors
-      de l'écran. Le bloc a été resserré en conséquence (date et contact
-      derrière un dépli) **et** ce test défile, parce qu'un tableau de bord est
-      plus haut qu'un écran et le restera.
+      **On descend d'abord, comme un humain.** `reachable()` interroge le point
+      au centre de l'élément : un élément hors du cadre n'est pas atteignable, et
+      c'est exact. Un tableau de bord est plus haut qu'un écran, et le restera.
     */
     await stage.scrollIntoViewIfNeeded();
     expect(await reachable(stage)).toBe(true);
+    const shown = Number(await stage.getAttribute("data-count"));
     await stage.locator("a").first().click();
     await page.waitForURL((url) => url.pathname.startsWith("/pilotage/liste"), { timeout: 15_000 });
     expect(await page.locator("[data-row]").count()).toBe(shown);
 
-    await page.goto(`${BASE_URL}/pilotage`, { waitUntil: "domcontentloaded" });
-    /*
-      **La cellule et son compte doivent être ceux de la *même* ligne.**
+    // Et le retour ramène sur l'onglet d'où l'on vient, pas sur un autre.
+    await page.locator("a", { hasText: "Retour" }).first().click();
+    await page.waitForURL((url) => url.pathname === "/pilotage", { timeout: 15_000 });
+  }, 120_000);
 
-      Toutes les cellules ne portent pas de lien — une ligne « Hors campagne »
-      n'en a pas, parce qu'il n'y a pas de campagne à filtrer. Prendre « le
-      premier compte » et « le premier lien » séparément les appariait alors
-      sur deux lignes différentes, et le test échouait en annonçant un écart
-      qui n'existait pas. C'était un défaut du test, pas du produit : corrigé
-      en ne regardant que les cellules **qui portent un lien**.
-    */
-    const cellWithLink = page.locator('[data-cell="messages"]:has(a)').first();
-    const cellCount = Number(await cellWithLink.getAttribute("data-count"));
-    const cell = cellWithLink.locator("a");
-    // Les tableaux sont en bas de l'écran : on descend d'abord, comme un
-    // humain. `reachable()` interroge le point au centre de l'élément, donc un
-    // élément hors du cadre n'est pas atteignable — et c'est exact : il faut
-    // bien faire défiler pour le toucher.
-    await cell.scrollIntoViewIfNeeded();
-    expect(await reachable(cell)).toBe(true);
-    await cell.click();
-    await page.waitForURL((url) => url.pathname.startsWith("/pilotage/liste"), { timeout: 15_000 });
-    expect(await page.locator("[data-row]").count()).toBe(cellCount);
-  });
-
-  it("bascule l'entonnoir entre nombres et pourcentages", async () => {
+  /**
+   * **Nombres contre passage, et le passage n'est pas la part des contactés.**
+   *
+   * « 4 % des contactés ont testé la démo » dit où l'on en est ; « 80 % de ceux
+   * qui l'ont reçue l'ont testée » dit quelle marche coince. Le test vérifie que
+   * la bascule change bien de question : la marche « Ont répondu » rend un
+   * pourcentage, et la première marche garde son nombre.
+   */
+  it("bascule l'entonnoir entre nombres et passage", async () => {
     const { page } = session;
     await page.goto(`${BASE_URL}/pilotage`, { waitUntil: "domcontentloaded" });
 
@@ -151,18 +162,14 @@ describeBrowser("le pilotage", () => {
     const before = await page.locator('[data-funnel-stage="replied"]').innerText();
     await toggle.click();
     await page.waitForURL((url) => url.searchParams.get("part") === "1", { timeout: 15_000 });
-    const after = await page.locator('[data-funnel-stage="replied"]').innerText();
 
+    const after = await page.locator('[data-funnel-stage="replied"]').innerText();
     expect(after).not.toBe(before);
     expect(after).toMatch(/%|—/);
-  });
-
-  it("garde le graphique et sa ligne de cible atteignables", async () => {
-    const { page } = session;
-    await page.goto(`${BASE_URL}/pilotage`, { waitUntil: "domcontentloaded" });
-    expect(await reachable(page.locator("svg").first())).toBe(true);
-    expect(await page.locator("[data-target-line]").count()).toBeGreaterThan(0);
-  });
+    // La première marche n'a pas de précédente : un tiret s'y lirait comme une
+    // donnée manquante, alors que c'est le point de départ.
+    expect(await page.locator('[data-funnel-stage="contacted"]').innerText()).not.toContain("—");
+  }, 90_000);
 
   /**
    * Une période sans aucune ligne doit **expliquer**, jamais afficher un zéro
@@ -176,8 +183,10 @@ describeBrowser("le pilotage", () => {
     });
     const body = await page.locator("body").innerText();
     expect(body).toContain("Aucune donnée sur cette période");
-    expect(await page.locator("[data-tile]").count()).toBe(0);
-  });
+    // Les cartes d'objectif restent — un objectif existe même sans travail
+    // fourni —, et elles affichent zéro contre leur cible, ce qui est le fait.
+    expect(await page.locator("[data-objective]").count()).toBe(3);
+  }, 90_000);
 
   it("reste lisible sous les deux préférences de thème", async () => {
     for (const scheme of ["light", "dark"] as const) {
@@ -188,11 +197,11 @@ describeBrowser("le pilotage", () => {
       });
       await page.goto(`${BASE_URL}/pilotage`, { waitUntil: "domcontentloaded" });
       expect(await reachable(page.locator("h1")), scheme).toBe(true);
-      expect(await reachable(page.locator('[data-kpi="messages"]')), scheme).toBe(true);
+      expect(await reachable(page.locator('[data-objective="messages"]')), scheme).toBe(true);
       expect(await reachable(page.locator("[data-filter-bar]")), scheme).toBe(true);
       await page.close();
     }
-  });
+  }, 90_000);
 
   /**
    * **Les anciens écrans de mesure, cliqués depuis un favori.**
@@ -208,7 +217,7 @@ describeBrowser("le pilotage", () => {
       expect(new URL(page.url()).pathname, old).toBe("/pilotage");
       expect(await reachable(page.locator("h1")), old).toBe(true);
     }
-  });
+  }, 90_000);
 
   /**
    * Ce que les deux écrans amputés doivent encore montrer — et ne plus montrer.
@@ -236,7 +245,7 @@ describeBrowser("le pilotage", () => {
     ]) {
       expect(home, gone).not.toContain(gone);
     }
-  });
+  }, 90_000);
 
   it("n'a produit aucune erreur de console", () => {
     expect(session.errors).toEqual([]);

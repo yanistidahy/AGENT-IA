@@ -4,6 +4,7 @@ import { searchText } from "../domain/text";
 import { companyNameKey, contactNameKey } from "./name-keys";
 import { normalizeCompanyName } from "./company-resolve";
 import { groupOfTitle } from "../domain/contact-group";
+import { syncMayWrite } from "../domain/company-profile";
 import {
   LEMLIST_STATUS_LABELS,
   MISSING_KEY_MESSAGE,
@@ -229,11 +230,25 @@ async function createContact(activity: LemlistActivity, owners: readonly string[
  * fausse est définitive, puisque la contrainte d'unicité empêche de la
  * réécrire.
  *
- * On ne corrige que ce que lemlist fait autorité sur : l'instant du fait, et le
- * nom de la campagne (qui se renomme). On ne touche **ni le contact ni le
- * type** : un rapprochement tranché à la main ne doit pas être défait par une
- * synchronisation, et un type qui changerait déplacerait un fait d'un
- * indicateur à un autre sans que personne l'ait demandé.
+ * On ne corrige que ce que lemlist fait autorité sur : l'instant du fait, le nom
+ * de la campagne (qui se renomme) et **l'étape de séquence**. On ne touche **ni
+ * le contact ni le type** : un rapprochement tranché à la main ne doit pas être
+ * défait par une synchronisation, et un type qui changerait déplacerait un fait
+ * d'un indicateur à un autre sans que personne l'ait demandé.
+ *
+ * ## L'étape se remplit à la resynchronisation, et c'est tout l'intérêt
+ *
+ * Les colonnes `stepIndex` / `stepType` sont arrivées au jalon 113 v2 : toutes
+ * les lignes importées **avant** sont à `null`. Sans réparation, l'onglet
+ * Campagnes afficherait « hors séquence » sur tout l'historique, pour
+ * l'éternité — la contrainte d'unicité empêche de réécrire la ligne. Le passage
+ * suivant les remplit donc, et c'est ce que le brief appelle « backfillé à la
+ * prochaine synchronisation ».
+ *
+ * **On ne remplace jamais une étape connue par du vide.** Un `null` chez lemlist
+ * veut dire « cette activité n'est pas née d'une étape », pas « oublie ce que tu
+ * savais » : effacer sur un payload plus pauvre perdrait de l'information sans
+ * que rien ne le signale.
  *
  * Rend `true` quand quelque chose a réellement changé — un `update`
  * inconditionnel compterait une réparation à chaque passage sur chaque ligne.
@@ -241,20 +256,95 @@ async function createContact(activity: LemlistActivity, owners: readonly string[
 async function repairEvent(activity: LemlistActivity): Promise<boolean> {
   const known = await prisma.outreachEvent.findUnique({
     where: { source_externalId: { source: "lemlist", externalId: activity.externalId } },
-    select: { id: true, occurredAt: true, extCampaignName: true },
+    select: { id: true, occurredAt: true, extCampaignName: true, stepIndex: true, stepType: true },
   });
   if (known === null) return false;
 
-  const patch: { occurredAt?: Date; extCampaignName?: string } = {};
+  const patch: {
+    occurredAt?: Date;
+    extCampaignName?: string;
+    stepIndex?: number;
+    stepType?: string;
+  } = {};
   if (known.occurredAt.getTime() !== activity.occurredAt.getTime()) {
     patch.occurredAt = activity.occurredAt;
   }
   if (activity.campaignName !== "" && known.extCampaignName !== activity.campaignName) {
     patch.extCampaignName = activity.campaignName;
   }
+  if (activity.stepIndex !== null && known.stepIndex !== activity.stepIndex) {
+    patch.stepIndex = activity.stepIndex;
+  }
+  if (activity.stepType !== "" && known.stepType !== activity.stepType) {
+    patch.stepType = activity.stepType;
+  }
   if (Object.keys(patch).length === 0) return false;
 
   await prisma.outreachEvent.update({ where: { id: known.id }, data: patch });
+  return true;
+}
+
+/* ------------------------------------------------- le profil de la marque ---- */
+
+/**
+ * **La niche et le trafic d'une marque, remplis sans jamais écraser la main.**
+ *
+ * Les deux arrivent dans les variables personnalisées du lead. Le relevé tourne
+ * toutes les quinze minutes : sans la règle qui suit, une correction tapée dans
+ * le CRM à 10 h 02 serait remplacée à 10 h 15 par la valeur fausse de lemlist,
+ * sans trace et sans message. La personne recommencerait, puis cesserait de
+ * corriger — c'est-à-dire que le champ cesserait de valoir quelque chose.
+ *
+ * `syncMayWrite` tranche champ par champ, sur la colonne de provenance : on
+ * écrit si le champ est vide, ou s'il porte déjà une valeur que **cette**
+ * synchronisation a posée (lemlist en est alors la source de vérité et un
+ * trafic de l'an dernier n'a pas à être figé). On n'écrit pas sur une valeur du
+ * CRM, ni sur une valeur d'origine inconnue : devant une provenance qu'on
+ * ignore, écraser est le geste irréversible.
+ *
+ * Rend `true` quand quelque chose a réellement changé — un `update`
+ * inconditionnel compterait un remplissage à chaque passage sur chaque ligne.
+ */
+async function fillCompanyProfile(
+  companyId: string | null,
+  activity: LemlistActivity,
+): Promise<boolean> {
+  if (companyId === null) return false;
+  if (activity.niche === "" && activity.visitors === null) return false;
+
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { niche: true, nicheSource: true, monthlyVisitors: true, visitorsSource: true },
+  });
+  if (company === null) return false;
+
+  const patch: {
+    niche?: string;
+    nicheSource?: string;
+    monthlyVisitors?: number;
+    visitorsSource?: string;
+  } = {};
+
+  if (
+    activity.niche !== "" &&
+    activity.niche !== company.niche &&
+    syncMayWrite({ filled: company.niche.trim() !== "", source: company.nicheSource })
+  ) {
+    patch.niche = activity.niche;
+    patch.nicheSource = "lemlist";
+  }
+
+  if (
+    activity.visitors !== null &&
+    activity.visitors !== company.monthlyVisitors &&
+    syncMayWrite({ filled: company.monthlyVisitors !== null, source: company.visitorsSource })
+  ) {
+    patch.monthlyVisitors = activity.visitors;
+    patch.visitorsSource = "lemlist";
+  }
+
+  if (Object.keys(patch).length === 0) return false;
+  await prisma.company.update({ where: { id: companyId }, data: patch });
   return true;
 }
 
@@ -280,6 +370,11 @@ export interface ApplyReport {
   readonly written: Readonly<Record<string, number>>;
   /** Les types lemlist rangés dans `other`, avec leur compte. */
   readonly unmapped: Readonly<Record<string, number>>;
+  /**
+   * Marques dont la niche ou le trafic viennent d'être remplis par ce passage.
+   * Une valeur tapée dans le CRM n'y entre jamais — voir `fillCompanyProfile`.
+   */
+  readonly profilesFilled: number;
 }
 
 function bump(counter: Record<string, number>, key: string): void {
@@ -308,6 +403,7 @@ export async function applyActivities(raws: readonly unknown[]): Promise<ApplyRe
   let ambiguous = 0;
   let contactsCreated = 0;
   let companiesCreated = 0;
+  let profilesFilled = 0;
   const written: Record<string, number> = {};
   const unmapped: Record<string, number> = {};
 
@@ -366,6 +462,8 @@ export async function applyActivities(raws: readonly unknown[]): Promise<ApplyRe
       owner,
       source: "lemlist",
       externalId: activity.externalId,
+      stepIndex: activity.stepIndex,
+      stepType: activity.stepType,
       detail: mapping.detail,
     });
 
@@ -375,6 +473,11 @@ export async function applyActivities(raws: readonly unknown[]): Promise<ApplyRe
       duplicates += 1;
       if (await repairEvent(activity)) repaired += 1;
     }
+
+    // Le profil de la marque, **après** l'événement : la niche et le trafic
+    // n'ont de sens que sur une société, et la société peut venir d'être créée
+    // juste au-dessus.
+    if (await fillCompanyProfile(companyId, activity)) profilesFilled += 1;
 
     if (mapping.type === "other") {
       await noteIssue(
@@ -395,6 +498,7 @@ export async function applyActivities(raws: readonly unknown[]): Promise<ApplyRe
     companiesCreated,
     written,
     unmapped,
+    profilesFilled,
   };
 }
 
@@ -510,8 +614,21 @@ export async function syncLemlist(): Promise<SyncOutcome> {
   return {
     ok: true,
     status: "connected",
+    /*
+      **Le remplissage des profils est dit, pas seulement compté.**
+
+      Sans cette phrase, « la niche se remplit depuis lemlist » resterait une
+      promesse du code : on ne voit pas une colonne qui s'est remplie, et encore
+      moins une qui ne s'est pas remplie parce qu'aucun lead ne porte la
+      variable. Le compte est aussi ce qui dira, au premier relevé réel, si les
+      variables s'appellent bien `niche` et `visiteurs` chez nous.
+    */
     message: `${report.received} activités lues, ${total} événements écrits, ${report.duplicates} déjà connus${
       report.repaired > 0 ? `, dont ${report.repaired} dont la date a été corrigée` : ""
+    }${
+      report.profilesFilled > 0
+        ? `. Niche ou trafic renseignés sur ${report.profilesFilled} marque${report.profilesFilled > 1 ? "s" : ""} (une valeur saisie dans le CRM n'est jamais écrasée)`
+        : ""
     }.${truncatedNote}`,
     report,
     fullHistory,

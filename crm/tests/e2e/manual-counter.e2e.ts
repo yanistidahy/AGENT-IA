@@ -32,22 +32,34 @@ if (!available) {
   console.warn("[e2e] compteur manuel ignoré : ni Chromium ni E2E_PASSWORD");
 }
 
-/** Le nombre affiché par la pastille des messages de la semaine. */
+/**
+ * Le nombre affiché par la carte d'objectif des messages de la semaine.
+ *
+ * C'était `[data-kpi="messages"]` avec son `data-count` jusqu'au jalon 113 v2 :
+ * les messages sont devenus une **carte d'objectif** (valeur sur cible), et le
+ * hameçon a suivi. L'invariant vérifié ici n'a pas changé — le compteur, la
+ * carte et le graphique bougent ensemble.
+ */
 async function messagesTile(page: Page): Promise<number> {
   await page.goto(`${BASE_URL}/pilotage?periode=semaine`, { waitUntil: "domcontentloaded" });
-  const tile = page.locator('[data-kpi="messages"]');
-  if ((await tile.count()) === 0) return 0;
-  return Number(await tile.getAttribute("data-count"));
+  const value = page.locator('[data-objective="messages"] [data-objective-value]');
+  if ((await value.count()) === 0) return 0;
+  return Number(await value.innerText());
 }
 
 /**
  * Le total de la dernière barre du graphique : la semaine en cours.
  *
- * Le graphique a été refondu au jalon 113 et ses barres portent désormais
- * `data-timeline-bar` / `data-total`. L'invariant vérifié ici n'a pas changé —
- * la pastille et le graphique bougent ensemble — seul le hameçon a suivi.
+ * Le graphique a été refondu au jalon 113 et ses barres portent
+ * `data-timeline-bar` / `data-total` ; il a déménagé sur l'onglet « Dans le
+ * temps » au jalon 113 v2, d'où la navigation ici. L'invariant vérifié n'a pas
+ * changé — **le compteur, la carte d'objectif et le graphique bougent
+ * ensemble**, sur deux écrans désormais —, seul le chemin a suivi.
  */
 async function lastBar(page: Page): Promise<number> {
+  await page.goto(`${BASE_URL}/pilotage/temps?periode=semaine&pas=semaine&vue=total&metric=messages`, {
+    waitUntil: "domcontentloaded",
+  });
   const bars = page.locator("[data-timeline-bar]");
   const count = await bars.count();
   if (count === 0) return 0;
@@ -209,6 +221,9 @@ describeBrowser("le compteur de messages manuels", () => {
     const before = await messagesTile(page);
     const beforeBar = await lastBar(page);
 
+    // Les deux relevés ci-dessus naviguent (la carte est sur « Vue d'ensemble »,
+    // la barre sur « Dans le temps ») : on revient au compteur avant de cliquer.
+    await page.goto(`${BASE_URL}/pilotage?periode=semaine`, { waitUntil: "domcontentloaded" });
     await ensureOwner(page);
     await clickChannel(page, "linkedin_dm");
 
@@ -220,6 +235,15 @@ describeBrowser("le compteur de messages manuels", () => {
     // Et le décompte du jour le dit, canal par canal.
     await page.goto(`${BASE_URL}/pilotage`, { waitUntil: "domcontentloaded" });
     const count = page.locator('[data-manual-count="linkedin_dm"]');
+    /*
+      **On descend d'abord.** Le compteur est passé à côté de l'entonnoir au
+      jalon 113 v2, comme le prototype validé le place : il n'est plus dans le
+      premier écran. `reachable()` interroge le point au centre de l'élément,
+      donc un élément hors du cadre n'est **pas** atteignable, et c'est exact.
+      C'est un écart assumé avec la promesse « atteignable en un geste » du
+      jalon 112, et CLAUDE.md le dit.
+    */
+    await count.scrollIntoViewIfNeeded();
     expect(await reachable(count)).toBe(true);
     expect(Number(await count.innerText())).toBeGreaterThanOrEqual(1);
   }, 120_000);
@@ -267,8 +291,10 @@ describeBrowser("le compteur de messages manuels", () => {
     const { page } = session;
     await page.goto(`${BASE_URL}/pilotage?periode=semaine`, { waitUntil: "domcontentloaded" });
 
-    const tile = page.locator('[data-kpi="messages"]');
-    const shown = Number(await tile.getAttribute("data-count"));
+    const card = page.locator('[data-objective="messages"]');
+    const shown = Number(await card.locator("[data-objective-value]").innerText());
+    await card.scrollIntoViewIfNeeded();
+    const tile = card.locator("a").first();
     expect(await reachable(tile)).toBe(true);
     await tile.click();
     await page.waitForURL((url) => url.pathname.startsWith("/pilotage/liste"), {

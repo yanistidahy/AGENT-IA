@@ -204,8 +204,20 @@ const companyRow = z.object({
    * ancienne ne peut pas porter une colonne qui n'existait pas.
    */
   nameKey: nullableText,
-  /** Le segment du pilotage se lit ici : l'effacer viderait les deux tableaux. */
+  /** La tranche de taille du pilotage se lit ici : l'effacer viderait les cartes. */
   monthlyVisitors: z.number().int().nullable().optional(),
+  /**
+   * La niche, et **qui a posé chacune des deux valeurs** (jalon 113 v2).
+   *
+   * Les deux colonnes de provenance ne sont pas de la décoration : elles
+   * décident d'un comportement. Les perdre à la restauration remettrait chaque
+   * valeur à « origine inconnue », et le prochain relevé lemlist n'écraserait
+   * alors plus rien — y compris ce qu'il devrait rafraîchir. Une sauvegarde qui
+   * change le comportement de la synchronisation n'est pas une sauvegarde.
+   */
+  niche: optionalText,
+  nicheSource: optionalText,
+  visitorsSource: optionalText,
 });
 
 const contactRow = z.object({
@@ -531,6 +543,16 @@ const outreachEventRow = z.object({
   source: optionalText,
   externalId: z.string().nullable().optional(),
   replyCategory: optionalText,
+  /**
+   * L'étape de séquence chez la source (jalon 113 v2).
+   *
+   * `null` et vide se lisent « hors séquence ». Elles traversent le fichier
+   * parce que l'onglet Campagnes en tire le résultat par étape : les perdre
+   * replierait toutes les campagnes sur un total, et le total ne dit pas
+   * laquelle des quatre relances ne sert à rien.
+   */
+  stepIndex: z.number().int().nullable().optional(),
+  stepType: optionalText,
   detail: optionalText,
   createdAt: day,
 });

@@ -4,6 +4,7 @@ import {
   getCompany,
   listCompanies,
   listIndustries,
+  listNiches,
 } from "@/lib/api/companies";
 import { COMPANY_FILTER_COLUMNS } from "@/lib/api/company-columns";
 import { parseFilters } from "@/lib/domain/column-filters";
@@ -31,9 +32,10 @@ export default async function SocietesPage({
   const filters = parseFilters(raw, COMPANY_FILTER_COLUMNS);
   const now = new Date();
 
-  const [companies, industries, owners, sequences, facetData] = await Promise.all([
+  const [companies, industries, niches, owners, sequences, facetData] = await Promise.all([
     listCompanies(query, filters, now),
     listIndustries(),
+    listNiches(),
     listOwners(),
     listSequences(),
     companyFacets(query, filters, now),
@@ -49,6 +51,7 @@ export default async function SocietesPage({
     <CompaniesView
       companies={companies}
       industries={industries}
+      niches={niches}
       owners={owners}
       sequences={sequences}
       focused={focused}

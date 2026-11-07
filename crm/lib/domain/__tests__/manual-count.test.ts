@@ -228,7 +228,10 @@ describe("une saisie sans fiche compte dans les messages et nulle part ailleurs"
       owner: "Yanis",
       source: "manual",
       replyCategory: "",
-      segment: "unknown",
+      size: "unknown",
+      niche: "",
+      stepIndex: null,
+      stepType: "",
       group: "autre",
     };
   }

@@ -40,10 +40,10 @@ const read = (file: string) => strip(readFileSync(path.join(ROOT, file), "utf8")
 const readAll = (file: string) => readFileSync(path.join(ROOT, file), "utf8");
 
 const domain = read("lib/domain/timeline.ts");
-const page = read("app/(crm)/pilotage/page.tsx");
+const page = read("app/(crm)/pilotage/temps/page.tsx");
 const chart = read("components/pilotage/timeline-chart.tsx");
 const plot = read("components/pilotage/timeline-plot.tsx");
-const tooltip = read("components/pilotage/timeline-tooltip.tsx");
+const detail = read("components/pilotage/timeline-detail.tsx");
 const toolbar = read("components/pilotage/timeline-toolbar.tsx");
 const pace = read("components/pilotage/week-pace.tsx");
 
@@ -71,7 +71,7 @@ describe("la valeur d'un point est celle de sa liste", () => {
     for (const [name, source] of [
       ["chart", chart],
       ["plot", plot],
-      ["tooltip", tooltip],
+      ["detail", detail],
       ["toolbar", toolbar],
       ["pace", pace],
     ] as const) {
@@ -107,9 +107,12 @@ describe("les trois réglages vivent dans l'URL", () => {
   });
 
   it("la page les relit depuis l'URL, avec un défaut sûr", () => {
-    expect(page).toContain('toGranularity(readOne("pas"))');
-    expect(page).toContain('toTimelineView(readOne("vue"))');
-    expect(page).toContain('toTimelineMetric(readOne("metric"))');
+    // `one(params, …)` depuis le jalon 113 v2 : la lecture d'un paramètre
+    // d'URL est devenue une fonction partagée par les quatre onglets, au lieu
+    // d'un `readOne` recopié dans chaque page.
+    expect(page).toContain('toGranularity(one(params, "pas"))');
+    expect(page).toContain('toTimelineView(one(params, "vue"))');
+    expect(page).toContain('toTimelineMetric(one(params, "metric"))');
   });
 
   it("les trois vocabulaires sont fermés", () => {
@@ -146,26 +149,41 @@ describe("les canaux ne se distinguent pas par la couleur seule", () => {
   });
 
   /**
-   * Vert au-dessus de la cible, neutre en dessous, **jamais rouge** : un retard
-   * de cadence n'est pas une faute, et peindre en rouge la moitié d'une série
-   * ferait fermer l'écran.
+   * **Vert au-dessus de la cible, gris neutre en dessous, et jamais une barre
+   * rouge** : un retard de cadence n'est pas une faute, et peindre en rouge la
+   * moitié d'une série ferait fermer l'écran.
+   *
+   * Gris et non bleu-violet depuis le jalon 113 v2 : `brand` porte l'**action**
+   * dans ce produit (jalon 23), et une barre de mesure n'est pas un bouton.
    */
-  it("une barre sous la cible est neutre, pas rouge", () => {
-    expect(plot).toMatch(/reached \? "var\(--color-win\)" : "var\(--color-brand-l\)"/);
+  it("une barre sous la cible est grise, et jamais rouge", () => {
+    expect(plot).toMatch(/reached \? "var\(--color-win\)" : "var\(--color-line\)"/);
     /*
-      **Un jeton de rouge**, pas la sous-chaîne « red » : la première version de
-      cette assertion accusait `points.reduce(` de peindre en rouge. Une garde
-      qui attrape un mot dans un autre mot n'apprend rien et finit par être
-      désactivée.
+      **Le rouge est permis sur le trait de cible, et sur rien d'autre.**
+
+      Le jalon 113 interdisait tout rouge dans ce fichier ; le prototype validé
+      demande la cible en pointillés rouges, et c'est une distinction réelle —
+      un trait rouge marque un **seuil**, une barre rouge juge le travail de la
+      semaine. La garde examine donc les deux `fill`/`stroke` des barres, et
+      elle est éprouvée en peignant une barre en `danger` : elle le nomme.
     */
-    expect(plot).not.toMatch(/var\(--color-(red|danger)|#(f{2}0{4}|e[0-9a-f]{5})|\bred-[1-9]/i);
+    const bars = plot.match(/(fill|stroke)=\{reached \?[^}]*\}/g) ?? [];
+    expect(bars.length, "les deux couleurs de barre ne sont plus lisibles ici").toBe(2);
+    for (const bar of bars) {
+      expect(bar, "une barre est peinte en rouge").not.toMatch(
+        /var\(--color-(pulse|danger)|#(f{2}0{4}|e[0-9a-f]{5})|\bred-[1-9]/i,
+      );
+    }
+    // Et la cible, elle, **doit** être le rouge du prototype, en pointillés.
+    expect(plot, "la cible n'est plus rouge").toContain('stroke="var(--color-danger)"');
+    expect(plot, "la cible n'est plus en pointillés").toContain('strokeDasharray="5 4"');
   });
 });
 
 /* ---------------------------------------------------- l'infobulle au focus - */
 
-describe("l'infobulle dit tout, et s'atteint au clavier", () => {
-  it("porte les cinq informations du jalon", () => {
+describe("le panneau de détail dit tout, et s'atteint au clavier", () => {
+  it("porte les sept informations du jalon", () => {
     for (const hook of [
       "data-tooltip-dates",
       "data-tooltip-total",
@@ -174,8 +192,15 @@ describe("l'infobulle dit tout, et s'atteint au clavier", () => {
       "data-tooltip-channel",
       "data-tooltip-sources",
     ]) {
-      expect(tooltip, hook).toContain(hook);
+      expect(detail, hook).toContain(hook);
     }
+    /*
+      **Et il porte le lien, qui est la raison de son déplacement.** Une
+      infobulle flottante ne peut pas porter de lien ; c'est pour « Voir les N
+      messages » que le panneau est passé sous le tracé.
+    */
+    expect(detail, "le panneau n'ouvre pas la liste").toContain("data-detail-link");
+    expect(detail, "le panneau n'est pas sous le tracé").toContain("data-timeline-detail");
   });
 
   /**
@@ -197,11 +222,24 @@ describe("l'infobulle dit tout, et s'atteint au clavier", () => {
     */
     const focuses = plot.match(/onFocus=\{\(\) => onEnter\(/g) ?? [];
     expect(focuses.length, "une des deux vues n'écoute pas le focus").toBe(2);
+
+    /*
+      **Et le tactile sélectionne au lieu de naviguer** (jalon 113 v2). Le
+      brief demande deux choses qui se contredisent au doigt : que le clic
+      remplisse le panneau, et que la barre ouvre la liste. Sans cet arbitrage,
+      un utilisateur tactile ne pourrait jamais lire le détail d'une période —
+      il n'a pas de survol, et son tap partirait.
+    */
+    const pointers = plot.match(/onPointerDown=\{\(event\) => \{/g) ?? [];
+    expect(pointers.length, "une des deux vues n'écoute pas le pointeur").toBe(2);
+    const blocks = plot.match(/if \(blockClick\(\)\) event\.preventDefault\(\);/g) ?? [];
+    expect(blocks.length, "une des deux vues navigue malgré le doigt").toBe(2);
+    expect(chart, "le type de pointeur n'est pas lu").toContain('pointer.current === "touch"');
   });
 
   it("les écarts et les parts sont écrits par le domaine", () => {
-    expect(tooltip).toContain("gapLabel(");
-    expect(tooltip).toContain("shareLabel(");
+    expect(detail).toContain("gapLabel(");
+    expect(detail).toContain("shareLabel(");
     expect(domain).toContain("export function gapLabel");
     expect(domain).toContain("export function shareLabel");
   });

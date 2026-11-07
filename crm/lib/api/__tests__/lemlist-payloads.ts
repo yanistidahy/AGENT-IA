@@ -75,6 +75,14 @@ export const emailSent = {
       companyName: "Maison Leroy",
       companyDomain: "maison-leroy.fr",
       linkedinUrl: "https://www.linkedin.com/in/anna-leroy/",
+      /*
+        **Les deux variables personnalisées du jalon 113 v2**, telles qu'un
+        vrai compte les porte : le nom en majuscule initiale (une variable
+        lemlist est nommée à la main) et le trafic en texte libre, avec
+        l'espace insécable que Google Sheets produit.
+      */
+      Niche: "Bijoux",
+      visiteurs: "8\u00a0000",
     },
   },
 } as const;
@@ -89,7 +97,7 @@ export const emailReplied = {
   contactId: "ctc_xW8Ou6C03Csv8vatp",
   campaignId: "cam_bSn8EORHQxbWPjHvu",
   campaignName: "E-commerce — Shopify (email d'abord)",
-  sequenceStep: 0,
+  sequenceStep: 2,
   sendUserName: "YANIS TIDAHY",
   subject: "Re: Votre boutique Maison Leroy",
   leadFirstName: "Anna",

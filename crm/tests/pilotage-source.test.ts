@@ -40,12 +40,14 @@ function filesIn(relative: string): string[] {
 
 const PAGES = filesIn("app/(crm)/pilotage");
 const VIEWS = filesIn("components/pilotage");
+/** La porte unique : l'onglet le traverse, il ne le recopie pas. */
+const GATE = "lib/api/pilotage-view.ts";
 
 describe("le tableau de bord ne calcule rien", () => {
-  it("couvre bien les deux écrans et les cinq vues", () => {
+  it("couvre bien les cinq écrans et les vues", () => {
     // Sans cette vérification, renommer un dossier rendrait la garde verte en
     // n'examinant plus rien.
-    expect(PAGES.length).toBeGreaterThanOrEqual(2);
+    expect(PAGES.length).toBeGreaterThanOrEqual(5);
     expect(VIEWS.length).toBeGreaterThanOrEqual(5);
   });
 
@@ -77,23 +79,41 @@ describe("le tableau de bord ne calcule rien", () => {
       const source = sourceOf(file);
       expect(source, `${file} : le bornage passe par slice()`).not.toMatch(/\.filter\s*\(/);
       expect(source, `${file} : un pourcentage se demande à rateLabel()`).not.toMatch(/\*\s*100/);
-      expect(source, `${file} : la période vient de periodOf()`).toContain("periodOf");
-      expect(source, `${file} : les lignes sont bornées par slice()`).toContain("slice(all, period)");
-      expect(source, `${file} : les filtres passent par applyFilters()`).toContain("applyFilters");
-      expect(source, `${file} : les chiffres viennent du domaine`).toContain(
-        "@/lib/domain/pilotage",
-      );
     }
   });
 
   /**
-   * **Un chiffre et la liste qu'il ouvre sortent du même appel.** Les deux
-   * pages passent par `metricResult`, avec les mêmes filtres et la même
-   * période : il n'existe donc aucun ordre d'appel qui les sépare.
+   * **Une seule porte, et les cinq écrans la traversent.**
+   *
+   * La garde du jalon 109 exigeait de **la** page qu'elle appelle `periodOf`,
+   * `applyFilters`, `slice` et `metricResult`. Avec un seul écran, cela
+   * suffisait. Avec quatre onglets plus la liste, la même suite recopiée cinq
+   * fois change la nature du risque : il suffit qu'un onglet attribue les
+   * campagnes avant de filtrer quand un autre fait l'inverse pour que deux
+   * onglets affichent deux nombres sur les mêmes gens — le défaut du jalon 54,
+   * reproduit à l'intérieur d'un seul écran.
+   *
+   * La garde a donc été **déplacée, pas affaiblie** : c'est `pilotage-view.ts`
+   * qui doit contenir la suite, et aucun écran qui a le droit de la refaire.
+   * Éprouvée en recopiant `applyFilters` dans un onglet : le test le nomme.
    */
-  it("fait sortir la pastille et sa liste du même appel", () => {
+  it("fait passer les cinq écrans par pilotage-view, et par lui seul", () => {
+    const gate = sourceOf(GATE);
+    expect(gate, "la période vient de periodOf()").toContain("periodOf");
+    expect(gate, "les filtres passent par applyFilters()").toContain("applyFilters");
+    expect(gate, "les lignes sont bornées par slice()").toContain("slice(all, period)");
+    expect(gate, "le chiffre et sa liste sortent du même appel").toContain("metricResult");
+
     for (const file of PAGES) {
-      expect(sourceOf(file), file).toContain("metricResult");
+      const source = sourceOf(file);
+      expect(source, `${file} : l'écran traverse pilotageView()`).toContain(
+        "@/lib/api/pilotage-view",
+      );
+      for (const forbidden of ["applyFilters", "slice(", "periodOf", "metricResult("]) {
+        expect(source, `${file} : ${forbidden} est refait ici au lieu de passer par la porte`).not.toContain(
+          forbidden,
+        );
+      }
     }
   });
 

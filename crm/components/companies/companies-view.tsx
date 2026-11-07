@@ -23,6 +23,8 @@ import { CompanyForm } from "./company-form";
 interface CompaniesViewProps {
   readonly companies: readonly CompanyRecord[];
   readonly industries: ReadonlyArray<{ value: string; count: number }>;
+  /** Les niches déjà en usage, proposées sous le champ du formulaire. */
+  readonly niches: readonly string[];
   readonly facets: Readonly<Record<string, readonly FacetValue[]>>;
   readonly totalRows: number;
   readonly owners: readonly string[];
@@ -37,6 +39,7 @@ const CONTROL =
 export function CompaniesView({
   companies,
   industries,
+  niches,
   owners,
   sequences,
   focused,
@@ -178,6 +181,7 @@ export function CompaniesView({
       <CompanyDrawer
         company={selected ?? null}
         industries={industryNames}
+        niches={niches}
         owners={owners}
         sequences={sequences}
         onClose={() => setParam({ fiche: null })}
@@ -188,6 +192,7 @@ export function CompaniesView({
         <CompanyForm
           company={null}
           industries={industryNames}
+          niches={niches}
           onCancel={() => setCreating(false)}
           onSaved={refresh}
         />
