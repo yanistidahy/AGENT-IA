@@ -16590,3 +16590,22 @@ finirait par traduire.
 production, sans lequel rien de ce module ne serait exerçable hors production.
 Mais c'est aussi une variable qui, posée par erreur, enverrait les appels
 ailleurs. Elle n'est pas dans `.env.example`.
+
+**Le rapprochement lit la table des contacts à chaque activité.** C'est le
+choix du jalon 6 — comparer en mémoire plutôt qu'en SQL, parce que la
+normalisation que nous appliquons (l'URL LinkedIn réduite, les accents pliés)
+n'existe pas en SQL et qu'une règle invérifiable hors production finit par
+laisser passer ce qu'elle prétend attraper. À 150 contacts c'est sans
+conséquence. À dix mille, une reprise d'historique de plusieurs milliers
+d'activités ferait autant de lectures de la table : **il faudrait alors
+indexer une colonne miroir d'adresse normalisée**, au prix d'un second endroit
+où la normalisation est écrite. Ce n'est pas le cas aujourd'hui, et le code ne
+prétend pas le contraire.
+
+**Le traitement est séquentiel et tient dans une requête HTTP.** Pas de file
+d'attente, pas de reprise : un relevé interrompu à mi-parcours laisse
+`lastSuccessAt` où il était et le suivant relit l'intervalle. C'est correct,
+mais cela veut dire qu'une reprise d'historique très longue peut dépasser le
+délai du proxy avant d'avoir fini — elle recommencera, sans rien compter deux
+fois, et sans jamais aboutir. La borne des 200 pages existe pour que ce cas se
+voie (`truncated`) au lieu de tourner indéfiniment.
