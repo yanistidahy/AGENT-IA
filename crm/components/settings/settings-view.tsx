@@ -84,6 +84,7 @@ interface SettingsViewProps {
    */
   readonly opens: React.ReactNode;
   readonly lemlist: React.ReactNode;
+  readonly backfill: React.ReactNode;
 }
 
 const LIST_LABELS: Array<{ kind: SettingsListKind; label: string }> = [
@@ -109,6 +110,7 @@ export function SettingsView({
   inbox,
   opens,
   lemlist,
+  backfill,
   tracking,
   limits,
   dailyCap,
@@ -189,6 +191,10 @@ export function SettingsView({
           {/* La prospection sortante vit désormais aussi dans lemlist : la
               section s'ouvre là où les autres canaux d'envoi se règlent. */}
           {lemlist}
+          {/* La reprise de l'historique du CRM : même section, parce qu'elle
+              répond à la même question — « pourquoi /pilotage ne montre-t-il
+              pas ce que j'ai envoyé ? ». */}
+          {backfill}
         </div>
       </Section>
 

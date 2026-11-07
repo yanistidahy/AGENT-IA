@@ -40,12 +40,18 @@ async function messagesTile(page: Page): Promise<number> {
   return Number(await tile.getAttribute("data-count"));
 }
 
-/** Le total de la dernière barre du graphique : la semaine en cours. */
+/**
+ * Le total de la dernière barre du graphique : la semaine en cours.
+ *
+ * Le graphique a été refondu au jalon 113 et ses barres portent désormais
+ * `data-timeline-bar` / `data-total`. L'invariant vérifié ici n'a pas changé —
+ * la pastille et le graphique bougent ensemble — seul le hameçon a suivi.
+ */
 async function lastBar(page: Page): Promise<number> {
-  const bars = page.locator("[data-week-total]");
+  const bars = page.locator("[data-timeline-bar]");
   const count = await bars.count();
   if (count === 0) return 0;
-  return Number(await bars.nth(count - 1).getAttribute("data-week-total"));
+  return Number(await bars.nth(count - 1).getAttribute("data-total"));
 }
 
 /**

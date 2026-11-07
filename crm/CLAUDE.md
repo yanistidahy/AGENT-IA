@@ -366,6 +366,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 113 | **« Dans le temps » refondu, et ses dates vérifiées d'abord** : la partie 1 a nommé la cause réelle du trou de septembre, et ce n'était pas une histoire de dates. Les événements lemlist **ont toujours porté la date de leur activité** — une seule écriture (`lemlist-sync.ts`, `occurredAt: activity.occurredAt`) alimentée par `readLemlistActivity`, qui lit `createdAt` et **refuse l'activité** si la date est illisible plutôt que de retomber sur l'instant de l'import ; mesuré : une activité du 20 octobre synchronisée le 7 novembre tombe dans la semaine du 19 octobre. Le vrai défaut était ailleurs : **la reprise du jalon 109 n'avait aucun appelant** — ni cron, ni workflow, ni démarrage, ni bouton — depuis deux jalons, donc les 52 emails de septembre dormaient dans `email_sends` sans jamais devenir des événements. Un bouton dans `/reglages` la rend atteignable, avec les comptes **avant/après par type** ; mesuré : 80 événements repris, 56 en septembre sur quatre semaines, et **0 au second passage**. Ajouté au passage : une ligne déjà importée dont la date est fausse **se corrige** à la resynchronisation au lieu d'être définitive (la contrainte d'unicité empêchait de la réécrire), sans doublon et sans toucher ni le contact ni le type. Côté graphique : indicateur, vue et granularité dans l'URL, la plage qui commence au premier fait, la cible tracée **période par période** (20 en jour, 100 en semaine, 420/440/460 en mois selon les jours ouvrés), une infobulle qui dit les dates exactes, les parts, l'écart à la cible, l'évolution et l'origine, une légende cliquable où chaque canal porte **un motif et une forme** et pas seulement une couleur, et le clic qui ouvre la liste du seau. L'invariant du jalon 109 vérifié sur **913 points** : zéro écart entre la valeur d'un point et la longueur de sa liste, en Total comme en Par canal, pour le jour, la semaine et le mois | **livré, à valider** |
 | 112 | **Un compteur pour ce qu'aucun outil ne voit partir** : les deux préalables d'abord. `manualDone` de lemlist — « tâche manuelle achevée » **dans leur interface** — reste hors de tout compte, et la garde le vérifie sur la **conséquence** et non sur la table : la ligne que la synchronisation écrirait, passée à `messagesSent`, rend un tableau vide, donc un même geste ne peut pas compter une fois cliqué ici et une fois importé de là. Et `logActivity` offrait bien une partie du travail — il écrit déjà un `message_sent` pour un appel, un message LinkedIn ou un DM Instagram — mais lui manquent trois choses qui sont tout l'écart : il **exige une fiche**, il ne connaît pas WhatsApp, et il crée une tâche de prochaine action. Le compteur n'écrit donc **que** dans le journal, jamais une interaction : écrire les deux doublerait le message. Cinq boutons, un lot annulable d'un geste (les lignes d'une saisie partagent un préfixe d'identifiant, donc aucune colonne de regroupement ajoutée), le propriétaire retenu par appareil dans un `localStorage` **sous `try/catch`** — l'accès lève en navigation privée, il ne rend pas `null`. `OutreachEvent.contactId` devient **facultatif**, et la conséquence est bornée par construction : tout ce qui compte des gens passe par `contactsOf`, seul endroit où le nul est filtré, donc une ligne sans fiche entre dans « messages envoyés » et dans **aucun** indicateur par personne. Mesuré : pastille, graphique et liste passent ensemble de 6 à 9 puis reviennent à 6, et la liste porte sa ligne « sans contact » pour que le nombre reste la longueur de la liste. Un défaut de ma première version, trouvé une fois sur six à la recette et corrigé dans le produit : le serveur ne connaissant pas `localStorage`, le bloc rendait « Qui a envoyé ces messages ? » même sur un appareil qui avait déjà répondu, d'où un clignotement et une course | **livré, à valider** |
 | 111 | **lemlist entre dans le journal de prospection** : la correspondance d'abord, écrite avant toute ligne de code — les **113 valeurs** de l'énumération `ActivityType` publiée, plus les dix-neuf événements que seul le webhook sert, chacune avec sa décision et sa raison (`lib/domain/lemlist.ts`), et un test qui échoue si lemlist en ajoute une sans qu'on tranche. Ce qui compte comme « envoyé » est **la définition de lemlist elle-même**, recopiée depuis ses statistiques de campagne plutôt que jugée. Quatre refus de double compte, chacun mesuré contre un faux à 100 % qui n'aurait fait rougir aucun test : la famille `*Done` n'est pas un envoi, `emailsExternalSent` peut être un email que le CRM a déjà compté, un échec d'envoi n'est pas un rebond, et `*Interested` est un classement et non une réponse. Les ouvertures entrent et **ne comptent pas** — par construction, chaque chiffre énumérant ses types, et une garde statique le vérifie. Deux chemins, **un seul écrivain** : webhook (secret dans le corps, comparé à temps constant, absent = 401) et relevé de quinze minutes greffé sur le workflow du jalon 41. Une réponse lemlist arrête une séquence du CRM **par le prédicat du jalon 106**, rendu variadique : une source de plus, pas une règle de plus. Mesuré en recette : le même webhook deux fois donne **un** événement, un inconnu donne **un** contact et **une** société réutilisés ensuite, l'envoi forcé par identifiant est refusé « Le contact a répondu » sans qu'aucune interaction ni réponse ne soit écrite en double, et la clé de recette n'apparaît **nulle part** — zéro occurrence en clair comme en base64 dans les réponses, le HTML, les morceaux de JavaScript servis, le journal du serveur et le fichier de sauvegarde, avec un contrôle négatif prouvant qu'elle part bien chez lemlist | **livré, à valider** |
 | 110 | **Une sauvegarde qui rend les envois avec leurs contacts** : inventaire d'abord — 47 modèles, 17 sauvegardés, **30 non couverts** —, puis la cause nommée. La restauration **garde** les identifiants (`createMany` porte `id`) ; le défaut n'était donc pas une régénération mais un trou de couverture : `contact.deleteMany()` déclenche les cascades et les `SetNull` de tables absentes du fichier, et rien ne les rend ensuite. Quatorze tables entrent dans la sauvegarde, dont le journal des envois, les réponses, les clics, les campagnes, les inscriptions et les **départs composés** (du texte payé au modèle). Mesuré : base vidée entièrement puis restaurée, **129 rattachements identiques ligne à ligne**, et la reprise du jalon 109 rejouée re-dérive **33 événements contre 11 avant**. Une ligne non replaçable est désormais **comptée et dite** ; la garde passe des colonnes aux **tables**, donc une table nouvelle ne peut plus entrer sans décision écrite | **livré, à valider** |
@@ -16858,3 +16859,218 @@ c'est un décompte de ce que *ce bloc* a écrit, pas du jour. La pastille
 **Le propriétaire retenu n'est pas une identité.** `localStorage` dit quel nom
 cet appareil a choisi la dernière fois ; rien ne vérifie que c'est la bonne
 personne qui tape, et il n'y a pas de comptes pour le faire (jalon 9).
+
+## Jalon 113 — « Dans le temps » refondu, et ses dates vérifiées
+
+```
+lib/domain/timeline.ts                   seaux, cibles, série, cadence — pur
+components/pilotage/timeline-toolbar.tsx les trois réglages, dans l'URL
+components/pilotage/timeline-chart.tsx   le cadre, la légende, l'infobulle
+components/pilotage/timeline-plot.tsx    le tracé SVG, barres et lignes
+components/pilotage/timeline-tooltip.tsx ce que dit un point
+components/pilotage/week-pace.tsx        la bande « Semaine en cours »
+components/settings/backfill-panel.tsx   le bouton qui manquait
+tests/timeline-source.test.ts            la garde statique
+```
+
+### Partie 1 — la cause du trou de septembre n'était pas une histoire de dates
+
+**Les événements lemlist ont toujours porté la date de leur activité.** Il y a
+une seule écriture de cette date dans tout le dépôt — `lib/api/lemlist-sync.ts`,
+`occurredAt: activity.occurredAt` — alimentée par `readLemlistActivity`
+(`lib/domain/lemlist.ts`), qui lit `createdAt` de l'activité et **refuse
+l'activité** si cette date est illisible, plutôt que de retomber sur l'instant
+de l'import. Le `createdAt` de la ligne, lui, est l'instant de l'écriture : il
+existe, il est conservé, et **aucun indicateur ne le lit**.
+
+Mesuré : une activité datée du 20 octobre, reçue par webhook le 7 novembre,
+tombe dans la semaine du 19 octobre. Aucun chemin à corriger.
+
+**Le vrai défaut était ailleurs, et il est plus bête :** la reprise du jalon
+109 n'avait **aucun appelant**. Ni passage quotidien, ni workflow, ni démarrage,
+ni bouton — seulement un `POST /api/outreach/backfill` qu'il fallait écrire à la
+main. Deux jalons durant, les emails de campagne du CRM sont donc restés dans
+`email_sends` sans jamais devenir des événements, et `/pilotage` montrait un
+septembre vide **parce qu'il n'avait jamais rien eu à montrer**. C'est le
+raisonnement du jalon 12, oublié : une maintenance sans bouton n'est exécutable
+par personne.
+
+**Ce que l'utilisateur doit cliquer, une fois :** `/reglages` → section
+« Synchronisation lemlist » → **« Reprendre l'historique »**. Le panneau affiche
+les comptes avant et après, type par type. On peut le relancer sans risque : la
+reprise est idempotente, chaque ligne portant un identifiant déterministe dérivé
+de sa source.
+
+**Et une ligne déjà importée se corrige désormais.** La contrainte d'unicité
+`(source, externalId)` rendait une date fausse **définitive** : le passage
+suivant voyait un doublon et regardait ailleurs. `repairEvent` compare
+maintenant la date et le nom de campagne, et met à jour ce qui a changé — sans
+doublon, et **sans toucher ni le contact ni le type** : un rapprochement tranché
+à la main ne doit pas être défait par une synchronisation, et un type qui
+changerait déplacerait un fait d'un indicateur à un autre sans que personne
+l'ait demandé.
+
+### Partie 2 — ce que l'ancien graphique faisait mal
+
+Douze semaines fixes dont dix vides, des barres empilées où aucun canal ne se
+compare à un autre, et rien au survol ni au clic. Quatre décisions le
+remplacent :
+
+1. **la plage commence à la première période qui porte quelque chose.** Une
+   série qui s'ouvre sur dix zéros ne dit pas « rien ne s'est passé », elle dit
+   « l'échelle est fausse ». Les zéros **de l'intérieur** restent : un creux au
+   milieu d'une série est une information ;
+2. **la granularité se choisit** — jour pour vérifier une semaine, semaine pour
+   tenir la cadence, mois pour voir la tendance ;
+3. **l'empilement devient un choix.** « Total » répond « combien », « Par
+   canal » répond « par où » : deux questions qu'une pile prétend traiter d'un
+   coup et ne traite ni l'une ni l'autre, parce qu'un segment au milieu d'une
+   pile n'a pas de base commune avec son voisin ;
+4. **la valeur d'un point est celle de la liste qu'il ouvre**, parce que
+   `pointValue` appelle `metricResult` — la fonction du jalon 109 qui *rend* la
+   liste. Il n'y a pas un comptage « pour la barre » et une requête « pour la
+   liste ».
+
+### La somme des canaux n'est pas toujours le total, et c'est exact
+
+Pour « nouvelles personnes contactées », quelqu'un touché la même semaine par
+email **et** par LinkedIn est une personne nouvelle une fois dans le total, et
+une fois dans *chacun* des deux canaux — c'est sa première touche sur chacun.
+Chaque canal est donc **recompté** par le même chemin que le total, sur
+l'histoire réduite à ce canal, et non obtenu en divisant le total. Une
+répartition obtenue par division aurait donné un nombre qui ne correspond à
+aucune liste, et l'item 3 du test d'acceptation l'aurait trouvé.
+
+### La cible se trace période par période
+
+Mon premier jet dessinait **un seul trait horizontal**, et seulement si toutes
+les périodes partageaient la même cible. Conséquence mesurée à la recette : en
+granularité « jour » la cible n'apparaissait **jamais** — un samedi n'en a pas,
+donc la série n'était jamais uniforme — et en « mois » elle disparaissait dès
+que deux mois n'avaient pas le même nombre de jours ouvrés. C'est-à-dire
+précisément dans les deux cas où elle a le plus de valeur.
+
+Chaque période porte donc son segment : **20** en jour ouvré (rien le
+week-end : le produit n'envoie pas, jalon 93), **100** en semaine, et en mois la
+cible fois les **semaines ouvrées** du mois — ses jours ouvrés divisés par cinq.
+Novembre 2026 (21 jours ouvrés) vaut 420, un mois de 22 vaut 440. Écrire
+« 4 semaines » donnerait la même cible à deux mois qui ne se ressemblent pas.
+Un indicateur sans cible — réponses, nouvelles personnes — n'en affiche aucune :
+une ligne inventée serait un objectif que personne n'a fixé.
+
+### Le graphique est un composant client, contre la convention
+
+Les graphiques de ce produit sont des composants **serveur** depuis le jalon 5 :
+du SVG statique, aucun JavaScript envoyé au navigateur. La règle tient toujours
+pour l'entonnoir, l'anneau et la bande de cadence — qui reste serveur. Elle ne
+tient pas pour celui-ci : une infobulle au survol, atteignable au clavier, et
+une légende qui masque une série sont de l'interaction, pas de la mise en page.
+
+Le compromis garde le calcul là où il était : **tout** est calculé sur le
+serveur par `lib/domain/timeline.ts`, et seuls le placement et l'écoute des
+événements traversent. `tests/pilotage-source.test.ts` et
+`tests/timeline-source.test.ts` échouent si une vue se met à compter, à
+découper une période ou à appeler `metricResult`.
+
+### Deux défauts de ma propre version, trouvés à la recette
+
+**Le focus clavier était documenté et pas écrit.** Le commentaire du composant
+affirmait que « `onMouseEnter` et `onFocus` posent le même état » ; `onFocus`
+n'existait pas. Le graphique était donc illisible au clavier, ce que le jalon
+exigeait explicitement. Le test de navigateur l'a attrapé, et une garde statique
+compte désormais les deux écouteurs — une promesse de commentaire n'engage rien.
+
+**La cible invisible en jour et en mois**, décrite plus haut.
+
+### Deux hameçons, et un renommage évité
+
+`data-timeline-bar` / `data-total` sur chaque barre, `data-timeline-point` /
+`data-value` sur chaque point : un nombre peint dans un `<text>` SVG ne se
+compare à rien, et c'est ce qui permet de vérifier 913 points au lieu d'en
+croire un.
+
+`data-target-line` **garde le nom** qu'il avait sur l'ancien graphique : les
+deux tests de navigateur du jalon 109 qui vérifient que la ligne suit le réglage
+de `/reglages` testent un invariant qui vaut toujours, et les renommer n'aurait
+rien prouvé de plus.
+
+### Ce qui a été retiré
+
+`WeekPoint`, `weeklySeries`, `weekLabel` et
+`components/pilotage/weekly-chart.tsx`. Leurs deux tests ont été remplacés, et
+l'un des deux **a changé de sens exprès** : « dessine aussi les semaines vides »
+affirmait la course de zéros du début, que ce jalon retire précisément parce
+qu'elle réglait l'échelle sur du vide.
+
+### Jalon 113 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (`auraflow113` : le jeu de démonstration, plus
+52 envois de campagne datés de septembre — le cas de production reproduit) et le
+serveur standalone. **Tous les chiffres viennent de cette base semée : ce ne
+sont pas des nombres de production.**
+
+- **item 1** — une activité datée du 20 octobre, reçue le 7 novembre, tombe dans
+  la **semaine du 19 octobre** ; `createdAt` de la ligne vaut bien le 7. Date
+  faussée à la main en base puis rejeu du même webhook : **« écrits 0,
+  doublons 1, réparés 1 »**, date revenue au 20 octobre, **une seule ligne**
+  avant comme après ;
+- **item 2** — reprise du CRM : **80 événements** écrits (63 messages, 10
+  réunions, 7 affaires gagnées), **56 en septembre** répartis sur quatre
+  semaines du 31 août au 21 septembre. Rejouée : **0 écrit**, totaux identiques ;
+- **item 3** — **913 points vérifiés, 0 écart** : pour chacun, la valeur lue sur
+  le tracé et la longueur de la liste que son propre lien ouvre. Trois
+  indicateurs × trois granularités × deux vues ;
+- **item 4** — légende : masquer un canal retire sa ligne du tracé et la rouvrir
+  la remet ; les trois réglages survivent au rechargement et changer la
+  granularité l'écrit dans l'URL ;
+- **item 5** — cibles relevées sur la page rendue : **20** en jour, **100** en
+  semaine, **420 / 440 / 460** en mois selon les jours ouvrés, **aucune** pour
+  « réponses ». Sur une plage lundi→dimanche en granularité jour, **4 segments**
+  de 20 — les quatre jours ouvrés non vides, le lundi vide étant retiré comme
+  période de tête ;
+- **item 6** — la bande de cadence annonce **4** et la pastille hebdomadaire
+  **4** ; la phrase dit « En retard de 96 : 4 messages pour 100 attendus » ;
+- **item 7** — vrai Chromium, `reachable()` et jamais `isVisible()` :
+  `tests/e2e/timeline.e2e.ts`, **7 tests**, **trois passages consécutifs
+  verts**. À **390 × 844** : **0 px** de débordement de page, et le tracé défile
+  bien **dans son cadre** (`scrollWidth > clientWidth` vérifié) ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` verts.
+
+### Jalon 113 — ce qui ne l'est pas
+
+**Un seul fait ancien étire la plage par défaut.** La règle demandée est « la
+plage commence à la première période qui porte quelque chose », et elle est
+appliquée telle quelle : sur la base de recette, un événement isolé du 25 mai
+ouvre une série de 24 semaines dont la moitié sont vides. Ce n'est pas la course
+de zéros *de tête* que le jalon visait — celle-là est bien retirée — mais le
+résultat se lit mal tout de même. Le remède existe et il est à la main de
+l'utilisateur : la plage libre de la barre de filtres, ou la granularité
+« mois ». Un remède automatique demanderait de juger qu'un fait est
+« négligeable », ce que ce produit ne fait pas.
+
+**La période de la barre de filtres ne borne pas le graphique**, sauf si c'est
+une plage libre. L'honorer littéralement — « cette semaine » par défaut —
+rendrait **une seule barre**, ce qui n'est pas un graphique. C'est une lecture
+du jalon, pas une omission : une fenêtre choisie est plus étroite, une période
+d'indicateur n'en est pas une.
+
+**La visibilité des canaux n'est pas dans l'URL.** Métrique, vue et granularité
+y sont ; masquer un canal est une exploration transitoire, et le jalon ne
+demandait la persistance que pour les trois premiers. Conséquence : une légende
+partagée par lien revient tous canaux visibles.
+
+**Le nombre de seaux est borné à 120.** Une plage libre de deux ans en
+granularité « jour » rendrait sept cents barres illisibles et autant d'appels à
+`metricResult`. Atteindre la borne garde les seaux **les plus récents** — et ne
+le dit pas à l'écran.
+
+**`buildSeries` appelle `metricResult` sept fois par seau** (le total, les six
+canaux). C'est ce qui garantit l'égalité avec la liste, et c'est payé en calcul :
+24 seaux font 168 appels sur l'historique filtré. À l'échelle de ce CRM c'est
+imperceptible ; à cent mille événements il faudrait indexer par période avant de
+compter, au prix de la garantie.
+
+**L'infobulle se place en haut à droite du cadre**, pas près du curseur. Suivre
+la souris demandait de calculer une position au survol, donc de réintroduire du
+calcul dans la vue pour un gain d'ergonomie discutable sur un graphique de cette
+taille.

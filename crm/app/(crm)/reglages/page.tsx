@@ -28,6 +28,7 @@ import { readUsageReport } from "@/lib/api/usage";
 import { CostPanel } from "@/components/settings/cost-panel";
 import { OpenAuditPanel } from "@/components/settings/open-audit-panel";
 import { LemlistPanel } from "@/components/settings/lemlist-panel";
+import { BackfillPanel } from "@/components/settings/backfill-panel";
 import { readLemlistStatus } from "@/lib/api/lemlist-sync";
 import { readOpenAudit } from "@/lib/api/open-audit";
 import { DEFAULT_MODELS } from "@/lib/domain/model-pricing";
@@ -168,6 +169,7 @@ export default async function ReglagesPage() {
       deploy={<DeployCard deploy={readDeployInfo()} now={new Date()} />}
       costs={<CostPanel report={usage} />}
       opens={<OpenAuditPanel audit={openAudit} />}
+      backfill={<BackfillPanel />}
       lemlist={
         <LemlistPanel
           initial={{
