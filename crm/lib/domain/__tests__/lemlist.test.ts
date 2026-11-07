@@ -202,6 +202,42 @@ describe("la lecture d'une charge utile enregistrée", () => {
   });
 
   /**
+   * **Les trois ajouts du jalon 113 v2, lus sur la charge utile enregistrée.**
+   *
+   * L'étape est le point délicat : lemlist émet `sequenceStep` **indexé à
+   * zéro** — c'est écrit dans la documentation de `GET /activities` — et
+   * l'écran affiche un rang à partir de 1. Un décalage d'une unité attribuerait
+   * à l'étape 2 ce que l'étape 3 a produit, et on retirerait la mauvaise
+   * relance d'une séquence sans jamais s'en apercevoir.
+   */
+  it("lit la niche, le trafic et l'étape, en rang affiché", () => {
+    const activity = readLemlistActivity(emailSent);
+    expect(activity?.niche).toBe("Bijoux");
+    // « 8 000 » avec l'espace insécable de Google Sheets.
+    expect(activity?.visitors).toBe(8_000);
+    // `sequenceStep: 0` dans la charge utile → première étape à l'écran.
+    expect(activity?.stepIndex).toBe(1);
+    expect(activity?.stepType).toBe("email");
+  });
+
+  it("laisse l'étape nulle hors séquence, plutôt que de la deviner", () => {
+    const activity = readLemlistActivity(linkedinOutsideCampaign);
+    // « Hors séquence » est le fait : une activité née de la boîte ou d'une
+    // fiche ne vient d'aucune étape, et lui en inventer une rangerait son
+    // résultat sous une étape qui ne l'a pas produite.
+    expect(activity?.stepIndex).toBeNull();
+    expect(activity?.stepType).toBe("");
+  });
+
+  it("laisse la niche vide et le trafic nul quand les variables n'y sont pas", () => {
+    const activity = readLemlistActivity(linkedinInviteAccepted);
+    expect(activity?.niche).toBe("");
+    // Jamais zéro : zéro rangerait la marque dans « Moins de 2 000 » sur la foi
+    // d'une variable absente.
+    expect(activity?.visitors).toBeNull();
+  });
+
+  /**
    * **Le cas que la documentation signale, et celui qui casse une lecture
    * écrite trop vite** : une activité née d'une fiche ou de la boîte, pas d'une
    * étape de campagne, n'a **aucune** clé `lead*`.
@@ -339,7 +375,10 @@ describe("la famille *Done ne compte jamais comme un message envoyé", () => {
       owner: "Yanis",
       source: "lemlist",
       replyCategory: "",
-      segment: "unknown",
+      size: "unknown",
+      niche: "",
+      stepIndex: null,
+      stepType: "",
       group: "autre",
     };
   }

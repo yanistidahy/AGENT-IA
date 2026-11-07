@@ -7,6 +7,8 @@ import { createCompany, updateCompany } from "@/lib/client/crm-api";
 interface CompanyFormProps {
   readonly company: CompanyRecord | null;
   readonly industries: readonly string[];
+  /** Les niches déjà en usage, proposées sous le champ (jalon 113 v2). */
+  readonly niches: readonly string[];
   readonly onCancel: () => void;
   readonly onSaved: () => void;
 }
@@ -16,7 +18,7 @@ const CONTROL =
 
 const SIZES = ["1-10", "11-50", "51-200", "201-500", "500+"] as const;
 
-export function CompanyForm({ company, industries, onCancel, onSaved }: CompanyFormProps) {
+export function CompanyForm({ company, industries, niches, onCancel, onSaved }: CompanyFormProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string[]>>({});
@@ -37,6 +39,7 @@ export function CompanyForm({ company, industries, onCancel, onSaved }: CompanyF
       // sans visite ; `null` dit qu'on ne sait pas, et le segment range alors
       // la société dans « non renseigné » au lieu de la compter comme petite.
       monthlyVisitors: text("monthlyVisitors") === "" ? null : Number(text("monthlyVisitors")),
+      niche: text("niche"),
     };
 
     setBusy(true);
@@ -94,6 +97,37 @@ export function CompanyForm({ company, industries, onCancel, onSaved }: CompanyF
         <Field label="Localisation" errors={fields.loc}>
           <input name="loc" defaultValue={company?.loc ?? ""} className={CONTROL} />
         </Field>
+        {/*
+          **La niche est un texte libre, avec les valeurs déjà en usage en
+          suggestion.**
+
+          Libre et non liste fermée : personne ne connaît la liste des niches
+          avant de prospecter, et une liste fermée se contourne en tapant
+          « Autre » — ce qui produit une niche « Autre » qui ne veut rien dire.
+          Le `datalist` propose sans imposer, et le regroupement de l'onglet
+          Segments plie casse et accents, donc « Bijoux » et « bijoux » restent
+          une seule niche même si deux personnes les tapent différemment.
+        */}
+        <Field label="Niche" errors={fields.niche}>
+          <input
+            name="niche"
+            list="company-niches"
+            data-company-niche
+            placeholder="bijoux, soins visage…"
+            maxLength={60}
+            defaultValue={company?.niche ?? ""}
+            className={CONTROL}
+          />
+          <datalist id="company-niches">
+            {niches.map((niche) => (
+              <option key={niche} value={niche} />
+            ))}
+          </datalist>
+          <span className="mt-1 block text-[11.5px] text-muted">
+            Axe du tableau « Par niche » sur Pilotage. Une valeur tapée ici n'est jamais écrasée par
+            la synchronisation lemlist.
+          </span>
+        </Field>
         <Field label="Visiteurs mensuels" errors={fields.monthlyVisitors}>
           <input
             name="monthlyVisitors"
@@ -104,8 +138,9 @@ export function CompanyForm({ company, industries, onCancel, onSaved }: CompanyF
             className={CONTROL}
           />
           <span className="mt-1 block text-[11.5px] text-muted">
-            Décide du segment sur Pilotage : petite marque de 2 000 à 10 000, grande marque à
-            partir de 15 000. Laissé vide, la société compte en « non renseigné ».
+            Décide de la tranche sur Pilotage : moins de 2 000, petites 2 000 à 10 000,
+            intermédiaires 10 000 à 15 000, grosses 15 000 et plus. Laissé vide, la société compte
+            en « non renseigné » — ce qui n'est pas zéro.
           </span>
         </Field>
       </div>

@@ -54,7 +54,10 @@ function row(
     owner: "Yanis",
     source: "crm",
     replyCategory: "",
-    segment: "unknown",
+    size: "unknown",
+    niche: "",
+    stepIndex: null,
+    stepType: "",
     group: "autre",
     ...extra,
   };

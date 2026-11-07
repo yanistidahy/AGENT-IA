@@ -57,8 +57,9 @@ async function setToggle(page: Session["page"], type: string, want: boolean): Pr
 async function qualifiedCount(session: Session): Promise<number> {
   const { page } = session;
   await page.goto(`${BASE_URL}/pilotage`, { waitUntil: "domcontentloaded" });
-  const tile = page.locator('[data-kpi="qualified"]');
-  return Number(await tile.getAttribute("data-count"));
+  // Carte d'objectif depuis le jalon 113 v2, et non plus pastille.
+  const value = page.locator('[data-objective="qualified"] [data-objective-value]');
+  return Number(await value.innerText());
 }
 
 describeBrowser("consigner une démo à la main", () => {
@@ -168,7 +169,13 @@ describeBrowser("la cible hebdomadaire", () => {
 
     const read = async (): Promise<{ tile: string; line: string | null }> => {
       await page.goto(`${BASE_URL}/pilotage`, { waitUntil: "domcontentloaded" });
-      const tile = await page.locator('[data-kpi="messages"]').innerText();
+      const tile = await page.locator('[data-objective="messages"]').innerText();
+      /*
+        La cible du graphique vit désormais sur l'onglet « Dans le temps » : la
+        carte d'objectif et la ligne du graphique doivent suivre le **même**
+        réglage, et c'est ce que ce test établit — deux écrans, un réglage.
+      */
+      await page.goto(`${BASE_URL}/pilotage/temps`, { waitUntil: "domcontentloaded" });
       const line = await page.locator("[data-target-line]").first().getAttribute("data-target-line");
       return { tile, line };
     };

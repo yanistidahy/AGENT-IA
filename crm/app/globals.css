@@ -79,9 +79,37 @@
    */
   --color-danger: #c2382a;
 
-  /* Ambre — alerte moyenne, affaire tiède */
+  /* Ambre — alerte moyenne, affaire tiède.
+     `gold` plein ne donne que 2.58:1 sur blanc : il ne porte jamais de texte.
+     Une puce ambre s'écrit donc `gold-d` sur `gold-l`.
+     gold-d sur --color-gold-l : 5.25:1 */
   --color-gold: #d99323;
   --color-gold-l: #fbf0dc;
+  --color-gold-d: #8a5a00;
+
+  /**
+   * **Le fond du tableau de bord**, et la seconde série de ses graphiques
+   * (jalon 113 v2, valeurs du prototype validé).
+   *
+   * `board` est un gris plus clair que `paper` : les cartes blanches du
+   * prototype s'y détachent par un filet de 1 px plutôt que par une ombre.
+   *
+   * **Mesuré, et c'est une contrainte** : `muted` sur `board` ne donne que
+   * 4.42:1 — sous le seuil AA, alors qu'il tient 4.77:1 sur blanc. Le texte
+   * secondaire posé **sur le fond** utilise donc `closed` (5.17:1) ; sur une
+   * carte blanche, `muted` reste correct. Même nature de piège qu'au jalon 30,
+   * où `muted` sur `paper` tombait à 4.15:1.
+   *
+   * `accent-2` est la seconde série — orange. Elle ne se distingue **jamais par
+   * la couleur seule** : la série qui la porte a aussi son tiret et sa forme de
+   * marqueur.
+   * accent-2 sur blanc        : 5.18:1
+   * blanc sur accent-2        : 5.18:1
+   * accent-2 sur accent-2-l   : 4.69:1
+   */
+  --color-board: #f5f6fa;
+  --color-accent-2: #c2410c;
+  --color-accent-2-l: #fff1e9;
 
   /* Violet — étape « Démo planifiée », avatars, panneau agents */
   --color-violet: #6d5ae6;
@@ -112,9 +140,10 @@
   --font-display: var(--font-space-grotesk), var(--font-public-sans), sans-serif;
   --font-mono: var(--font-ibm-plex-mono), ui-monospace, monospace;
 
-  /* Rayons */
+  /* Rayons. `board` est celui des cartes du prototype validé du pilotage. */
   --radius-card: 10px;
   --radius-control: 7px;
+  --radius-board: 16px;
 
   /* Ombres */
   --shadow-card: 0 1px 2px rgba(13, 18, 32, 0.05), 0 8px 24px -12px rgba(13, 18, 32, 0.18);

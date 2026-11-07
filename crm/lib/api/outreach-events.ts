@@ -9,7 +9,8 @@ import {
   type OutreachSource,
   type OutreachType,
 } from "../domain/outreach";
-import { NO_CONTACT_LABEL, segmentOf, type EventRow } from "../domain/pilotage";
+import { NO_CONTACT_LABEL, type EventRow } from "../domain/pilotage";
+import { sizeBucketOf } from "../domain/size-buckets";
 import { groupLabel } from "../domain/contact-group";
 import { contactTitle } from "../domain/contact-identity";
 import type { ActivityType } from "../domain/types";
@@ -59,6 +60,16 @@ export interface OutreachEventInput {
   readonly source?: OutreachSource;
   readonly externalId?: string | null;
   readonly replyCategory?: string;
+  /**
+   * **L'étape de séquence chez la source**, quand le fait en vient.
+   *
+   * `null` — le défaut — se lit « hors séquence », et c'est le cas de tout ce
+   * que le CRM et le compteur manuel écrivent. L'onglet Campagnes en tire le
+   * résultat par étape : savoir que la relance 3 ne produit rien est ce qui
+   * permet de la retirer, et un total de campagne ne le dit pas.
+   */
+  readonly stepIndex?: number | null;
+  readonly stepType?: string;
   readonly detail?: string;
 }
 
@@ -95,6 +106,8 @@ export async function recordOutreachEvent(
         source: input.source ?? "crm",
         externalId: input.externalId ?? null,
         replyCategory: input.replyCategory ?? "",
+        stepIndex: input.stepIndex ?? null,
+        stepType: input.stepType ?? "",
         detail: input.detail ?? "",
       },
     });
@@ -429,8 +442,10 @@ export async function readEventRows(): Promise<EventRow[]> {
       source: true,
       detail: true,
       replyCategory: true,
+      stepIndex: true,
+      stepType: true,
       campaign: { select: { name: true } },
-      company: { select: { name: true, monthlyVisitors: true } },
+      company: { select: { name: true, monthlyVisitors: true, niche: true } },
       contact: {
         select: {
           firstName: true,
@@ -477,7 +492,16 @@ export async function readEventRows(): Promise<EventRow[]> {
     owner: row.owner,
     source: row.source,
     replyCategory: row.replyCategory,
-    segment: segmentOf(row.company?.monthlyVisitors ?? null),
+    /*
+      La taille et la niche sont lues sur la **société recopiée sur
+      l'événement**, pas sur celle du contact : une fiche peut changer de maison
+      après coup, et l'histoire mesurée n'a pas à bouger avec elle (c'est la
+      raison d'être de `companyId` sur l'événement, jalon 109).
+    */
+    size: sizeBucketOf(row.company?.monthlyVisitors ?? null),
+    niche: row.company?.niche ?? "",
     group: groupLabel(row.contact?.contactGroup ?? "", row.contact?.groupSetBy ?? ""),
+    stepIndex: row.stepIndex,
+    stepType: row.stepType,
   }));
 }

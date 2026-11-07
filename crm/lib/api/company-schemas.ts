@@ -15,6 +15,14 @@ export const createCompanySchema = z.object({
    * n'est pas zéro : zéro affirmerait un site sans visite.
    */
   monthlyVisitors: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
+  /**
+   * **La niche de la marque**, en texte libre — « bijoux », « soins visage ».
+   *
+   * Rognée et bornée à 60 caractères : au-delà c'est une phrase, pas une
+   * niche, et une phrase ferait une ligne de tableau par fiche. Vide vaut
+   * « non renseignée », que l'onglet Segments nomme au lieu de la masquer.
+   */
+  niche: z.string().trim().max(60).optional(),
 });
 
 export type CreateCompanyInput = z.infer<typeof createCompanySchema>;
@@ -33,6 +41,14 @@ export const updateCompanySchema = z
      * n'est pas zéro : zéro affirmerait un site sans visite.
      */
     monthlyVisitors: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
+  /**
+   * **La niche de la marque**, en texte libre — « bijoux », « soins visage ».
+   *
+   * Rognée et bornée à 60 caractères : au-delà c'est une phrase, pas une
+   * niche, et une phrase ferait une ligne de tableau par fiche. Vide vaut
+   * « non renseignée », que l'onglet Segments nomme au lieu de la masquer.
+   */
+  niche: z.string().trim().max(60).optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "Aucun champ à mettre à jour",

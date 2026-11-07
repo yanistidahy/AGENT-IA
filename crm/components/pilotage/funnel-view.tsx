@@ -4,8 +4,20 @@ import { NO_DATA, rateLabel, type FunnelStep, type Metric } from "@/lib/domain/p
 /**
  * L'entonnoir, en personnes, des contactés aux clients.
  *
- * **Nombres ou pourcentages, et le choix vit dans l'URL** : la vue se met en
- * favori, et elle survit à un rechargement (la règle du jalon 1).
+ * **Deux bascules, et elles ne répondent pas à la même question** (jalon
+ * 113 v2) :
+ *
+ * - **Nombres** — combien de personnes à chaque marche ;
+ * - **Passage %** — quelle part de la marche **précédente** a franchi celle-ci.
+ *
+ * La seconde est celle qui désigne le point de blocage. « 4 % des contactés ont
+ * testé la démo » dit où l'on en est ; « 80 % de ceux qui l'ont reçue l'ont
+ * testée » dit que le problème n'est pas là. Le prototype remplace donc
+ * l'ancienne vue « part des contactés » par le passage, et les deux parts sont
+ * calculées par `funnel` — cette vue n'en divise aucune.
+ *
+ * Le choix vit dans l'URL : la vue se met en favori et survit à un
+ * rechargement (la règle du jalon 1).
  *
  * Les marches dont un chiffre a une liste sont cliquables ; les autres —
  * l'essai, le client — n'ont pas encore de source dans l'historique et le
@@ -36,18 +48,20 @@ export function FunnelView({
   const empty = steps.every((step) => step.contactIds.length === 0);
 
   return (
-    <div className="rounded-card border border-line bg-surface px-4 py-3.5">
+    <div data-funnel className="rounded-board border border-line bg-surface px-4 py-3.5">
       <header className="mb-3 flex items-baseline justify-between gap-3">
         <h2 className="font-display text-[15px] font-semibold tracking-tight">
           Entonnoir
-          <span className="ml-2 text-[12px] font-normal text-muted">en personnes</span>
+          <span className="ml-2 text-[12px] font-normal text-muted">
+            en personnes{asShare ? " · passage depuis la marche précédente" : ""}
+          </span>
         </h2>
         <Link
           href={toggleHref}
           data-funnel-toggle
           className="rounded-control border border-line px-2.5 py-1 text-[12px] font-semibold transition-colors hover:bg-surface-2"
         >
-          {asShare ? "Voir les nombres" : "Voir les pourcentages"}
+          {asShare ? "Voir les nombres" : "Voir le passage %"}
         </Link>
       </header>
 
@@ -62,7 +76,17 @@ export function FunnelView({
             // dire la même chose, et la garde statique interdit la seconde.
             const width = step.share === null ? 0 : Math.max(2, Math.round(step.share * 100));
             const metric = DRILL[step.stage];
-            const shown = asShare ? rateLabel(step.share) : String(count);
+            /*
+              En mode passage, la première marche n'a pas de précédente : elle
+              affiche son nombre plutôt qu'un tiret. Un tiret sur « Contactés »
+              se lirait comme une donnée manquante, alors que c'est le point de
+              départ.
+            */
+            const shown = !asShare
+              ? String(count)
+              : step.passage === null && step.stage === "contacted"
+                ? String(count)
+                : rateLabel(step.passage);
 
             const row = (
               <div className="flex items-center gap-3">
@@ -83,7 +107,12 @@ export function FunnelView({
             );
 
             return (
-              <li key={step.stage} data-funnel-stage={step.stage} data-count={count}>
+              <li
+                key={step.stage}
+                data-funnel-stage={step.stage}
+                data-count={count}
+                data-passage={step.passage === null ? "" : String(step.passage)}
+              >
                 {metric === undefined ? (
                   <div className="opacity-70">{row}</div>
                 ) : (

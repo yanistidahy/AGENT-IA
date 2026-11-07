@@ -36,7 +36,7 @@ export interface Band {
  */
 export const BANDS: readonly Band[] = [
   { channel: "email", color: "var(--color-brand)", dash: "", marker: "circle" },
-  { channel: "linkedin_invite", color: "var(--color-win-d)", dash: "6 3", marker: "square" },
+  { channel: "linkedin_invite", color: "var(--color-accent-2)", dash: "6 3", marker: "square" },
   { channel: "linkedin_message", color: "var(--color-violet, #7C5CF6)", dash: "2 3", marker: "diamond" },
   { channel: "whatsapp", color: "var(--color-win)", dash: "8 3 2 3", marker: "triangle" },
   { channel: "call", color: "var(--color-ambre, #D99323)", dash: "4 4", marker: "cross" },
@@ -59,6 +59,23 @@ interface Props {
   readonly width: number;
   readonly onEnter: (key: string, channel: OutreachChannel | null) => void;
   readonly onLeave: () => void;
+  /**
+   * **Le tactile sélectionne la période, il ne navigue pas.**
+   *
+   * Le brief du jalon 113 v2 demande deux choses qui se contredisent sur un
+   * écran tactile : que le clic remplisse le panneau de détail, et que la barre
+   * ouvre la liste de sa période. Un doigt ne peut pas faire les deux.
+   *
+   * L'arbitrage : au doigt, la barre **sélectionne** (le panneau se remplit) et
+   * la navigation est annulée ; c'est alors « Voir les N messages », dans le
+   * panneau, qui ouvre la liste. À la souris et au clavier, rien ne change — le
+   * survol remplit le panneau et le clic ouvre la liste, comme au jalon 113.
+   *
+   * Sans cet arbitrage, un utilisateur tactile ne pourrait **jamais** lire le
+   * détail d'une période : il n'a pas de survol, et son tap partirait.
+   */
+  readonly onPointer: (type: string) => void;
+  readonly blockClick: () => boolean;
 }
 
 /** Un marqueur, par forme : lisible sans la couleur. */
@@ -97,6 +114,8 @@ export function TimelinePlot({
   width,
   onEnter,
   onLeave,
+  onPointer,
+  blockClick,
 }: Props) {
   const inner = width - PAD.left - PAD.right;
   const slot = points.length === 0 ? inner : inner / points.length;
@@ -180,13 +199,21 @@ export function TimelinePlot({
         ? points.map((point, index) =>
             point.target === null ? null : (
               <g key={`t-${point.key}`} data-target-line={point.target}>
+                {/*
+                  **La cible est un trait rouge en pointillés**, et c'est le
+                  prototype validé qui tranche. Cela ne contredit pas la règle
+                  d'à côté — « jamais de barre rouge » : une barre rouge juge le
+                  travail de la semaine, un trait rouge marque un **seuil**. Le
+                  rouge retenu est `danger` (5.39:1 sur blanc) et non `pulse`,
+                  qui ne donne que 3.72:1 et rendrait l'étiquette illisible.
+                */}
                 <line
                   x1={centre(index) - slot / 2 + 1}
                   y1={y(point.target)}
                   x2={centre(index) + slot / 2 - 1}
                   y2={y(point.target)}
-                  stroke="var(--color-brand-d)"
-                  strokeWidth="1.4"
+                  stroke="var(--color-danger)"
+                  strokeWidth="1.5"
                   strokeDasharray="5 4"
                 />
                 {index === lastTargetIndex ? (
@@ -196,7 +223,7 @@ export function TimelinePlot({
                     textAnchor="end"
                     fontSize="9.5"
                     fontWeight="600"
-                    fill="var(--color-brand-d)"
+                    fill="var(--color-danger)"
                   >
                     cible {point.target}
                   </text>
@@ -212,10 +239,15 @@ export function TimelinePlot({
             const x = centre(index) - barW / 2;
             const top = y(point.total);
             /*
-              **Vert au-dessus de la cible, neutre en dessous.** Jamais rouge :
-              un retard de cadence n'est pas une faute, et peindre en rouge la
-              moitié d'une série ferait fermer l'écran. `win` porte la réussite,
-              `brand` porte l'action — l'un ne remplace jamais l'autre (jalon 23).
+              **Vert au-dessus de la cible, gris neutre en dessous.** Jamais de
+              barre rouge : un retard de cadence n'est pas une faute, et peindre
+              en rouge la moitié d'une série ferait fermer l'écran.
+
+              Gris et non bleu-violet, contre ma première version : `brand`
+              porte l'**action** dans ce produit (jalon 23), et une barre de
+              mesure n'est pas un bouton. Le gris laisse par ailleurs toute la
+              couleur disponible aux deux choses qui en ont besoin ici — le vert
+              de la cible atteinte, le rouge du seuil.
             */
             const reached = point.target !== null && point.total >= point.target;
             return (
@@ -229,6 +261,13 @@ export function TimelinePlot({
                   href={point.href}
                   aria-label={`${point.exact} : ${point.total}`}
                   onFocus={() => onEnter(point.key, null)}
+                  onPointerDown={(event) => {
+                    onPointer(event.pointerType);
+                    onEnter(point.key, null);
+                  }}
+                  onClick={(event) => {
+                    if (blockClick()) event.preventDefault();
+                  }}
                 >
                   {/* Une zone de capture pleine hauteur : viser une barre de
                       trois pixels de haut au survol est impossible. */}
@@ -245,8 +284,8 @@ export function TimelinePlot({
                     width={barW}
                     height={Math.max(0, HEIGHT - PAD.bottom - top)}
                     rx="2"
-                    fill={reached ? "var(--color-win)" : "var(--color-brand-l)"}
-                    stroke={reached ? "var(--color-win-d)" : "var(--color-brand)"}
+                    fill={reached ? "var(--color-win)" : "var(--color-line)"}
+                    stroke={reached ? "var(--color-win-d)" : "var(--color-muted)"}
                     strokeWidth="1"
                   />
                 </a>
@@ -289,6 +328,13 @@ export function TimelinePlot({
                     href={point.channelHref[channel] ?? point.href}
                     aria-label={`${CHANNEL_LABELS[channel]}, ${point.exact} : ${point.byChannel[channel] ?? 0}`}
                     onFocus={() => onEnter(point.key, channel)}
+                    onPointerDown={(event) => {
+                      onPointer(event.pointerType);
+                      onEnter(point.key, channel);
+                    }}
+                    onClick={(event) => {
+                      if (blockClick()) event.preventDefault();
+                    }}
                   >
                     <g
                       data-timeline-point={`${channel}:${point.key}`}

@@ -17,6 +17,8 @@ import {
   type WeeklyTargets,
 } from "../domain/pilotage";
 import { OUTREACH_CHANNELS } from "../domain/outreach";
+import { isSizeBucket } from "../domain/size-buckets";
+import { nicheSuggestions, type NicheSuggestion } from "../domain/company-profile";
 
 /**
  * **Ce que l'écran reçoit : des lignes, des cibles, et de quoi remplir les
@@ -37,7 +39,16 @@ const querySchema = z.object({
   campagne: z.string().optional(),
   canal: z.string().optional(),
   proprietaire: z.string().optional(),
-  segment: z.string().optional(),
+  /**
+   * La tranche de taille. La barre ne la montre pas — le prototype ne la
+   * demande pas —, mais elle existe pour que les liens de l'onglet
+   * « Segments » puissent ouvrir la liste d'**une** tranche : un lien ne peut
+   * porter qu'un filtre qui existe.
+   */
+  taille: z.string().optional(),
+  niche: z.string().optional(),
+  fonction: z.string().optional(),
+  origine: z.string().optional(),
   /** Le mode de l'entonnoir : nombres ou pourcentages. */
   part: z.string().optional(),
 });
@@ -66,7 +77,10 @@ export function parsePilotageQuery(
     campagne: read("campagne"),
     canal: read("canal"),
     proprietaire: read("proprietaire"),
-    segment: read("segment"),
+    taille: read("taille"),
+    niche: read("niche"),
+    fonction: read("fonction"),
+    origine: read("origine"),
     part: read("part"),
   });
 
@@ -87,7 +101,10 @@ export function parsePilotageQuery(
         ? (data.canal ?? "")
         : "",
       owner: data.proprietaire ?? "",
-      segment: data.segment ?? "",
+      size: isSizeBucket(data.taille ?? "") ? (data.taille ?? "") : "",
+      niche: data.niche ?? "",
+      group: data.fonction ?? "",
+      source: data.origine ?? "",
     },
     asShare: data.part === "1",
   };
@@ -118,6 +135,27 @@ export interface PilotageData {
    */
   readonly campaigns: readonly { readonly id: string; readonly name: string }[];
   readonly owners: readonly string[];
+  /**
+   * **Les niches du menu, lues sur les sociétés et non sur le journal.**
+   *
+   * Sur les sociétés, parce qu'une niche renseignée sur une marque qu'on n'a pas
+   * encore contactée doit se proposer quand même : le menu sert aussi à poser la
+   * valeur. Regroupées par clé pliée, et la variante proposée est la plus
+   * fréquente — proposer « bijoux » à quelqu'un qui a toujours écrit « Bijoux »
+   * le pousserait à créer la variante qu'on cherche à éviter.
+   */
+  readonly niches: readonly NicheSuggestion[];
+  /** Les groupes de fonction réellement portés par le journal (jalon 94). */
+  readonly groups: readonly string[];
+  /** Les origines réellement portées par le journal : crm, lemlist, manual. */
+  readonly sources: readonly string[];
+  /**
+   * Les campagnes du CRM archivées, en clés de `campaignKey`.
+   *
+   * C'est le seul cas où « terminée » est un fait et non une déduction sur un
+   * silence : archiver est une décision humaine. Voir `boardState`.
+   */
+  readonly archivedCampaigns: readonly string[];
   /** Combien de sociétés n'ont pas de visiteurs mensuels, pour le dire à l'écran. */
   readonly companiesWithoutVisitors: number;
   /**
@@ -146,6 +184,8 @@ export async function readPilotage(): Promise<PilotageData> {
     owners,
     withoutVisitors,
     manual,
+    niches,
+    archived,
     contacts,
   ] = await Promise.all([
     readEventRows(),
@@ -176,6 +216,8 @@ export async function readPilotage(): Promise<PilotageData> {
     }),
     prisma.company.count({ where: { monthlyVisitors: null } }),
     readManualCounter(),
+    prisma.company.findMany({ where: { niche: { not: "" } }, select: { niche: true } }),
+    prisma.campaign.findMany({ where: { archivedAt: { not: null } }, select: { id: true } }),
     prisma.contact.findMany({
       orderBy: { nameKey: "asc" },
       select: {
@@ -211,6 +253,10 @@ export async function readPilotage(): Promise<PilotageData> {
       owners.map((owner) => owner.value),
       rows.map((row) => row.owner),
     ),
+    niches: nicheSuggestions(niches.map((row) => row.niche)),
+    groups: distinct(rows.map((row) => row.group)),
+    sources: distinct(rows.map((row) => row.source)),
+    archivedCampaigns: archived.map((campaign) => `crm:${campaign.id}`),
     companiesWithoutVisitors: withoutVisitors,
     manual,
     /*
@@ -224,6 +270,11 @@ export async function readPilotage(): Promise<PilotageData> {
       label: contactTitle(contact),
     })),
   };
+}
+
+/** Les valeurs non vides, dédoublonnées, triées : pour un menu. */
+function distinct(values: readonly string[]): string[] {
+  return [...new Set(values)].filter((value) => value !== "").sort((a, b) => a.localeCompare(b, "fr"));
 }
 
 /** La liste des réglages d'abord, puis les noms du journal qu'elle ignore. */

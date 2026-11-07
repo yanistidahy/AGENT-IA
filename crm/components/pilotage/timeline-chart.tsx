@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CHANNEL_LABELS, type OutreachChannel } from "@/lib/domain/outreach";
 import { NO_DATA } from "@/lib/domain/pilotage";
 import { TimelinePlot, bandOf } from "./timeline-plot";
-import { TimelineTooltip } from "./timeline-tooltip";
+import { TimelineDetail } from "./timeline-detail";
 
 /**
  * **« Dans le temps », refondu.**
@@ -76,9 +76,20 @@ export function TimelineChart({
 }: Props) {
   const [hidden, setHidden] = useState<readonly OutreachChannel[]>([]);
   const [hover, setHover] = useState<{ key: string; channel: OutreachChannel | null } | null>(null);
+  /*
+    **Le dernier type de pointeur**, pour arbitrer entre les deux demandes du
+    brief : au doigt, la barre sélectionne la période ; à la souris, elle ouvre
+    la liste. Un `ref` et non un état : la valeur est lue dans le `click` qui
+    suit immédiatement le `pointerdown`, et un rendu entre les deux n'apporte
+    rien — il ferait juste clignoter le graphique à chaque pression.
+  */
+  const pointer = useRef<string>("mouse");
 
   const visible = channels.filter((channel) => !hidden.includes(channel));
   const point = hover === null ? null : (points.find((entry) => entry.key === hover.key) ?? null);
+  // À défaut de survol, la dernière période : c'est celle qu'on regarde en
+  // ouvrant l'écran, et cela évite un panneau qui apparaît et pousse la page.
+  const shownPoint = point ?? points[points.length - 1] ?? null;
 
   function toggle(channel: OutreachChannel): void {
     setHidden((current) =>
@@ -90,7 +101,7 @@ export function TimelineChart({
 
   if (points.length === 0) {
     return (
-      <section className="rounded-card border border-line bg-surface p-3.5" data-timeline>
+      <section className="rounded-board border border-line bg-surface p-3.5" data-timeline>
         <h2 className="font-display text-[15px] font-semibold tracking-tight">Dans le temps</h2>
         <p className="mt-2 text-[13px] text-muted">{NO_DATA}</p>
       </section>
@@ -98,7 +109,7 @@ export function TimelineChart({
   }
 
   return (
-    <section className="rounded-card border border-line bg-surface p-3.5" data-timeline>
+    <section className="rounded-board border border-line bg-surface p-3.5" data-timeline>
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="font-display text-[15px] font-semibold tracking-tight">
           Dans le temps
@@ -129,20 +140,35 @@ export function TimelineChart({
             width={widthFor(points.length, view)}
             onEnter={(key, channel) => setHover({ key, channel })}
             onLeave={() => setHover(null)}
+            onPointer={(type) => {
+              pointer.current = type;
+            }}
+            blockClick={() => pointer.current === "touch" || pointer.current === "pen"}
           />
         </div>
 
-        {point !== null ? (
-          <div className="pointer-events-none absolute right-2 top-2 z-10">
-            <TimelineTooltip
-              point={point}
-              channels={channels}
-              visible={visible}
-              focused={hover?.channel ?? null}
-            />
-          </div>
-        ) : null}
       </div>
+
+      {/*
+        **Le panneau de détail est sous le tracé, et toujours présent.**
+
+        Il remplace l'infobulle flottante du jalon 113, pour trois raisons
+        mesurables : elle se posait en travers du graphique qu'on lit, elle ne
+        survivait pas à un doigt sur un écran tactile, et elle ne pouvait pas
+        porter le lien « Voir les N messages » — or c'est pour ce lien qu'on
+        s'arrête sur une barre. Toujours présent, parce qu'un bloc qui apparaît
+        au survol déplace tout ce qui le suit, et on perd la barre visée.
+      */}
+      {shownPoint !== null ? (
+        <TimelineDetail
+          point={shownPoint}
+          channels={channels}
+          visible={visible}
+          focused={hover?.channel ?? null}
+          fallback={point === null}
+          metricLabel={metricLabel}
+        />
+      ) : null}
 
       {view === "canal" && channels.length > 0 ? (
         <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5" data-timeline-legend>

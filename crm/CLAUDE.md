@@ -62,6 +62,9 @@ classe.**
 | Réussite | `win` / `win-d` / `win-l` | `#0FA88F` / `#0B7A68` / `#DFF3EF` |
 | Encre | `ink` / `ink-2` / `ink-3` | `#0D1220` / `#161C2E` / `#232B42` |
 | Neutres | `muted` / `line` / `line-2` | `#6B7192` / `#DEE0EA` / `#ECEEF4` |
+| Fond du pilotage | `board` | `#F5F6FA` |
+| Seconde série | `accent-2` / `accent-2-l` | `#C2410C` / `#FFF1E9` |
+| Ambre lisible | `gold-d` | `#8A5A00` |
 
 **`brand` porte l'action, `win` porte la réussite, et l'un ne remplace jamais
 l'autre.** Boutons, liens, entrée de navigation active, anneau de focus, états
@@ -91,6 +94,21 @@ pas des couleurs de marque.
 | `muted` sur blanc | 4.9:1 | AA texte |
 | `closed` sur `paper` (fiche close) | 4.86:1 | AA texte |
 | bande la plus claire de l'entonnoir, texte blanc | 4.65:1 | AA texte |
+| `accent-2` sur blanc (seconde série) | 5.18:1 | AA texte |
+| blanc sur `accent-2` | 5.18:1 | AA texte |
+| `accent-2` sur `accent-2-l` (puce) | 4.69:1 | AA texte |
+| `gold-d` sur `gold-l` (puce ambre) | 5.25:1 | AA texte |
+| `closed` sur `board` (texte secondaire du pilotage) | 5.17:1 | AA texte |
+| ~~`muted` sur `board`~~ | **4.42:1** | **sous le seuil** |
+
+**Troisième piège, relevé au jalon 113 v2** : le fond `board` du prototype
+(`#F5F6FA`) est à peine plus sombre que le blanc, et cela suffit à faire tomber
+`muted` de 4.77:1 à **4.42:1** — sous le seuil AA, alors qu'il porte les
+libellés secondaires et les onglets inactifs du pilotage. Le texte secondaire
+posé **sur le fond** utilise donc `closed` (5.17:1) ; sur une carte blanche,
+`muted` reste correct. Même nature de piège qu'au jalon 30, où `muted` sur
+`paper` tombait à 4.15:1. `gold` plein ne porte par ailleurs **jamais** de
+texte (2.58:1 sur blanc) : une puce ambre s'écrit `gold-d` sur `gold-l`.
 
 Deux pièges relevés et corrigés au passage : **le blanc sur menthe pleine ne
 donne que 3.0:1** — d'où l'interdiction du texte blanc sur `win` plein, la
@@ -366,6 +384,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 113 v2 | **Pilotage en quatre onglets, d'après le prototype validé** : « Dans le temps » du jalon 113 **reste** et devient l'onglet 2 ; ce jalon le complète et en ajoute trois. Les préalables d'abord. Les parties 1 et 2 de la partie 0 **étaient déjà faites** (dates vérifiées, bouton de reprise livré, PR #84) et ne sont pas refaites. Trois ajouts de données : `Company.niche` en texte libre avec suggestions et regroupement pliant casse et accents ; **deux colonnes de provenance** (`nicheSource`, `visitorsSource`) qui servent une seule règle — une valeur tapée dans le CRM n'est **jamais** écrasée par la synchronisation, et la migration déclare `crm` les trafics déjà saisis parce que le CRM en était jusqu'ici le seul chemin d'écriture ; et `OutreachEvent.stepIndex`/`stepType`, **convertis depuis le `sequenceStep` indexé à zéro** de lemlist (vérifié dans la documentation publiée : un décalage d'une unité attribuerait à l'étape 2 ce que l'étape 3 a produit). Deux fonctions partagées par les quatre onglets : les **cinq tranches** de taille — l'intervalle 10 000 à 15 000, rangé dans « non renseigné » au jalon 109 faute de brief, devient « Intermédiaires » — et la **règle d'échantillon** (moins de 10 « à ne pas interpréter », 10 à 29 « échantillon faible », 30 et plus « fiable »), avec **le `n` à côté de chaque taux sur chaque onglet**, une puce hachurée sous dix, et une comparaison qui se taît sous trente d'un seul côté, sur un taux nul ou sous 1,5 fois d'écart. Les quatre onglets partagent dix filtres dans l'URL et laissent leurs réglages locaux derrière. **Une seule porte** (`lib/api/pilotage-view.ts`) lit l'URL, borne la période, attribue les campagnes et filtre : la garde statique du jalon 109, qui exigeait la suite de *la* page, exige maintenant qu'aucun des cinq écrans ne la refasse — déplacée, pas affaiblie, et éprouvée en recopiant `applyFilters` dans un onglet. Mesuré : **780 chiffres cliquables** sur les quatre onglets et les douze vues du graphique, **zéro écart** entre le nombre affiché et la longueur de sa liste. Un défaut réel de ma propre version trouvé par cette vérification et non à la relecture : une ligne de canal affichait les **personnes** touchées et ouvrait la liste des **messages** — « 1 » au-dessus de deux lignes. Relevé au passage, et mesuré : `muted` ne donne que **4.42:1** sur le fond `#F5F6FA` du prototype — sous le seuil AA, là où il tient 4.77:1 sur blanc —, donc le texte secondaire posé sur ce fond est `closed` (5.17:1) | **livré, à valider** |
 | 113 | **« Dans le temps » refondu, et ses dates vérifiées d'abord** : la partie 1 a nommé la cause réelle du trou de septembre, et ce n'était pas une histoire de dates. Les événements lemlist **ont toujours porté la date de leur activité** — une seule écriture (`lemlist-sync.ts`, `occurredAt: activity.occurredAt`) alimentée par `readLemlistActivity`, qui lit `createdAt` et **refuse l'activité** si la date est illisible plutôt que de retomber sur l'instant de l'import ; mesuré : une activité du 20 octobre synchronisée le 7 novembre tombe dans la semaine du 19 octobre. Le vrai défaut était ailleurs : **la reprise du jalon 109 n'avait aucun appelant** — ni cron, ni workflow, ni démarrage, ni bouton — depuis deux jalons, donc les 52 emails de septembre dormaient dans `email_sends` sans jamais devenir des événements. Un bouton dans `/reglages` la rend atteignable, avec les comptes **avant/après par type** ; mesuré : 80 événements repris, 56 en septembre sur quatre semaines, et **0 au second passage**. Ajouté au passage : une ligne déjà importée dont la date est fausse **se corrige** à la resynchronisation au lieu d'être définitive (la contrainte d'unicité empêchait de la réécrire), sans doublon et sans toucher ni le contact ni le type. Côté graphique : indicateur, vue et granularité dans l'URL, la plage qui commence au premier fait, la cible tracée **période par période** (20 en jour, 100 en semaine, 420/440/460 en mois selon les jours ouvrés), une infobulle qui dit les dates exactes, les parts, l'écart à la cible, l'évolution et l'origine, une légende cliquable où chaque canal porte **un motif et une forme** et pas seulement une couleur, et le clic qui ouvre la liste du seau. L'invariant du jalon 109 vérifié sur **913 points** : zéro écart entre la valeur d'un point et la longueur de sa liste, en Total comme en Par canal, pour le jour, la semaine et le mois | **livré, à valider** |
 | 112 | **Un compteur pour ce qu'aucun outil ne voit partir** : les deux préalables d'abord. `manualDone` de lemlist — « tâche manuelle achevée » **dans leur interface** — reste hors de tout compte, et la garde le vérifie sur la **conséquence** et non sur la table : la ligne que la synchronisation écrirait, passée à `messagesSent`, rend un tableau vide, donc un même geste ne peut pas compter une fois cliqué ici et une fois importé de là. Et `logActivity` offrait bien une partie du travail — il écrit déjà un `message_sent` pour un appel, un message LinkedIn ou un DM Instagram — mais lui manquent trois choses qui sont tout l'écart : il **exige une fiche**, il ne connaît pas WhatsApp, et il crée une tâche de prochaine action. Le compteur n'écrit donc **que** dans le journal, jamais une interaction : écrire les deux doublerait le message. Cinq boutons, un lot annulable d'un geste (les lignes d'une saisie partagent un préfixe d'identifiant, donc aucune colonne de regroupement ajoutée), le propriétaire retenu par appareil dans un `localStorage` **sous `try/catch`** — l'accès lève en navigation privée, il ne rend pas `null`. `OutreachEvent.contactId` devient **facultatif**, et la conséquence est bornée par construction : tout ce qui compte des gens passe par `contactsOf`, seul endroit où le nul est filtré, donc une ligne sans fiche entre dans « messages envoyés » et dans **aucun** indicateur par personne. Mesuré : pastille, graphique et liste passent ensemble de 6 à 9 puis reviennent à 6, et la liste porte sa ligne « sans contact » pour que le nombre reste la longueur de la liste. Un défaut de ma première version, trouvé une fois sur six à la recette et corrigé dans le produit : le serveur ne connaissant pas `localStorage`, le bloc rendait « Qui a envoyé ces messages ? » même sur un appareil qui avait déjà répondu, d'où un clignotement et une course | **livré, à valider** |
 | 111 | **lemlist entre dans le journal de prospection** : la correspondance d'abord, écrite avant toute ligne de code — les **113 valeurs** de l'énumération `ActivityType` publiée, plus les dix-neuf événements que seul le webhook sert, chacune avec sa décision et sa raison (`lib/domain/lemlist.ts`), et un test qui échoue si lemlist en ajoute une sans qu'on tranche. Ce qui compte comme « envoyé » est **la définition de lemlist elle-même**, recopiée depuis ses statistiques de campagne plutôt que jugée. Quatre refus de double compte, chacun mesuré contre un faux à 100 % qui n'aurait fait rougir aucun test : la famille `*Done` n'est pas un envoi, `emailsExternalSent` peut être un email que le CRM a déjà compté, un échec d'envoi n'est pas un rebond, et `*Interested` est un classement et non une réponse. Les ouvertures entrent et **ne comptent pas** — par construction, chaque chiffre énumérant ses types, et une garde statique le vérifie. Deux chemins, **un seul écrivain** : webhook (secret dans le corps, comparé à temps constant, absent = 401) et relevé de quinze minutes greffé sur le workflow du jalon 41. Une réponse lemlist arrête une séquence du CRM **par le prédicat du jalon 106**, rendu variadique : une source de plus, pas une règle de plus. Mesuré en recette : le même webhook deux fois donne **un** événement, un inconnu donne **un** contact et **une** société réutilisés ensuite, l'envoi forcé par identifiant est refusé « Le contact a répondu » sans qu'aucune interaction ni réponse ne soit écrite en double, et la clé de recette n'apparaît **nulle part** — zéro occurrence en clair comme en base64 dans les réponses, le HTML, les morceaux de JavaScript servis, le journal du serveur et le fichier de sauvegarde, avec un contrôle négatif prouvant qu'elle part bien chez lemlist | **livré, à valider** |
@@ -17074,3 +17093,329 @@ compter, au prix de la garantie.
 la souris demandait de calculer une position au survol, donc de réintroduire du
 calcul dans la vue pour un gain d'ergonomie discutable sur un graphique de cette
 taille.
+
+## Jalon 113 v2 — Pilotage en quatre onglets
+
+**Ce jalon ne remplace pas le précédent.** « Dans le temps » du jalon 113 (PR
+#84, `6b15102`) reste : il devient l'onglet 2, complété de ce que le prototype
+validé demande. Et les **parties 1 et 2** de la partie 0 de ce brief étaient
+déjà livrées — les dates des événements lemlist ont été vérifiées ligne à ligne
+et le bouton « Reprendre l'historique » existe dans `/reglages` depuis ce
+jalon. Elles ne sont pas refaites ; ce qui suit est tout le reste.
+
+```
+lib/domain/size-buckets.ts      les 5 tranches + la règle d'échantillon — pur
+lib/domain/company-profile.ts   niche, trafic, et qui a le droit d'écrire — pur
+lib/domain/segments.ts          l'onglet Segments : cartes, séries, niches — pur
+lib/domain/campaigns-board.ts   l'onglet Campagnes, et le résultat par étape — pur
+lib/domain/board-links.ts       les liens des onglets et des listes — pur
+lib/api/pilotage-view.ts        **la porte unique** : URL → période → filtres
+app/(crm)/pilotage/            page.tsx · temps/ · segments/ · campagnes/ · liste/
+components/pilotage/           board-tabs, board-header, objective-cards,
+                               kpi-cards, reliability-chip, size-cards,
+                               rate-evolution, contacted-bars, niche-table,
+                               campaign-board, timeline-detail (remplace
+                               timeline-tooltip)
+```
+
+### La garde du jalon 109, déplacée et non affaiblie
+
+Avec un seul écran, la garde exigeait de **la** page qu'elle appelle `periodOf`,
+`applyFilters`, `slice` et `metricResult`. Avec cinq écrans, la même suite
+recopiée cinq fois change la nature du risque : il suffit qu'un onglet attribue
+les campagnes avant de filtrer quand un autre fait l'inverse pour que deux
+onglets affichent deux nombres sur les mêmes gens — le défaut du jalon 54,
+reproduit à l'intérieur d'un seul écran.
+
+`lib/api/pilotage-view.ts` est donc **le seul** endroit qui lit l'URL, borne la
+période, attribue les campagnes et filtre. La garde vérifie maintenant que ce
+fichier porte la suite **et qu'aucun des cinq écrans ne la refait** —
+`applyFilters`, `slice(`, `periodOf` et `metricResult(` y sont interdits.
+Éprouvée en recopiant `applyFilters` dans l'onglet Campagnes : le test le nomme
+par fichier.
+
+### Deux fonctions que les quatre onglets partagent
+
+**Les cinq tranches de taille** (`sizeBucketOf`). Le jalon 109 en avait trois et
+rangeait l'intervalle **10 000 à 15 000 dans « non renseigné »**, parce que le
+brief d'alors ne le décrivait pas : inventer une appartenance aurait gonflé un
+segment d'après une règle que personne n'avait posée. Le prototype nomme les
+cinq, dont cet intervalle (« Intermédiaires ») et une tranche basse (« Moins de
+2 000 », affichée seulement si elle n'est pas vide). **Conséquence à savoir** :
+une marque à 12 000 visiteurs comptait hier dans « non renseigné » et compte
+aujourd'hui dans « Intermédiaires » ; les deux cartes comparées ne bougent pas.
+
+Les bornes sont **inclusives en bas, exclusives en haut** : 10 000 pile est
+« intermédiaire », pas « petite ». Un rond chiffre est précisément ce qu'on
+saisit quand on estime, et le ranger des deux côtés selon l'écran serait
+l'incohérence qui décrédibilise un tableau de bord. Et **zéro n'est pas « non
+renseigné »** : une marque à 0 visiteur déclaré tombe dans « Moins de 2 000 »,
+`null` seul vaut l'ignorance (la règle du jalon 20).
+
+**La règle d'échantillon** (`reliabilityOf`), et c'est elle qui porte le jalon.
+Un taux de 100 % sur une personne et un taux de 11,8 % sur 340 s'affichent de la
+même façon et ne disent pas du tout la même chose ; sans règle, le premier gagne
+toujours l'attention parce qu'il est plus gros.
+
+| n | état | ce que l'écran en fait |
+|---|---|---|
+| moins de 10 | « à ne pas interpréter » | chiffre en gris, puce **hachurée** |
+| 10 à 29 | « échantillon faible » | puce ambre (`gold-d` sur `gold-l`) |
+| 30 et plus | « fiable » | puce verte |
+
+**Chaque taux de chaque onglet porte son `n`**, et c'est vérifié par une garde
+statique plutôt que par relecture : la règle ne vaut que si elle tient sur
+l'écran où l'on a oublié de l'appliquer. La puce porte **son mot** et non une
+teinte seule, et l'état illisible porte en plus des hachures — un daltonien ne
+distingue pas l'ambre du vert.
+
+La **comparaison** entre deux tranches (« 3 fois moins de réponses ») se taît
+dans trois cas, et chacun évite une affirmation fausse : un échantillon sous 30
+d'un seul côté (la différence peut n'être que du hasard), un taux de référence
+nul (« une infinité de fois moins » n'est pas une phrase), et un rapport sous
+1,5 (« 1,1 fois moins » est du bruit présenté comme un écart). Elle se pose sur
+la **plus faible** des deux seulement : « 3 fois moins » et « 3 fois plus »
+disent la même chose deux fois.
+
+### La niche, le trafic, et qui a le droit de les écrire
+
+Les deux arrivent par deux chemins — tapés dans le CRM, ou lus dans les
+variables personnalisées d'un lead lemlist. Le relevé tourne toutes les quinze
+minutes : **sans règle, une correction tapée à 10 h 02 serait remplacée à
+10 h 15**, sans trace et sans message. La personne recommencerait, puis
+cesserait de corriger — c'est-à-dire que le champ cesserait de valoir quelque
+chose.
+
+Deux colonnes de provenance (`nicheSource`, `visitorsSource`) rendent la règle
+applicable : `syncMayWrite` écrit si le champ est vide, ou s'il porte une valeur
+que **la synchronisation** a elle-même posée (lemlist est alors la source de
+vérité, et refuser figerait un trafic de l'an dernier). Elle n'écrit pas sur une
+valeur du CRM, **ni sur une valeur d'origine inconnue** : devant une provenance
+qu'on ignore, écraser est le geste irréversible, garder ne coûte qu'un import de
+moins.
+
+**La migration déclare `crm` les trafics déjà renseignés**, et ce n'est pas une
+supposition : jusqu'ici le CRM était le *seul* chemin d'écriture de
+`monthlyVisitors`. Les laisser « inconnus » les aurait protégés aussi, mais
+aurait dit faux.
+
+Le trafic est lu d'un texte libre. Les quatre formes du brief (`8000`, `8 000`,
+`8k`, `8K`) et quatre de plus qu'un vrai compte contient : l'espace insécable
+que Google Sheets produit, le séparateur de milliers, le `k` décimal (`8,5k`) et
+le suffixe `M`. **Le point et la virgule sont ambigus et l'ambiguïté est
+tranchée par le nombre de décimales** : trois chiffres derrière et pas de
+suffixe, c'est un séparateur de milliers (`8.000` = 8 000) ; un ou deux, c'est
+une décimale. Tout le reste rend `null` — **jamais zéro** : « ?», « à voir »,
+« gros site » rangeraient la marque dans « Moins de 2 000 » sur la foi d'un
+point d'interrogation.
+
+La niche garde sa casse à l'écriture et se **regroupe** sur une clé pliée
+(minuscules, sans accents) : « Bijoux » et « bijoux » font une seule ligne de
+tableau sans qu'une orthographe s'affiche à la place de l'autre. Le champ
+propose les valeurs déjà en usage, et la variante proposée est **la plus
+fréquente** — proposer « bijoux » à quelqu'un qui a toujours écrit « Bijoux » le
+pousserait à créer la variante qu'on cherche à éviter.
+
+### L'étape de séquence, et le zéro de lemlist
+
+`GET /activities` émet **`sequenceStep` indexé à zéro** — c'est écrit dans la
+documentation publiée, relue pour ce jalon. La conversion en rang affiché
+(`+ 1`) est faite **une fois**, dans `readLemlistActivity` : un décalage d'une
+unité sur un écran « résultats par étape » attribuerait à l'étape 2 ce que
+l'étape 3 a produit, et on retirerait la mauvaise relance d'une séquence sans
+jamais s'en apercevoir.
+
+**L'objet Activity ne porte pas le type de l'étape.** Vérifié champ par champ
+contre le schéma publié : il porte `stepId`, `sequenceStep`,
+`totalSequenceStep` et `journeyDepth`, et rien qui nomme la nature du pas. On la
+déduit donc du type de l'activité, ce qui est exact par construction — un
+`emailsSent` ne peut venir que d'une étape email. **Ce que nous ne stockons
+pas** : `stepId`, que la documentation recommande comme référence stable quand
+on réordonne une séquence. Nous gardons le rang **au moment du fait**, qui est ce
+dont le résultat par étape a besoin ; si l'on veut un jour suivre une étape à
+travers un réordonnancement, c'est `stepId` qu'il faudra ajouter.
+
+**L'étape se remplit aussi sur les lignes déjà importées.** Les deux colonnes
+sont arrivées à ce jalon : tout l'historique lemlist était à `null`, et la
+contrainte d'unicité empêche de réécrire une ligne. Sans réparation, l'onglet
+Campagnes aurait affiché « hors séquence » sur tout le passé pour l'éternité.
+`repairEvent` les remplit au passage suivant — et **ne remplace jamais une étape
+connue par du vide** : un `null` chez lemlist veut dire « cette activité n'est
+pas née d'une étape », pas « oublie ce que tu savais ». Mesuré : une ligne remise
+à `null` reçoit `stepIndex 1` / `stepType email` au passage suivant, comptée
+`repaired: 1`.
+
+Le taux d'une étape a **son propre dénominateur** : les personnes que *cette*
+étape a touchées. Diviser les réponses de l'étape 3 par les inscrits de la
+campagne donnerait un taux qui baisse mécaniquement à chaque relance, et on en
+conclurait que les relances ne marchent pas. Une réponse, qui ne porte pas
+d'étape quand elle vient d'un relevé de messagerie, est rattachée à **l'étape du
+dernier message parti à cette personne** — la même attribution que
+`attributeCampaigns`, pour la même raison : sans elle, chaque étape afficherait
+0 réponse et 0 %, c'est-à-dire un échec affirmé là où la donnée n'était pas
+rattachée.
+
+### Ce que le prototype a changé, et ce que la marque a gardé
+
+| Le prototype demande | Retenu | Pourquoi |
+|---|---|---|
+| fond `#F5F6FA`, cartes blanches, 16 px | **tel quel**, en jetons `board` et `radius-board` | — |
+| indigo `#4338CA` en primaire | **`brand` `#4B3FE4`** | la marque a remplacé le prototype sur la couleur au jalon 23 ; l'écart est imperceptible et une teinte d'action différente sur un seul écran casserait la règle |
+| vert `#16A34A` pour la cible atteinte | **`win` `#0FA88F`** | même raison, et les contrastes de `win` sont mesurés depuis le jalon 23 |
+| orange `#C2410C` en seconde série | **tel quel**, jeton `accent-2` | aucune seconde série n'existait ; 5.18:1 sur blanc |
+| cible en **pointillés rouges** | **tel quel**, en `danger` | un trait rouge marque un **seuil** ; une barre rouge juge le travail de la semaine. `pulse` écarté : 3.72:1, l'étiquette y serait illisible |
+| barres neutres sous la cible | **gris**, pas bleu-violet | `brand` porte l'**action** (jalon 23) ; une barre de mesure n'est pas un bouton |
+
+### L'infobulle devient un panneau
+
+L'infobulle flottante du jalon 113 passe **sous le tracé**, et ce n'est pas un
+goût : elle se posait en travers du graphique qu'on lit, elle ne survivait pas à
+un doigt sur un écran tactile, et **elle ne pouvait pas porter de lien** — or le
+panneau en porte un, « Voir les N messages », qui est la raison pour laquelle on
+s'arrête sur une barre. Le panneau est **toujours présent** et porte la dernière
+période au repos : un bloc qui apparaît au survol déplace tout ce qui le suit, et
+on perd la barre qu'on visait.
+
+### Ce que j'ai refusé
+
+**Refusé — un onglet par question du prototype, soit plus de quatre.** Les
+quatre répondent à quatre moments : où en est la semaine, comment cela évolue,
+qui répond mieux, quelle campagne marche. Un cinquième onglet se serait rempli
+de ce qui ne tenait pas ailleurs.
+
+**Refusé — un filtre de taille dans la barre.** Le prototype ne le demande pas,
+et l'onglet « Segments » est l'écran qui pose la question. Le filtre existe
+(`taille=` dans l'URL) parce que les liens de cet onglet doivent pouvoir ouvrir
+la liste d'une tranche, et la barre le **dit** quand il est posé, avec le geste
+pour le retirer : un filtre actif invisible est un filtre dont on accuse les
+chiffres.
+
+**Refusé — restreindre le tableau par niche avec le filtre de page.** Le
+restreindre à « Petites » avec `taille=` restreindrait aussi les deux cartes du
+dessus, et on comparerait les petites… aux petites. La bascule du tableau est
+donc un réglage **local** (`tranche=`).
+
+**Refusé — « terminée » sur une campagne lemlist silencieuse.** Une activité ne
+porte aucun état de campagne. Une campagne arrêtée pour de bon et une campagne
+simplement muette se lisent donc toutes deux « en pause », et l'écran le dit au
+survol. Lever la limite demanderait d'appeler `GET /api/campaigns`, ce que la
+synchronisation ne fait pas.
+
+**Refusé — un taux hebdomadaire par défaut sur la courbe des segments.** Un taux
+sur huit personnes saute de 0 à 25 % parce qu'une personne a répondu, et la
+courbe raconte alors du hasard avec l'autorité d'un graphique. Le **cumulé** est
+le défaut ; le mode période reste disponible, avec des points **creux** sous dix
+personnes et un sous-titre qui le dit.
+
+### Jalon 113 v2 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (migration `56_niche_and_steps` appliquée sur
+une base au schéma précédent **portant des données**, puis `migrate diff`
+renvoyant « This is an empty migration ») et le serveur standalone de
+production :
+
+- **le rattrapage de provenance** : une société à 8 000 visiteurs devient
+  `visitorsSource = 'crm'`, une société sans trafic reste à vide ;
+- **la synchronisation lemlist, de bout en bout** contre le webhook réel de
+  l'application (secret dans le corps, base dédiée) : un lead inconnu crée
+  **1 contact et 1 société**, écrit l'événement avec `stepIndex 1` (depuis
+  `sequenceStep: 0`) et remplit le profil — niche « Bijoux », **8 000**
+  visiteurs lus de « 8 000 » **avec l'espace insécable**, les deux marqués
+  `lemlist` ;
+- **puis une correction tapée dans le CRM** (« Soins visage », 42 000) passe les
+  deux marques à `crm`, et **deux passages de synchronisation de plus** laissent
+  la valeur intacte : `profilesFilled: 0`, et la fiche lit toujours « Soins
+  visage » / 42 000. C'est la règle dont tout le reste dépend, et elle est
+  mesurée, pas relue ;
+- **une seconde activité à `sequenceStep: 2`** s'écrit en `stepIndex 3` — la
+  conversion du zéro de lemlist, vérifiée sur deux valeurs ;
+- **l'étape d'une ligne déjà importée se remplit** : les deux lignes remises à
+  `null` en base reçoivent `stepIndex 1` et `3` au passage suivant, comptées
+  `repaired: 1` ;
+- **780 chiffres cliquables** relevés sur les quatre onglets **et les douze vues
+  du graphique** (3 granularités × 2 vues × 2 indicateurs) : **zéro écart**
+  entre le nombre affiché et la longueur de la liste qu'il ouvre. Le lien est lu
+  **dans l'élément qui porte le chiffre**, jamais par position dans le document
+  — la correction du jalon 113, où l'appariement par l'ordre du DOM avait produit
+  89 écarts imaginaires ;
+- **un défaut réel de ma propre version**, trouvé par cette vérification et non
+  à la relecture : la ligne par canal de la carte « Taux de réponse » affichait
+  les **personnes** touchées et ouvrait la liste des **messages** — « 1 »
+  au-dessus d'une liste de deux lignes. Le nombre et le lien sortent maintenant
+  du même chiffre, qui est aussi le dénominateur du taux affiché à côté ;
+- **les quatre onglets répondent 200**, chacun se déclarant actif par
+  `aria-current="page"` ;
+- **les filtres traversent les onglets** : quatre filtres posés, tour complet
+  des quatre onglets en cliquant, les quatre encore là et affichés dans la
+  barre ; et une granularité posée sur « Dans le temps » ne suit **pas** sur
+  « Campagnes » ;
+- **le `n` et la fiabilité** sous le taux de réponse, sur les cartes de tranche,
+  dans le tableau par niche et sur chaque ligne de campagne ;
+- **la courbe des deux tranches** porte un marqueur rond plein et un marqueur
+  carré tireté : vérifié dans le DOM, pas seulement dans le code ;
+- **les barres des grosses marques sont hachurées** (`fill="url(#contacted-hatch)"`) ;
+- **la cible est bien `--color-danger` en pointillés**, et **aucune barre** ne
+  porte ce rouge ;
+- **le panneau de détail** est présent avant tout survol (`data-detail-default="1"`),
+  se remplit au survol **et au focus clavier**, et porte son lien ;
+- **le résultat par étape** s'ouvre depuis son `<summary>`, replié par défaut ;
+- **les quatre onglets à 390 px** : aucun débordement horizontal de la page ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**2 205 tests**) et la
+  suite de navigateur verts ;
+- **trois gardes éprouvées en réintroduisant le défaut** : `applyFilters`
+  recopié dans un onglet, une borne `15_000` écrite dans une vue, et la puce de
+  fiabilité retirée d'une carte — les trois sont nommées par fichier. La
+  troisième a d'ailleurs révélé une garde trop faible : `toContain("ReliabilityChip")`
+  était satisfaite par la seule ligne d'import, donc elle ne vérifiait rien ;
+  elle cherche maintenant `<ReliabilityChip`.
+
+### Jalon 113 v2 — ce qui ne l'est pas
+
+**Le brief est tronqué au milieu de l'onglet 4.** Il s'arrête sur « colonnes
+personnes, messages (invitations included, with a one-line note that », et ne
+porte **aucune liste de test d'acceptation**, contrairement à tous les briefs
+précédents. Les colonnes retenues pour cet onglet sont donc mon choix —
+personnes, messages (invitations comprises, avec la note), réponses, taux avec
+son `n`, démos envoyées, démos qualifiées, plus le détail par étape — et la
+recette ci-dessus est celle que j'ai écrite, pas celle qui était demandée. **Les
+colonnes manquantes et les critères d'acceptation restent à confirmer.**
+
+**Le rendu visuel n'a pas été comparé au prototype.** Le prototype cliquable
+n'est pas dans le dépôt et n'a jamais été lisible côté agent : ce qui est
+vérifié, ce sont les valeurs de ses jetons, les formes, les motifs, les textes
+et les contrastes — pas la ressemblance.
+
+**La synchronisation lemlist n'a pas été exercée contre la vraie API.** Les
+variables personnalisées et l'étape sont lues sur des charges utiles
+**reproduites** à la forme publiée, et le webhook a été appelé en local. Ce que
+seule la production établit : que les leads portent bien des variables nommées
+`niche` et `visiteurs`, et que `sequenceStep` y arrive comme la documentation le
+décrit. Le remplissage des profils se lira au premier relevé réel — et
+`profilesFilled` est précisément là pour le dire.
+
+**Le trafic reste saisi à la main dans la plupart des cas.** Le bandeau de
+couverture le dit en haut de l'onglet Segments, parce que deux cartes qui
+comparent petites et grosses sur un tiers des fiches ne décrivent pas la
+prospection, elles décrivent le tiers qu'on a pris la peine de renseigner.
+
+**La niche n'entre pas dans l'export CSV des sociétés.** Elle se saisit sur la
+fiche et s'importe de lemlist ; le tableur reste à faire si l'on veut la remplir
+en masse.
+
+**Le compteur manuel n'est plus atteignable en un geste.** Le jalon 112
+promettait un bloc « atteignable en un geste sur mobile » ; le prototype validé
+le place **à côté de l'entonnoir**, donc sous les trois cartes d'objectif et les
+quatre indicateurs. Sur un téléphone, il faut désormais défiler. C'est un écart
+assumé avec la promesse précédente, et non un oubli : le brief de ce jalon décrit
+la mise en page, et la contredire pour tenir une promesse plus ancienne aurait
+été un choix à prendre avec l'utilisateur, pas à l'écrit. Si le geste compte plus
+que la mise en page, le remonter au-dessus des objectifs sur petit écran est une
+ligne de CSS.
+
+**La vue d'ensemble ne porte plus de tableau de regroupement.** « Par segment »
+et « Par groupe de fonction » du jalon 109 ont disparu de cet onglet : le premier
+est devenu l'onglet « Segments » tout entier, le second est devenu un **filtre**
+(Fonction). `breakdown` reste la fonction qui calcule les six colonnes
+communes — les deux nouveaux tableaux passent par elle — mais le tableau
+« par fonction » n'existe plus en tant qu'écran. Si la lecture par fonction
+manque, elle se recrée en une ligne : c'est le même appel, avec un autre axe.

@@ -1,276 +1,197 @@
+import { BoardTabs } from "@/components/pilotage/board-tabs";
 import { FilterBar } from "@/components/pilotage/filter-bar";
 import { ManualCounter } from "@/components/pilotage/manual-counter";
-import { KpiTiles, type Tile } from "@/components/pilotage/kpi-tiles";
-import { TimelineToolbar } from "@/components/pilotage/timeline-toolbar";
-import { TimelineChart } from "@/components/pilotage/timeline-chart";
-import { WeekPaceStrip } from "@/components/pilotage/week-pace";
+import { ObjectiveCards, type Objective } from "@/components/pilotage/objective-cards";
+import { KpiCards, type Kpi } from "@/components/pilotage/kpi-cards";
 import { FunnelView } from "@/components/pilotage/funnel-view";
+import { ReliabilityChip, SampleLine } from "@/components/pilotage/reliability-chip";
+import { BoardHeader } from "@/components/pilotage/board-header";
+import { pilotageView } from "@/lib/api/pilotage-view";
+import { listHref, sameHere } from "@/lib/domain/board-links";
 import {
-  BREAKDOWN_COLUMNS,
-  BreakdownTable,
-  type BreakdownSort,
-} from "@/components/pilotage/breakdown-table";
-import { parsePilotageQuery, periodOf, readPilotage } from "@/lib/api/pilotage";
-import {
-  NO_DATA,
-  SEGMENT_LABELS,
-  applyFilters,
-  breakdown,
+  channelSplit,
   funnel,
-  metricResult,
+  inviteAcceptance,
+  objectiveLabel,
+  progress,
   rateLabel,
   replyRate,
-  slice,
   uncategorisedReplies,
-  type Breakdown,
   type Metric,
-  campaignKey,
-  campaignLabel,
 } from "@/lib/domain/pilotage";
-import {
-  GRANULARITY_LABELS,
-  bucketsBetween,
-  buildSeries,
-  channelsWithData,
-  peakOf,
-  rangeNote,
-  timelineMetricLabel,
-  timelineRange,
-  toGranularity,
-  toTimelineMetric,
-  toTimelineView,
-  trimLeadingEmpty,
-  weekPace,
-  weeklyTargetFor,
-} from "@/lib/domain/timeline";
+import { CHANNEL_LABELS } from "@/lib/domain/outreach";
+import { reliabilityOf } from "@/lib/domain/size-buckets";
 
 export const dynamic = "force-dynamic";
 
-/** Douze semaines : un trimestre, assez pour voir une tendance sans la noyer. */
-
 /**
- * **Pilotage — un seul tableau de bord, sur un seul journal.**
+ * **Onglet 1 — Vue d'ensemble : où en est la semaine.**
  *
- * Aucun chiffre n'est calculé ici : chacun sort de `lib/domain/pilotage.ts`, et
- * `tests/pilotage-source.test.ts` échoue si cette page se met à compter. Ce
- * n'est pas une règle d'élégance — c'est ce qui garantit qu'une pastille et la
- * liste qu'elle ouvre sortent du **même** appel (jalons 49, 78, 105).
- *
- * Les lignes sont filtrées **une fois** (`applyFilters`) et ce même tableau sert
- * les pastilles, le graphique, l'entonnoir et les deux tableaux : deux
- * filtrages, même écrits avec le même prédicat, laissent la possibilité d'en
- * appeler un sur un tableau et l'autre sur un autre.
+ * Trois objectifs, quatre indicateurs, un entonnoir, et le compteur manuel à
+ * côté. Aucun chiffre n'est calculé ici : chacun sort de `lib/domain/pilotage.ts`
+ * par l'unique porte `pilotageView`, qui lit l'URL, borne la période, attribue
+ * les campagnes et filtre — une fois pour les quatre onglets. C'est ce qui rend
+ * impossible qu'un onglet compte autre chose qu'un autre sur les mêmes gens.
  */
-export default async function PilotagePage({
+export default async function OverviewPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const query = parsePilotageQuery(params);
-  /** Un paramètre d'URL, en une valeur. Les trois réglages du graphique y vivent. */
-  const readOne = (key: string): string => {
-    const value = params[key];
-    return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
-  };
-  const now = new Date();
-  const period = periodOf(query, now);
+  const view = await pilotageView(params);
+  const { data, period, query, rows, previous, metric } = view;
 
-  const data = await readPilotage();
-  const all = applyFilters(data.rows, query.filters);
-  const rows = slice(all, period);
-
-  const metric = (key: Metric) => metricResult(all, rows, period, key);
-  const week = metric("messages");
   /*
-    **La cible ne s'affiche que sur la semaine en cours.**
+    **Les cibles ne s'affichent que sur la semaine en cours.**
 
-    Elle est hebdomadaire : la comparer au mois écoulé ou à une plage libre de
-    trois jours donnerait un pourcentage qui ne veut rien dire — « 310 % de la
-    cible » sur un mois, « 12 % » sur deux jours. Hors de la semaine courante,
-    la pastille garde son chiffre et perd sa barre, ce qui est le fait.
+    Elles sont hebdomadaires : les comparer au mois écoulé ou à une plage libre
+    de trois jours donnerait « 310 % » puis « 12 % », deux nombres qui ne veulent
+    rien dire. Hors de la semaine, la carte garde son chiffre et perd sa barre.
   */
   const weekly = query.periodKey === "semaine";
-  const targetOf = (value: number) => (weekly ? value : null);
-  const sort = sortOf(params);
-  const dir = dirOf(params);
+  const objective = (name: Metric, label: string, target: number): Objective => {
+    const value = metric(name).count;
+    return {
+      metric: name,
+      label,
+      value,
+      target,
+      note: objectiveLabel(value, target),
+      ratio: weekly ? progress(value, target) : null,
+      href: listHref(params, name, {}, "/pilotage"),
+    };
+  };
 
-  const tiles: readonly Tile[] = [
+  const objectives: readonly Objective[] = [
+    objective("messages", "Messages envoyés", data.targets.messages),
+    objective("demos_sent", "Démos envoyées", data.targets.demos),
+    objective("qualified", "Démos qualifiées", data.targets.qualified),
+  ];
+
+  const fresh = metric("new_contacted").count;
+  const positive = metric("positive").count;
+  const uncategorised = uncategorisedReplies(rows).length;
+  const rate = replyRate(rows);
+  const contacted = metric("contacted").count;
+  const replied = metric("replies").count;
+  const invites = inviteAcceptance(rows);
+  /*
+    **La période précédente passe par le même appel que la courante.**
+
+    `metricOn` est `metricResult` avec un autre bornage : mêmes filtres, même
+    définition. Recompter « nouvelles personnes » autrement pour la comparaison
+    rendrait l'évolution fausse sans que le chiffre courant bouge d'un pouce,
+    donc sans que personne s'en aperçoive.
+  */
+  const freshBefore = view.metricOn(previous.period, previous.rows, "new_contacted").count;
+
+  // La décomposition par canal vient du domaine : un taux de plus écrit ici
+  // serait un taux de plus à maintenir, et la garde statique le refuse.
+  const perChannel = channelSplit(rows);
+
+  const kpis: readonly Kpi[] = [
     {
-      metric: "messages",
-      label: "Messages envoyés",
-      value: String(week.count),
-      actual: week.count,
-      target: targetOf(data.targets.messages),
-    },
-    {
-      metric: "new_contacted",
+      key: "new_contacted",
       label: "Nouvelles personnes",
-      value: String(metric("new_contacted").count),
-      actual: metric("new_contacted").count,
-      target: null,
-      hint: "Premier message dans la période",
+      value: String(fresh),
+      href: listHref(params, "new_contacted", {}, "/pilotage"),
+      change: { delta: fresh - freshBefore, before: freshBefore },
+      hint: "Premier message dans la période, sur toute l'histoire.",
     },
     {
-      metric: "replies",
-      label: "Réponses",
-      value: String(metric("replies").count),
-      actual: metric("replies").count,
-      target: null,
+      key: "positive",
+      label: "Réponses positives",
+      value: String(positive),
+      href: listHref(params, "positive", {}, "/pilotage"),
+      lines: [
+        {
+          label: "Réponses non classées",
+          value: String(uncategorised),
+          href: uncategorised === 0 ? null : listHref(params, "replies", {}, "/pilotage"),
+        },
+      ],
+      hint:
+        uncategorised > 0
+          ? "Une réponse non classée compte dans les réponses et dans aucune catégorie : rien n'est deviné."
+          : undefined,
     },
     {
-      metric: null,
+      key: "reply_rate",
       label: "Taux de réponse",
-      value: rateLabel(replyRate(rows)),
-      actual: null,
-      target: null,
-      hint: "Personnes qui ont répondu sur personnes contactées",
+      value: rateLabel(rate),
+      href: null,
+      sample: (
+        <span className="flex flex-wrap items-center gap-2">
+          <SampleLine part={replied} whole={contacted} />
+          <ReliabilityChip n={contacted} reliability={reliabilityOf(contacted)} />
+        </span>
+      ),
+      /*
+        **Le nombre d'une ligne de canal est son `n`, et le lien ouvre ce `n`.**
+
+        Défaut de ma première version, trouvé par la vérification de
+        l'invariant et non à la relecture : la ligne affichait les **personnes**
+        touchées par le canal et ouvrait la liste des **messages**. Un canal où
+        l'on a relancé deux fois une personne affichait donc « 1 » au-dessus
+        d'une liste de deux lignes. Le nombre et la liste sortent maintenant du
+        même chiffre (`contacted`), qui est aussi le dénominateur du taux
+        affiché à côté — c'est-à-dire le seul nombre que cette ligne doit dire.
+      */
+      lines: perChannel.map((line) => ({
+        label: `${CHANNEL_LABELS[line.channel]} · ${rateLabel(line.rate)}`,
+        value: String(line.contacted),
+        href: listHref(params, "contacted", { canal: line.channel }, "/pilotage"),
+      })),
     },
     {
-      metric: "demos_sent",
-      label: "Démos envoyées",
-      value: String(metric("demos_sent").count),
-      actual: metric("demos_sent").count,
-      target: targetOf(data.targets.demos),
-    },
-    {
-      metric: "qualified",
-      label: "Démos qualifiées",
-      value: String(metric("qualified").count),
-      actual: metric("qualified").count,
-      target: targetOf(data.targets.qualified),
+      key: "invites",
+      label: "Invitations LinkedIn acceptées",
+      value: rateLabel(invites.rate),
+      href: null,
+      sample: (
+        <SampleLine part={invites.accepted.length} whole={invites.sent.length} />
+      ),
+      hint: "Une invitation acceptée n'est pas une réponse : elle n'entre pas dans le taux ci-contre.",
     },
   ];
 
-  const steps = funnel(all, rows, period);
-  const byCampaign = sortLines(
-    breakdown(all, rows, period, (row) => ({
-      key: campaignKey(row),
-      label: campaignLabel(row),
-    })),
-    sort,
-    dir,
-  );
-  const bySegment = sortLines(
-    breakdown(all, rows, period, (row) => ({
-      key: row.segment,
-      label: SEGMENT_LABELS[row.segment],
-    })),
-    sort,
-    dir,
-  );
-  const byGroup = sortLines(
-    breakdown(all, rows, period, (row) => ({ key: row.group, label: row.group })),
-    sort,
-    dir,
-  );
-
-  const base = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    const single = Array.isArray(value) ? value[0] : value;
-    if (single !== undefined && single !== "") base.set(key, single);
-  }
-
-  const listHref = (key: Metric, extra: Record<string, string> = {}) => {
-    const next = new URLSearchParams(base.toString());
-    next.set("metric", key);
-    for (const [name, value] of Object.entries(extra)) next.set(name, value);
-    next.delete("tri");
-    next.delete("sens");
-    return `/pilotage/liste?${next.toString()}`;
-  };
-
-  const sortHref = (key: BreakdownSort) => {
-    const next = new URLSearchParams(base.toString());
-    next.set("tri", key);
-    next.set("sens", sort === key && dir === "desc" ? "asc" : "desc");
-    return `/pilotage?${next.toString()}`;
-  };
-
-  const toggleHref = () => {
-    const next = new URLSearchParams(base.toString());
-    if (query.asShare) next.delete("part");
-    else next.set("part", "1");
-    return `/pilotage?${next.toString()}`;
-  };
-
-  /*
-    **Le graphique « Dans le temps », refondu au jalon 113.**
-
-    Tout est calculé ici, côté serveur, par les fonctions de
-    `lib/domain/timeline.ts` : la vue ne reçoit que des coordonnées et des
-    liens. La valeur d'un point sort de `metricResult`, la même fonction que la
-    liste qu'il ouvre — c'est ce qui rend l'item 3 du test d'acceptation vrai
-    par construction plutôt que par vigilance.
-  */
-  const granularity = toGranularity(readOne("pas"));
-  const view = toTimelineView(readOne("vue"));
-  const timelineMetric = toTimelineMetric(readOne("metric"));
-  const weeklyTarget = weeklyTargetFor(timelineMetric, data.targets);
-
-  const range = timelineRange(all, period, query.periodKey === "libre", now);
-  const series = trimLeadingEmpty(
-    buildSeries(
-      all,
-      bucketsBetween(range.from, range.to, granularity),
-      timelineMetric,
-      granularity,
-      weeklyTarget,
-    ),
-  );
-  const timelineChannels = channelsWithData(series);
-  const timelinePoints = series.map((point) => ({
-    key: point.bucket.key,
-    short: point.bucket.short,
-    exact: point.bucket.exact,
-    total: point.total,
-    target: point.target,
-    previous: point.previous,
-    byChannel: point.byChannel,
-    bySource: point.bySource,
-    href: listHref(timelineMetric, {
-      periode: "libre",
-      du: point.bucket.fromKey,
-      au: point.bucket.toKey,
-    }),
-    channelHref: Object.fromEntries(
-      timelineChannels.map((channel) => [
-        channel,
-        listHref(timelineMetric, {
-          periode: "libre",
-          du: point.bucket.fromKey,
-          au: point.bucket.toKey,
-          canal: channel,
-        }),
-      ]),
-    ),
-  }));
-
-  const uncategorised = uncategorisedReplies(rows).length;
+  const steps = funnel(view.all, rows, period);
 
   return (
-    <div className="px-6 py-5">
-      <header className="mb-3">
-        <h1 className="font-display text-xl font-semibold tracking-tight">Pilotage</h1>
-        <p className="mt-0.5 text-[12.5px] text-muted">
-          {period.label} · tout vient du journal des événements de prospection, une ligne par fait.
-        </p>
-      </header>
+    <div className="min-h-full bg-board px-6 py-5">
+      <BoardHeader period={period.label} />
+      <BoardTabs params={params} active="/pilotage" />
+      <FilterBar
+        campaigns={data.campaigns}
+        owners={data.owners}
+        niches={data.niches}
+        groups={data.groups}
+        sources={data.sources}
+      />
 
-      {/*
-        **Le compteur est au-dessus de la barre de filtres, et avant l'état
-        vide.**
+      <section className="mb-4">
+        <ObjectiveCards objectives={objectives} />
+      </section>
 
-        Deux raisons, dans cet ordre. D'abord l'usage : on vient d'envoyer trois
-        DM depuis son téléphone, on ouvre l'écran pour *compter*, pas pour lire
-        — le geste doit être le premier chose atteignable, sans défilement et
-        sans réglage préalable. Ensuite, c'est l'erreur du jalon 19 à ne pas
-        refaire : le bandeau de sauvegarde vivait **après** les retours
-        anticipés « base vide », donc il disparaissait exactement quand il
-        comptait. Un compteur rendu après `rows.length === 0` serait invisible
-        sur une base neuve, c'est-à-dire le jour où l'on en a le plus besoin.
-      */}
-      <section className="mb-3">
+      <section className="mb-4">
+        <KpiCards kpis={kpis} />
+      </section>
+
+      <section className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <FunnelView
+          steps={steps}
+          asShare={query.asShare}
+          toggleHref={sameHere("/pilotage", params, { part: query.asShare ? "" : "1" })}
+          href={(name) => listHref(params, name, {}, "/pilotage")}
+        />
+        {/*
+          **Le compteur reste à côté de l'entonnoir, et il reste atteignable
+          même quand la période est vide.** C'est l'erreur du jalon 19 à ne pas
+          refaire : un bloc rendu après un retour anticipé « rien à afficher »
+          disparaît exactement le jour où l'on en a le plus besoin — une base
+          neuve, où le premier geste est justement de compter.
+        */}
         <ManualCounter
           owners={data.owners}
           contacts={data.contactOptions}
@@ -281,150 +202,6 @@ export default async function PilotagePage({
           }))}
         />
       </section>
-
-      <FilterBar campaigns={data.campaigns} owners={data.owners} />
-
-      {rows.length === 0 ? (
-        <p className="rounded-card border border-line bg-surface px-4 py-6 text-[13px] text-muted">
-          {NO_DATA} Changez la période ou retirez un filtre.
-        </p>
-      ) : (
-        <>
-          <section className="mb-4">
-            <KpiTiles tiles={tiles} href={(key) => listHref(key)} />
-          </section>
-
-          <section className="mb-4 space-y-3">
-            <TimelineToolbar />
-            <TimelineChart
-              points={timelinePoints}
-              view={view}
-              channels={timelineChannels}
-              peak={peakOf(series, view, timelineChannels)}
-              metricLabel={timelineMetricLabel(timelineMetric)}
-              granularityLabel={GRANULARITY_LABELS[granularity]}
-              rangeNote={rangeNote(series, range.note)}
-            />
-            <WeekPaceStrip pace={weekPace(all, now, data.targets.messages)} />
-          </section>
-
-          <section className="mb-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <FunnelView
-              steps={steps}
-              asShare={query.asShare}
-              toggleHref={toggleHref()}
-              href={(key) => listHref(key)}
-            />
-            <div className="space-y-3">
-              {uncategorised > 0 && (
-                <p className="rounded-card border border-line bg-surface px-4 py-3 text-[12.5px] leading-relaxed text-muted">
-                  <strong className="text-ink">
-                    {uncategorised} réponse{uncategorised > 1 ? "s" : ""} sans catégorie.
-                  </strong>{" "}
-                  Elles comptent dans les réponses, et dans aucune catégorie — rien n'est deviné.
-                  Classez-les depuis la fiche du contact pour qu'elles entrent dans « réponse
-                  positive ».
-                </p>
-              )}
-              {data.companiesWithoutVisitors > 0 && (
-                <p className="rounded-card border border-line bg-surface px-4 py-3 text-[12.5px] leading-relaxed text-muted">
-                  <strong className="text-ink">
-                    {data.companiesWithoutVisitors} société
-                    {data.companiesWithoutVisitors > 1 ? "s" : ""} sans visiteurs mensuels.
-                  </strong>{" "}
-                  Leurs fiches comptent dans « non renseigné » du tableau par segment. Le nombre se
-                  saisit sur la fiche de la société.
-                </p>
-              )}
-            </div>
-          </section>
-
-          <section className="mb-4 space-y-3">
-            <BreakdownTable
-              title="Campagnes côte à côte"
-              lines={byCampaign}
-              sort={sort}
-              dir={dir}
-              sortHref={sortHref}
-              cellHref={(line, column) => cellHref(line, column, listHref, "campagne")}
-            />
-            <BreakdownTable
-              title="Par segment"
-              hint="Taille de marque, d'après les visiteurs mensuels"
-              lines={bySegment}
-              sort={sort}
-              dir={dir}
-              sortHref={sortHref}
-              cellHref={(line, column) => cellHref(line, column, listHref, "segment")}
-            />
-            <BreakdownTable
-              title="Par groupe de fonction"
-              lines={byGroup}
-              sort={sort}
-              dir={dir}
-              sortHref={sortHref}
-              cellHref={() => null}
-            />
-          </section>
-        </>
-      )}
     </div>
   );
-}
-
-/* ------------------------------------------------------------ le tri ------ */
-
-function sortOf(params: Record<string, string | string[] | undefined>): BreakdownSort {
-  const raw = Array.isArray(params.tri) ? params.tri[0] : params.tri;
-  const found = BREAKDOWN_COLUMNS.find((column) => column.key === raw);
-  return found?.key ?? "messages";
-}
-
-function dirOf(params: Record<string, string | string[] | undefined>): "asc" | "desc" {
-  const raw = Array.isArray(params.sens) ? params.sens[0] : params.sens;
-  return raw === "asc" ? "asc" : "desc";
-}
-
-/**
- * Le tri des lignes de regroupement.
- *
- * Les valeurs absentes sortent en fin **dans les deux sens** : inverser un tri
- * ne doit pas ramener les lignes vides en tête (la règle du jalon 30). Aucun
- * `localeCompare` : il suit la locale du conteneur, donc l'ordre changerait d'un
- * environnement à l'autre (jalon 72).
- */
-function sortLines(lines: readonly Breakdown[], sort: BreakdownSort, dir: "asc" | "desc"): Breakdown[] {
-  const sign = dir === "asc" ? 1 : -1;
-  return [...lines].sort((a, b) => {
-    if (sort === "label") return a.label < b.label ? -sign : a.label > b.label ? sign : 0;
-    if (sort === "replyRate") {
-      if (a.replyRate === null && b.replyRate === null) return 0;
-      if (a.replyRate === null) return 1;
-      if (b.replyRate === null) return -1;
-      return (a.replyRate - b.replyRate) * sign;
-    }
-    const left = a[sort];
-    const right = b[sort];
-    return (Number(left) - Number(right)) * sign;
-  });
-}
-
-/** La cellule d'un tableau ouvre la même liste que la pastille, bornée à sa ligne. */
-function cellHref(
-  line: Breakdown,
-  column: BreakdownSort,
-  listHref: (key: Metric, extra?: Record<string, string>) => string,
-  axis: "campagne" | "segment",
-): string | null {
-  const metric: Partial<Record<BreakdownSort, Metric>> = {
-    contacted: "contacted",
-    messages: "messages",
-    replies: "replies",
-    demos: "demos_sent",
-    qualified: "qualified",
-  };
-  const key = metric[column];
-  if (key === undefined) return null;
-  if (axis === "campagne" && line.key === "hors-campagne") return null;
-  return listHref(key, { [axis]: line.key });
 }

@@ -1,18 +1,14 @@
 import Link from "next/link";
-import { parsePilotageQuery, periodOf, readPilotage } from "@/lib/api/pilotage";
+import { pilotageView, readMetric } from "@/lib/api/pilotage-view";
 import { CHANNEL_LABELS, TYPE_LABELS, replyCategoryLabel } from "@/lib/domain/outreach";
 import {
   NO_CAMPAIGN,
   NO_DATA,
-  applyFilters,
   campaignKey,
   campaignLabel,
   sourceLabel,
-  isMetric,
-  metricResult,
-  slice,
-  type Metric,
 } from "@/lib/domain/pilotage";
+import { backTab, one } from "@/lib/domain/board-links";
 
 export const dynamic = "force-dynamic";
 
@@ -32,22 +28,22 @@ export default async function PilotageListPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const query = parsePilotageQuery(params);
-  const now = new Date();
-  const period = periodOf(query, now);
+  /*
+    **La liste passe par la même porte que les onglets.**
 
-  const raw = Array.isArray(params.metric) ? params.metric[0] : params.metric;
-  const metric: Metric = raw !== undefined && isMetric(raw) ? raw : "messages";
-
-  const data = await readPilotage();
-  const all = applyFilters(data.rows, query.filters);
-  const rows = slice(all, period);
-  const result = metricResult(all, rows, period, metric);
+    `pilotageView` lit l'URL, borne la période, attribue les campagnes et filtre
+    — une fois. Refaire ce chemin ici, même à l'identique, laisserait la
+    possibilité qu'il dérive : c'est exactement ce qui sépare une pastille de sa
+    liste, et les jalons 49, 78 et 105 l'ont payé trois fois.
+  */
+  const view = await pilotageView(params);
+  const { period } = view;
+  const result = view.metric(readMetric(one(params, "metric"), "messages"));
 
   const back = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    const single = Array.isArray(value) ? value[0] : value;
-    if (single !== undefined && single !== "" && key !== "metric") back.set(key, single);
+  for (const key of Object.keys(params)) {
+    const single = one(params, key);
+    if (single !== "" && key !== "metric" && key !== "retour") back.set(key, single);
   }
 
   return (
@@ -62,7 +58,7 @@ export default async function PilotageListPage({
           {result.count > 1 ? "s" : ""} · {period.label}
         </p>
         <Link
-          href={`/pilotage?${back.toString()}`}
+          href={`${backTab(params)}?${back.toString()}`}
           className="ml-auto rounded-control border border-line bg-surface px-3 py-1.5 text-[13px] font-semibold transition-colors hover:bg-surface-2"
         >
           Retour au pilotage
