@@ -40,6 +40,12 @@ export interface OutreachEventInput {
   readonly contactId: string;
   readonly companyId?: string | null;
   readonly campaignId?: string | null;
+  /**
+   * La campagne **chez la source**, quand elle n'a pas de ligne dans le CRM.
+   * Vide pour tout ce que le CRM produit lui-même.
+   */
+  readonly extCampaignId?: string;
+  readonly extCampaignName?: string;
   readonly channel: OutreachChannel;
   readonly type: OutreachType;
   readonly occurredAt: Date;
@@ -74,6 +80,8 @@ export async function recordOutreachEvent(
         contactId: input.contactId,
         companyId: input.companyId ?? null,
         campaignId: input.campaignId ?? null,
+        extCampaignId: input.extCampaignId ?? "",
+        extCampaignName: input.extCampaignName ?? "",
         channel: input.channel,
         type: input.type,
         occurredAt: input.occurredAt,
@@ -406,6 +414,8 @@ export async function readEventRows(): Promise<EventRow[]> {
       id: true,
       contactId: true,
       campaignId: true,
+      extCampaignId: true,
+      extCampaignName: true,
       channel: true,
       type: true,
       occurredAt: true,
@@ -440,6 +450,8 @@ export async function readEventRows(): Promise<EventRow[]> {
     companyName: row.company?.name ?? row.contact.company?.name ?? "",
     campaignId: row.campaignId,
     campaignName: row.campaign?.name ?? "",
+    extCampaignId: row.extCampaignId,
+    extCampaignName: row.extCampaignName,
     channel: toChannel(row.channel),
     type: row.type as EventRow["type"],
     occurredAt: row.occurredAt,

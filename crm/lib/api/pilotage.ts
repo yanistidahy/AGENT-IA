@@ -108,6 +108,12 @@ export interface PilotageData {
   /** L'histoire entière : « nouvelle personne » et la qualification en ont besoin. */
   readonly rows: readonly EventRow[];
   readonly targets: WeeklyTargets;
+  /**
+   * Le menu des campagnes, **les deux outils réunis**. `id` y porte la clé de
+   * `campaignKey` — préfixée `crm:` ou `lemlist:` — et non un identifiant brut :
+   * le filtre compare ce que le regroupement produit, sinon choisir une
+   * campagne dans le menu ne retiendrait rien.
+   */
   readonly campaigns: readonly { readonly id: string; readonly name: string }[];
   readonly owners: readonly string[];
   /** Combien de sociétés n'ont pas de visiteurs mensuels, pour le dire à l'écran. */
@@ -115,7 +121,7 @@ export interface PilotageData {
 }
 
 export async function readPilotage(): Promise<PilotageData> {
-  const [rows, settings, campaigns, owners, withoutVisitors] = await Promise.all([
+  const [rows, settings, crmCampaigns, lemlistCampaigns, owners, withoutVisitors] = await Promise.all([
     readEventRows(),
     prisma.settings.findUnique({
       where: { id: "singleton" },
@@ -126,6 +132,17 @@ export async function readPilotage(): Promise<PilotageData> {
       },
     }),
     prisma.campaign.findMany({ orderBy: { nameKey: "asc" }, select: { id: true, name: true } }),
+    /*
+      Les campagnes lemlist n'ont pas de table : elles se lisent dans le
+      journal. `groupBy` plutôt qu'un `distinct` sur deux colonnes, parce qu'une
+      campagne renommée chez lemlist laisse deux noms pour un identifiant et que
+      l'on veut alors le plus récent — d'où le `_max` sur la date.
+    */
+    prisma.outreachEvent.groupBy({
+      by: ["extCampaignId", "extCampaignName"],
+      where: { extCampaignId: { not: "" } },
+      _max: { occurredAt: true },
+    }),
     prisma.settingsList.findMany({
       where: { kind: "owners" },
       orderBy: { position: "asc" },
@@ -141,7 +158,7 @@ export async function readPilotage(): Promise<PilotageData> {
       demos: settings?.cibleDemosSemaine ?? DEFAULT_TARGETS.demos,
       qualified: settings?.cibleQualifieesSemaine ?? DEFAULT_TARGETS.qualified,
     },
-    campaigns,
+    campaigns: mergeCampaigns(crmCampaigns, lemlistCampaigns),
     /*
       **Les propriétaires du menu : la liste des réglages, plus ceux que le
       journal porte réellement.**
@@ -166,4 +183,47 @@ function mergeOwners(listed: readonly string[], seen: readonly string[]): string
   for (const name of listed) if (name !== "" && !out.includes(name)) out.push(name);
   const extra = [...new Set(seen)].filter((name) => name !== "" && !out.includes(name)).sort();
   return [...out, ...extra];
+}
+
+/**
+ * **Les campagnes des deux outils, dans un seul menu.**
+ *
+ * Les clés sont celles de `campaignKey` : `crm:<id>` et `lemlist:<id>`. Les
+ * préfixer n'est pas une coquetterie — les deux outils ont leur propre espace
+ * de noms, et une collision rangerait deux campagnes différentes sous la même
+ * entrée. Le libellé d'une campagne lemlist dit son outil, pour que deux
+ * campagnes homonymes ne soient pas indiscernables dans la liste déroulante.
+ */
+function mergeCampaigns(
+  crm: readonly { readonly id: string; readonly name: string }[],
+  lemlist: readonly {
+    readonly extCampaignId: string;
+    readonly extCampaignName: string;
+    readonly _max: { readonly occurredAt: Date | null };
+  }[],
+): { readonly id: string; readonly name: string }[] {
+  const out = crm.map((campaign) => ({
+    id: `crm:${campaign.id}`,
+    name: campaign.name === "" ? "Campagne sans nom" : campaign.name,
+  }));
+
+  // Un identifiant lemlist renommé apparaît deux fois dans le regroupement :
+  // on garde le nom du fait le plus récent, qui est le nom actuel.
+  const latest = new Map<string, { name: string; at: number }>();
+  for (const row of lemlist) {
+    const at = row._max.occurredAt?.getTime() ?? 0;
+    const known = latest.get(row.extCampaignId);
+    if (known === undefined || at >= known.at) {
+      latest.set(row.extCampaignId, { name: row.extCampaignName, at });
+    }
+  }
+
+  const imported = [...latest.entries()]
+    .map(([id, value]) => ({
+      id: `lemlist:${id}`,
+      name: `${value.name === "" ? "Campagne lemlist sans nom" : value.name} (lemlist)`,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+
+  return [...out, ...imported];
 }

@@ -1,4 +1,4 @@
-name: AuraFLOW — relevé des réponses
+name: AuraFLOW — relevé des réponses et des activités lemlist
 
 # Détection automatique des réponses : le CRM ouvre INBOX en lecture seule,
 # lit sept en-têtes par message et rapproche les réponses de ses propres envois.
@@ -59,3 +59,43 @@ jobs:
 
           echo "HTTP $http_code"
           cat response.json
+
+      # **Le rattrapage de la synchronisation lemlist**, greffé sur ce workflow
+      # et non sur un nouveau : même cadence, même nature — aller chercher
+      # dehors ce qui s'est passé. Deux crons à quinze minutes seraient deux
+      # choses à surveiller pour un seul rythme.
+      #
+      # `if: always()` : un relevé IMAP qui échoue ne doit pas emporter la
+      # synchronisation lemlist. Ce sont deux sources indépendantes, et les
+      # coudre ensemble ferait dépendre l'une de la santé de l'autre — la leçon
+      # de l'ordre sauvegarde/vacations du jalon 19.
+      - name: Rattrapage des activités lemlist
+        if: always()
+        env:
+          CRM_URL: ${{ secrets.CRM_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRM_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::Les secrets CRM_URL et CRON_SECRET doivent être posés sur le dépôt."
+            exit 1
+          fi
+
+          # Pas de `--retry` ici : la route est idempotente par la contrainte
+          # d'unicité `(source, externalId)`, mais une reprise d'historique peut
+          # durer, et un second appel pendant le premier consommerait deux fois
+          # le budget d'appels de la clé lemlist (20 requêtes / 2 s).
+          http_code=$(curl --silent --show-error --fail-with-body \
+            --max-time 300 \
+            --output lemlist.json --write-out '%{http_code}' \
+            --request POST "${CRM_URL%/}/api/cron/lemlist" \
+            --header "Authorization: Bearer ${CRON_SECRET}" \
+            --header "Content-Type: application/json") || {
+              echo "::error::La synchronisation lemlist a échoué (HTTP ${http_code:-?})."
+              cat lemlist.json || true
+              exit 1
+            }
+
+          echo "HTTP $http_code"
+          cat lemlist.json

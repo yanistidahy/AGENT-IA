@@ -53,6 +53,27 @@ export const PUBLIC_PATHS: readonly string[] = [
    * propre `CRON_SECRET` vérifié par la route à temps constant.
    */
   "/api/cron/inbox",
+  /**
+   * Le rattrapage lemlist, appelé par le même workflow de quinze minutes que le
+   * relevé de la boîte. Même régime : pas de session, son propre `CRON_SECRET`
+   * vérifié par la route à temps constant.
+   */
+  "/api/cron/lemlist",
+  /**
+   * **Le webhook lemlist.** lemlist ne présente pas de session — il ne peut
+   * pas : il n'est pas un utilisateur de l'espace. Il présente en revanche le
+   * `secret` que nous avons posé à la création du webhook, dans le corps JSON
+   * de chaque appel, et la route le compare à `LEMLIST_WEBHOOK_SECRET` **à
+   * temps constant**. Sans cette variable, la route répond 401 et n'écrit rien :
+   * c'est la posture du jalon 9, où une variable manquante ferme au lieu
+   * d'ouvrir.
+   *
+   * `/api/lemlist/sync` et `/api/lemlist/test`, eux, **ne sont pas ici** : ce
+   * sont les deux boutons de `/reglages`, donc des gestes d'un utilisateur
+   * connecté, et le verrou les couvre sans qu'ils aient à vérifier quoi que ce
+   * soit.
+   */
+  "/api/lemlist/webhook",
 ];
 
 /** Ressources servies par Next lui-même, jamais porteuses de données métier. */

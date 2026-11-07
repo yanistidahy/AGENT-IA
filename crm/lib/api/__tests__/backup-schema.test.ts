@@ -103,6 +103,44 @@ describe("le format de sauvegarde", () => {
     expect(parsed.data.emailSends?.[0]?.contactId).toBeNull();
   });
 
+  /**
+   * **Un défaut réel, trouvé au jalon 111 et pris en flagrant délit.**
+   *
+   * `Company.nameKey` et `Contact.nameKey` sont `String?` : réellement nuls sur
+   * toute ligne que le rattrapage du jalon 72 n'a pas touchée — le seed, par
+   * exemple, n'écrit pas la clé de tri. Le schéma les déclarait
+   * `z.string().optional()`, qui accepte l'absence de clé mais **pas** la
+   * valeur `null`.
+   *
+   * Mesuré sur une base de recette fraîchement semée : l'export réussit, et la
+   * restauration de **son propre fichier** est refusée en 400 en citant treize
+   * `companies.N.nameKey`. Le filet rendait donc un fichier qu'il ne savait pas
+   * reprendre, ce qui est précisément le mode de défaillance que le jalon 110 a
+   * réparé pour les envois. Éprouvé en remettant `optionalText` : ce test tombe.
+   */
+  it("accepte une clé de tri nulle, comme la base en porte", () => {
+    const parsed = backupSchema.safeParse({
+      ...ancientBackup(),
+      companies: [
+        { id: "k1", name: "Maison Leroy", nameKey: null, createdAt: "2026-11-02T09:00:00.000Z" },
+      ],
+      contacts: [
+        {
+          id: "c1",
+          firstName: "Anna",
+          lastName: "Leroy",
+          lifecycle: "Lead",
+          nameKey: null,
+          createdAt: "2026-11-02T09:00:00.000Z",
+        },
+      ],
+    });
+    expect(parsed.success, JSON.stringify(parsed.error?.issues ?? [])).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.companies[0]?.nameKey).toBeNull();
+    expect(parsed.data.contacts[0]?.nameKey).toBeNull();
+  });
+
   it("refuse un fichier d'une autre version du format", () => {
     expect(backupSchema.safeParse({ ...ancientBackup(), version: 99 }).success).toBe(true);
     // Le numéro passe la validation de forme ; c'est `restoreBackup` qui le

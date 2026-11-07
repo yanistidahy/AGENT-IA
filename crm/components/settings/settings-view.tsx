@@ -83,6 +83,7 @@ interface SettingsViewProps {
    * frontière client.
    */
   readonly opens: React.ReactNode;
+  readonly lemlist: React.ReactNode;
 }
 
 const LIST_LABELS: Array<{ kind: SettingsListKind; label: string }> = [
@@ -107,6 +108,7 @@ export function SettingsView({
   imap,
   inbox,
   opens,
+  lemlist,
   tracking,
   limits,
   dailyCap,
@@ -184,6 +186,9 @@ export function SettingsView({
           />
           <InboxPanel initial={inbox} />
           {opens}
+          {/* La prospection sortante vit désormais aussi dans lemlist : la
+              section s'ouvre là où les autres canaux d'envoi se règlent. */}
+          {lemlist}
         </div>
       </Section>
 

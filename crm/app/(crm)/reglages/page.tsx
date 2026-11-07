@@ -27,6 +27,8 @@ import { LIFECYCLES } from "@/lib/domain/types";
 import { readUsageReport } from "@/lib/api/usage";
 import { CostPanel } from "@/components/settings/cost-panel";
 import { OpenAuditPanel } from "@/components/settings/open-audit-panel";
+import { LemlistPanel } from "@/components/settings/lemlist-panel";
+import { readLemlistStatus } from "@/lib/api/lemlist-sync";
 import { readOpenAudit } from "@/lib/api/open-audit";
 import { DEFAULT_MODELS } from "@/lib/domain/model-pricing";
 import { DEFAULT_TARGETS } from "@/lib/domain/pilotage";
@@ -84,6 +86,7 @@ export default async function ReglagesPage() {
   const inbox = await inboxHealth(imap.ready);
   // Le logo, par la composition partagée avec la route de téléversement :
   // deux compositions finiraient par afficher deux écrans différents.
+  const lemlistStatus = await readLemlistStatus();
   const logo = await readLogoPanelState();
   // La vidéo, même motif : une seule composition, partagée avec sa route.
   const video = await readVideoPanelState();
@@ -165,6 +168,15 @@ export default async function ReglagesPage() {
       deploy={<DeployCard deploy={readDeployInfo()} now={new Date()} />}
       costs={<CostPanel report={usage} />}
       opens={<OpenAuditPanel audit={openAudit} />}
+      lemlist={
+        <LemlistPanel
+          initial={{
+            ...lemlistStatus,
+            lastSuccessAt: lemlistStatus.lastSuccessAt?.toISOString() ?? null,
+            lastAttemptAt: lemlistStatus.lastAttemptAt?.toISOString() ?? null,
+          }}
+        />
+      }
       delays={delays}
       colleagueWarningDays={settingsRow?.colleagueWarningDays ?? 30}
       targets={{

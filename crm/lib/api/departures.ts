@@ -182,7 +182,7 @@ function dayKey(now: Date): string {
  */
 async function repliedAfter(contactId: string, since: Date | null): Promise<Date | null> {
   const floor = replyFloor(since);
-  const [answer, recorded] = await Promise.all([
+  const [answer, recorded, imported] = await Promise.all([
     prisma.activity.findFirst({
       where: {
         ...REAL_ACTIVITY,
@@ -198,8 +198,36 @@ async function repliedAfter(contactId: string, since: Date | null): Promise<Date
       orderBy: { receivedAt: "desc" },
       select: { receivedAt: true },
     }),
+    /*
+      **La troisième source : une réponse reçue dans lemlist** (jalon 111).
+
+      C'est un fait du journal de prospection, écrit par la synchronisation avec
+      `source: "lemlist"` et `type: "reply_received"`. Le lire ici, et non dans
+      une règle à part, est ce qui fait qu'"une réponse arrête les relances"
+      reste **une seule** décision : les quatre chemins d'envoi passent déjà par
+      `repliedAfter`, donc ils héritent de lemlist sans qu'aucun d'eux change.
+
+      Aucune interaction n'est consignée en double au passage : la
+      synchronisation n'écrit que dans `outreach_events`, elle ne touche ni
+      `activities` ni `email_replies`. La réponse compte donc une fois pour
+      l'arrêt, et une fois dans le pilotage.
+    */
+    prisma.outreachEvent.findFirst({
+      where: {
+        contactId,
+        source: "lemlist",
+        type: "reply_received",
+        ...(floor === null ? {} : { occurredAt: { gte: floor } }),
+      },
+      orderBy: { occurredAt: "desc" },
+      select: { occurredAt: true },
+    }),
   ]);
-  return latestReply(answer?.date ?? null, recorded?.receivedAt ?? null);
+  return latestReply(
+    answer?.date ?? null,
+    recorded?.receivedAt ?? null,
+    imported?.occurredAt ?? null,
+  );
 }
 
 export interface ComposeReport {

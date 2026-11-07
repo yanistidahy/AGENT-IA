@@ -62,6 +62,14 @@ export interface EventRow {
   readonly companyName: string;
   readonly campaignId: string | null;
   readonly campaignName: string;
+  /**
+   * La campagne **chez la source**, pour un événement que le CRM n'a pas
+   * produit. Vide sur tout ce qui vient du CRM ; `campaignKey` réunit les deux
+   * origines en une seule clé, de sorte que « Campagnes côte à côte » compare
+   * une campagne lemlist et une campagne du CRM dans le même tableau.
+   */
+  readonly extCampaignId: string;
+  readonly extCampaignName: string;
   readonly channel: OutreachChannel;
   readonly type: OutreachType;
   readonly occurredAt: Date;
@@ -530,6 +538,49 @@ export function weekLabel(monday: Date): string {
   }).format(monday);
 }
 
+/* ------------------------------------------------- la clé de campagne ----- */
+
+/** Ce qui désigne « hors campagne », écrit une fois. */
+export const NO_CAMPAIGN = "hors-campagne";
+
+/**
+ * **Une seule clé pour deux origines.**
+ *
+ * Une campagne du CRM est une ligne de `campaigns` ; une campagne lemlist n'est
+ * que deux colonnes de texte sur l'événement. Les comparer demande une clé
+ * commune, et la préfixer est ce qui empêche un identifiant lemlist de
+ * ressembler à un identifiant du CRM — ils n'ont pas le même espace de noms, et
+ * une collision rangerait deux campagnes différentes dans la même colonne.
+ *
+ * C'est la seule fonction qui décide de ce qu'est « une campagne » pour le
+ * pilotage : le filtre, le regroupement et le menu l'appellent tous les trois.
+ */
+export function campaignKey(row: EventRow): string {
+  if (row.campaignId !== null) return `crm:${row.campaignId}`;
+  if (row.extCampaignId !== "") return `lemlist:${row.extCampaignId}`;
+  return NO_CAMPAIGN;
+}
+
+/**
+ * Le libellé d'une campagne, **en nommant son outil**.
+ *
+ * Le suffixe n'est pas décoratif : deux campagnes peuvent porter le même nom
+ * dans les deux outils, et « Campagnes côte à côte » deviendrait illisible si
+ * rien ne les distinguait. Une campagne lemlist sans nom — la documentation
+ * prévient qu'un événement hors campagne n'en porte pas — se dit telle quelle
+ * plutôt que de s'afficher vide.
+ */
+export function campaignLabel(row: EventRow): string {
+  if (row.campaignId !== null) {
+    return row.campaignName === "" ? "Campagne sans nom" : row.campaignName;
+  }
+  if (row.extCampaignId !== "") {
+    const name = row.extCampaignName === "" ? "Campagne lemlist sans nom" : row.extCampaignName;
+    return `${name} (lemlist)`;
+  }
+  return "Hors campagne";
+}
+
 /* ------------------------------------------------------- les filtres ------ */
 
 export interface PilotageFilters {
@@ -551,7 +602,7 @@ export const NO_FILTER = "";
  * résultat à toutes les définitions.
  */
 export function keepRow(row: EventRow, filters: PilotageFilters): boolean {
-  if (filters.campaignId !== NO_FILTER && row.campaignId !== filters.campaignId) return false;
+  if (filters.campaignId !== NO_FILTER && campaignKey(row) !== filters.campaignId) return false;
   if (filters.channel !== NO_FILTER && row.channel !== filters.channel) return false;
   if (filters.owner !== NO_FILTER && row.owner !== filters.owner) return false;
   if (filters.segment !== NO_FILTER && row.segment !== filters.segment) return false;
@@ -579,11 +630,23 @@ export function keepRow(row: EventRow, filters: PilotageFilters): boolean {
  * qui est le fait.
  */
 export function attributeCampaigns(rows: readonly EventRow[]): EventRow[] {
-  const last = new Map<string, { id: string; name: string }>();
+  /*
+    Les deux origines voyagent ensemble dans le même souvenir : une réponse
+    lemlist doit recevoir la campagne lemlist du message auquel elle répond,
+    exactement comme une réponse du CRM reçoit la sienne. Garder deux cartes
+    séparées aurait laissé la question « laquelle gagne » ouverte, et c'est le
+    genre d'ambiguïté qui finit par attribuer une réponse à l'autre outil.
+  */
+  const last = new Map<string, { id: string | null; name: string; extId: string; extName: string }>();
   const out: EventRow[] = [];
   for (const row of [...rows].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())) {
-    if (row.campaignId !== null) {
-      last.set(row.contactId, { id: row.campaignId, name: row.campaignName });
+    if (campaignKey(row) !== NO_CAMPAIGN) {
+      last.set(row.contactId, {
+        id: row.campaignId,
+        name: row.campaignName,
+        extId: row.extCampaignId,
+        extName: row.extCampaignName,
+      });
       out.push(row);
       continue;
     }
@@ -594,7 +657,13 @@ export function attributeCampaigns(rows: readonly EventRow[]): EventRow[] {
       out.push(row);
       continue;
     }
-    out.push({ ...row, campaignId: known.id, campaignName: known.name });
+    out.push({
+      ...row,
+      campaignId: known.id,
+      campaignName: known.name,
+      extCampaignId: known.extId,
+      extCampaignName: known.extName,
+    });
   }
   return out;
 }

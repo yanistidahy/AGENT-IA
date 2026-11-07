@@ -48,6 +48,7 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     domainRejections,
     dealStageVisits,
     agents,
+    lemlistIssues,
   ] = await Promise.all([
     prisma.stage.findMany({ orderBy: { position: "asc" } }),
     prisma.company.findMany(),
@@ -82,6 +83,9 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     prisma.domainRejection.findMany(),
     prisma.dealStageVisit.findMany(),
     prisma.agent.findMany({ orderBy: { order: "asc" } }),
+    // Les arbitrages de rapprochement en attente (jalon 111) : ils ne sont pas
+    // re-signalés au relevé suivant, donc les perdre les perdrait pour de bon.
+    prisma.lemlistIssue.findMany({ orderBy: { firstAt: "asc" } }),
   ]);
 
   return {
@@ -118,6 +122,7 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
     domainRejections,
     dealStageVisits,
     agents,
+    lemlistIssues,
   };
 }
 
@@ -151,6 +156,23 @@ const optionalDay = z.coerce.date().nullable().optional();
 const text = z.string();
 const optionalText = z.string().optional();
 
+/**
+ * **Une colonne de texte qui peut être nulle en base.**
+ *
+ * `optionalText` accepte l'absence de clé, pas la valeur `null` — et
+ * `Company.nameKey` comme `Contact.nameKey` sont `String?`, donc réellement
+ * nuls sur toute ligne que le rattrapage du jalon 72 n'a pas encore touchée
+ * (le seed, par exemple, n'écrit pas la clé de tri). Conséquence mesurée au
+ * jalon 111, sur une base de recette fraîchement semée : **l'export réussit, et
+ * la restauration de son propre fichier est refusée en 400**, en citant treize
+ * `companies.N.nameKey`. Le filet rendait donc un fichier qu'il ne savait pas
+ * reprendre — exactement le mode de défaillance que le jalon 110 a réparé pour
+ * les envois. Les lignes ajoutées au jalon 110 (`campaignRow` et les suivantes)
+ * écrivaient déjà `z.string().nullable().optional()` ; celles d'avant ne l'ont
+ * jamais fait.
+ */
+const nullableText = z.string().nullable().optional();
+
 const stageRow = z.object({
   id: z.string(),
   name: text,
@@ -181,7 +203,7 @@ const companyRow = z.object({
    * est une. Facultative, comme les autres ajouts : une sauvegarde plus
    * ancienne ne peut pas porter une colonne qui n'existait pas.
    */
-  nameKey: optionalText,
+  nameKey: nullableText,
   /** Le segment du pilotage se lit ici : l'effacer viderait les deux tableaux. */
   monthlyVisitors: z.number().int().nullable().optional(),
 });
@@ -216,7 +238,7 @@ const contactRow = z.object({
   instagram: optionalText,
   searchText: optionalText,
   /** Clé de tri — voir companyRow.nameKey. */
-  nameKey: optionalText,
+  nameKey: nullableText,
   /**
    * Le groupe de fonction et sa provenance. `groupSetBy` porte les corrections
    * faites à la main : les perdre à une restauration rendrait au recalcul le
@@ -485,6 +507,16 @@ const outreachEventRow = z.object({
   contactId: z.string(),
   companyId: z.string().nullable().optional(),
   campaignId: z.string().nullable().optional(),
+  /*
+    **La campagne lemlist traverse le fichier, elle aussi.**
+
+    Ce sont deux colonnes de texte, pas une relation : il n'y a rien à replacer,
+    donc rien à perdre. Les laisser dehors rangerait les événements importés
+    sous « Hors campagne » après une restauration — exactement le mensonge que
+    le jalon 110 a corrigé pour les campagnes du CRM.
+  */
+  extCampaignId: optionalText,
+  extCampaignName: optionalText,
   channel: z.string(),
   type: z.string(),
   occurredAt: day,
@@ -494,6 +526,17 @@ const outreachEventRow = z.object({
   replyCategory: optionalText,
   detail: optionalText,
   createdAt: day,
+});
+
+/** Un arbitrage de rapprochement lemlist en attente (jalon 111). */
+const lemlistIssueRow = z.object({
+  id: z.string(),
+  kind: z.string(),
+  key: z.string(),
+  detail: optionalText,
+  seen: z.number().int().optional(),
+  firstAt: day,
+  lastAt: day,
 });
 
 /* ------------------------------------------------- l'histoire de prospection --
@@ -755,6 +798,7 @@ export const backupSchema = z.object({
   signatories: z.array(signatoryRow).optional(),
   domainRejections: z.array(domainRejectionRow).optional(),
   dealStageVisits: z.array(dealStageVisitRow).optional(),
+  lemlistIssues: z.array(lemlistIssueRow).optional(),
   agents: z.array(agentRow).optional(),
 });
 
@@ -850,6 +894,7 @@ export async function restoreBackup(payload: BackupPayload): Promise<RestoreResu
         // Les travaux de composition en cours tombent avec leur campagne : ils
         // sont transitoires, et `NOT_BACKED_UP` le déclare.
         if (payload.campaigns !== undefined) await tx.campaign.deleteMany();
+        if (payload.lemlistIssues !== undefined) await tx.lemlistIssue.deleteMany();
         if (payload.dealStageVisits !== undefined) await tx.dealStageVisit.deleteMany();
         if (payload.domainRejections !== undefined) await tx.domainRejection.deleteMany();
         if (payload.signatories !== undefined) await tx.signatory.deleteMany();
@@ -945,6 +990,14 @@ export async function restoreBackup(payload: BackupPayload): Promise<RestoreResu
         const knownContactIds = new Set(payload.contacts.map((contact) => contact.id));
         const knownCompanyIds = new Set(payload.companies.map((company) => company.id));
 
+        /*
+          Les anomalies de rapprochement ne pointent sur rien : ni contact, ni
+          campagne, juste une adresse ou un type lemlist en texte. Il n'y a donc
+          aucune ligne à écarter — `placeable` n'aurait rien à décider.
+        */
+        if (payload.lemlistIssues !== undefined) {
+          await tx.lemlistIssue.createMany({ data: payload.lemlistIssues });
+        }
         if (payload.dealStageVisits !== undefined) {
           const knownDeals = new Set(payload.deals.map((deal) => deal.id));
           const knownStages = new Set(payload.stages.map((stage) => stage.id));
@@ -1196,6 +1249,7 @@ export async function restoreBackup(payload: BackupPayload): Promise<RestoreResu
     réponses: await prisma.emailReply.count(),
     clics: await prisma.emailLinkClick.count(),
     événements: await prisma.outreachEvent.count(),
+    "anomalies lemlist": await prisma.lemlistIssue.count(),
   };
 
   return { ok: true, counts, skipped, warnings };
