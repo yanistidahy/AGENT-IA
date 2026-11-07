@@ -53,6 +53,8 @@ function row(
     companyName: "Maison",
     campaignId: null,
     campaignName: "",
+    extCampaignId: "",
+    extCampaignName: "",
     channel: "email" as OutreachChannel,
     type,
     occurredAt: new Date(iso),
@@ -397,7 +399,10 @@ describe("attribution de campagne", () => {
         row("a", "message_sent", "2026-11-02T09:00:00Z", { campaignId: "k1", campaignName: "Nov" }),
         row("a", "reply_received", "2026-11-03T10:00:00Z"),
       ],
-      { campaignId: "k1", channel: NO_FILTER, owner: NO_FILTER, segment: NO_FILTER },
+      // Le filtre compare désormais la **clé** de campagne, préfixée par son
+      // outil (jalon 111) : c'est elle que le regroupement produit, et un
+      // filtre qui comparerait l'identifiant brut ne retiendrait rien.
+      { campaignId: "crm:k1", channel: NO_FILTER, owner: NO_FILTER, segment: NO_FILTER },
     );
     expect(rows).toHaveLength(2);
     expect(rows[1]!.type).toBe("reply_received");

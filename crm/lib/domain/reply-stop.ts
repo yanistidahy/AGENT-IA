@@ -50,21 +50,29 @@ export function replyFloor(since: Date | null): Date | null {
 }
 
 /**
- * La plus récente des réponses connues, les deux sources réunies.
+ * La plus récente des réponses connues, **toutes sources réunies**.
  *
- * L'interaction consignée **et** la détection du relevé. Prendre la plus récente
- * plutôt que la première trouvée garde le sens de `repliedAt` dans `nextStep` :
- * « quand le contact a-t-il répondu pour la dernière fois ».
+ * L'interaction consignée, la détection du relevé IMAP, et depuis le jalon 111
+ * la réponse reçue dans lemlist. Prendre la plus récente plutôt que la première
+ * trouvée garde le sens de `repliedAt` dans `nextStep` : « quand le contact
+ * a-t-il répondu pour la dernière fois ».
+ *
+ * **Variadique, et c'est tout le jalon 111 côté règle.** « Une réponse reçue
+ * dans lemlist arrête la séquence du CRM » ne demandait pas une seconde règle :
+ * il suffisait que le prédicat existant reçoive une source de plus. Écrire un
+ * second arrêt — dans l'envoi, dans l'ordonnanceur — aurait rendu la question
+ * « lequel des deux a tranché ? » impossible à répondre, et c'est exactement ce
+ * que le jalon 106 avait payé. Les quatre chemins d'envoi continuent d'appeler
+ * cette fonction et elle seule ; la garde statique de
+ * `tests/reply-stop-source.test.ts` échoue si l'un d'eux cesse de le faire.
  */
-export function latestReply(
-  activityRepliedAt: Date | null,
-  recordedReplyAt: Date | null,
-): Date | null {
-  if (activityRepliedAt === null) return recordedReplyAt;
-  if (recordedReplyAt === null) return activityRepliedAt;
-  return activityRepliedAt.getTime() >= recordedReplyAt.getTime()
-    ? activityRepliedAt
-    : recordedReplyAt;
+export function latestReply(...dates: readonly (Date | null)[]): Date | null {
+  let best: Date | null = null;
+  for (const date of dates) {
+    if (date === null) continue;
+    if (best === null || date.getTime() > best.getTime()) best = date;
+  }
+  return best;
 }
 
 /**

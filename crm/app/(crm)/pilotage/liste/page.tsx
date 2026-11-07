@@ -2,8 +2,11 @@ import Link from "next/link";
 import { parsePilotageQuery, periodOf, readPilotage } from "@/lib/api/pilotage";
 import { CHANNEL_LABELS, TYPE_LABELS, replyCategoryLabel } from "@/lib/domain/outreach";
 import {
+  NO_CAMPAIGN,
   NO_DATA,
   applyFilters,
+  campaignKey,
+  campaignLabel,
   isMetric,
   metricResult,
   slice,
@@ -96,7 +99,7 @@ export default async function PilotageListPage({
                   </td>
                   <td className="max-w-[200px] truncate px-3 py-2 text-muted">{row.companyName}</td>
                   <td className="max-w-[180px] truncate px-3 py-2 text-muted">
-                    {row.campaignName === "" ? "—" : row.campaignName}
+                    {campaignKey(row) === NO_CAMPAIGN ? "—" : campaignLabel(row)}
                   </td>
                   <td className="px-3 py-2 text-muted">{CHANNEL_LABELS[row.channel]}</td>
                   <td className="px-3 py-2 text-muted">

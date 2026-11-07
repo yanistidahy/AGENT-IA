@@ -63,6 +63,17 @@ export const BACKED_UP_TABLES: readonly BackedUpTable[] = [
   { model: "EmailOpenHit", key: "emailOpenHits", label: "Chargements du pixel" },
   { model: "EmailLinkClick", key: "emailLinkClicks", label: "Clics sur nos liens" },
   { model: "OutreachEvent", key: "outreachEvents", label: "Journal de prospection" },
+  /*
+    **Les anomalies de synchronisation sont sauvegardées, l'état ne l'est pas.**
+
+    Un rapprochement ambigu — deux fiches portant la même adresse — est une
+    décision qui attend quelqu'un. Elle n'est **pas** re-signalée au relevé
+    suivant : l'événement ayant été écrit, la même activité ne repasse plus par
+    le rapprochement. La perdre à une restauration perdrait donc la seule trace
+    d'un arbitrage à rendre, et c'est pour cela que cette table entre dans le
+    fichier alors que son nom fait penser à un journal technique.
+  */
+  { model: "LemlistIssue", key: "lemlistIssues", label: "Anomalies de synchronisation lemlist" },
 ];
 
 /**
@@ -161,6 +172,12 @@ export const NOT_BACKED_UP: readonly SkippedTable[] = [
     model: "CompositionJob",
     label: "Travaux de composition en cours",
     consequence: "Une composition interrompue est à relancer ; les départs déjà écrits sont rendus.",
+  },
+  {
+    model: "LemlistSync",
+    label: "État du relevé lemlist",
+    consequence:
+      "Le relevé repart d'une reprise d'historique complète : lemlist est réinterrogé depuis le début, et la contrainte d'unicité fait que rien n'est compté deux fois.",
   },
 ];
 

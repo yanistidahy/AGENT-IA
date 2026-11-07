@@ -18,6 +18,7 @@ import {
   toSubjectMode,
   type StepVariant,
 } from "../domain/step-variants";
+import { activeLemlistCampaign, type LemlistTouch } from "../domain/lemlist";
 import { REMOVED } from "../domain/campaign-members";
 import { prisma } from "../db";
 import { autoUnlock, BLOCK_LABELS, MAX_STEPS, type AutoUnlock } from "../domain/sequence-rules";
@@ -570,9 +571,48 @@ export async function enroll(input: z.infer<typeof enrollSchema>): Promise<Enrol
   let already = 0;
   const refused: Array<{ contactId: string; reason: string }> = [];
 
+  /*
+    **Un prospect, un outil** (jalon 111).
+
+    Quelqu'un qu'une campagne lemlist travaille encore ne s'inscrit pas dans une
+    campagne du CRM : il recevrait deux messages de deux outils qui ne se voient
+    pas, et c'est la seule façon certaine de se faire marquer comme indésirable.
+    Le refus **nomme la campagne**, parce qu'« inscription refusée » sans dire
+    laquelle oblige à chercher dans lemlist.
+
+    La question se répond sur le journal, sans appeler lemlist : une clé absente
+    ou une API lente ne doit ni empêcher d'inscrire quelqu'un, ni le permettre
+    par accident. Voir `activeLemlistCampaign`.
+  */
+  const lemlistTouches = await prisma.outreachEvent.findMany({
+    where: { source: "lemlist", contactId: { in: input.contactIds } },
+    orderBy: { occurredAt: "desc" },
+    select: { contactId: true, type: true, occurredAt: true, extCampaignName: true },
+  });
+  const touchesByContact = new Map<string, LemlistTouch[]>();
+  for (const touch of lemlistTouches) {
+    const list = touchesByContact.get(touch.contactId) ?? [];
+    list.push({
+      type: touch.type as LemlistTouch["type"],
+      occurredAt: touch.occurredAt,
+      campaignName: touch.extCampaignName,
+    });
+    touchesByContact.set(touch.contactId, list);
+  }
+  const now = new Date();
+
   for (const contact of contacts) {
     if (contact.email.trim() === "") {
       refused.push({ contactId: contact.id, reason: "Aucune adresse électronique" });
+      continue;
+    }
+
+    const lemlistCampaign = activeLemlistCampaign(touchesByContact.get(contact.id) ?? [], now);
+    if (lemlistCampaign !== null) {
+      refused.push({
+        contactId: contact.id,
+        reason: `Déjà travaillé par la campagne lemlist « ${lemlistCampaign} »`,
+      });
       continue;
     }
 

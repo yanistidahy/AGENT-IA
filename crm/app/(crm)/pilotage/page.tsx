@@ -22,6 +22,8 @@ import {
   weeklySeries,
   type Breakdown,
   type Metric,
+  campaignKey,
+  campaignLabel,
 } from "@/lib/domain/pilotage";
 
 export const dynamic = "force-dynamic";
@@ -121,8 +123,8 @@ export default async function PilotagePage({
   const steps = funnel(all, rows, period);
   const byCampaign = sortLines(
     breakdown(all, rows, period, (row) => ({
-      key: row.campaignId ?? "hors-campagne",
-      label: row.campaignName === "" ? "Hors campagne" : row.campaignName,
+      key: campaignKey(row),
+      label: campaignLabel(row),
     })),
     sort,
     dir,

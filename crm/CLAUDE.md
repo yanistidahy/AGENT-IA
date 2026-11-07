@@ -253,6 +253,9 @@ disponible localement.
 | `SMTP_PASSWORD` | **jalon 32** | mot de passe de la boîte d'envoi — **serveur uniquement**, jamais en base. **Sert aussi à IMAP** depuis le jalon 37 : c'est la même boîte |
 | `CRM_PUBLIC_URL` | jalon 37 | adresse publique du CRM, pour composer l'URL du pixel de suivi. À défaut, `RAILWAY_PUBLIC_DOMAIN`. Absente, **aucun pixel n'est posé** |
 | `AGENT_ETIENNE_ENABLED` | phase 4 | drapeau de l'agent verrouillé |
+| `LEMLIST_API_KEY` | **jalon 111** | clé de l'API lemlist — **serveur uniquement**, jamais en base, jamais dans la sauvegarde, jamais rendue par une route. Lue par `lib/api/lemlist-client.ts` et par lui seul |
+| `LEMLIST_WEBHOOK_SECRET` | **jalon 111** | mot de passe partagé du webhook lemlist, comparé à temps constant. **Absente, la route répond 401 et n'écrit rien** |
+| `LEMLIST_BASE_URL` | jalon 111 | joint de vérification : remplace la racine de l'API par un substitut local (`scripts/mock-lemlist.ts`). **Vide en production**, et c'est le cas normal |
 
 Aucune clé n'est lue côté client. Tout appel Anthropic passe par une route
 serveur. `.env` n'est jamais commité ; `.env.example` documente les valeurs.
@@ -363,6 +366,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 111 | **lemlist entre dans le journal de prospection** : la correspondance d'abord, écrite avant toute ligne de code — les **113 valeurs** de l'énumération `ActivityType` publiée, plus les dix-neuf événements que seul le webhook sert, chacune avec sa décision et sa raison (`lib/domain/lemlist.ts`), et un test qui échoue si lemlist en ajoute une sans qu'on tranche. Ce qui compte comme « envoyé » est **la définition de lemlist elle-même**, recopiée depuis ses statistiques de campagne plutôt que jugée. Quatre refus de double compte, chacun mesuré contre un faux à 100 % qui n'aurait fait rougir aucun test : la famille `*Done` n'est pas un envoi, `emailsExternalSent` peut être un email que le CRM a déjà compté, un échec d'envoi n'est pas un rebond, et `*Interested` est un classement et non une réponse. Les ouvertures entrent et **ne comptent pas** — par construction, chaque chiffre énumérant ses types, et une garde statique le vérifie. Deux chemins, **un seul écrivain** : webhook (secret dans le corps, comparé à temps constant, absent = 401) et relevé de quinze minutes greffé sur le workflow du jalon 41. Une réponse lemlist arrête une séquence du CRM **par le prédicat du jalon 106**, rendu variadique : une source de plus, pas une règle de plus. Mesuré en recette : le même webhook deux fois donne **un** événement, un inconnu donne **un** contact et **une** société réutilisés ensuite, l'envoi forcé par identifiant est refusé « Le contact a répondu » sans qu'aucune interaction ni réponse ne soit écrite en double, et la clé de recette n'apparaît **nulle part** — zéro occurrence en clair comme en base64 dans les réponses, le HTML, les morceaux de JavaScript servis, le journal du serveur et le fichier de sauvegarde, avec un contrôle négatif prouvant qu'elle part bien chez lemlist | **livré, à valider** |
 | 110 | **Une sauvegarde qui rend les envois avec leurs contacts** : inventaire d'abord — 47 modèles, 17 sauvegardés, **30 non couverts** —, puis la cause nommée. La restauration **garde** les identifiants (`createMany` porte `id`) ; le défaut n'était donc pas une régénération mais un trou de couverture : `contact.deleteMany()` déclenche les cascades et les `SetNull` de tables absentes du fichier, et rien ne les rend ensuite. Quatorze tables entrent dans la sauvegarde, dont le journal des envois, les réponses, les clics, les campagnes, les inscriptions et les **départs composés** (du texte payé au modèle). Mesuré : base vidée entièrement puis restaurée, **129 rattachements identiques ligne à ligne**, et la reprise du jalon 109 rejouée re-dérive **33 événements contre 11 avant**. Une ligne non replaçable est désormais **comptée et dite** ; la garde passe des colonnes aux **tables**, donc une table nouvelle ne peut plus entrer sans décision écrite | **livré, à valider** |
 | 109 | **« Pilotage » : un seul tableau de bord, sur un seul journal** : « Ma performance », « Rapports », l'entonnoir et les statistiques d'« Emails » et les pastilles de l'accueil sont **supprimés** — dix-neuf fichiers, deux routes redirigées en 307 —, et **aucune ligne d'envoi, de réponse, de clic, d'interaction ou de tâche n'a été touchée** (comptes relevés avant la migration et après la reprise, identiques). À la place, une table d'événements de prospection, une ligne par fait, unique par `(source, externalId)` pour la synchronisation lemlist à venir ; **chaque chiffre vient d'une fonction de `lib/domain/pilotage.ts`**, et une garde statique échoue si une page se remet à compter. Deux règles qui structurent tout : les emails se comptent dans le journal des envois et les autres canaux dans les interactions, **jamais les deux** (sinon chaque email vaudrait deux messages) ; et une pastille et la liste qu'elle ouvre sortent du **même appel**, le nombre affiché étant la longueur de cette liste. Les ouvertures ne sont plus un indicateur | **livré, à valider** |
 | 108 | **L'export des contacts dit où en est chaque prospect** : l'export du jalon 3 est **étendu, pas doublé** — dix colonnes dérivées après les quinze colonnes de saisie, dont le statut affiché, le dernier canal, la campagne en cours, « a répondu », « prospect chaud » et les moyens de contact disponibles. Chacune vient de la fonction qui la décide déjà ailleurs (`resolveDisplayStatus`, `readHotProspects`, `latestReply`, `groupLabel`, `ACTIVITY_LABELS`) : aucune seconde définition de statut. Dates en JJ/MM/AAAA, BOM UTF-8, point-virgule, et **toute cellule qui ouvrirait une formule est désamorcée** dans l'écrivain CSV, donc sur les deux exports. Un défaut de ma propre première version, mesuré puis corrigé : `nextUrl.origin` exportait `http://0.0.0.0:3312`, un lien que personne ne peut ouvrir | **livré, à valider** |
@@ -16247,3 +16251,342 @@ la transaction. C'est la limite nommée au jalon 12, et elle n'a pas bougé.
 **Le format reste du JSON indenté, en mémoire, en une fois.** Un export qui
 dépasserait la mémoire du conteneur échouerait franchement plutôt que de
 produire un fichier tronqué — mais il échouerait. Le seuil n'a pas été mesuré.
+
+## Jalon 111 — lemlist entre dans le journal de prospection
+
+```
+lib/domain/lemlist.ts          la correspondance, la lecture d'une activité, « actif dans lemlist » — pur
+lib/api/lemlist-client.ts      le seul lecteur de LEMLIST_API_KEY : file, espacement, 429
+lib/api/lemlist-sync.ts        l'écrivain unique : rapprochement, création, anomalies, état
+app/api/lemlist/webhook/       le chemin rapide, public au middleware, fermé par son secret
+app/api/cron/lemlist/          le rattrapage de quinze minutes, fermé par CRON_SECRET
+app/api/lemlist/sync|test|status/  les deux boutons de /reglages et la relecture d'état
+components/settings/lemlist-panel.tsx   l'écran
+scripts/mock-lemlist.ts        le substitut qui applique les contraintes documentées
+lib/api/__tests__/lemlist-payloads.ts  les charges utiles enregistrées, anonymisées
+```
+
+### La correspondance, écrite avant le code
+
+C'est le préalable que le jalon demandait, et il n'est pas décoratif : **cette
+table décide à elle seule de ce que `/pilotage` comptera.** Elle vit dans
+`LEMLIST_MAPPING`, une ligne par type, et un test parcourt l'énumération
+publiée et échoue si une valeur n'y a pas de décision écrite — y compris celle
+que lemlist ajoutera demain.
+
+| Ce que lemlist envoie | Devient | Canal |
+|---|---|---|
+| `emailsSent` | `message_sent` | email |
+| `linkedinSent`, `linkedinInMailSent`, `linkedinVoiceNoteDone` | `message_sent` | message LinkedIn |
+| `whatsappMessageSent`, `whatsappVoiceNoteSent` | `message_sent` | WhatsApp |
+| `smsSent` | `message_sent` | autre (« SMS » dans le détail) |
+| `aircallEnded` | `message_sent` | appel |
+| `linkedinInviteDone` | `linkedin_invite_sent` | invitation LinkedIn |
+| `linkedinInviteAccepted` | `linkedin_invite_accepted` | invitation LinkedIn |
+| `emailsReplied`, `linkedinReplied`, `linkedinVoiceNoteReplied`, `whatsappReplied`, `whatsappVoiceNoteReplied`, `smsReplied` | `reply_received` | le canal de la réponse |
+| `emailsBounced` | `bounce` | email |
+| `emailsOpened`, `linkedinOpened`, `whatsappMessageOpened`, `whatsappVoiceNoteOpened` | `message_opened` — **jamais un indicateur** | le canal |
+| `emailsClicked` | `link_clicked` — **jamais un indicateur** | email |
+| `emailsUnsubscribed`, `apiUnsubscribed`, `manualUnsubscribed`, `entityUnsubscribed`, `variableUnsubscribed` | `unsubscribed` | le canal |
+| `meetingBooked` | `meeting_booked` | autre |
+| **tout le reste** (82 types documentés, plus les 19 événements de webhook) | `other` — importé, **nommé à l'écran**, compté nulle part | autre |
+
+**« Envoyé » n'est pas mon jugement, c'est la définition de lemlist.** Les
+statistiques de campagne de lemlist additionnent `emailsSent + linkedinSent +
+linkedinInMailSent + linkedinVoiceNoteDone + smsSent + whatsappMessageSent` ;
+la table recopie cette liste. Reprendre la définition de la source est la seule
+façon de ne pas inventer un second compte de messages envoyés.
+
+**Quatre refus, et chacun évite un faux à 100 % qu'aucun test n'aurait vu.**
+C'est la leçon du jalon 109, où un double compte aurait fait valoir deux
+messages à chaque email :
+
+1. **la famille `*Done` n'est pas un envoi.** `emailsDone`, `linkedinDone`,
+   `whatsappDone`, `smsDone`, `manualDone`, `aircallDone` marquent une *tâche
+   achevée*, pendant que l'envoi porte son propre type. Les compter tous deux
+   doublerait chaque message. Trois exceptions assumées, parce que lemlist
+   n'émet rien d'autre pour ces gestes : `linkedinVoiceNoteDone` (que lemlist
+   compte lui-même comme un envoi), `linkedinInviteDone` (il n'existe pas de
+   `linkedinInviteSent`) et `aircallEnded` ;
+2. **`emailsExternalSent` ne compte pas.** Un email parti hors de lemlist peut
+   être **celui que le CRM vient d'envoyer** depuis la même boîte, déjà compté
+   par le journal des envois. La règle du jalon 109 l'emporte ;
+3. **un échec d'envoi n'est pas un rebond.** Seul `emailsBounced` devient
+   `bounce`. Ranger les quinze `*Failed` dans le rebond ferait mesurer au taux
+   de rebond la santé de notre automatisation au lieu de la réception du
+   message ;
+4. **`*Interested` / `*NotInterested` ne sont pas des réponses.** La personne a
+   répondu (`emailsReplied`), **puis** quelqu'un l'a classée : deux activités
+   pour un fait. Écrire la seconde comme une réponse doublerait le taux de
+   réponse, et rétro-corriger la première casserait l'idempotence
+   `(source, externalId)`. Une réponse lemlist arrive donc **sans catégorie**,
+   exactement comme une réponse relevée en IMAP (jalon 41).
+
+**Les ouvertures entrent, et ne comptent pas — par construction.** Chaque
+chiffre de `lib/domain/pilotage.ts` énumère les types qu'il additionne, et aucun
+n'énumère `message_opened`, `link_clicked` ni `other`. Ce n'est donc pas une
+promesse mais une propriété vérifiable, et `tests/lemlist-source.test.ts` échoue
+si un fichier de pilotage se remet à les nommer.
+
+### Les limites d'appel, et comment on les respecte
+
+**20 requêtes par 2 secondes, sur toutes les routes, par clé d'API.** Les
+réponses portent `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining` et
+`X-RateLimit-Reset` ; un dépassement répond `429`.
+
+Trois réponses, et aucun nombre magique de notre côté :
+
+- **une file d'un seul fil.** `queue()` chaîne tous les appels au niveau du
+  module, donc le webhook, le relevé et le bouton « Tester » ne peuvent pas se
+  doubler. Un relevé qui lancerait dix pages en `Promise.all` consommerait la
+  moitié du budget en une rafale — pour une clé que l'utilisateur **partage**
+  avec son propre outillage ;
+- **un espacement calculé sur le plafond annoncé**, pas devin : 20 pour 2 s
+  valent 100 ms d'écart, et on prend 150 ms pour laisser de la place à un autre
+  client de la même clé ;
+- **`Retry-After` honoré à la lettre**, et à défaut un recul exponentiel borné à
+  quatre tentatives. `X-RateLimit-Reset` est **volontairement ignoré** : la
+  documentation prévient elle-même de son format humain (« Tue Feb 16 2021
+  09:02:42 GMT+0100 (…) »), que `Date.parse` n'interprète pas de façon
+  portable. Le nombre de secondes de `Retry-After` est la seule valeur dont le
+  format est sûr. Mesuré en recette : un 429 avec `Retry-After: 1` fait durer
+  l'appel **1 045 ms** puis réussit.
+
+### Les points d'entrée dont ce jalon dépend
+
+| Appelé | Pour quoi |
+|---|---|
+| `GET /api/activities?version=v2&limit=&offset=&minDate=` | l'historique et le relevé incrémental. `limit` plafonne à 100, la pagination est un `offset` à incrémenter (ce n'est **pas** un curseur) |
+| `GET /api/team?version=v2` | « Tester la connexion ». Choisi parce qu'il ne lit **aucune donnée de prospect** et ne consomme aucun crédit |
+| `POST /api/hooks` | la création du webhook, avec son `secret`. Non appelé par le code : c'est un geste d'installation, décrit ci-dessous |
+
+Authentification **Basic, pas Bearer**, avec un **login vide** : la chaîne à
+encoder est `:LaClé`, deux-points compris. L'oublier produit un 401 qu'on met
+une demi-journée à comprendre.
+
+Événements de webhook sur lesquels on s'abonne : **aucun filtre**. Un `targetUrl`
+ne peut être enregistré qu'une fois, `type` et `campaignId` compris ; on
+enregistre donc l'URL **sans** `type` — elle reçoit tout — et on filtre de notre
+côté. C'est aussi ce qui fait qu'un type nouveau arrive au lieu d'être muet.
+
+### Les deux chemins, et le seul écrivain
+
+Le webhook est le chemin **rapide**, le relevé de quinze minutes le chemin
+**sûr** : lemlist **désactive** un webhook dont le point d'arrivée a répondu 404
+ou 410 — un redéploiement malheureux suffit —, le garde dans la liste avec
+`disabled: true` et ne le rallume pas. Sans relevé, la synchronisation
+s'arrêterait sans que rien ne le dise.
+
+Les deux appellent `applyActivities`, et c'est tout. Écrire la règle deux fois
+serait la garantie qu'une seule des deux sera corrigée — la leçon du jalon 12.
+
+**Un rejeu est inoffensif par contrainte de base, pas par vérification.** Chaque
+événement porte `source: "lemlist"` et `externalId` = `_id` de l'activité ;
+`(source, externalId)` est unique, `recordOutreachEvent` avale le `P2002`. Une
+course ne contourne pas une contrainte.
+
+**La borne basse n'avance que sur un succès**, et avec deux heures de
+recouvrement : le cron de GitHub n'est pas ponctuel, et une activité peut
+apparaître dans l'API avec un `createdAt` légèrement antérieur. Repasser sur
+deux heures déjà vues ne coûte rien.
+
+### Le rapprochement, et le refus de fusionner
+
+Par adresse d'abord (coupée, en minuscules), puis par URL LinkedIn réduite à sa
+forme comparable — `https://www.linkedin.com/in/x/` et `linkedin.com/in/x` sont
+le même profil, et sans cette réduction le second rapprochement échouerait sur
+une barre oblique. **Rien n'est réécrit en base** : c'est une clé de
+comparaison, et la valeur stockée reste celle de la source (règle du jalon 10).
+
+**Deux fiches qui répondent au même critère ne sont jamais fusionnées.**
+L'activité est laissée de côté et l'ambiguïté écrite dans `lemlist_issues`, que
+`/reglages` affiche. Choisir « la première » attribuerait du travail à la
+mauvaise personne ; deviner laquelle est la bonne n'est pas une décision de
+programme.
+
+Un inconnu reçoit une fiche marquée `source: "lemlist"` et une note « importé de
+lemlist », avec sa société **rapprochée par domaine** puis par nom, créée à
+défaut. Le domaine passe avant le nom parce qu'il est la seule des deux valeurs
+qui ne se réécrit pas : « Acme », « ACME SAS » et « Acme Inc. » sont trois
+façons d'écrire `acme.com`. **Les domaines de messagerie publique sont écartés**
+— sans ce garde-fou, tous les indépendants du portefeuille finiraient dans une
+société nommée Gmail.
+
+Le traitement est **séquentiel**, et c'est voulu : il n'existe aucune contrainte
+d'unicité sur l'adresse d'un contact (un prospect sans adresse est courant
+depuis le jalon 50), donc deux activités du même inconnu arrivant en parallèle
+créeraient deux fiches.
+
+### Une campagne lemlist est une référence, pas une ligne de `campaigns`
+
+Lui créer une campagne dans le CRM la ferait apparaître dans `/campagnes` avec
+ses boutons « Écrire les mails » et « Réinitialiser », qui n'ont aucun sens sur
+une séquence que le CRM ne pilote pas. Deux colonnes portent donc la référence
+(`extCampaignId`, `extCampaignName`), et **une seule fonction décide de ce qu'est
+une campagne pour le pilotage** : `campaignKey`, qui rend `crm:<id>` ou
+`lemlist:<id>`. Le préfixe n'est pas une coquetterie — les deux outils ont leur
+propre espace de noms, et une collision rangerait deux campagnes différentes
+sous la même entrée de « Campagnes côte à côte ».
+
+### Une réponse arrête les relances : une source de plus, pas une règle de plus
+
+`latestReply` est devenu **variadique**. C'est tout le jalon côté règle : les
+quatre chemins d'envoi passent déjà par `repliedAfter`, qui lit désormais une
+troisième source — l'événement `reply_received` de source `lemlist`. Aucun
+chemin n'a changé, et il n'y a pas de second arrêt dont on devrait se demander
+lequel a tranché. C'est exactement ce que le jalon 106 avait payé.
+
+La synchronisation **n'écrit que dans `outreach_events`** : ni interaction, ni
+`EmailReply`. La réponse compte donc une fois pour l'arrêt et une fois dans le
+pilotage, jamais deux.
+
+### « Un prospect, un outil »
+
+Inscrire dans une campagne du CRM quelqu'un qu'une campagne lemlist travaille
+encore est refusé, **en nommant la campagne**. La question se répond sur le
+journal (`activeLemlistCampaign`), sans appeler lemlist : une clé absente ou une
+API lente ne doit ni empêcher d'inscrire quelqu'un, ni le permettre par
+accident. La règle se lit dans l'ordre : si le dernier fait lemlist est une
+réponse, une désinscription ou un rebond, lemlist a fini — sa séquence s'arrête
+d'elle-même sur ces trois faits. Si c'est un envoi ou une invitation de moins de
+trente jours, la campagne est en cours.
+
+### Le substitut, et pourquoi il est versionné
+
+`scripts/mock-lemlist.ts` applique les contraintes documentées — Basic avec
+login vide, `version=v2` obligatoire, page de cent, `offset` à incrémenter — et
+sert **les mêmes charges utiles que les tests unitaires**. Deux jeux différents
+finiraient par divergir, et c'est exactement ainsi que le défaut du jalon 17 a
+survécu quatre jalons.
+
+**Les charges utiles committées sont des reproductions anonymisées.** Les
+activités réelles du compte portent des noms, adresses et descriptions de vrais
+prospects ; les committer serait publier des données personnelles pour le
+confort d'un test. La **forme** est celle de la documentation, champ pour champ,
+y compris les pièges qu'elle signale : une activité hors campagne ne porte
+**aucune** clé `lead*`, `sequenceStep` est indexé à zéro, `stepId` est
+facultatif sur l'historique, et le `secret` d'un webhook voyage **dans le
+corps**, pas dans un en-tête.
+
+### L'installation, à faire une fois en production
+
+1. poser `LEMLIST_API_KEY` et `LEMLIST_WEBHOOK_SECRET` dans les variables du
+   service Railway (`openssl rand -hex 32` pour le second) ;
+2. créer le webhook côté lemlist, **sans `type`** pour qu'il reçoive tout :
+   `POST https://api.lemlist.com/api/hooks?version=v2` avec
+   `{"targetUrl": "https://<le-crm>/api/lemlist/webhook", "secret": "<le même>"}` ;
+3. cliquer « Tester la connexion » puis « Synchroniser maintenant » dans
+   `/reglages` — le premier passage remonte tout l'historique.
+
+Le secret est **immuable** côté lemlist : pour le changer, il faut supprimer le
+webhook et en créer un autre. Et attention au plafond : un espace de travail
+porte 200 webhooks au plus, **désactivés compris**, et rien ne les purge.
+
+### Jalon 111 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (`auraflow111`, 18 contacts du jeu de
+démonstration) et le serveur standalone de production, avec le substitut en lieu
+et place de l'API :
+
+- **migration fidèle au schéma** : SQL écrit à la main, appliqué sur une base
+  au schéma précédent, puis `migrate diff` renvoyant une migration vide ;
+- **item 1** — le même webhook enregistré deux fois : passage 1 écrit
+  1 événement, passage 2 en compte **1 doublon et écrit 0**, une seule ligne
+  pour `act_PbKqTGpQqSlPcoOZ5` ;
+- **item 2** — le relevé rend la même activité : « 8 activités lues,
+  7 événements écrits, **1 déjà connus** », toujours une seule ligne pour cet
+  identifiant ;
+- **item 3** — une adresse inconnue : **1 contact et 1 société** créés
+  (`source=lemlist`, note « importé de lemlist », société `maison-leroy.fr`) ;
+  une seconde activité pour la même personne crée **0 contact et 0 société** ;
+- **item 4** — la réponse lemlist arrête la relance. Témoin d'abord : sans
+  réponse, l'envoi forcé par identifiant franchit tous les garde-fous et
+  s'arrête au seul mot de passe SMTP absent, le départ restant `pending`. La
+  réponse arrive par le webhook, se rapproche d'Alice par son adresse, et le
+  même appel répond alors **« Le contact a répondu »** — départ `skipped`,
+  inscription `stopped`, et **0 interaction, 0 `email_reply`** écrites en
+  double ;
+- **item 5** — témoin : Bruno sans activité lemlist s'inscrit (`enrolled: 1`).
+  Après un `linkedinSent` daté de deux jours, la même requête répond
+  `refused: 1` avec **« Déjà travaillé par la campagne lemlist « Artisans -
+  LinkedIn d'abord » »**, et 0 inscription en base ;
+- **item 6** — sans `LEMLIST_API_KEY` : `/reglages` répond 200,
+  `data-lemlist-status="missing_key"`, la page porte « clé absente » **et** la
+  phrase qui dit quoi faire ; les trois routes répondent `missing_key` et rien
+  ne lève. Avec une clé refusée : « clé refusée par lemlist » à l'écran, et le
+  corps de lemlist — qui contenait `invalid api key: lml_CL…` — **n'est recopié
+  nulle part** (0 occurrence dans la réponse, la page et le journal) ;
+- **item 7** — la clé de recette cherchée dans 15 fichiers : **0 occurrence**,
+  en clair comme en base64, dans les trois réponses d'API, les deux pages
+  rendues, les **huit morceaux de JavaScript servis au navigateur**, le journal
+  du serveur et le fichier de sauvegarde (34 sections, 85 683 octets). Aucune
+  clé nommée `password|secret|apiKey` dans la sauvegarde. **Contrôle négatif** :
+  6 des 7 requêtes reçues par le substitut portaient bien l'en-tête
+  `Authorization: Basic` attendu — les zéros ci-dessus ne viennent donc pas d'un
+  appel qui n'aurait rien envoyé ;
+- **item 8** — webhook sans secret, avec un mauvais secret, et avec un corps qui
+  n'est pas du JSON : **401** dans les trois cas, et **0 événement écrit** ;
+- **item 9** — le menu des campagnes porte `crm:cam_j111` et quatre
+  `lemlist:…`, toutes préfixées ; sur 10 couples (campagne, période, pastille)
+  exercés, **pastille = liste** sans exception. Là où le compte est nul sur une
+  campagne sans événement, l'écran rend l'état vide du jalon 109 et non une
+  pastille à zéro ;
+- **item 10** — vérifié dans un vrai Chromium : `tests/e2e/lemlist.e2e.ts`,
+  **7 tests**, `reachable()` et jamais `isVisible()` — panneau atteignable,
+  quatre états possibles, les deux boutons atteignables et actifs, la clé
+  absente du HTML servi, les deux clics produisant une phrase, les clés de
+  campagne toutes préfixées, et l'égalité pastille/liste sur une campagne
+  lemlist ;
+- **429 honoré** : avec `Retry-After: 1`, l'appel dure 1 045 ms puis réussit ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` verts.
+
+### Jalon 111 — ce qui ne l'est pas
+
+**Les comptes ci-dessus viennent de charges utiles enregistrées, pas de la
+production.** Huit activités fabriquées, pas l'historique d'un vrai compte. Les
+nombres établissent que la chaîne fonctionne et qu'elle ne compte pas deux fois ;
+ils ne disent rien du volume réel.
+
+**Ce que seule la production peut établir**, et qui est resté hors de portée ici :
+
+1. **que lemlist envoie bien ces champs-là.** La forme des charges utiles est
+   celle de la documentation, champ pour champ. Si un champ manque ou change de
+   nom, `readLemlistActivity` rendra `null` ou une valeur vide — elle ne lèvera
+   pas, et l'écran comptera les lignes illisibles ;
+2. **ce que deviennent les six agrégats d'état de lead** (`contacted`, `hooked`,
+   `attracted`, `warmed`, `interested`, `notInterested`). S'ils portent
+   l'identifiant de l'activité sous-jacente, la contrainte d'unicité les avale
+   et il n'en reste rien ; s'ils en portent un propre, ils se posent en `other`,
+   donc hors de tout indicateur. **Dans les deux cas aucun chiffre ne bouge**,
+   mais lequel se produit n'est pas établi ;
+3. **si `manualDone` double une activité de canal.** Il est rangé en `other`
+   précisément parce que la question n'est pas tranchée. Si la production montre
+   qu'une tâche manuelle n'émet **que** `manualDone`, alors des messages réels
+   sont pour l'instant comptés nulle part, et la ligne est à changer ;
+4. **le comportement réel du plafond d'appels** sous une reprise d'historique de
+   plusieurs milliers d'activités. L'espacement et le recul sont exercés contre
+   un substitut qui répond en une milliseconde ;
+5. **que le webhook arrive.** Rien de ce qui est vérifié ici n'établit que
+   lemlist atteint notre URL depuis l'extérieur : les appels de recette sont
+   partis de la même machine.
+
+**La reprise d'historique est bornée à 200 pages** (20 000 activités) par
+passage. Au-delà, `truncated` est rendu, `historyDone` reste faux, l'écran le
+dit et le passage suivant continue. Ce n'est pas une limite mesurée contre un
+vrai compte.
+
+**Aucune catégorie de réponse n'est posée par la synchronisation.** Une réponse
+lemlist arrive non catégorisée, et il faut la classer à la main dans le CRM pour
+qu'elle compte comme positive. C'est délibéré (voir le quatrième refus), mais
+cela veut dire que « réponses positives » restera à zéro sur les campagnes
+lemlist tant que personne ne classe.
+
+**Les anomalies ne se referment pas toutes seules.** Un rapprochement ambigu
+tranché à la main laisse sa ligne dans `lemlist_issues` : il n'y a pas de bouton
+« c'est réglé », et la ligne reste affichée. Même chose pour un type qu'on
+finirait par traduire.
+
+**`LEMLIST_BASE_URL` existe.** C'est un joint de vérification, vide en
+production, sans lequel rien de ce module ne serait exerçable hors production.
+Mais c'est aussi une variable qui, posée par erreur, enverrait les appels
+ailleurs. Elle n'est pas dans `.env.example`.

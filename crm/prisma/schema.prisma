@@ -350,15 +350,15 @@ model Activity {
 /// rejouer le même déclencheur ne peut pas créer une seconde tâche, la base le
 /// refuse. Voir lib/domain/automation.ts.
 model Task {
-  id       String   @id @default(cuid())
-  title    String
-  due      DateTime
-  priority String   @default("normale")
+  id        String    @id @default(cuid())
+  title     String
+  due       DateTime
+  priority  String    @default("normale")
   /// **À qui la tâche est assignée.** C'est le champ d'assignation du jalon 4,
   /// et il n'en existe pas d'autre : l'écran l'appelle « Assigné à », la base
   /// l'appelle `owner`. Une seconde colonne aurait eu à rester cohérente avec
   /// celle-ci, et un jour elle l'aurait contredite.
-  owner String
+  owner     String
   /// **Le canal de la tâche** (jalon 105) : `tache` | `appel` | `email` |
   /// `instagram`.
   ///
@@ -366,8 +366,8 @@ model Task {
   /// intitulé, faute de colonne (jalon 92) — « Joindre Sophie » n'y entrait
   /// donc pas. Le type est maintenant saisi à la création. Le défaut porte sur
   /// la colonne, donc l'existant lit `tache` sauf ce que la migration a repris.
-  kind String  @default("tache")
-  done Boolean @default(false)
+  kind      String    @default("tache")
+  done      Boolean   @default(false)
   doneAt    DateTime?
   createdAt DateTime  @default(now())
   auto      Boolean   @default(false)
@@ -420,8 +420,8 @@ model Settings {
   /// **Les cibles hebdomadaires du pilotage** (jalon 109), semaine lundi →
   /// dimanche à Paris. `0` = pas de cible : l'écran n'affiche alors aucune barre
   /// plutôt qu'un « 4 sur 0 », la convention du plafond mensuel (jalon 36).
-  cibleMessagesSemaine  Int @default(100)
-  cibleDemosSemaine     Int @default(10)
+  cibleMessagesSemaine   Int @default(100)
+  cibleDemosSemaine      Int @default(10)
   cibleQualifieesSemaine Int @default(5)
 
   /// Fenêtre de l'avertissement « un collègue a déjà été écrit », en jours.
@@ -1021,10 +1021,10 @@ model EmailSequenceStep {
   /// est écrit à la main une fois pour toutes, et la composition se réduit au
   /// remplacement des balises. Le défaut est `alex` : c'est ce que portent
   /// toutes les étapes existantes, et une valeur inconnue y retombe.
-  mode      String @default("alex")
+  mode    String @default("alex")
   /// Le gabarit d'une étape écrite à la main. Vides pour une étape d'Alex.
-  subject   String @default("")
-  body      String @default("")
+  subject String @default("")
+  body    String @default("")
 
   /// **D'où vient l'objet de cette étape** (jalon 104).
   ///
@@ -1293,23 +1293,23 @@ model TaskTab {
 model AutoSend {
   id String @id @default("singleton")
 
-  enabled Boolean @default(false)
+  enabled         Boolean @default(false)
   /// L'intervalle nominal, en secondes. Plancher applicatif : 60.
-  intervalSeconds Int @default(210)
+  intervalSeconds Int     @default(210)
   /// Fenêtre d'envoi, en minutes depuis minuit, **heure de Paris**.
-  startMinute Int     @default(540)
-  endMinute   Int     @default(1020)
+  startMinute     Int     @default(540)
+  endMinute       Int     @default(1020)
   /// Tirer chaque écart au hasard dans ±30 % de l'intervalle.
-  vary        Boolean @default(true)
+  vary            Boolean @default(true)
 
   /// Quand le prochain envoi est dû. Nul = rien de programmé.
-  dueAt    DateTime?
+  dueAt      DateTime?
   /// Le dernier envoi réellement parti, et le dernier passage de la boucle.
   lastSendAt DateTime?
   lastTickAt DateTime?
 
   /// Échecs consécutifs ; remis à zéro par un envoi réussi.
-  failures Int @default(0)
+  failures      Int    @default(0)
   /// Pourquoi le produit a coupé l'envoi tout seul. Vide = il ne l'a pas fait.
   stoppedReason String @default("")
 
@@ -1692,7 +1692,7 @@ model Campaign {
 
   sequence EmailSequence?
 
-  jobs CompositionJob[]
+  jobs     CompositionJob[]
   outreach OutreachEvent[]
 
   @@map("campaigns")
@@ -1837,6 +1837,17 @@ model OutreachEvent {
   campaignId String?
   campaign   Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
+  /// La campagne **chez la source**, quand elle n'existe pas dans le CRM.
+  ///
+  /// Une campagne lemlist n'a aucune ligne dans `campaigns`, et lui en créer
+  /// une serait pire qu'inutile : elle apparaîtrait dans `/campagnes` avec ses
+  /// boutons « Écrire les mails » et « Réinitialiser », qui n'ont aucun sens
+  /// sur une séquence que le CRM ne pilote pas. Deux colonnes portent donc la
+  /// référence — identifiant et nom —, et « Campagnes côte à côte » compare les
+  /// deux origines par la clé que `lib/domain/pilotage.ts` en dérive.
+  extCampaignId   String @default("")
+  extCampaignName String @default("")
+
   /// `email` | `linkedin_invite` | `linkedin_message` | `whatsapp` | `call` | `other`
   channel String
 
@@ -1878,5 +1889,78 @@ model OutreachEvent {
   @@index([type, occurredAt])
   @@index([contactId, type])
   @@index([campaignId])
+  @@index([extCampaignId])
   @@map("outreach_events")
+}
+
+/// **L'état de la synchronisation lemlist, une seule ligne.**
+///
+/// Singleton comme `Settings` : il n'y a qu'un espace de travail, donc qu'un
+/// relevé. Ce qui est stocké ici est **exactement ce que l'écran affiche** —
+/// pas un journal d'appels, pas un cache de réponses, et surtout **aucune
+/// clé** : `LEMLIST_API_KEY` reste une variable de service, lue à chaque appel
+/// et jamais écrite nulle part.
+model LemlistSync {
+  id String @id @default("singleton")
+
+  /// L'instant du dernier relevé **réussi**. Un échec ne l'avance pas : c'est
+  /// la borne basse du relevé suivant, et la faire avancer sur un échec
+  /// perdrait silencieusement les activités de l'intervalle.
+  lastSuccessAt DateTime?
+
+  /// L'instant de la dernière tentative, réussie ou non. Les deux ensemble
+  /// disent « ça tourne » ou « ça tourne et ça échoue ».
+  lastAttemptAt DateTime?
+
+  /// La dernière erreur, en français, telle qu'elle s'affiche. Vide quand le
+  /// dernier passage a réussi.
+  lastError String @default("")
+
+  /// `connected` | `missing_key` | `refused` | `unknown`
+  status String @default("unknown")
+
+  /// Le nombre d'activités lues et d'événements écrits au dernier passage,
+  /// pour que « ça a tourné » se distingue de « ça a rapporté quelque chose ».
+  lastRead    Int @default(0)
+  lastWritten Int @default(0)
+
+  /// Vrai dès qu'une reprise d'historique complète a abouti. Le premier
+  /// passage remonte tout ; les suivants ne reprennent qu'à partir de
+  /// `lastSuccessAt`.
+  historyDone Boolean @default(false)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("lemlist_sync")
+}
+
+/// **Ce que la synchronisation n'a pas su faire, nommé plutôt que tu.**
+///
+/// Deux natures, un seul endroit : un type lemlist sans correspondance, et un
+/// rapprochement ambigu — deux fiches du CRM portant la même adresse ou la même
+/// URL LinkedIn. Le jalon interdit de fusionner deux contacts existants
+/// automatiquement ; il faut donc un endroit où le dire, et `/reglages` le lit.
+///
+/// La clé `(kind, key)` est unique : le même type inconnu rencontré mille fois
+/// produit une ligne dont le compteur monte, pas mille lignes.
+model LemlistIssue {
+  id String @id @default(cuid())
+
+  /// `unmapped_type` | `ambiguous_match`
+  kind String
+
+  /// Le type lemlist brut, ou l'adresse / l'URL sur laquelle le rapprochement
+  /// a buté. Jamais un identifiant interne : cette ligne se lit par un humain.
+  key String
+
+  /// La phrase affichée, en français.
+  detail String @default("")
+
+  seen    Int      @default(1)
+  firstAt DateTime @default(now())
+  lastAt  DateTime @default(now())
+
+  @@unique([kind, key])
+  @@index([kind])
+  @@map("lemlist_issues")
 }

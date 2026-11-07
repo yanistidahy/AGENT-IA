@@ -58,6 +58,29 @@ export const OUTREACH_TYPES = [
   "meeting_held",
   "trial_started",
   "customer_won",
+  /*
+    **Les quatre types du jalon 111, et leur statut.**
+
+    `message_opened` et `link_clicked` existent pour qu'une campagne lemlist se
+    relise ligne à ligne. Ils ne sont **sélectionnés par aucun indicateur** de
+    `lib/domain/pilotage.ts`, et ce n'est pas une promesse mais une propriété de
+    construction : chaque chiffre y énumère les types qu'il additionne. Le jalon
+    109 avait retiré les ouvertures des indicateurs ; les réimporter ne les y
+    remet pas, et une garde statique échoue si un fichier de pilotage se remet à
+    les nommer.
+
+    `unsubscribed` est un fait qui compte — il arrête la prospection — sans être
+    un indicateur de performance.
+
+    `other` est le **seau de ce qui n'a pas de correspondance** : un type lemlist
+    qu'on ne sait pas traduire y tombe en portant son nom dans `detail`, et
+    `/reglages` les liste. Rien n'est jeté en silence, et rien de ce seau ne peut
+    gonfler un chiffre.
+  */
+  "message_opened",
+  "link_clicked",
+  "unsubscribed",
+  "other",
 ] as const;
 export type OutreachType = (typeof OUTREACH_TYPES)[number];
 
@@ -74,7 +97,25 @@ export const TYPE_LABELS: Record<OutreachType, string> = {
   meeting_held: "Rendez-vous tenu",
   trial_started: "Essai démarré",
   customer_won: "Client gagné",
+  message_opened: "Message ouvert",
+  link_clicked: "Lien cliqué",
+  unsubscribed: "Désinscription",
+  other: "Autre activité",
 };
+
+/**
+ * **Les types importés qui ne sont pas des indicateurs.**
+ *
+ * Écrit ici pour que la liste existe à un seul endroit : l'écran de `/reglages`
+ * s'en sert pour dire ce qu'une synchronisation range sans le compter, et un
+ * test s'en sert pour vérifier qu'aucune fonction de `pilotage.ts` ne les
+ * sélectionne.
+ */
+export const NON_KPI_TYPES: readonly OutreachType[] = [
+  "message_opened",
+  "link_clicked",
+  "other",
+];
 
 export function isOutreachType(value: string): value is OutreachType {
   return (OUTREACH_TYPES as readonly string[]).includes(value);
