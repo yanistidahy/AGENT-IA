@@ -128,7 +128,22 @@ describeBrowser("le compteur de messages manuels", () => {
       expect(await button.isEnabled(), channel).toBe(true);
     }
 
-    for (const hook of ["[data-manual-quantity]", "[data-manual-date]", "[data-manual-contact]"]) {
+    /*
+      **Le nombre est atteignable sans rien ouvrir** : « +1 » et « +5 » sont le
+      cas courant. Antidater et lier une fiche passent derrière un dépli, pour
+      que le bloc ne pousse pas l'entonnoir hors de l'écran — la recette l'a
+      mesuré, et la garde `reachable()` de `pilotage.e2e.ts` l'a signalé.
+    */
+    const quantity = page.locator("[data-manual-quantity]");
+    await quantity.scrollIntoViewIfNeeded();
+    expect(await reachable(quantity)).toBe(true);
+
+    const more = page.locator("[data-manual-more]");
+    await more.scrollIntoViewIfNeeded();
+    expect(await reachable(more)).toBe(true);
+    await more.locator("summary").click();
+
+    for (const hook of ["[data-manual-date]", "[data-manual-contact]"]) {
       const field = page.locator(hook);
       await field.scrollIntoViewIfNeeded();
       expect(await reachable(field), hook).toBe(true);

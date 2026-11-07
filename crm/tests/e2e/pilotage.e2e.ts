@@ -97,6 +97,20 @@ describeBrowser("le pilotage", () => {
 
     const stage = page.locator('[data-funnel-stage="contacted"]');
     const shown = Number(await stage.getAttribute("data-count"));
+    /*
+      **On descend d'abord, comme un humain.** C'est déjà la règle appliquée à
+      la cellule de tableau plus bas, et elle vaut ici pour la même raison :
+      `reachable()` interroge le point au centre de l'élément, donc un élément
+      hors du cadre n'est pas atteignable — et c'est exact.
+
+      Ce test passait sans défiler tant que l'entonnoir tenait dans le premier
+      écran. Le compteur du jalon 112, posé au-dessus, l'a poussé dessous, et
+      la garde a fait son travail : elle a signalé un élément réellement hors
+      de l'écran. Le bloc a été resserré en conséquence (date et contact
+      derrière un dépli) **et** ce test défile, parce qu'un tableau de bord est
+      plus haut qu'un écran et le restera.
+    */
+    await stage.scrollIntoViewIfNeeded();
     expect(await reachable(stage)).toBe(true);
     await stage.locator("a").first().click();
     await page.waitForURL((url) => url.pathname.startsWith("/pilotage/liste"), { timeout: 15_000 });
@@ -132,6 +146,7 @@ describeBrowser("le pilotage", () => {
     await page.goto(`${BASE_URL}/pilotage`, { waitUntil: "domcontentloaded" });
 
     const toggle = page.locator("[data-funnel-toggle]");
+    await toggle.scrollIntoViewIfNeeded();
     expect(await reachable(toggle)).toBe(true);
     const before = await page.locator('[data-funnel-stage="replied"]').innerText();
     await toggle.click();

@@ -53,55 +53,76 @@ export function CounterInputs({
 }: Props) {
   return (
     <>
-  <div className="mt-2.5 flex flex-wrap items-end gap-2.5">
-    <label className="text-[12px] text-muted">
-      Nombre
-      <input
-        type="number"
-        min={1}
-        max={MAX_BATCH}
-        value={quantity}
-        onChange={(event) => onQuantity(event.target.value)}
-        data-manual-quantity
-        className="mt-0.5 block w-20 rounded-control border border-line bg-surface px-2 py-1.5 text-[13px] text-ink outline-none focus:border-brand"
-      />
-    </label>
-    <label className="text-[12px] text-muted">
-      Date
-      <input
-        type="date"
-        value={day === "" ? todayInput() : day}
-        min={minInput()}
-        max={todayInput()}
-        onChange={(event) => onDay(event.target.value)}
-        data-manual-date
-        className="mt-0.5 block rounded-control border border-line bg-surface px-2 py-1.5 text-[13px] text-ink outline-none focus:border-brand"
-      />
-    </label>
-  </div>
-
-  <div className="mt-2.5">
-    <p className="text-[12px] text-muted">Contact (facultatif)</p>
-    <div className="mt-0.5" data-manual-contact>
-      <Combobox
-        options={contacts}
-        value={contact}
-        onChange={onContact}
-        placeholder="Chercher une fiche…"
-        emptyLabel="Aucune fiche ne correspond"
-      />
-    </div>
-  </div>
-
   {/*
-    **La seule chose qui ne se devine pas**, donc elle est écrite. Et elle
-    est exacte : les indicateurs « par personne » dérivent tous d'un
-    regroupement sur la fiche, donc une ligne sans fiche n'y entre jamais.
+    **Le nombre reste visible, la date et le contact passent derrière un dépli.**
+
+    Le bloc est au-dessus du tableau de bord : chaque pixel qu'il prend pousse
+    l'entonnoir et les tableaux vers le bas, et la recette l'a mesuré — le
+    premier jet rendait la marche « contactés » **hors de l'écran** à 1440 × 900,
+    et `reachable()` l'a signalé en échouant. Un bloc de saisie ne doit pas
+    coûter la lecture de l'écran qui l'héberge.
+
+    Le partage suit donc le cas courant : « +1 » et « +5 » se font sans rien
+    ouvrir (le nombre est là, collé aux boutons), tandis qu'antidater et lier une
+    fiche — plus rares — demandent un geste. La phrase qui dit ce que le contact
+    change reste **toujours visible** : c'est la seule chose du bloc qui ne se
+    devine pas.
   */}
+  <div className="mt-2 flex items-center gap-2">
+    <label className="text-[12px] text-muted" htmlFor="manual-quantity">
+      par clic
+    </label>
+    <input
+      id="manual-quantity"
+      type="number"
+      min={1}
+      max={MAX_BATCH}
+      value={quantity}
+      onChange={(event) => onQuantity(event.target.value)}
+      data-manual-quantity
+      aria-label="Nombre de messages"
+      className="w-16 rounded-control border border-line bg-surface px-2 py-1.5 text-center text-[13px] text-ink outline-none focus:border-brand"
+    />
+    <span className="text-[12px] text-muted">message(s)</span>
+  </div>
+
   <p className="mt-2 text-[11.5px] leading-snug text-muted" data-manual-note>
     Avec un contact, le message compte aussi dans « nouvelles personnes contactées » et dans le
     taux de réponse. Sans contact, il compte seulement dans « messages envoyés ».
   </p>
+
+  <details className="mt-1.5" data-manual-more>
+    <summary className="cursor-pointer text-[12px] text-muted hover:text-brand-d">
+      Antidater ou lier une fiche
+    </summary>
+
+    <div className="mt-2 flex flex-wrap items-end gap-2.5">
+      <label className="text-[12px] text-muted">
+        Date
+        <input
+          type="date"
+          value={day === "" ? todayInput() : day}
+          min={minInput()}
+          max={todayInput()}
+          onChange={(event) => onDay(event.target.value)}
+          data-manual-date
+          className="mt-0.5 block rounded-control border border-line bg-surface px-2 py-1.5 text-[13px] text-ink outline-none focus:border-brand"
+        />
+      </label>
+      <div className="min-w-[200px] flex-1">
+        <p className="text-[12px] text-muted">Contact (facultatif)</p>
+        <div className="mt-0.5" data-manual-contact>
+          <Combobox
+            options={contacts}
+            value={contact}
+            onChange={onContact}
+            placeholder="Chercher une fiche…"
+            emptyLabel="Aucune fiche ne correspond"
+          />
+        </div>
+      </div>
+    </div>
+  </details>
     </>
   );
 }

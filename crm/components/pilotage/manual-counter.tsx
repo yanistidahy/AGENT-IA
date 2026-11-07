@@ -248,7 +248,7 @@ export function ManualCounter({ owners, contacts, initialToday, initialHistory }
       )}
 
       {/* Les cinq boutons. Une colonne sous 420 px, deux au-delà. */}
-      <div className="mt-3 grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
+      <div className="mt-2.5 grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
         {MANUAL_CHANNELS.map((channel) => (
           <button
             key={channel}

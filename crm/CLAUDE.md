@@ -16758,6 +16758,26 @@ hauteur tenant la place. L'écran ne saute pas, et l'état affiché est toujours
 l'état réel. Le test attend que le bloc ait tranché. Huit passages consécutifs
 verts après correction.
 
+### Le bloc a été resserré, et c'est une garde qui l'a exigé
+
+Le premier jet rendait tout à plat : propriétaire, cinq boutons, nombre, date,
+contact, phrase, décompte, dernière saisie, historique. À 1440 × 900, cela
+poussait la marche « contactés » de l'entonnoir **hors de l'écran**, et
+`pilotage.e2e.ts` a échoué en le disant — `reachable()` interroge le point au
+centre d'un élément, donc un élément hors du cadre n'est pas atteignable, et
+c'était exact.
+
+Deux corrections, pas une : **le bloc a maigri** — la date et le contact
+passent derrière un dépli, le nombre reste collé aux boutons parce que « +1 »
+et « +5 » sont le cas courant —, **et le test défile d'abord**, comme il le
+faisait déjà pour la cellule de tableau quinze lignes plus bas. Un tableau de
+bord est plus haut qu'un écran et le restera ; ce qui ne devait pas rester,
+c'est un bloc de saisie qui coûte la lecture de l'écran qui l'héberge.
+
+La phrase sur le contact et l'« Annuler » de la dernière saisie restent
+**toujours visibles** : le jalon les demandait sous le bloc, et ce sont les deux
+seules choses qui ne se devinent pas.
+
 ### Deux hameçons ajoutés, et pourquoi
 
 `data-week` / `data-week-total` sur chaque barre du graphique. Un total peint
@@ -16798,7 +16818,11 @@ des **écarts**.
   horizontal**, boutons de **44 px** de haut et jamais plus larges que l'écran ;
 - **item 7** — vérifié dans un vrai Chromium avec `reachable()` et jamais
   `isVisible()` : `tests/e2e/manual-counter.e2e.ts`, **6 tests**, **huit
-  passages consécutifs verts** ;
+  passages consécutifs verts** après correction de la course du propriétaire,
+  et trois de plus après le resserrement du bloc ;
+- **aucune régression de navigateur** : la suite entière rejouée,
+  `tests/e2e/pilotage.e2e.ts` comprise — c'est elle qui avait signalé
+  l'entonnoir poussé hors de l'écran ;
 - **la sauvegarde rend les lignes sans fiche** : fichier pris puis restauré,
   événements et lignes sans fiche identiques, **rien d'écarté** ;
 - `npm run build`, `npx tsc --noEmit`, `npx vitest run` verts.
