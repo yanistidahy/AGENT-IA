@@ -90,7 +90,15 @@ export function WeeklyChart({
           let stacked = 0;
           const x = PAD.left + index * slot + (slot - barW) / 2;
           return (
-            <g key={point.label}>
+            /*
+              **Le total de la barre est lisible, pas seulement dessiné**
+              (jalon 112). Un nombre peint dans un `<text>` SVG ne se compare à
+              rien : vérifier que la pastille de la semaine et la dernière barre
+              disent la même chose demandait de lire la barre, et une mesure
+              qu'on ne peut pas lire est une mesure qu'on croit sur parole.
+              Même rôle que `data-kpi` / `data-count` sur les pastilles.
+            */
+            <g key={point.label} data-week={point.label} data-week-total={point.total}>
               {OUTREACH_CHANNELS.map((channel) => {
                 const value = point.byChannel[channel];
                 if (value === 0) return null;

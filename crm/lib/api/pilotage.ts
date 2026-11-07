@@ -2,6 +2,8 @@ import "server-only";
 import { z } from "zod";
 import { prisma } from "../db";
 import { readEventRows } from "./outreach-events";
+import { readManualCounter, type ManualCounterState } from "./manual-events";
+import { contactTitle } from "../domain/contact-identity";
 import {
   DEFAULT_TARGETS,
   PERIOD_KEYS,
@@ -118,10 +120,34 @@ export interface PilotageData {
   readonly owners: readonly string[];
   /** Combien de sociétés n'ont pas de visiteurs mensuels, pour le dire à l'écran. */
   readonly companiesWithoutVisitors: number;
+  /**
+   * L'état du compteur manuel (jalon 112) : le décompte du jour et les vingt
+   * dernières saisies.
+   */
+  readonly manual: ManualCounterState;
+  /**
+   * Les fiches, pour le sélecteur facultatif du compteur.
+   *
+   * Chargées avec la page plutôt que par un appel au premier focus : à
+   * l'échelle de ce CRM c'est une projection de deux champs sur quelques
+   * centaines de lignes, et une liste déjà là est une liste qui répond au
+   * premier caractère tapé. À dix mille fiches il faudrait une recherche
+   * serveur — c'est dit dans CLAUDE.md et le code ne prétend pas le contraire.
+   */
+  readonly contactOptions: readonly { readonly id: string; readonly label: string }[];
 }
 
 export async function readPilotage(): Promise<PilotageData> {
-  const [rows, settings, crmCampaigns, lemlistCampaigns, owners, withoutVisitors] = await Promise.all([
+  const [
+    rows,
+    settings,
+    crmCampaigns,
+    lemlistCampaigns,
+    owners,
+    withoutVisitors,
+    manual,
+    contacts,
+  ] = await Promise.all([
     readEventRows(),
     prisma.settings.findUnique({
       where: { id: "singleton" },
@@ -149,6 +175,18 @@ export async function readPilotage(): Promise<PilotageData> {
       select: { value: true },
     }),
     prisma.company.count({ where: { monthlyVisitors: null } }),
+    readManualCounter(),
+    prisma.contact.findMany({
+      orderBy: { nameKey: "asc" },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        instagram: true,
+        company: { select: { name: true } },
+      },
+    }),
   ]);
 
   return {
@@ -174,6 +212,17 @@ export async function readPilotage(): Promise<PilotageData> {
       rows.map((row) => row.owner),
     ),
     companiesWithoutVisitors: withoutVisitors,
+    manual,
+    /*
+      Le libellé vient de `contactTitle`, la seule fonction qui décide comment
+      une fiche s'appelle (jalon 50 : une fiche de marque n'a personne de
+      nommé). Recomposer « prénom nom » ici rendrait le sélecteur muet sur ces
+      fiches-là, qui sont justement celles qu'on contacte en DM.
+    */
+    contactOptions: contacts.map((contact) => ({
+      id: contact.id,
+      label: contactTitle(contact),
+    })),
   };
 }
 

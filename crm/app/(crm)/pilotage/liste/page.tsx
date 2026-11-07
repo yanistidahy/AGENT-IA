@@ -7,6 +7,7 @@ import {
   applyFilters,
   campaignKey,
   campaignLabel,
+  sourceLabel,
   isMetric,
   metricResult,
   slice,
@@ -82,6 +83,7 @@ export default async function PilotageListPage({
                 <Th>Campagne</Th>
                 <Th>Canal</Th>
                 <Th>Événement</Th>
+                <Th>Origine</Th>
                 <Th>Quand</Th>
                 <Th>Propriétaire</Th>
               </tr>
@@ -89,13 +91,26 @@ export default async function PilotageListPage({
             <tbody>
               {result.rows.map((row) => (
                 <tr key={row.id} data-row className="border-b border-line-2 last:border-0">
-                  <td className="px-3 py-2 font-medium">
-                    <Link
-                      href={`/contacts?fiche=${encodeURIComponent(row.contactId)}`}
-                      className="hover:text-brand-d hover:underline"
-                    >
-                      {row.contactName}
-                    </Link>
+                  {/*
+                    **Une ligne sans fiche se montre tout de même** (jalon 112) :
+                    un message compté au compteur manuel sans destinataire
+                    enregistré. Sans elle, le nombre de lignes cesserait d'égaler
+                    le nombre annoncé, et c'est l'invariant du jalon 109. Pas de
+                    lien : il n'y a pas de fiche à ouvrir.
+                  */}
+                  <td className="px-3 py-2 font-medium" data-cell="contact">
+                    {row.contactId === null ? (
+                      <span className="text-muted italic" data-no-contact>
+                        {row.contactName}
+                      </span>
+                    ) : (
+                      <Link
+                        href={`/contacts?fiche=${encodeURIComponent(row.contactId)}`}
+                        className="hover:text-brand-d hover:underline"
+                      >
+                        {row.contactName}
+                      </Link>
+                    )}
                   </td>
                   <td className="max-w-[200px] truncate px-3 py-2 text-muted">{row.companyName}</td>
                   <td className="max-w-[180px] truncate px-3 py-2 text-muted">
@@ -109,6 +124,9 @@ export default async function PilotageListPage({
                         ({replyCategoryLabel(row.replyCategory)})
                       </span>
                     )}
+                  </td>
+                  <td className="px-3 py-2 text-muted" data-source={row.source}>
+                    {sourceLabel(row.source)}
                   </td>
                   <td className="px-3 py-2 tabular-nums text-muted">{day(row.occurredAt)}</td>
                   <td className="px-3 py-2 text-muted">{row.owner === "" ? "—" : row.owner}</td>

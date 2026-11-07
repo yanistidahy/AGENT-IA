@@ -1824,8 +1824,24 @@ model CustomFilterMember {
 model OutreachEvent {
   id String @id @default(cuid())
 
-  contactId String
-  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  /// **Facultatif depuis le jalon 112.**
+  ///
+  /// Un message consigné au compteur manuel n'a pas toujours de fiche : on
+  /// envoie un DM à quelqu'un qu'on n'a pas encore créé, et exiger la fiche
+  /// ferait soit renoncer à compter le message, soit créer une fiche vide pour
+  /// satisfaire une contrainte. Les deux sont pires que la colonne nulle.
+  ///
+  /// La conséquence est bornée par construction : les indicateurs « par
+  /// personne » (nouvelles personnes contactées, taux de réponse, démos
+  /// qualifiées) sont tous dérivés d'un regroupement **sur cette colonne**, et
+  /// une ligne sans fiche n'y entre donc jamais. « Messages envoyés », qui
+  /// compte des faits et non des gens, la compte.
+  ///
+  /// `Cascade` est conservé : les événements d'une fiche supprimée meurent avec
+  /// elle, comme au jalon 109. Une ligne sans fiche n'appartient à personne et
+  /// survit à toute suppression.
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   /// Recopiée au moment de l'écriture plutôt que jointe à la lecture : le
   /// segment du pilotage se lit sur la société, et une fiche peut changer de

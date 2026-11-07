@@ -57,7 +57,13 @@ export function segmentOf(monthlyVisitors: number | null): Segment {
 /** Une ligne du journal, telle que le pilotage la lit. */
 export interface EventRow {
   readonly id: string;
-  readonly contactId: string;
+  /**
+   * **`null` depuis le jalon 112** : un message compté au compteur manuel n'a
+   * pas toujours de fiche. Toutes les fonctions « par personne » de ce module
+   * sautent ces lignes — voir `contactsOf` —, et « messages envoyés », qui
+   * compte des faits et non des gens, les compte.
+   */
+  readonly contactId: string | null;
   readonly contactName: string;
   readonly companyName: string;
   readonly campaignId: string | null;
@@ -74,6 +80,14 @@ export interface EventRow {
   readonly type: OutreachType;
   readonly occurredAt: Date;
   readonly owner: string;
+  /**
+   * `crm` | `lemlist` | `manuel` — d'où vient le fait.
+   *
+   * Affiché dans la liste d'un chiffre (jalon 112) : trois origines écrivent
+   * désormais des messages envoyés, et savoir laquelle a produit une ligne est
+   * la première question qu'on se pose devant un total qui surprend.
+   */
+  readonly source: string;
   readonly replyCategory: string;
   readonly segment: Segment;
   /** Le groupe de fonction du contact (jalon 94), pour le tableau par segment. */
@@ -187,12 +201,21 @@ export function messagesSent(rows: readonly EventRow[]): EventRow[] {
   return rows.filter((row) => SENT_TYPES.includes(row.type));
 }
 
-/** Les identifiants, dédoublonnés, dans l'ordre de première apparition. */
+/**
+ * Les identifiants, dédoublonnés, dans l'ordre de première apparition.
+ *
+ * **Une ligne sans fiche n'est personne.** C'est le point d'entrée unique de
+ * tout ce qui compte des gens, et c'est donc ici — et nulle part ailleurs —
+ * que le jalon 112 se tient : un message compté au compteur sans destinataire
+ * enregistré ne peut pas devenir « une nouvelle personne contactée », ni
+ * grossir le dénominateur du taux de réponse. Garder le filtre à un seul
+ * endroit est ce qui empêche une fonction d'oublier la règle.
+ */
 function contactsOf(rows: readonly EventRow[]): string[] {
   const seen = new Set<string>();
   const ids: string[] = [];
   for (const row of rows) {
-    if (seen.has(row.contactId)) continue;
+    if (row.contactId === null || seen.has(row.contactId)) continue;
     seen.add(row.contactId);
     ids.push(row.contactId);
   }
@@ -215,6 +238,7 @@ export function peopleMessaged(rows: readonly EventRow[]): string[] {
 export function firstTouch(allRows: readonly EventRow[]): Map<string, Date> {
   const first = new Map<string, Date>();
   for (const row of messagesSent(allRows)) {
+    if (row.contactId === null) continue;
     const known = first.get(row.contactId);
     if (known === undefined || row.occurredAt.getTime() < known.getTime()) {
       first.set(row.contactId, row.occurredAt);
@@ -309,6 +333,10 @@ export function qualifiedAt(allRows: readonly EventRow[]): Map<string, Date> {
             ? "feedback"
             : null;
     if (key === null) continue;
+    // Une ligne sans fiche ne qualifie personne : la qualification est un fait
+    // *sur quelqu'un*, et les trois pas doivent être franchis par la même
+    // personne.
+    if (row.contactId === null) continue;
     const known = parts.get(row.contactId) ?? {};
     const current = known[key];
     // Le premier de chaque sorte : la qualification date du dernier *pas*
@@ -640,6 +668,16 @@ export function attributeCampaigns(rows: readonly EventRow[]): EventRow[] {
   const last = new Map<string, { id: string | null; name: string; extId: string; extName: string }>();
   const out: EventRow[] = [];
   for (const row of [...rows].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())) {
+    /*
+      **Une ligne sans fiche ne reçoit ni ne donne de campagne.** L'attribution
+      remonte au dernier message parti *à cette personne* ; sans personne, il
+      n'y a pas de fil à suivre, et prêter à ces lignes la campagne d'un voisin
+      les rangerait sous une campagne qui ne les a pas produites.
+    */
+    if (row.contactId === null) {
+      out.push(row);
+      continue;
+    }
     if (campaignKey(row) !== NO_CAMPAIGN) {
       last.set(row.contactId, {
         id: row.campaignId,
@@ -765,6 +803,7 @@ function firstRowPerContact(pool: readonly EventRow[], ids: readonly string[]): 
   const seen = new Set<string>();
   const picked: EventRow[] = [];
   for (const row of pool) {
+    if (row.contactId === null) continue;
     if (!wanted.has(row.contactId) || seen.has(row.contactId)) continue;
     seen.add(row.contactId);
     picked.push(row);
@@ -832,4 +871,33 @@ export function metricResult(
         qualifiedDemos(allRows, period),
       );
   }
+}
+
+/**
+ * **Le libellé d'une ligne sans fiche**, écrit une fois.
+ *
+ * Depuis le jalon 112, un message compté au compteur manuel peut n'avoir
+ * personne derrière lui. La liste d'un chiffre doit tout de même rendre une
+ * ligne pour lui : sinon le nombre affiché cesse d'égaler la longueur de la
+ * liste, et c'est précisément l'invariant que le jalon 109 a construit.
+ */
+export const NO_CONTACT_LABEL = "Sans contact";
+
+/**
+ * Les libellés d'origine d'un fait, pour la liste d'un chiffre.
+ *
+ * Trois chemins écrivent des messages envoyés depuis le jalon 112 — le CRM, la
+ * synchronisation lemlist et le compteur manuel —, et savoir lequel a produit
+ * une ligne est la première question qu'on se pose devant un total qui
+ * surprend. Un `source` inconnu se rend tel quel plutôt que vide : une valeur
+ * nouvelle doit se voir, pas disparaître.
+ */
+export const SOURCE_LABELS: Readonly<Record<string, string>> = {
+  crm: "CRM",
+  lemlist: "lemlist",
+  manual: "manuel",
+};
+
+export function sourceLabel(source: string): string {
+  return SOURCE_LABELS[source] ?? source;
 }

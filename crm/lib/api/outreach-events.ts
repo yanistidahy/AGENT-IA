@@ -9,7 +9,7 @@ import {
   type OutreachSource,
   type OutreachType,
 } from "../domain/outreach";
-import { segmentOf, type EventRow } from "../domain/pilotage";
+import { NO_CONTACT_LABEL, segmentOf, type EventRow } from "../domain/pilotage";
 import { groupLabel } from "../domain/contact-group";
 import { contactTitle } from "../domain/contact-identity";
 import type { ActivityType } from "../domain/types";
@@ -37,7 +37,13 @@ import type { ActivityType } from "../domain/types";
 /* ---------------------------------------------------------- l'écriture ---- */
 
 export interface OutreachEventInput {
-  readonly contactId: string;
+  /**
+   * `null` depuis le jalon 112 : le compteur manuel consigne des messages dont
+   * le destinataire n'est pas enregistré. Tout le reste du produit écrit
+   * toujours une fiche, et les indicateurs « par personne » sautent ces lignes
+   * par `contactsOf`.
+   */
+  readonly contactId: string | null;
   readonly companyId?: string | null;
   readonly campaignId?: string | null;
   /**
@@ -420,6 +426,8 @@ export async function readEventRows(): Promise<EventRow[]> {
       type: true,
       occurredAt: true,
       owner: true,
+      source: true,
+      detail: true,
       replyCategory: true,
       campaign: { select: { name: true } },
       company: { select: { name: true, monthlyVisitors: true } },
@@ -440,14 +448,25 @@ export async function readEventRows(): Promise<EventRow[]> {
   return rows.map((row) => ({
     id: row.id,
     contactId: row.contactId,
-    contactName: contactTitle({
-      firstName: row.contact.firstName,
-      lastName: row.contact.lastName,
-      company: row.contact.company,
-      email: row.contact.email,
-      instagram: row.contact.instagram,
-    }),
-    companyName: row.company?.name ?? row.contact.company?.name ?? "",
+    /*
+      **« Sans contact » est un libellé, pas une fiche vide.**
+
+      Depuis le jalon 112 une ligne peut n'avoir personne derrière elle : un
+      message compté au compteur manuel sans destinataire enregistré. La liste
+      d'un chiffre doit alors afficher quelque chose, sinon son nombre de lignes
+      cesse d'égaler le nombre annoncé — et c'est l'invariant du jalon 109.
+    */
+    contactName:
+      row.contact === null
+        ? NO_CONTACT_LABEL
+        : contactTitle({
+            firstName: row.contact.firstName,
+            lastName: row.contact.lastName,
+            company: row.contact.company,
+            email: row.contact.email,
+            instagram: row.contact.instagram,
+          }),
+    companyName: row.company?.name ?? row.contact?.company?.name ?? "",
     campaignId: row.campaignId,
     campaignName: row.campaign?.name ?? "",
     extCampaignId: row.extCampaignId,
@@ -456,8 +475,9 @@ export async function readEventRows(): Promise<EventRow[]> {
     type: row.type as EventRow["type"],
     occurredAt: row.occurredAt,
     owner: row.owner,
+    source: row.source,
     replyCategory: row.replyCategory,
     segment: segmentOf(row.company?.monthlyVisitors ?? null),
-    group: groupLabel(row.contact.contactGroup, row.contact.groupSetBy),
+    group: groupLabel(row.contact?.contactGroup ?? "", row.contact?.groupSetBy ?? ""),
   }));
 }

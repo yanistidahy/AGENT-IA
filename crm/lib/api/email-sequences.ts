@@ -591,6 +591,10 @@ export async function enroll(input: z.infer<typeof enrollSchema>): Promise<Enrol
   });
   const touchesByContact = new Map<string, LemlistTouch[]>();
   for (const touch of lemlistTouches) {
+    // Une ligne sans fiche (jalon 112) ne concerne personne : elle ne peut
+    // donc pas rendre quelqu'un « actif dans lemlist ». La requête les écarte
+    // déjà par `contactId: { in: … }`, mais le type le dit et on le respecte.
+    if (touch.contactId === null) continue;
     const list = touchesByContact.get(touch.contactId) ?? [];
     list.push({
       type: touch.type as LemlistTouch["type"],

@@ -366,6 +366,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 112 | **Un compteur pour ce qu'aucun outil ne voit partir** : les deux préalables d'abord. `manualDone` de lemlist — « tâche manuelle achevée » **dans leur interface** — reste hors de tout compte, et la garde le vérifie sur la **conséquence** et non sur la table : la ligne que la synchronisation écrirait, passée à `messagesSent`, rend un tableau vide, donc un même geste ne peut pas compter une fois cliqué ici et une fois importé de là. Et `logActivity` offrait bien une partie du travail — il écrit déjà un `message_sent` pour un appel, un message LinkedIn ou un DM Instagram — mais lui manquent trois choses qui sont tout l'écart : il **exige une fiche**, il ne connaît pas WhatsApp, et il crée une tâche de prochaine action. Le compteur n'écrit donc **que** dans le journal, jamais une interaction : écrire les deux doublerait le message. Cinq boutons, un lot annulable d'un geste (les lignes d'une saisie partagent un préfixe d'identifiant, donc aucune colonne de regroupement ajoutée), le propriétaire retenu par appareil dans un `localStorage` **sous `try/catch`** — l'accès lève en navigation privée, il ne rend pas `null`. `OutreachEvent.contactId` devient **facultatif**, et la conséquence est bornée par construction : tout ce qui compte des gens passe par `contactsOf`, seul endroit où le nul est filtré, donc une ligne sans fiche entre dans « messages envoyés » et dans **aucun** indicateur par personne. Mesuré : pastille, graphique et liste passent ensemble de 6 à 9 puis reviennent à 6, et la liste porte sa ligne « sans contact » pour que le nombre reste la longueur de la liste. Un défaut de ma première version, trouvé une fois sur six à la recette et corrigé dans le produit : le serveur ne connaissant pas `localStorage`, le bloc rendait « Qui a envoyé ces messages ? » même sur un appareil qui avait déjà répondu, d'où un clignotement et une course | **livré, à valider** |
 | 111 | **lemlist entre dans le journal de prospection** : la correspondance d'abord, écrite avant toute ligne de code — les **113 valeurs** de l'énumération `ActivityType` publiée, plus les dix-neuf événements que seul le webhook sert, chacune avec sa décision et sa raison (`lib/domain/lemlist.ts`), et un test qui échoue si lemlist en ajoute une sans qu'on tranche. Ce qui compte comme « envoyé » est **la définition de lemlist elle-même**, recopiée depuis ses statistiques de campagne plutôt que jugée. Quatre refus de double compte, chacun mesuré contre un faux à 100 % qui n'aurait fait rougir aucun test : la famille `*Done` n'est pas un envoi, `emailsExternalSent` peut être un email que le CRM a déjà compté, un échec d'envoi n'est pas un rebond, et `*Interested` est un classement et non une réponse. Les ouvertures entrent et **ne comptent pas** — par construction, chaque chiffre énumérant ses types, et une garde statique le vérifie. Deux chemins, **un seul écrivain** : webhook (secret dans le corps, comparé à temps constant, absent = 401) et relevé de quinze minutes greffé sur le workflow du jalon 41. Une réponse lemlist arrête une séquence du CRM **par le prédicat du jalon 106**, rendu variadique : une source de plus, pas une règle de plus. Mesuré en recette : le même webhook deux fois donne **un** événement, un inconnu donne **un** contact et **une** société réutilisés ensuite, l'envoi forcé par identifiant est refusé « Le contact a répondu » sans qu'aucune interaction ni réponse ne soit écrite en double, et la clé de recette n'apparaît **nulle part** — zéro occurrence en clair comme en base64 dans les réponses, le HTML, les morceaux de JavaScript servis, le journal du serveur et le fichier de sauvegarde, avec un contrôle négatif prouvant qu'elle part bien chez lemlist | **livré, à valider** |
 | 110 | **Une sauvegarde qui rend les envois avec leurs contacts** : inventaire d'abord — 47 modèles, 17 sauvegardés, **30 non couverts** —, puis la cause nommée. La restauration **garde** les identifiants (`createMany` porte `id`) ; le défaut n'était donc pas une régénération mais un trou de couverture : `contact.deleteMany()` déclenche les cascades et les `SetNull` de tables absentes du fichier, et rien ne les rend ensuite. Quatorze tables entrent dans la sauvegarde, dont le journal des envois, les réponses, les clics, les campagnes, les inscriptions et les **départs composés** (du texte payé au modèle). Mesuré : base vidée entièrement puis restaurée, **129 rattachements identiques ligne à ligne**, et la reprise du jalon 109 rejouée re-dérive **33 événements contre 11 avant**. Une ligne non replaçable est désormais **comptée et dite** ; la garde passe des colonnes aux **tables**, donc une table nouvelle ne peut plus entrer sans décision écrite | **livré, à valider** |
 | 109 | **« Pilotage » : un seul tableau de bord, sur un seul journal** : « Ma performance », « Rapports », l'entonnoir et les statistiques d'« Emails » et les pastilles de l'accueil sont **supprimés** — dix-neuf fichiers, deux routes redirigées en 307 —, et **aucune ligne d'envoi, de réponse, de clic, d'interaction ou de tâche n'a été touchée** (comptes relevés avant la migration et après la reprise, identiques). À la place, une table d'événements de prospection, une ligne par fait, unique par `(source, externalId)` pour la synchronisation lemlist à venir ; **chaque chiffre vient d'une fonction de `lib/domain/pilotage.ts`**, et une garde statique échoue si une page se remet à compter. Deux règles qui structurent tout : les emails se comptent dans le journal des envois et les autres canaux dans les interactions, **jamais les deux** (sinon chaque email vaudrait deux messages) ; et une pastille et la liste qu'elle ouvre sortent du **même appel**, le nombre affiché étant la longueur de cette liste. Les ouvertures ne sont plus un indicateur | **livré, à valider** |
@@ -16609,3 +16610,227 @@ mais cela veut dire qu'une reprise d'historique très longue peut dépasser le
 délai du proxy avant d'avoir fini — elle recommencera, sans rien compter deux
 fois, et sans jamais aboutir. La borne des 200 pages existe pour que ce cas se
 voie (`truncated`) au lieu de tourner indéfiniment.
+
+## Jalon 112 — un compteur pour ce qu'aucun outil ne voit partir
+
+```
+lib/domain/manual-count.ts              les cinq canaux, les deux bornes, le lot, le décompte — pur
+lib/api/manual-events.ts                l'écrivain : étendu, pas doublé (les trois bascules y vivaient déjà)
+app/api/outreach/manual/route.ts        écrire, défaire, relire
+components/pilotage/manual-counter.tsx  le bloc, ses deux compagnons de découpage
+tests/manual-counter-source.test.ts     la garde statique
+```
+
+### Les deux préalables, tranchés avant la première ligne
+
+**1. `manualDone` de lemlist ne compte nulle part, et c'est vérifié sur la
+conséquence.** lemlist émet `manualDone` quand une **tâche manuelle** est
+achevée dans *son* interface. Si elle entrait dans « messages envoyés », un même
+geste serait compté deux fois : une fois cliqué dans le compteur, une fois
+importé par la synchronisation. Le jalon 111 l'avait déjà rangée dans `other`
+pour une raison voisine — l'envoi porte son propre type —, mais une table n'est
+pas une garantie. Le test fabrique donc **la ligne que la synchronisation
+écrirait** et la passe à la fonction qui compte :
+
+```
+mapLemlistType("manualDone")  →  type "other"  →  messagesSent([ligne])  →  []
+```
+
+Trois façons de le défaire le font tomber : élargir `SENT_TYPES`, changer la
+table, renommer un type. Et un témoin accompagne l'égalité — `emailsSent`,
+`linkedinSent`, `whatsappMessageSent` et `aircallEnded` **y entrent**, sinon
+l'assertion serait vraie d'une fonction qui ne compterait plus rien. La famille
+entière des sept `*Done` de tâche est couverte.
+
+**2. `logActivity` offrait bien une partie du travail, et c'est pour cela qu'il
+faut dire ce qui manque.** `logActivity` écrit déjà un `message_sent` pour un
+appel, un message LinkedIn ou un DM Instagram (jalon 109, par
+`eventForActivity`). Trois choses lui manquent, et elles sont tout l'écart :
+
+| | `logActivity` | le compteur |
+|---|---|---|
+| Fiche | **obligatoire** (400 sans rattachement) | facultative |
+| WhatsApp | absent d'`ACTIVITY_TYPES` | un canal |
+| Lot | une interaction par appel | « +5 » en un geste |
+| Effet de bord | tâche de prochaine action, `lastContact` avancé | aucun |
+
+Le compteur **étend donc `lib/api/manual-events.ts`** plutôt que d'ouvrir un
+module parallèle : c'est déjà le fichier des « faits qu'aucune machine ne peut
+constater » (les trois bascules du jalon 109), et le compteur est de la même
+famille. Il réutilise `recordOutreachEvent`, `ownerOrDefault`, `parisDayRange`
+et `contactTitle` — aucune de ces décisions n'est reprise.
+
+**Et il n'écrit que dans le journal, jamais une interaction.** Écrire les deux
+doublerait le message, puisque l'interaction produit déjà son événement : c'est
+le double compte que le jalon 109 interdit. **Conséquence à dire, et elle est
+réelle** : un message compté ici n'apparaît pas dans la chronologie de la fiche
+et n'avance pas sa date de dernière touche. « Consigner un appel » reste le
+geste pour cela, et il compte déjà.
+
+### `contactId` devient facultatif, et la conséquence est bornée par construction
+
+Un DM part parfois à quelqu'un qui n'a pas encore de fiche. Exiger la fiche
+ferait soit renoncer à compter le message, soit créer une fiche vide pour
+satisfaire une contrainte : les deux sont pires que la colonne nulle.
+
+Ce qui rend le changement sûr n'est pas une relecture de tous les appelants,
+c'est **un seul point de passage** : tout ce qui compte des gens dans
+`lib/domain/pilotage.ts` dérive de `contactsOf`, et c'est là — et nulle part
+ailleurs — que le nul est filtré.
+
+| Indicateur | Compte une ligne sans fiche ? |
+|---|---|
+| Messages envoyés | **oui** — il compte des faits |
+| Nouvelles personnes contactées | non |
+| Taux de réponse (dénominateur) | non |
+| Démos qualifiées | non |
+
+Les trois autres lectures de `contactId` — `firstTouch`, `firstRowPerContact`,
+`qualifiedAt` — gardent le nul explicitement, et la garde statique échoue si
+l'une d'elles cesse de le faire. `Cascade` est conservé : les événements d'une
+fiche supprimée meurent avec elle (jalon 109), et une ligne sans fiche
+n'appartient à personne et survit à toute suppression.
+
+**La sauvegarde suit** : `contactId` y est nullable, et `placeable` tient une
+ligne sans fiche pour replaçable — elle n'attend personne. Seule une ligne qui
+*cite* une fiche absente du fichier est écartée, comptée et dite (jalon 110).
+Sans cela on exportait un fichier qu'on ne pouvait pas restaurer, exactement le
+défaut que le jalon 111 a trouvé sur `nameKey`.
+
+### Un lot s'annule d'un geste, sans colonne de regroupement
+
+Un « +5 » écrit **cinq** événements : cinq messages sont cinq faits. Mais
+« Annuler » doit retirer les cinq, sinon le geste d'annulation ne défait pas le
+geste de saisie. Les cinq lignes partagent donc un préfixe d'identifiant externe
+— `manual-count:<lot>:<rang>` — et un `deleteMany` sur ce préfixe défait
+exactement une saisie. Aucune colonne ajoutée, et l'idempotence
+`(source, externalId)` continue de valoir ligne à ligne.
+
+Les cinq lignes portent **le même instant** : elles consignent une session de
+prospection, pas cinq horodatages qu'on aurait inventés en les espaçant d'une
+minute.
+
+### Les deux bornes, et pourquoi elles refusent au lieu de corriger
+
+**Vingt messages au plus d'un seul geste**, et **sept jours d'antidatage**. Les
+deux sont lues par le domaine et non par le schéma Zod : un
+`z.number().max(20)` rendrait « Invalid input », qui n'apprend rien et n'indique
+aucun geste ; le refus doit nommer la borne franchie.
+
+Et il refuse plutôt que de corriger : un « 0 » ramené à 1 écrirait un message
+que personne n'a demandé, un « 50 » ramené à 20 en écrirait vingt sans le dire.
+Le futur est refusé — compter un message qui n'est pas parti est le seul
+mensonge que ce compteur pourrait produire — à une minute près, parce que
+l'horloge d'un téléphone n'est pas celle du serveur.
+
+### Le bloc est fait pour un téléphone
+
+Il est **au-dessus de la barre de filtres et avant l'état vide**. L'usage le
+commande : on vient d'envoyer trois DM, on ouvre l'écran pour *compter*, pas
+pour lire. Et c'est l'erreur du jalon 19 à ne pas refaire — le bandeau de
+sauvegarde vivait après les retours anticipés « base vide », donc il
+disparaissait exactement quand il comptait.
+
+Cinq boutons atteignables sans réglage préalable (le propriétaire et le contact
+sont des réglages, les boutons sont le geste), cibles de 44 px (jalon 46), une
+colonne sous 420 px. Le propriétaire est retenu **par appareil** et non par
+compte : le même espace sert deux personnes derrière un seul mot de passe
+partagé (jalon 9), c'est donc l'appareil qui dit qui tape.
+
+Le sélecteur de contact est le **combobox du jalon 6**
+(`components/ui/combobox.tsx`), sans création à la volée — on ne crée pas une
+fiche en comptant un message. Le jalon parlait d'« un sélecteur de contact du
+jalon 107 » : il n'existe pas de jalon 107 dans ce dépôt (les jalons passent de
+106 à 108), et le sélecteur de ce projet est ce combobox.
+
+### Un défaut de ma première version, trouvé une fois sur six
+
+Le serveur ne connaît pas `localStorage`. Le bloc rendait donc « Qui a envoyé
+ces messages ? » **même sur un appareil qui avait déjà répondu**, et l'effet le
+remplaçait aussitôt. Deux conséquences, et la seconde est celle qui l'a révélé :
+un clignotement à chaque chargement, et une **course** — le test de navigateur
+voyait le bloc de choix puis le trouvait disparu au moment de cliquer, une fois
+sur six passages.
+
+Corrigé **dans le produit** et non dans le test : rien d'« à propos du
+propriétaire » n'est rendu avant le montage, une ligne de réserve de la même
+hauteur tenant la place. L'écran ne saute pas, et l'état affiché est toujours
+l'état réel. Le test attend que le bloc ait tranché. Huit passages consécutifs
+verts après correction.
+
+### Deux hameçons ajoutés, et pourquoi
+
+`data-week` / `data-week-total` sur chaque barre du graphique. Un total peint
+dans un `<text>` SVG ne se compare à rien : vérifier que la pastille de la
+semaine et la dernière barre disent la même chose demandait de **lire** la
+barre, et une mesure qu'on ne peut pas lire est une mesure qu'on croit sur
+parole. Même rôle que `data-kpi` / `data-count` sur les pastilles.
+
+### Jalon 112 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16** (`auraflow112`, 18 contacts du jeu de
+démonstration, reprise du jalon 109 rejouée : 28 événements) et le serveur
+standalone de production. **Tous les chiffres ci-dessous viennent de cette base
+semée : ce ne sont pas des nombres de production.** Ce qui est établi, ce sont
+des **écarts**.
+
+- **migration fidèle au schéma** : SQL écrit à la main, appliqué sur une base
+  au schéma précédent, puis `migrate diff` renvoyant une migration vide ;
+- **item 1** — « +1 DM LinkedIn » sans contact : messages **4 → 5**, nouvelles
+  personnes **4 → 4**. La ligne écrite porte `contact=NUL`, canal
+  `linkedin_message`, type `message_sent`, source `manual` ;
+- **item 2** — « +1 WhatsApp » sur `p2`. Témoin d'abord, et il compte : `p2`
+  portait déjà un événement, mais un `meeting_held` — `firstTouch` ne regarde
+  que les messages, donc `p2` n'avait jamais été *messagé*. Résultat : messages
+  **5 → 6**, nouvelles personnes **4 → 5**, pour la bonne raison ;
+- **item 3** — « +5 appels » : 5 lignes écrites sous un même préfixe de lot,
+  événements **30 → 35** ; « Annuler » en retire **5**, retour à **30**, et il
+  ne reste **aucune** ligne du lot ;
+- **item 4** — un `manualDone` de lemlist inséré pour la **même personne le
+  même jour** : messages **6 → 6**, nouvelles personnes **5 → 5**. Les deux
+  inchangés ;
+- **item 5** — pastille, dernière barre du graphique et liste relevées
+  ensemble : **6 / 6 / 6**, puis **9 / 9 / 9** après « +3 invitations », puis
+  **6 / 6 / 6** après annulation. Sur 6 couples (période, pastille) exercés,
+  pastille = liste sans exception. La liste porte **1 ligne « sans contact »**
+  et nomme les deux origines présentes (`crm`, `manual`) ;
+- **item 6** — à **390 × 844** : bloc atteignable, **0 px de débordement
+  horizontal**, boutons de **44 px** de haut et jamais plus larges que l'écran ;
+- **item 7** — vérifié dans un vrai Chromium avec `reachable()` et jamais
+  `isVisible()` : `tests/e2e/manual-counter.e2e.ts`, **6 tests**, **huit
+  passages consécutifs verts** ;
+- **la sauvegarde rend les lignes sans fiche** : fichier pris puis restauré,
+  événements et lignes sans fiche identiques, **rien d'écarté** ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` verts.
+
+### Jalon 112 — ce qui ne l'est pas
+
+**Un message compté ici n'apparaît pas sur la fiche.** C'est la conséquence
+assumée de n'écrire que dans le journal, et c'est le compromis central du
+jalon : la chronologie de la fiche ne montrera pas ce DM, et sa date de
+dernière touche n'avancera pas — donc le statut de relance et les alertes ne
+bougent pas non plus. « Consigner un appel » reste le geste complet.
+
+**Rien n'empêche de compter deux fois le même message à la main.** Cliquer
+« +1 WhatsApp » puis consigner la même interaction écrit deux événements. Ce
+sont deux gestes humains délibérés et aucun automate ne les produit, mais le
+produit ne le détecte pas et ne le dira pas.
+
+**Le compteur ne sait pas qui était le destinataire d'un lot.** Un « +5 » avec
+un contact attribue les cinq messages à cette personne, ce qui est le cas réel
+le plus rare ; sans contact, les cinq sont anonymes. Il n'y a pas de « cinq
+personnes différentes » exprimable.
+
+**Les fiches du sélecteur sont chargées avec la page.** À l'échelle de ce CRM
+c'est une projection de deux champs sur quelques centaines de lignes, et une
+liste déjà là répond au premier caractère tapé. À dix mille fiches il faudrait
+une recherche serveur.
+
+**Le décompte « Aujourd'hui » ne porte que les lignes du compteur.** Un message
+envoyé depuis lemlist ou consigné en interaction le même jour n'y figure pas :
+c'est un décompte de ce que *ce bloc* a écrit, pas du jour. La pastille
+« messages », elle, compte tout.
+
+**Le propriétaire retenu n'est pas une identité.** `localStorage` dit quel nom
+cet appareil a choisi la dernière fois ; rien ne vérifie que c'est la bonne
+personne qui tape, et il n'y a pas de comptes pour le faire (jalon 9).
