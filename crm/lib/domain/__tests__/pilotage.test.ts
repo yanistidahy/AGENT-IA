@@ -59,6 +59,7 @@ function row(
     type,
     occurredAt: new Date(iso),
     owner: "Yanis",
+    source: "crm",
     replyCategory: "",
     segment: "unknown",
     group: "Non classé",

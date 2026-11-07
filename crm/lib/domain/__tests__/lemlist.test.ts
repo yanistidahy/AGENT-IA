@@ -14,6 +14,7 @@ import {
   type LemlistTouch,
 } from "../lemlist";
 import { OUTREACH_CHANNELS, OUTREACH_TYPES } from "../outreach";
+import { SENT_TYPES, messagesSent, peopleMessaged, type EventRow } from "../pilotage";
 import {
   conditionChosen,
   emailOpened,
@@ -300,5 +301,81 @@ describe("« actif dans une campagne lemlist »", () => {
     expect(activeLemlistCampaign([touch("message_sent", "2026-11-05T09:00:00Z", "")], now)).toBe(
       "une campagne lemlist",
     );
+  });
+});
+
+/**
+ * **Le préalable du jalon 112, écrit en test.**
+ *
+ * Le compteur manuel va permettre de consigner à la main un message LinkedIn ou
+ * un appel. lemlist, de son côté, émet `manualDone` quand une **tâche
+ * manuelle** est achevée dans son interface. Si les deux entraient dans
+ * « messages envoyés », un même geste compterait deux fois — une fois cliqué
+ * par l'utilisateur, une fois importé — et le chiffre serait faux sans que rien
+ * ne rougisse.
+ *
+ * Le jalon 111 avait déjà rangé la famille `*Done` dans `other` pour une raison
+ * voisine (l'envoi porte son propre type). Ce test-ci vérifie la **conséquence**
+ * plutôt que la table : il fabrique la ligne que la synchronisation écrirait et
+ * la passe à la fonction qui compte. Une table modifiée, une fonction de
+ * comptage élargie, un type renommé : les trois le font tomber.
+ */
+describe("la famille *Done ne compte jamais comme un message envoyé", () => {
+  /** La ligne que la synchronisation écrirait pour ce type lemlist. */
+  function rowFor(rawType: string): EventRow {
+    const mapping = mapLemlistType(rawType);
+    return {
+      id: `e-${rawType}`,
+      contactId: "p1",
+      contactName: "Anna Leroy",
+      companyName: "Maison Leroy",
+      campaignId: null,
+      campaignName: "",
+      extCampaignId: "cam_x",
+      extCampaignName: "Shopify",
+      channel: mapping.channel,
+      type: mapping.type,
+      occurredAt: new Date("2026-11-02T09:00:00Z"),
+      owner: "Yanis",
+      source: "lemlist",
+      replyCategory: "",
+      segment: "unknown",
+      group: "autre",
+    };
+  }
+
+  it("`manualDone` n'entre pas dans « messages envoyés »", () => {
+    const row = rowFor("manualDone");
+    expect(row.type).toBe("other");
+    expect(SENT_TYPES).not.toContain(row.type);
+    expect(messagesSent([row])).toEqual([]);
+    // Et il ne fait entrer personne dans « nouvelles personnes contactées ».
+    expect(peopleMessaged([row])).toEqual([]);
+  });
+
+  it("aucun des sept `*Done` de tâche n'y entre", () => {
+    const family = [
+      "manualDone",
+      "emailsDone",
+      "linkedinDone",
+      "whatsappDone",
+      "smsDone",
+      "aircallDone",
+      "apiDone",
+    ];
+    for (const rawType of family) {
+      const row = rowFor(rawType);
+      expect(messagesSent([row]), `${rawType} compte comme un message`).toEqual([]);
+    }
+  });
+
+  /**
+   * Le témoin : sans lui, l'égalité ci-dessus serait vraie même si
+   * `messagesSent` ne comptait plus rien du tout.
+   */
+  it("mais un vrai envoi y entre, lui", () => {
+    for (const rawType of ["emailsSent", "linkedinSent", "whatsappMessageSent", "aircallEnded"]) {
+      expect(messagesSent([rowFor(rawType)]), rawType).toHaveLength(1);
+    }
   });
 });

@@ -504,7 +504,14 @@ const taskTabRow = z.object({
  */
 const outreachEventRow = z.object({
   id: z.string(),
-  contactId: z.string(),
+  /*
+    **Nullable depuis le jalon 112.** Un message compté au compteur manuel sans
+    destinataire enregistré n'a pas de fiche. L'exiger ici ferait un fichier
+    qu'on exporte et qu'on ne peut pas restaurer — exactement le défaut que le
+    jalon 111 a trouvé sur `nameKey`, et la seule chose qu'une sauvegarde ne
+    doit jamais faire.
+  */
+  contactId: z.string().nullable().optional(),
   companyId: z.string().nullable().optional(),
   campaignId: z.string().nullable().optional(),
   /*
@@ -1197,11 +1204,18 @@ export async function restoreBackup(payload: BackupPayload): Promise<RestoreResu
           await tx.outreachEvent.createMany({
             data: placeable(
               payload.outreachEvents,
-              (event) => knownContactIds.has(event.contactId),
+              /*
+                **Une ligne sans fiche est replaçable**, précisément parce
+                qu'elle n'attend personne. Seule une ligne qui *cite* une fiche
+                absente du fichier ne l'est pas, et celle-là est comptée et dite
+                (jalon 110) plutôt que replacée sur un contact au hasard.
+              */
+              (event) => event.contactId == null || knownContactIds.has(event.contactId),
               "événements de prospection",
               skipped,
             ).map((event) => ({
               ...event,
+              contactId: event.contactId ?? null,
               companyId:
                 event.companyId != null && knownCompanyIds.has(event.companyId)
                   ? event.companyId

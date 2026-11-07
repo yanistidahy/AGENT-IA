@@ -1,4 +1,5 @@
 import { FilterBar } from "@/components/pilotage/filter-bar";
+import { ManualCounter } from "@/components/pilotage/manual-counter";
 import { KpiTiles, type Tile } from "@/components/pilotage/kpi-tiles";
 import { WeeklyChart } from "@/components/pilotage/weekly-chart";
 import { FunnelView } from "@/components/pilotage/funnel-view";
@@ -182,6 +183,31 @@ export default async function PilotagePage({
           {period.label} · tout vient du journal des événements de prospection, une ligne par fait.
         </p>
       </header>
+
+      {/*
+        **Le compteur est au-dessus de la barre de filtres, et avant l'état
+        vide.**
+
+        Deux raisons, dans cet ordre. D'abord l'usage : on vient d'envoyer trois
+        DM depuis son téléphone, on ouvre l'écran pour *compter*, pas pour lire
+        — le geste doit être le premier chose atteignable, sans défilement et
+        sans réglage préalable. Ensuite, c'est l'erreur du jalon 19 à ne pas
+        refaire : le bandeau de sauvegarde vivait **après** les retours
+        anticipés « base vide », donc il disparaissait exactement quand il
+        comptait. Un compteur rendu après `rows.length === 0` serait invisible
+        sur une base neuve, c'est-à-dire le jour où l'on en a le plus besoin.
+      */}
+      <section className="mb-3">
+        <ManualCounter
+          owners={data.owners}
+          contacts={data.contactOptions}
+          initialToday={data.manual.today}
+          initialHistory={data.manual.history.map((entry) => ({
+            ...entry,
+            at: entry.at.toISOString(),
+          }))}
+        />
+      </section>
 
       <FilterBar campaigns={data.campaigns} owners={data.owners} />
 
