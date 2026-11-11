@@ -147,7 +147,16 @@ describeBrowser("l'onglet Segments", () => {
     const before = await page.locator("[data-rate-detail-period]").innerText();
     expect(before.length, "la bande est muette au repos").toBeGreaterThan(0);
 
-    const point = page.locator("[data-rate-point]").first();
+    /*
+      **On survole un point de la série tracée en dernier**, et c'est une
+      précision que la recette du jalon 114 a imposée : quand les deux tranches
+      ont des taux proches, leurs marqueurs se recouvrent, et c'est celui du
+      dessus qu'un pointeur atteint. Viser « le premier point du document »
+      revenait à viser celui qui est **dessous** — un survol qui échoue sur un
+      graphique correct. Le recouvrement est une propriété de tout tracé à deux
+      séries, pas un défaut de celui-ci.
+    */
+    const point = page.locator('[data-rate-line="large"] [data-rate-point]').first();
     await point.scrollIntoViewIfNeeded();
     await point.hover();
     await expect
@@ -155,6 +164,16 @@ describeBrowser("l'onglet Segments", () => {
         timeout: 10_000,
       })
       .toBe(true);
+
+    /*
+      Et la bande porte **les deux tranches** de la période survolée, pas
+      seulement celle qu'on a touchée : c'est ce qui rend le recouvrement sans
+      conséquence pour la lecture. Un survol qui ne montrerait que la série du
+      dessus laisserait l'autre invisible là où elles se croisent.
+    */
+    const detail = await page.locator("[data-rate-detail]").innerText();
+    expect(detail).toContain("Petites");
+    expect(detail).toContain("Grosses");
 
     /*
       Au clavier : chaque point est un lien, donc focalisable. Le lien est

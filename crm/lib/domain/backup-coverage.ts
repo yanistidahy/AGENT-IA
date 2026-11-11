@@ -179,6 +179,12 @@ export const NOT_BACKED_UP: readonly SkippedTable[] = [
     consequence:
       "Le relevé repart d'une reprise d'historique complète : lemlist est réinterrogé depuis le début, et la contrainte d'unicité fait que rien n'est compté deux fois.",
   },
+  {
+    model: "LemlistCampaign",
+    label: "État et compteurs des campagnes lemlist",
+    consequence:
+      "La prochaine synchronisation les relit : ce sont des copies de ce que lemlist publie, et c'est pour cela qu'elles n'ont pas à être sauvegardées. En attendant, une puce d'état retombe sur la déduction par le silence et la phrase de pause ne s'affiche pas — l'écran dit alors « on ne sait pas » au lieu d'un chiffre faux.",
+  },
 ];
 
 /** Tous les modèles déclarés, dans un sens ou dans l'autre. */

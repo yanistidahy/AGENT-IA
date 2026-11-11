@@ -275,6 +275,45 @@ describe("les limites d'appel de lemlist sont respectées", () => {
   });
 });
 
+/* ------------------------------------------------- lemlist est en lecture -- */
+
+describe("la synchronisation ne fait que lire chez lemlist", () => {
+  /**
+   * **Le connecteur lemlist est en lecture seule, et c'est une règle du brief,
+   * pas une préférence.**
+   *
+   * Un `POST` ou un `PATCH` envoyé depuis ce CRM lancerait, mettrait en pause ou
+   * modifierait une campagne réelle, chez de vraies personnes. Le jalon 114
+   * ajoute deux routes — `GET /campaigns` et `GET /v2/campaigns/{id}/stats` —, et
+   * c'est exactement le moment où une écriture peut se glisser à côté : la garde
+   * vérifie la **conséquence** (la méthode qui part sur le fil) et non
+   * l'intention.
+   */
+  it("n'émet jamais autre chose qu'un GET", () => {
+    const requests = client.match(/\bfetch\(/g) ?? [];
+    expect(requests, "un second chemin de requête").toHaveLength(1);
+    const methods = client.match(/method:\s*"([A-Z]+)"/g) ?? [];
+    expect(methods).toEqual(['method: "GET"']);
+    for (const verb of ["POST", "PUT", "PATCH", "DELETE"]) {
+      expect(client, `le client émet un ${verb}`).not.toContain(`"${verb}"`);
+    }
+  });
+
+  /**
+   * **Les statistiques de campagne demandent les deux dates**, parce que la
+   * route les exige : `startDate` seul rend 400, et un `nbLeads` manquant
+   * deviendrait « 0 prospect attend » sur une campagne dont on n'a rien lu.
+   */
+  it("appelle les statistiques avec ses deux bornes, et refuse un compte absent", () => {
+    expect(client).toContain("/v2/campaigns/");
+    expect(client).toContain("startDate");
+    expect(client).toContain("endDate");
+    expect(client).toContain("nbLeadsLaunched");
+    // Et le relevé n'écrase jamais un compte connu par un nul.
+    expect(sync).toContain("refreshCampaigns");
+  });
+});
+
 /** Les fichiers TypeScript d'un dossier, récursivement. */
 function walk(dir: string): string[] {
   const out: string[] = [];

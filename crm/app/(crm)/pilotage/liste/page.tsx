@@ -86,7 +86,19 @@ export default async function PilotageListPage({
             </thead>
             <tbody>
               {result.rows.map((row) => (
-                <tr key={row.id} data-row className="border-b border-line-2 last:border-0">
+                <tr
+                  key={row.id}
+                  data-row
+                  /*
+                    Le type brut à côté de son libellé : la recette du jalon 114
+                    doit pouvoir vérifier qu'une liste d'« invitations acceptées »
+                    ne contient **que** des `linkedin_invite_accepted`. Lire le
+                    libellé français marcherait jusqu'au jour où on le reformule,
+                    et le test se mettrait alors à mesurer la traduction.
+                  */
+                  data-type={row.type}
+                  className="border-b border-line-2 last:border-0"
+                >
                   {/*
                     **Une ligne sans fiche se montre tout de même** (jalon 112) :
                     un message compté au compteur manuel sans destinataire

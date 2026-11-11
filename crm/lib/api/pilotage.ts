@@ -19,6 +19,7 @@ import {
 import { OUTREACH_CHANNELS } from "../domain/outreach";
 import { isSizeBucket } from "../domain/size-buckets";
 import { nicheSuggestions, type NicheSuggestion } from "../domain/company-profile";
+import type { CampaignReport } from "../domain/campaigns-board";
 
 /**
  * **Ce que l'écran reçoit : des lignes, des cibles, et de quoi remplir les
@@ -156,6 +157,16 @@ export interface PilotageData {
    * silence : archiver est une décision humaine. Voir `boardState`.
    */
   readonly archivedCampaigns: readonly string[];
+  /**
+   * **Ce que la synchronisation a relevé des campagnes lemlist** (jalon 114) :
+   * leur état publié, et combien de prospects attendent d'être lancés.
+   *
+   * Vide tant qu'aucun relevé n'a eu lieu, et l'onglet Campagnes retombe alors
+   * sur ce qu'il savait déjà déduire d'un silence de trente jours. Une liste
+   * vide n'est donc pas un écran cassé, c'est un écran moins précis — et il le
+   * dit.
+   */
+  readonly reportedCampaigns: readonly CampaignReport[];
   /** Combien de sociétés n'ont pas de visiteurs mensuels, pour le dire à l'écran. */
   readonly companiesWithoutVisitors: number;
   /**
@@ -186,6 +197,7 @@ export async function readPilotage(): Promise<PilotageData> {
     manual,
     niches,
     archived,
+    lemlistCampaignRows,
     contacts,
   ] = await Promise.all([
     readEventRows(),
@@ -218,6 +230,9 @@ export async function readPilotage(): Promise<PilotageData> {
     readManualCounter(),
     prisma.company.findMany({ where: { niche: { not: "" } }, select: { niche: true } }),
     prisma.campaign.findMany({ where: { archivedAt: { not: null } }, select: { id: true } }),
+    prisma.lemlistCampaign.findMany({
+      select: { extId: true, status: true, leads: true, leadsLaunched: true },
+    }),
     prisma.contact.findMany({
       orderBy: { nameKey: "asc" },
       select: {
@@ -257,6 +272,18 @@ export async function readPilotage(): Promise<PilotageData> {
     groups: distinct(rows.map((row) => row.group)),
     sources: distinct(rows.map((row) => row.source)),
     archivedCampaigns: archived.map((campaign) => `crm:${campaign.id}`),
+    /*
+      Le préfixe `lemlist:` est posé **ici**, une fois, parce que c'est la clé
+      que `campaignKey` produit : comparer un identifiant brut à une clé
+      préfixée ne rapprocherait jamais rien, et l'état relevé n'atteindrait
+      aucune ligne du tableau sans qu'aucun test de type ne s'en plaigne.
+    */
+    reportedCampaigns: lemlistCampaignRows.map((row) => ({
+      key: `lemlist:${row.extId}`,
+      status: row.status,
+      leads: row.leads,
+      leadsLaunched: row.leadsLaunched,
+    })),
     companiesWithoutVisitors: withoutVisitors,
     manual,
     /*

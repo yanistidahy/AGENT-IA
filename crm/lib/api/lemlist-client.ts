@@ -378,3 +378,149 @@ export async function readActivityPages(
   }
   return { ok: true, data: { raw, truncated: true } };
 }
+
+/* -------------------------------------------------------- les campagnes ------- */
+
+/** La page maximale documentée de `GET /campaigns`. */
+export const CAMPAIGNS_PAGE = 100;
+
+/**
+ * `GET /api/campaigns?version=v2` — les campagnes **et leur état**.
+ *
+ * Jusqu'au jalon 114 le pilotage ne connaissait les campagnes lemlist que par
+ * les événements qu'elles avaient produits, et en **déduisait** l'état d'un
+ * silence de trente jours. Une campagne arrêtée pour de bon et une campagne
+ * simplement muette se lisaient donc pareil. Cette route le dit : son champ
+ * `status` vaut `running`, `paused`, `draft`, `ended`, `archived` ou `errors`.
+ *
+ * Lecture seule, et aucune donnée de prospect : on lit l'identifiant, le nom et
+ * l'état, rien d'autre.
+ */
+export interface LemlistCampaignRow {
+  readonly extId: string;
+  readonly name: string;
+  readonly status: string;
+}
+
+export async function fetchCampaignsPage(page: number): Promise<LemlistResult<LemlistCampaignRow[]>> {
+  const result = await get<unknown>("/campaigns", {
+    limit: String(CAMPAIGNS_PAGE),
+    offset: String(page * CAMPAIGNS_PAGE),
+  });
+  if (!result.ok) return result;
+
+  /*
+    **La réponse peut être une liste ou une enveloppe.** La documentation donne
+    un tableau, et des comptes paginés rendent `{ campaigns: [...] }`. Lire les
+    deux formes coûte trois lignes ; en lire une seule rendrait un relevé muet
+    sur un compte dont on ne connaîtrait la forme qu'en production.
+  */
+  const raw = result.data;
+  const list = Array.isArray(raw)
+    ? raw
+    : typeof raw === "object" && raw !== null && Array.isArray((raw as { campaigns?: unknown }).campaigns)
+      ? ((raw as { campaigns: unknown[] }).campaigns)
+      : null;
+  if (list === null) {
+    return {
+      ok: false,
+      error: {
+        kind: "server",
+        status: null,
+        message: "lemlist a répondu autre chose qu'une liste de campagnes.",
+      },
+    };
+  }
+
+  const rows: LemlistCampaignRow[] = [];
+  for (const entry of list) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const row = entry as Record<string, unknown>;
+    const extId = typeof row["_id"] === "string" ? row["_id"] : "";
+    if (extId === "") continue;
+    rows.push({
+      extId,
+      name: typeof row["name"] === "string" ? row["name"] : "",
+      status: typeof row["status"] === "string" ? row["status"] : "",
+    });
+  }
+  return { ok: true, data: rows };
+}
+
+/** Toutes les campagnes, page par page, bornées comme les activités. */
+export async function readCampaignPages(
+  maxPages: number,
+): Promise<LemlistResult<LemlistCampaignRow[]>> {
+  const all: LemlistCampaignRow[] = [];
+  for (let page = 0; page < maxPages; page += 1) {
+    const result = await fetchCampaignsPage(page);
+    if (!result.ok) return result;
+    all.push(...result.data);
+    if (result.data.length < CAMPAIGNS_PAGE) return { ok: true, data: all };
+  }
+  return { ok: true, data: all };
+}
+
+export interface LemlistCampaignStats {
+  readonly leads: number;
+  readonly leadsLaunched: number;
+}
+
+/**
+ * `GET /api/v2/campaigns/{id}/stats` — combien de prospects, combien lancés.
+ *
+ * **Trois pièges de cette route, et chacun est documenté chez lemlist** :
+ *
+ * 1. **le `/v2/` est dans le chemin**, pas seulement dans la requête. La
+ *    documentation ouvre d'ailleurs sur un avertissement à ce sujet. Les autres
+ *    routes de ce fichier prennent `version=v2` en paramètre ; celle-ci veut
+ *    les deux, et c'est elle qui l'impose ;
+ * 2. **`startDate` et `endDate` sont obligatoires.** Les omettre est un 400, pas
+ *    un défaut « depuis toujours ». L'appelant donne donc une fenêtre, et on la
+ *    prend large : ce qu'on cherche est un **état courant**, pas une mesure de
+ *    période ;
+ * 3. **`nbLeads` moins `nbLeadsLaunched` est le nombre qui nous intéresse.** Un
+ *    événement ne parle que de ce qui est déjà parti ; par construction il ne
+ *    peut rien dire de ce qui attend. C'est toute la raison de cet appel.
+ */
+export async function fetchCampaignStats(
+  extId: string,
+  from: Date,
+  to: Date,
+): Promise<LemlistResult<LemlistCampaignStats>> {
+  const result = await get<unknown>(`/v2/campaigns/${encodeURIComponent(extId)}/stats`, {
+    startDate: from.toISOString(),
+    endDate: to.toISOString(),
+  });
+  if (!result.ok) return result;
+
+  const raw = result.data;
+  if (typeof raw !== "object" || raw === null) {
+    return {
+      ok: false,
+      error: {
+        kind: "server",
+        status: null,
+        message: "lemlist a répondu autre chose que des statistiques de campagne.",
+      },
+    };
+  }
+  const row = raw as Record<string, unknown>;
+  const count = (key: string): number | null => {
+    const value = row[key];
+    return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+  };
+  const leads = count("nbLeads");
+  const launched = count("nbLeadsLaunched");
+  if (leads === null || launched === null) {
+    return {
+      ok: false,
+      error: {
+        kind: "server",
+        status: null,
+        message: "Les statistiques de campagne lemlist n'ont pas les deux comptes attendus.",
+      },
+    };
+  }
+  return { ok: true, data: { leads, leadsLaunched: launched } };
+}

@@ -1944,6 +1944,53 @@ model OutreachEvent {
   @@map("outreach_events")
 }
 
+/// **Une campagne lemlist, telle que lemlist la décrit** (jalon 114).
+///
+/// Jusqu'ici le pilotage ne connaissait les campagnes lemlist que par les
+/// **événements** qu'elles avaient produits : deux colonnes de texte sur chaque
+/// ligne du journal. Cela suffisait pour comparer des résultats, pas pour
+/// répondre à deux questions que le brief pose :
+///
+/// 1. **l'état** d'une campagne. Il était jusqu'ici *déduit* d'un silence de
+///    trente jours, faute de mieux, et une campagne arrêtée pour de bon se
+///    lisait comme une campagne simplement muette. `GET /campaigns` le dit.
+/// 2. **combien de prospects attendent d'être lancés.** Un événement ne parle
+///    que de ce qui est déjà parti ; par construction, il ne peut rien dire de
+///    ce qui n'est pas parti. `GET /v2/campaigns/{id}/stats` donne `nbLeads` et
+///    `nbLeadsLaunched`, et la différence est la réponse.
+///
+/// Une table à part et non des colonnes sur `OutreachEvent` : c'est un état
+/// **courant** de campagne, pas un fait daté. Recopié sur chaque événement, il
+/// mentirait dès le lendemain, et réécrire mille lignes à chaque relevé pour
+/// tenir un seul nombre à jour serait le genre de dette qu'on paie en silence.
+model LemlistCampaign {
+  /// L'identifiant lemlist (`cam_…`), qui est aussi la clé de rapprochement
+  /// avec `OutreachEvent.extCampaignId`.
+  extId String @id
+
+  name String @default("")
+
+  /// `running` | `paused` | `draft` | `ended` | `archived` | `errors` — le
+  /// vocabulaire publié de lemlist, **recopié tel quel**. La traduction vers
+  /// les trois états de l'écran vit dans `lib/domain/campaigns-board.ts` : y
+  /// stocker notre vocabulaire perdrait la nuance que lemlist nous donne, et la
+  /// rendrait impossible à retrouver sans un second relevé.
+  status String @default("")
+
+  /// `nbLeads` et `nbLeadsLaunched` des statistiques de campagne. `null`
+  /// distingue « pas encore relevé » de « zéro prospect » : afficher « 0
+  /// prospect attend » sur une campagne dont on n'a pas lu les statistiques
+  /// serait une affirmation qu'on n'a pas vérifiée.
+  leads         Int?
+  leadsLaunched Int?
+
+  /// L'instant du relevé de cette ligne. Un écran qui affiche un nombre de
+  /// prospects doit pouvoir dire de quand il date.
+  syncedAt DateTime @default(now())
+
+  @@map("lemlist_campaigns")
+}
+
 /// **L'état de la synchronisation lemlist, une seule ligne.**
 ///
 /// Singleton comme `Settings` : il n'y a qu'un espace de travail, donc qu'un

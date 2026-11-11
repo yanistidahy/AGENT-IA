@@ -182,6 +182,8 @@ export function TimelinePlot({
             textAnchor="end"
             fontSize="9"
             fill="var(--color-muted)"
+            /* Décor : il se lit, il ne s'attrape pas. Voir l'étiquette de valeur. */
+            pointerEvents="none"
           >
             {Math.round(peak * fraction)}
           </text>
@@ -224,6 +226,13 @@ export function TimelinePlot({
                     fontSize="9.5"
                     fontWeight="600"
                     fill="var(--color-danger)"
+                    /*
+                      **Une étiquette ne prend pas le clic d'une barre.** Elle
+                      est posée au-dessus du tracé, donc elle recouvre la cible
+                      du lien dès que la barre monte assez haut — voir la note
+                      de l'étiquette de valeur juste en dessous.
+                    */
+                    pointerEvents="none"
                   >
                     cible {point.target}
                   </text>
@@ -290,6 +299,21 @@ export function TimelinePlot({
                   />
                 </a>
                 {point.total > 0 ? (
+                  /*
+                    **Le nombre posé sur la barre ne doit pas voler son clic.**
+
+                    Défaut réel, trouvé au jalon 114 par la suite de navigateur :
+                    cette étiquette est un frère du lien, dessinée **après** lui,
+                    et le lien couvre toute la hauteur de la colonne. Dès qu'une
+                    barre monte assez, l'étiquette tombe pile au centre du lien —
+                    et c'est elle que le doigt touche. Sur un téléphone, le
+                    nombre est précisément ce qu'on vise ; taper dessus ne
+                    faisait rien.
+
+                    `pointer-events: none` rend l'étiquette traversante : elle se
+                    lit, elle ne s'attrape pas. Le lien reprend toute sa surface,
+                    étiquette comprise.
+                  */
                   <text
                     x={centre(index)}
                     y={top - 3}
@@ -297,6 +321,7 @@ export function TimelinePlot({
                     fontSize="9"
                     fontWeight="600"
                     fill="var(--color-ink-2)"
+                    pointerEvents="none"
                   >
                     {point.total}
                   </text>
@@ -370,6 +395,8 @@ export function TimelinePlot({
             textAnchor="middle"
             fontSize="9"
             fill="var(--color-muted)"
+            /* Décor : il se lit, il ne s'attrape pas. Voir l'étiquette de valeur. */
+            pointerEvents="none"
           >
             {point.short}
           </text>

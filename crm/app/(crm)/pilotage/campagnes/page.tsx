@@ -3,9 +3,10 @@ import { BoardHeader } from "@/components/pilotage/board-header";
 import { FilterBar } from "@/components/pilotage/filter-bar";
 import { CampaignBoard } from "@/components/pilotage/campaign-board";
 import { pilotageView } from "@/lib/api/pilotage-view";
-import { listHref } from "@/lib/domain/board-links";
+import { listHref, one, sameHere } from "@/lib/domain/board-links";
 import { NO_CAMPAIGN, type Metric } from "@/lib/domain/pilotage";
-import { boardLines } from "@/lib/domain/campaigns-board";
+import { boardLines, toBoardSort, toSortDir } from "@/lib/domain/campaigns-board";
+import type { BoardColumn } from "@/components/pilotage/campaign-board";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,36 @@ export default async function CampaignsPage({
   const view = await pilotageView(params);
   const { data, period, rows, all, now } = view;
 
-  const lines = boardLines(all, rows, period, data.archivedCampaigns, now);
+  /*
+    **Le tri vit dans l'URL**, comme tous les réglages locaux de ces onglets
+    (`tri` et `sens` sont dans `LOCAL_PARAMS`) : une vue triée se partage, se met
+    en favori et survit à un rechargement — la règle du jalon 1 —, et l'écran
+    reste rendu côté serveur, sans un octet de JavaScript pour trier.
+  */
+  const sort = toBoardSort(one(params, "tri"));
+  const dir = toSortDir(one(params, "sens"));
+
+  const lines = boardLines(
+    all,
+    rows,
+    period,
+    data.archivedCampaigns,
+    data.reportedCampaigns,
+    now,
+    sort,
+    dir,
+  );
+
+  /*
+    **Cliquer la colonne déjà triée inverse le sens ; une autre colonne repart
+    en décroissant.** Repartir en croissant mettrait en tête la campagne qui a le
+    moins produit, c'est-à-dire la ligne qu'on ne cherchait pas.
+  */
+  const sortHref = (key: typeof sort) =>
+    sameHere("/pilotage/campagnes", params, {
+      tri: key,
+      sens: key === sort && dir === "desc" ? "asc" : "desc",
+    });
 
   return (
     <div className="min-h-full bg-board px-6 py-5">
@@ -47,10 +77,15 @@ export default async function CampaignsPage({
 
       <CampaignBoard
         lines={lines}
+        sort={sort}
+        dir={dir}
+        sortHref={sortHref}
         cellHref={(line, column) => {
-          const metric: Record<typeof column, Metric> = {
+          const metric: Record<BoardColumn, Metric> = {
             people: "contacted",
             messages: "messages",
+            invites: "invites",
+            accepted: "invites_accepted",
             replies: "replies",
             demos: "demos_sent",
             qualified: "qualified",
