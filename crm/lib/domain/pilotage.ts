@@ -903,7 +903,10 @@ export const METRICS = [
   "messages",
   "contacted",
   "new_contacted",
+  "invites",
+  "invites_accepted",
   "replies",
+  "replies_uncategorised",
   "positive",
   "demos_sent",
   "demos_tested",
@@ -915,7 +918,10 @@ export const METRIC_LABELS: Record<Metric, string> = {
   messages: "Messages envoyés",
   contacted: "Personnes contactées",
   new_contacted: "Nouvelles personnes contactées",
+  invites: "Invitations LinkedIn envoyées",
+  invites_accepted: "Invitations LinkedIn acceptées",
   replies: "Réponses",
+  replies_uncategorised: "Réponses non classées",
   positive: "Réponses positives",
   demos_sent: "Démos envoyées",
   demos_tested: "Démos testées",
@@ -1008,8 +1014,34 @@ export function metricResult(
       // canal que le filtre courant écarte, et la ligne doit tout de même
       // pouvoir se montrer.
       return byPeople(messagesSent(allRows), newlyContacted(allRows, period));
+    /*
+      **Les deux colonnes d'invitation ouvrent leur liste par `inviteAcceptance`**
+      — la fonction qui en rend déjà le taux sur la vue d'ensemble et les deux
+      colonnes du tableau des campagnes. Recompter ici, même d'un `filter`
+      identique, ferait deux définitions de « invitation acceptée » : la pastille
+      et sa liste pourraient alors différer, et c'est précisément ce que
+      l'invariant du jalon 109 interdit.
+    */
+    case "invites":
+      return byEvents(inviteAcceptance(rows).sent);
+    case "invites_accepted":
+      return byEvents(inviteAcceptance(rows).accepted);
     case "replies":
       return byPeople(replies(rows), peopleReplied(rows));
+    /*
+      **Les réponses non classées ouvrent leur propre liste**, et c'est un défaut
+      réel corrigé au jalon 114 : la ligne affichait le nombre de réponses **non
+      classées** et ouvrait la liste des **personnes ayant répondu** — « 11 »
+      au-dessus d'une liste de 22 lignes. Trouvé par le contrôle d'invariant
+      relancé sur une période large, pas à la relecture ; exactement le même
+      défaut que la ligne par canal du jalon 113 v2, et au même endroit : une
+      carte dont les lignes partagent un lien avec leur titre.
+
+      Comptées en **événements** : une personne peut avoir deux réponses dont une
+      seule classée, et c'est bien le nombre de réponses à classer qu'on cherche.
+    */
+    case "replies_uncategorised":
+      return byEvents(uncategorisedReplies(rows));
     case "positive":
       return byPeople(positiveReplies(rows), peoplePositive(rows));
     case "demos_sent":

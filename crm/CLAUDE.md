@@ -384,6 +384,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 114 | **L'onglet Campagnes achevé, et le compteur rendu au pouce** : le brief du jalon 113 v2 s'arrêtait au milieu de l'onglet 4 et ne portait aucun test d'acceptation ; celui-ci le termine. **Trois colonnes de plus et un tri qui se partage** : « Invitations acceptées » à part des réponses (une invitation acceptée n'est pas une réponse, c'est une porte qui s'ouvre), une puce d'état et une puce d'origine par campagne, et **chaque colonne numérique triable au clic sur son en-tête, dans les deux sens, avec `aria-sort`** — ce qui a imposé de refaire la liste de cartes en **vrai tableau**, puisque `aria-sort` ne vit que sur un `<th>` ; le tri voyage dans l'URL (`tri`, `sens`), donc la vue triée se partage et survit au rechargement, et les valeurs absentes restent en bas **dans les deux sens**. **L'état d'une campagne devient un fait relevé** : la synchronisation lit `GET /campaigns` et `GET /v2/campaigns/{id}/stats` — deux appels en **lecture seule**, le `/v2/` étant dans le chemin et les deux dates obligatoires — et stocke `status`, `nbLeads`, `nbLeadsLaunched` dans `lemlist_campaigns` ; le relevé gagne alors sur la déduction par trente jours de silence, qui était la limite documentée au jalon 113 v2, et l'écran dit au survol lequel des deux on regarde. De là, la phrase du brief : **« Campagne en pause : 3 prospects attendent d'être lancés »**, dont le 3 vient de `nbLeads − nbLeadsLaunched` et **jamais** du journal — un événement ne parle que de ce qui est déjà parti, donc par construction il ne peut rien dire de ce qui attend ; sans relevé, l'écran se tait plutôt que d'écrire « 0 ». **Et le compteur manuel revient à portée du pouce** sous 768 px, au-dessus des objectifs : un seul compteur dans le document, déplacé par `order`, jamais un second bloc masqué par point de rupture (ce seraient deux `localStorage` et un « +1 » cliqué dans celui que l'autre ne voit pas). Mesuré avant d'y toucher, et c'était le vrai obstacle : à 390 px, **huit filtres empilés font 534 px de haut**, soit les deux tiers de l'écran avant le premier chiffre — la barre se défile désormais du doigt sous 768 px et reprend `flex-wrap` au-dessus, le bureau inchangé. Vérifié dans un navigateur, sur une base semée : **16 tris** (8 colonnes × 2 sens) avec leur `aria-sort` et l'ordre réellement obtenu, la colonne « Invitations acceptées » qui ouvre une liste ne contenant **que** des `linkedin_invite_accepted` et de la longueur annoncée, la phrase de pause à 3, et « +1 DM LinkedIn » **atteignable et cliquable sans défiler** à 390 × 844 — `reachable()`, pas `isVisible()`. **Deux défauts réels du produit** que la relecture n'avait pas vus : l'étiquette de valeur d'une barre de « Dans le temps », dessinée par-dessus son propre lien, **volait le clic de la barre** dès qu'elle montait assez haut — sur un téléphone, le nombre est exactement ce qu'on vise, et taper dessus ne faisait rien ; et la ligne « Réponses non classées » affichait 11 et ouvrait la liste des 22 personnes ayant répondu, faute d'indicateur à elle. Le second n'est apparu qu'en **élargissant la période**, d'où un contrôle d'invariant qui accepte maintenant des paramètres : rejoué sur deux périodes, **321** puis **326 chiffres**, zéro écart | **livré, à valider** |
 | 113 v2 | **Pilotage en quatre onglets, d'après le prototype validé** : « Dans le temps » du jalon 113 **reste** et devient l'onglet 2 ; ce jalon le complète et en ajoute trois. Les préalables d'abord. Les parties 1 et 2 de la partie 0 **étaient déjà faites** (dates vérifiées, bouton de reprise livré, PR #84) et ne sont pas refaites. Trois ajouts de données : `Company.niche` en texte libre avec suggestions et regroupement pliant casse et accents ; **deux colonnes de provenance** (`nicheSource`, `visitorsSource`) qui servent une seule règle — une valeur tapée dans le CRM n'est **jamais** écrasée par la synchronisation, et la migration déclare `crm` les trafics déjà saisis parce que le CRM en était jusqu'ici le seul chemin d'écriture ; et `OutreachEvent.stepIndex`/`stepType`, **convertis depuis le `sequenceStep` indexé à zéro** de lemlist (vérifié dans la documentation publiée : un décalage d'une unité attribuerait à l'étape 2 ce que l'étape 3 a produit). Deux fonctions partagées par les quatre onglets : les **cinq tranches** de taille — l'intervalle 10 000 à 15 000, rangé dans « non renseigné » au jalon 109 faute de brief, devient « Intermédiaires » — et la **règle d'échantillon** (moins de 10 « à ne pas interpréter », 10 à 29 « échantillon faible », 30 et plus « fiable »), avec **le `n` à côté de chaque taux sur chaque onglet**, une puce hachurée sous dix, et une comparaison qui se taît sous trente d'un seul côté, sur un taux nul ou sous 1,5 fois d'écart. Les quatre onglets partagent dix filtres dans l'URL et laissent leurs réglages locaux derrière. **Une seule porte** (`lib/api/pilotage-view.ts`) lit l'URL, borne la période, attribue les campagnes et filtre : la garde statique du jalon 109, qui exigeait la suite de *la* page, exige maintenant qu'aucun des cinq écrans ne la refasse — déplacée, pas affaiblie, et éprouvée en recopiant `applyFilters` dans un onglet. Mesuré : **780 chiffres cliquables** sur les quatre onglets et les douze vues du graphique, **zéro écart** entre le nombre affiché et la longueur de sa liste. Un défaut réel de ma propre version trouvé par cette vérification et non à la relecture : une ligne de canal affichait les **personnes** touchées et ouvrait la liste des **messages** — « 1 » au-dessus de deux lignes. Relevé au passage, et mesuré : `muted` ne donne que **4.42:1** sur le fond `#F5F6FA` du prototype — sous le seuil AA, là où il tient 4.77:1 sur blanc —, donc le texte secondaire posé sur ce fond est `closed` (5.17:1) | **livré, à valider** |
 | 113 | **« Dans le temps » refondu, et ses dates vérifiées d'abord** : la partie 1 a nommé la cause réelle du trou de septembre, et ce n'était pas une histoire de dates. Les événements lemlist **ont toujours porté la date de leur activité** — une seule écriture (`lemlist-sync.ts`, `occurredAt: activity.occurredAt`) alimentée par `readLemlistActivity`, qui lit `createdAt` et **refuse l'activité** si la date est illisible plutôt que de retomber sur l'instant de l'import ; mesuré : une activité du 20 octobre synchronisée le 7 novembre tombe dans la semaine du 19 octobre. Le vrai défaut était ailleurs : **la reprise du jalon 109 n'avait aucun appelant** — ni cron, ni workflow, ni démarrage, ni bouton — depuis deux jalons, donc les 52 emails de septembre dormaient dans `email_sends` sans jamais devenir des événements. Un bouton dans `/reglages` la rend atteignable, avec les comptes **avant/après par type** ; mesuré : 80 événements repris, 56 en septembre sur quatre semaines, et **0 au second passage**. Ajouté au passage : une ligne déjà importée dont la date est fausse **se corrige** à la resynchronisation au lieu d'être définitive (la contrainte d'unicité empêchait de la réécrire), sans doublon et sans toucher ni le contact ni le type. Côté graphique : indicateur, vue et granularité dans l'URL, la plage qui commence au premier fait, la cible tracée **période par période** (20 en jour, 100 en semaine, 420/440/460 en mois selon les jours ouvrés), une infobulle qui dit les dates exactes, les parts, l'écart à la cible, l'évolution et l'origine, une légende cliquable où chaque canal porte **un motif et une forme** et pas seulement une couleur, et le clic qui ouvre la liste du seau. L'invariant du jalon 109 vérifié sur **913 points** : zéro écart entre la valeur d'un point et la longueur de sa liste, en Total comme en Par canal, pour le jour, la semaine et le mois | **livré, à valider** |
 | 112 | **Un compteur pour ce qu'aucun outil ne voit partir** : les deux préalables d'abord. `manualDone` de lemlist — « tâche manuelle achevée » **dans leur interface** — reste hors de tout compte, et la garde le vérifie sur la **conséquence** et non sur la table : la ligne que la synchronisation écrirait, passée à `messagesSent`, rend un tableau vide, donc un même geste ne peut pas compter une fois cliqué ici et une fois importé de là. Et `logActivity` offrait bien une partie du travail — il écrit déjà un `message_sent` pour un appel, un message LinkedIn ou un DM Instagram — mais lui manquent trois choses qui sont tout l'écart : il **exige une fiche**, il ne connaît pas WhatsApp, et il crée une tâche de prochaine action. Le compteur n'écrit donc **que** dans le journal, jamais une interaction : écrire les deux doublerait le message. Cinq boutons, un lot annulable d'un geste (les lignes d'une saisie partagent un préfixe d'identifiant, donc aucune colonne de regroupement ajoutée), le propriétaire retenu par appareil dans un `localStorage` **sous `try/catch`** — l'accès lève en navigation privée, il ne rend pas `null`. `OutreachEvent.contactId` devient **facultatif**, et la conséquence est bornée par construction : tout ce qui compte des gens passe par `contactsOf`, seul endroit où le nul est filtré, donc une ligne sans fiche entre dans « messages envoyés » et dans **aucun** indicateur par personne. Mesuré : pastille, graphique et liste passent ensemble de 6 à 9 puis reviennent à 6, et la liste porte sa ligne « sans contact » pour que le nombre reste la longueur de la liste. Un défaut de ma première version, trouvé une fois sur six à la recette et corrigé dans le produit : le serveur ne connaissant pas `localStorage`, le bloc rendait « Qui a envoyé ces messages ? » même sur un appareil qui avait déjà répondu, d'où un clignotement et une course | **livré, à valider** |
@@ -17419,3 +17420,275 @@ est devenu l'onglet « Segments » tout entier, le second est devenu un **filtre
 communes — les deux nouveaux tableaux passent par elle — mais le tableau
 « par fonction » n'existe plus en tant qu'écran. Si la lecture par fonction
 manque, elle se recrée en une ligne : c'est le même appel, avec un autre axe.
+
+---
+
+## Jalon 114 — l'onglet Campagnes achevé, et le compteur rendu au pouce
+
+Le brief du jalon 113 v2 s'arrêtait au milieu de l'onglet 4 — « colonnes
+personnes, messages (invitations comprises, avec une note d'une ligne que » — et
+ne portait aucune liste de test d'acceptation. Ce jalon le termine, contre le
+prototype validé, et ferme les deux dettes que la section « ce qui ne l'est
+pas » du jalon précédent nommait : l'état déduit d'un silence, et le compteur
+manuel devenu inatteignable sur un téléphone.
+
+```
+lib/api/lemlist-client.ts       + GET /campaigns et GET /v2/campaigns/{id}/stats
+lib/api/lemlist-sync.ts         + refreshCampaigns() — le relevé, borné
+lib/domain/campaigns-board.ts   + l'état relevé, l'attente, le tri
+components/pilotage/campaign-board.tsx   la liste de cartes devient un tableau
+components/pilotage/campaign-steps.tsx   le panneau d'étapes + la phrase de pause
+components/pilotage/filter-bar.tsx       une rangée qui se défile sous 768 px
+components/pilotage/timeline-plot.tsx    les étiquettes ne volent plus le clic
+prisma/migrations/57_lemlist_campaigns/  la table du relevé
+scripts/check-pilotage-invariant.mjs     + PARAMS, pour vérifier une autre période
+```
+
+### Pourquoi une liste de cartes est devenue un tableau
+
+Le brief demande « chaque colonne numérique triable au clic sur son en-tête,
+dans les deux sens, avec `aria-sort` ». **`aria-sort` ne se pose que sur un
+`<th>`** : la liste de cartes du jalon 113 v2 n'avait pas d'en-têtes, donc pas
+d'endroit où le dire. Rendre les colonnes triables sans l'annoncer aurait fait
+un tri que seule la souris peut voir.
+
+Les en-têtes sont des **liens**, pas des boutons : le tri vit dans l'URL
+(`tri`, `sens`, tous deux dans `LOCAL_PARAMS`), donc la vue triée se partage et
+survit à un rechargement — la règle du jalon 1 — et l'écran reste rendu côté
+serveur, sans un octet de JavaScript pour trier. Le sens se lit **deux fois** :
+une flèche qui se voit, `aria-sort` qui se dit.
+
+Trois décisions dans `sortBoard`, et chacune évite un tableau qui ment :
+
+1. **les valeurs absentes restent en bas dans les deux sens.** Un taux `null`
+   veut dire « rien à convertir » ; inverser le tri ne doit pas en faire le
+   meilleur résultat du tableau (la règle du jalon 30) ;
+2. **le libellé départage toujours**, pour que deux lignes à égalité ne changent
+   pas d'ordre d'un rendu à l'autre — un tableau qui se réordonne tout seul au
+   rechargement est un tableau qu'on croit buggé ;
+3. **cliquer une autre colonne repart en décroissant**, et seule la colonne déjà
+   active s'inverse. Repartir en croissant mettrait en tête la campagne qui a le
+   moins produit, c'est-à-dire la ligne qu'on ne cherchait pas.
+
+### « Invitations acceptées » est une colonne, pas une réponse
+
+Une invitation acceptée n'est pas une réponse : c'est une porte qui s'ouvre. La
+mélanger au taux de réponse le ferait monter sans qu'un seul message ait été lu
+— le refus déjà posé sur la vue d'ensemble au jalon 113 v2, appliqué ici à la
+ligne de campagne.
+
+Le chiffre et la liste qu'il ouvre sortent de **la même fonction**
+(`inviteAcceptance`), qui rend déjà le taux de la quatrième carte. Deux
+`filter` identiques écrits à deux endroits feraient deux définitions, donc deux
+nombres — c'est exactement l'invariant du jalon 109, étendu à deux indicateurs
+nouveaux (`invites`, `invites_accepted`).
+
+### L'état d'une campagne devient un fait relevé
+
+Au jalon 113 v2, il était **toujours** déduit d'un silence de trente jours,
+parce qu'une activité lemlist ne porte aucun état de campagne — vérifié contre
+le schéma publié de l'objet Activity. Une campagne arrêtée pour de bon et une
+campagne simplement muette se lisaient donc pareil.
+
+La documentation publiée de lemlist donne les deux routes qui manquaient, et
+les deux sont en **lecture** :
+
+| Route | Ce qu'on en garde | Piège |
+|---|---|---|
+| `GET /api/campaigns?version=v2` | `_id`, `name`, `status` | `status` ∈ running, paused, draft, ended, archived, errors |
+| `GET /api/v2/campaigns/{id}/stats` | `nbLeads`, `nbLeadsLaunched` | le `/v2/` est dans **le chemin**, et `startDate`/`endDate` sont **obligatoires** |
+
+`LemlistCampaign` (`lemlist_campaigns`) stocke les trois valeurs. **Ce n'est pas
+un statut tenu à la main** : ce que `lib/domain/campaign-status.ts` interdit,
+c'est d'entretenir un état qu'on pourrait calculer ; recopier ce que l'outil
+source déclare est l'inverse exact. L'ordre est donc : une campagne du CRM
+archivée est terminée (décision humaine), **puis** l'état relevé, **puis** la
+déduction par le silence — et la puce dit au survol lequel des trois on
+regarde.
+
+Les six états de lemlist se rangent dans trois puces, `draft` et `errors` avec
+« en pause » : lemlist n'envoie plus, et dire « en cours » ferait croire que le
+travail avance. **Un état inconnu rend `null`** plutôt qu'un repli : si lemlist
+en ajoute un demain, mieux vaut retomber sur la déduction que de ranger une
+nouveauté dans une case au hasard.
+
+Le relevé est **borné**, et chaque borne a sa raison : les statistiques ne sont
+demandées que pour les campagnes que le journal connaît déjà ou que lemlist
+déclare en pause, 40 au plus par passage (le plafond publié est de 20 requêtes
+par 2 secondes), le dépassement est **dit** plutôt que franchi en silence, un
+échec du relevé ne fait pas échouer la synchronisation, et **un compte connu
+n'est jamais écrasé par un nul**.
+
+### La phrase de pause, et pourquoi son nombre ne peut pas venir du journal
+
+> Campagne en pause : 3 prospects attendent d'être lancés
+
+Le 3 est `nbLeads − nbLeadsLaunched`. **Le journal ne peut pas le produire** :
+un événement ne parle que de ce qui est déjà parti, donc par construction il ne
+dit rien de ce qui attend. C'est toute la raison de l'appel aux statistiques.
+
+`waitingToLaunch` rend `null` — « on ne sait pas » — quand l'un des deux comptes
+manque, et **refuse un compte négatif** au lieu de le ramener à zéro : plus de
+lancés que d'inscrits voudrait dire qu'on a mal lu la route, et un
+`Math.max(0, …)` cacherait précisément ce qu'il faut voir. `pausedNotice` se
+tait dans trois cas (pas en pause, compte inconnu, personne en attente), parce
+que « 0 prospect attend d'être lancé » est une phrase vraie et inutile, et que
+la répéter sur chaque campagne apprendrait à ne plus la lire.
+
+### Le compteur manuel, et le vrai obstacle sur un téléphone
+
+Le jalon 113 v2 écrivait : « Si le geste compte plus que la mise en page, le
+remonter au-dessus des objectifs sur petit écran est une ligne de CSS. » C'était
+**faux, et la mesure l'a montré** : le compteur remonté en tête, son bouton
+tombait encore à 829 px sur un écran de 844, parce que la barre de filtres
+occupait **534 px** — huit filtres empilés, les deux tiers d'un téléphone
+consommés par des menus qu'on ne change presque jamais.
+
+Deux changements, donc, et le second était l'obstacle réel :
+
+1. **un seul compteur dans le document**, déplacé par `order-first
+   md:order-none` dans une grille unique qui porte les quatre blocs. Le réflexe
+   aurait été d'en rendre deux et d'en masquer un par point de rupture : ce
+   seraient deux blocs d'état client, deux `localStorage`, deux listes
+   d'annulation — et un « +1 » cliqué dans celui que l'autre ne voit pas. Une
+   garde statique compte les occurrences ;
+2. **la barre de filtres se défile du doigt sous 768 px** (`flex` sans
+   `flex-wrap`, `overflow-x-auto`) et reprend `flex-wrap` au-dessus. C'est le
+   même geste que la bande de portraits du jalon 15, et le bureau est inchangé.
+
+**L'ordre du document ne bouge pas** — objectifs, indicateurs, entonnoir,
+compteur — et c'est délibéré : le bureau reste identique jusqu'à l'ordre de
+tabulation. Le prix est payé sous 768 px, où le compteur se voit en premier et
+se tabule en dernier. C'est le bon sens de l'écart : sur un téléphone on atteint
+ce bloc du pouce, et le brief demande qu'il soit cliquable **sans défiler**, pas
+qu'il soit le premier au clavier.
+
+### Jalon 114 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16**, le serveur standalone de production et un
+Chromium réel, sur une base semée pour la recette (80 fiches réparties sur six
+semaines, deux campagnes lemlist, une troisième en pause avec son relevé) :
+
+- **la migration 57 est fidèle au schéma** : schéma précédent poussé sur une
+  base jetable, le SQL écrit à la main appliqué, puis
+  `prisma migrate diff --from-url … --to-schema-datamodel` → « No difference
+  detected » ;
+- **16 tris** — les huit colonnes numériques, dans les deux sens — avec, à
+  chaque fois : l'URL qui porte `tri` et `sens`, l'en-tête qui annonce
+  `aria-sort="ascending"` ou `"descending"`, **les sept autres colonnes à
+  `"none"`**, et l'ordre **réellement obtenu** relu dans le DOM, valeurs
+  absentes en fin dans les deux sens ;
+- **« Invitations acceptées » ouvre ses propres événements** : le nombre de la
+  colonne, la longueur de la liste et le compte en base coïncident, et **toutes**
+  les lignes de la liste portent `data-type="linkedin_invite_accepted"` ;
+- **la phrase de pause** dit « Campagne en pause : 3 prospects attendent d'être
+  lancés » sur la campagne semée à 12 inscrits et 9 lancés, avec
+  `data-waiting="3"` ;
+- **le relevé gagne sur la déduction** : une campagne qui porte des faits de
+  cette semaine mais que lemlist déclare `ended` s'affiche « Terminée », puce
+  marquée « relevée » ; une campagne du CRM, sans relevé, garde une puce
+  « déduite » et le dit au survol ;
+- **à 390 × 844, « +1 DM LinkedIn » est atteignable au chargement**, sans un
+  seul défilement — `reachable()`, qui interroge le document au centre du
+  bouton, et non `isVisible()`, qui ne voit pas un ancêtre qui rogne. Le clic
+  fait monter le compte du canal, et le bloc reste au-dessus des objectifs ;
+- **à 1440, rien n'a bougé** : le compteur est à droite de l'entonnoir, sur la
+  même bande, et sous les objectifs ;
+- **onze gardes statiques nouvelles**, dont **quatre éprouvées en réintroduisant
+  le défaut exact** : `aria-sort` retiré des en-têtes, un second
+  `<ManualCounter>` masqué par point de rupture (deux gardes tombent), la phrase
+  de pause recomposée dans la vue, et un `POST` dans le client lemlist — chacune
+  nomme le fichier fautif ;
+- **le connecteur lemlist reste en lecture** : une garde compte les requêtes du
+  client (une seule) et les méthodes émises (`GET`, et rien d'autre) ;
+- **l'invariant du jalon 109 rejoué deux fois** : **321 chiffres** sur la
+  semaine en cours et **326** sur une période libre de quatre mois, **zéro
+  écart** entre le nombre affiché et la longueur de la liste qu'il ouvre ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**2 233 tests**) et la
+  suite de navigateur verts — **42 fichiers, 177 tests**, un fichier ignoré par
+  conception (`pilotage-manual`, qui attend `E2E_CONTACT_CLICKED`).
+
+**Deux défauts réels du produit, trouvés par la recette et non à la relecture.**
+
+**Le premier : le nombre posé sur une barre volait son clic.** Dans « Dans le
+temps », l'étiquette de valeur est un frère du lien, dessinée **après** lui, et
+le lien couvre toute la hauteur de la colonne. Dès qu'une barre monte assez,
+l'étiquette tombe pile au centre du lien — et c'est elle que le doigt touche. Sur
+un téléphone, le nombre est précisément ce qu'on vise, et taper dessus ne faisait
+rien. Les quatre étiquettes du tracé sont désormais traversantes
+(`pointer-events: none`) : elles se lisent, elles ne s'attrapent pas. Le défaut
+ne s'est montré qu'avec une base dont la dernière barre est haute — c'est la
+suite de navigateur qui l'a attrapé, en échouant sur un `tap` que rien ne
+bloquait à l'œil.
+
+**Le second**, trouvé par le contrôle d'invariant : la ligne « Réponses non
+classées » de la vue d'ensemble affichait
+le nombre de réponses **non classées** (11) et ouvrait la liste des **personnes
+ayant répondu** (22 lignes). Même défaut, même carte et même cause qu'au jalon
+113 v2 : une ligne secondaire qui emprunte l'indicateur de son titre. Elle a
+désormais le sien (`replies_uncategorised`), compté en événements — une personne
+peut avoir deux réponses dont une seule classée, et c'est bien le nombre de
+réponses **à classer** que la ligne annonce.
+
+Et celui-là ne s'est vu qu'en **élargissant la période** : la semaine en cours ne
+portait aucune réponse non classée, donc le lien n'était pas rendu. Le contrôle
+accepte maintenant des paramètres (`PARAMS="periode=libre&du=…&au=…"`), et c'est
+le second passage qui a parlé.
+
+**Deux défauts de la recette elle-même, qui faisaient échouer des tests sur des
+écrans corrects** :
+
+1. **la base de recette était datée en dur** (5 octobre), donc le pilotage
+   s'ouvrait sur une semaine vide un mois plus tard. Les faits sont maintenant
+   posés par rapport à maintenant, et jamais dans le futur ;
+2. **les réponses tombaient dans deux semaines sur six** — le même indice
+   décidait de la semaine *et* du tirage —, donc les deux séries de la courbe
+   des tranches valaient 0 % quatre semaines sur six. Le tirage se fait
+   maintenant sur le rang dans la semaine.
+
+Le second a révélé une **fragilité du test**, pas du produit : la suite visait
+« le premier point du document », c'est-à-dire celui de la série tracée en
+**dessous**. Quand deux taux sont proches, le marqueur du dessus le recouvre et
+le pointeur ne l'atteint plus — une propriété de tout tracé à deux séries. Le
+test vise désormais la série du dessus, et vérifie en plus que la bande de
+détail porte **les deux tranches** de la période survolée : c'est ce qui rend le
+recouvrement sans conséquence pour la lecture.
+
+### Jalon 114 — ce qui ne l'est pas
+
+**Une erreur d'hydratation vue une fois, non reproduite.** À l'avant-dernier
+passage de la suite, `/departs` a renvoyé une erreur React 418 (le HTML rendu au
+serveur ne correspondait pas à celui du client) relevée par le collecteur
+d'erreurs de console. Rejouée seule et aux deux passages suivants, elle n'est pas
+revenue, et rien de ce jalon ne touche cet écran. Je ne sais donc pas la
+reproduire, et je ne la déclare pas corrigée : elle est notée ici pour qu'elle
+soit reconnue si elle revient.
+
+**Les deux routes lemlist n'ont pas été appelées pour de vrai.** Il n'y a pas de
+clé dans cet environnement, et le connecteur est en lecture seule de toute
+façon. Les formes de réponse sont celles de la documentation publiée
+(`_id`/`name`/`status`, `nbLeads`/`nbLeadsLaunched`), le relevé a été exercé sur
+des lignes semées à la main dans `lemlist_campaigns`, et le lecteur accepte les
+deux formes de réponse connues (`[…]` et `{campaigns: […]}`) plutôt que de
+parier sur une seule. Ce que seule la production établira : que `GET /campaigns`
+rend bien ces champs sur ce compte, et que le plafond de 40 statistiques par
+passage suffit.
+
+**L'ordre du document et l'ordre visuel divergent sous 768 px.** Le compteur se
+voit en premier et se tabule en dernier. C'est le prix d'un seul compteur dans
+le document, et il est payé là où le geste est tactile. Si quelqu'un travaille
+au clavier sur un téléphone, c'est un vrai inconfort, et la réponse serait de
+rendre deux blocs dont un seul monté — avec l'état partagé que cela suppose.
+
+**La barre de filtres, sous 768 px, se défile sans l'annoncer.** Rien ne dit
+qu'il reste des filtres à droite : c'est le défaut connu de ce motif. Une ombre
+de bord ou un compteur « 8 filtres » le dirait ; ce n'est pas fait.
+
+**Le rendu visuel n'a toujours pas été comparé au prototype** — il n'est pas
+dans le dépôt. Ce qui est vérifié, ce sont les colonnes, les puces, les textes,
+les attributs et les positions, pas la ressemblance.
+
+**Deux dettes du jalon 113 v2 sont fermées par celui-ci** : « terminée » n'est
+plus toujours une déduction, et le compteur manuel est de nouveau atteignable en
+un geste sur un téléphone. La troisième reste ouverte : la niche n'entre
+toujours pas dans l'export CSV des sociétés.

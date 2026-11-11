@@ -108,7 +108,16 @@ export default async function OverviewPage({
         {
           label: "Réponses non classées",
           value: String(uncategorised),
-          href: uncategorised === 0 ? null : listHref(params, "replies", {}, "/pilotage"),
+          /*
+            **Son propre indicateur, et pas « replies ».** La ligne compte les
+            réponses *non classées* ; ouvrir la liste des personnes ayant répondu
+            affichait « 11 » au-dessus de 22 lignes — le défaut que le contrôle
+            d'invariant a relevé au jalon 114.
+          */
+          href:
+            uncategorised === 0
+              ? null
+              : listHref(params, "replies_uncategorised", {}, "/pilotage"),
         },
       ],
       hint:
@@ -170,38 +179,71 @@ export default async function OverviewPage({
         sources={data.sources}
       />
 
-      <section className="mb-4">
-        <ObjectiveCards objectives={objectives} />
-      </section>
+      {/*
+        **Une seule grille pour les quatre blocs, et un seul compteur dans le
+        document.**
 
-      <section className="mb-4">
-        <KpiCards kpis={kpis} />
-      </section>
+        Le brief du jalon 114 demande le compteur **en haut** sous 768 px, au-dessus
+        des objectifs, et **inchangé** au-dessus. La tentation est d'en rendre deux
+        exemplaires et d'en masquer un par point de rupture : ce serait deux blocs
+        d'état client, deux fois le même `localStorage`, deux listes d'annulation —
+        et le jour où l'on clique « +1 » dans celui que l'autre ne voit pas, la
+        page se contredit elle-même. Les quatre blocs sont donc les enfants d'une
+        **seule** grille, et c'est `order` qui déplace le compteur.
 
-      <section className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        <FunnelView
-          steps={steps}
-          asShare={query.asShare}
-          toggleHref={sameHere("/pilotage", params, { part: query.asShare ? "" : "1" })}
-          href={(name) => listHref(params, name, {}, "/pilotage")}
-        />
+        **L'ordre du document ne bouge pas**, et c'est délibéré : il reste
+        objectifs, indicateurs, entonnoir, compteur, donc le bureau est inchangé
+        jusqu'à l'ordre de tabulation. Le prix est payé sous 768 px, où le
+        compteur se voit en premier et se tabule en dernier. C'est le bon sens de
+        l'écart : sur un téléphone on atteint ce bloc du pouce, et le brief
+        demande qu'il soit **cliquable sans défiler** — pas qu'il soit le premier
+        au clavier.
+      */}
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <section className="xl:col-span-2 xl:row-start-1">
+          <ObjectiveCards objectives={objectives} />
+        </section>
+
+        <section className="xl:col-span-2 xl:row-start-2">
+          <KpiCards kpis={kpis} />
+        </section>
+
+        <section className="xl:col-start-1 xl:row-start-3">
+          <FunnelView
+            steps={steps}
+            asShare={query.asShare}
+            toggleHref={sameHere("/pilotage", params, { part: query.asShare ? "" : "1" })}
+            href={(name) => listHref(params, name, {}, "/pilotage")}
+          />
+        </section>
+
         {/*
-          **Le compteur reste à côté de l'entonnoir, et il reste atteignable
-          même quand la période est vide.** C'est l'erreur du jalon 19 à ne pas
-          refaire : un bloc rendu après un retour anticipé « rien à afficher »
-          disparaît exactement le jour où l'on en a le plus besoin — une base
-          neuve, où le premier geste est justement de compter.
+          **Le compteur reste à côté de l'entonnoir sur grand écran, et il reste
+          atteignable même quand la période est vide.** C'est l'erreur du jalon 19
+          à ne pas refaire : un bloc rendu après un retour anticipé « rien à
+          afficher » disparaît exactement le jour où l'on en a le plus besoin —
+          une base neuve, où le premier geste est justement de compter.
+
+          `order-first md:order-none` : premier sous 768 px, à sa place au-dessus.
+          Le point de rupture est bien `md` (768 px) et non `xl`, parce que c'est
+          celui que le brief nomme ; entre les deux, la colonne unique garde
+          l'ordre du document, comme avant ce jalon.
         */}
-        <ManualCounter
-          owners={data.owners}
-          contacts={data.contactOptions}
-          initialToday={data.manual.today}
-          initialHistory={data.manual.history.map((entry) => ({
-            ...entry,
-            at: entry.at.toISOString(),
-          }))}
-        />
-      </section>
+        <section
+          data-counter-slot
+          className="order-first md:order-none xl:col-start-2 xl:row-start-3"
+        >
+          <ManualCounter
+            owners={data.owners}
+            contacts={data.contactOptions}
+            initialToday={data.manual.today}
+            initialHistory={data.manual.history.map((entry) => ({
+              ...entry,
+              at: entry.at.toISOString(),
+            }))}
+          />
+        </section>
+      </div>
     </div>
   );
 }

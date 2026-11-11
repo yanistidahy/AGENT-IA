@@ -49,9 +49,22 @@ export function FilterBar({
   const periode = value("periode") === "" ? "semaine" : value("periode");
 
   return (
+    /*
+      **Sous 768 px, la barre se fait défiler sur le côté au lieu de s'empiler.**
+
+      Mesuré avant d'y toucher : à 390 px, huit filtres empilés font **534 px de
+      haut**, c'est-à-dire les deux tiers d'un écran de téléphone consommés par
+      des menus qu'on ne change presque jamais. C'est ce qui repoussait le
+      compteur manuel sous la ligne de flottaison, et le jalon 114 demande
+      précisément qu'il soit cliquable sans défiler.
+
+      Une rangée qui se défile du doigt est le même geste que la bande de
+      portraits du jalon 15, et au-dessus de 768 px `flex-wrap` revient : la
+      barre du bureau est **inchangée**, enveloppe comprise.
+    */
     <div
       data-filter-bar
-      className="mb-4 flex flex-wrap items-end gap-2 rounded-board border border-line bg-surface px-3.5 py-3"
+      className="mb-4 flex items-end gap-2 overflow-x-auto rounded-board border border-line bg-surface px-3.5 py-3 [&>*]:shrink-0 md:flex-wrap md:overflow-x-visible md:[&>*]:shrink"
     >
       <Field label="Période">
         <select

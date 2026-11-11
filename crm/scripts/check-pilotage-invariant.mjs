@@ -35,6 +35,21 @@ function chromiumPath() {
 const BASE = process.env.BASE_URL ?? "http://127.0.0.1:3313";
 const PASSWORD = process.env.E2E_PASSWORD ?? "recette";
 
+/**
+ * Des paramètres ajoutés à chaque onglet, par exemple une période libre.
+ *
+ * Ajouté au jalon 114 : sans eux, le contrôle ne voit que « cette semaine », et
+ * une base dont l'histoire est plus large n'est vérifiée qu'au septième. Le
+ * passage se relance avec `PARAMS="periode=libre&du=…&au=…"`.
+ */
+const PARAMS = process.env.PARAMS ?? "";
+
+/** L'URL d'un onglet, avec les paramètres communs ajoutés au bon séparateur. */
+function urlOf(tab) {
+  if (PARAMS === "") return `${BASE}${tab}`;
+  return `${BASE}${tab}${tab.includes("?") ? "&" : "?"}${PARAMS}`;
+}
+
 const TABS = ["/pilotage", "/pilotage/temps", "/pilotage/segments", "/pilotage/campagnes"];
 
 /*
@@ -62,7 +77,7 @@ await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 20
 
 const pairs = [];
 for (const tab of TABS) {
-  await page.goto(`${BASE}${tab}`, { waitUntil: "domcontentloaded" });
+  await page.goto(urlOf(tab), { waitUntil: "domcontentloaded" });
 
   // 1. Toute ancre vers la liste dont le texte est un entier pur.
   const plain = await page.$$eval('a[href*="/pilotage/liste"]', (nodes) =>
@@ -89,7 +104,7 @@ for (const tab of TABS) {
 }
 
 for (const url of TIME_VIEWS) {
-  await page.goto(`${BASE}${url}`, { waitUntil: "domcontentloaded" });
+  await page.goto(urlOf(url), { waitUntil: "domcontentloaded" });
   const marks = await page.$$eval("[data-total], [data-value]", (nodes) =>
     nodes
       .map((node) => {

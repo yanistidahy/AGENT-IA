@@ -16,7 +16,13 @@ import {
   type LemlistActivity,
 } from "../domain/lemlist";
 import { recordOutreachEvent } from "./outreach-events";
-import { hasLemlistKey, readActivityPages, type LemlistError } from "./lemlist-client";
+import {
+  fetchCampaignStats,
+  hasLemlistKey,
+  readActivityPages,
+  readCampaignPages,
+  type LemlistError,
+} from "./lemlist-client";
 
 /**
  * **Un seul écrivain, deux chemins.**
@@ -282,6 +288,132 @@ async function repairEvent(activity: LemlistActivity): Promise<boolean> {
 
   await prisma.outreachEvent.update({ where: { id: known.id }, data: patch });
   return true;
+}
+
+/* --------------------------------------------- l'état des campagnes ---------- */
+
+/** Le nombre de pages de campagnes : 100 par page, donc 5 000 campagnes. */
+const CAMPAIGN_PAGES = 50;
+
+/**
+ * La fenêtre demandée aux statistiques de campagne.
+ *
+ * `startDate` et `endDate` sont **obligatoires** sur cette route : les omettre
+ * est un 400, pas un défaut « depuis toujours ». On la prend donc très large,
+ * parce que ce qu'on cherche n'est pas une mesure de période mais un **état
+ * courant** : combien de prospects la campagne contient, combien ont été
+ * lancés. Une fenêtre étroite rendrait « 0 prospect en attente » sur une
+ * campagne pleine simplement parce qu'elle dort depuis un mois.
+ */
+const STATS_WINDOW_YEARS = 10;
+
+/**
+ * **L'état des campagnes lemlist, relevé après les activités.**
+ *
+ * Deux appels de plus par passage, et ils répondent à deux questions que les
+ * activités ne peuvent pas trancher :
+ *
+ * 1. **l'état** — `GET /campaigns` le dit (`running`, `paused`, `ended`…), là
+ *    où l'écran le déduisait d'un silence de trente jours. Une campagne arrêtée
+ *    pour de bon et une campagne simplement muette se lisaient pareil ;
+ * 2. **les prospects en attente** — `nbLeads − nbLeadsLaunched`. Un événement
+ *    ne parle que de ce qui est **parti** ; par construction, il ne peut rien
+ *    dire de ce qui attend.
+ *
+ * **Bornes assumées.** On ne demande les statistiques que des campagnes que le
+ * journal connaît déjà *ou* qui ne sont pas en cours : une campagne active de
+ * mille prospects nous intéresse moins que celle qui dort avec trois personnes
+ * en attente, et un appel par campagne sur un compte qui en a trois cents
+ * consommerait trente secondes de limite de débit à chaque relevé. Le plafond
+ * `STATS_BUDGET` dit la borne, et un relevé qui l'atteint le laisse dire par
+ * son rapport plutôt que de la franchir en silence.
+ *
+ * **Un échec ici ne fait pas échouer le relevé.** Les activités sont déjà
+ * écrites à ce stade, et elles sont l'essentiel ; perdre l'état des campagnes
+ * coûte une puce moins précise, pas un fait. L'erreur est donc comptée et dite,
+ * pas levée.
+ */
+const STATS_BUDGET = 40;
+
+export interface CampaignRefresh {
+  readonly seen: number;
+  readonly withStats: number;
+  readonly skipped: number;
+  readonly error: string;
+}
+
+async function refreshCampaigns(now: Date): Promise<CampaignRefresh> {
+  const pages = await readCampaignPages(CAMPAIGN_PAGES);
+  if (!pages.ok) {
+    return { seen: 0, withStats: 0, skipped: 0, error: pages.error.message };
+  }
+
+  const rows = pages.data;
+  /*
+    Les campagnes que le journal a déjà vues passer : ce sont celles que l'écran
+    affiche, donc les seules dont l'état change quelque chose à ce qui est lu.
+  */
+  const known = new Set(
+    (
+      await prisma.outreachEvent.findMany({
+        where: { extCampaignId: { not: "" } },
+        distinct: ["extCampaignId"],
+        select: { extCampaignId: true },
+      })
+    ).map((row) => row.extCampaignId),
+  );
+
+  const from = new Date(now.getTime() - STATS_WINDOW_YEARS * 365 * 86_400_000);
+  let withStats = 0;
+  let skipped = 0;
+  let error = "";
+
+  for (const row of rows) {
+    /*
+      **L'état est écrit pour toutes les campagnes, les statistiques pour
+      quelques-unes.** Écrire l'état coûte zéro appel — il est déjà dans la
+      réponse ; demander les statistiques coûte un appel par campagne.
+    */
+    let stats: { leads: number; leadsLaunched: number } | null = null;
+    const wanted = known.has(row.extId) || row.status === "paused";
+    if (wanted && withStats < STATS_BUDGET) {
+      const outcome = await fetchCampaignStats(row.extId, from, now);
+      if (outcome.ok) {
+        stats = outcome.data;
+        withStats += 1;
+      } else if (error === "") {
+        error = outcome.error.message;
+      }
+    } else if (wanted) {
+      skipped += 1;
+    }
+
+    await prisma.lemlistCampaign.upsert({
+      where: { extId: row.extId },
+      create: {
+        extId: row.extId,
+        name: row.name,
+        status: row.status,
+        leads: stats?.leads ?? null,
+        leadsLaunched: stats?.leadsLaunched ?? null,
+        syncedAt: now,
+      },
+      /*
+        **On n'écrase pas un compte connu par du vide.** Une campagne dont les
+        statistiques n'ont pas été redemandées à ce passage garde celles du
+        précédent : afficher « pas encore relevé » là où l'on savait hier serait
+        une régression silencieuse de ce que l'écran peut dire.
+      */
+      update: {
+        name: row.name,
+        status: row.status,
+        ...(stats === null ? {} : { leads: stats.leads, leadsLaunched: stats.leadsLaunched }),
+        syncedAt: now,
+      },
+    });
+  }
+
+  return { seen: rows.length, withStats, skipped, error };
 }
 
 /* ------------------------------------------------- le profil de la marque ---- */
@@ -593,6 +725,14 @@ export async function syncLemlist(): Promise<SyncOutcome> {
   const report = await applyActivities(pages.data.raw);
   const total = Object.values(report.written).reduce((sum, count) => sum + count, 0);
 
+  /*
+    **L'état des campagnes se relève après les activités, et son échec ne fait
+    pas échouer le relevé.** Les activités sont déjà écrites à ce stade et elles
+    sont l'essentiel ; perdre l'état d'une campagne coûte une puce moins précise,
+    pas un fait. Le rapport le dit plutôt que de le taire.
+  */
+  const campaigns = await refreshCampaigns(startedAt);
+
   await prisma.lemlistSync.update({
     where: { id: "singleton" },
     data: {
@@ -611,6 +751,17 @@ export async function syncLemlist(): Promise<SyncOutcome> {
   const truncatedNote = pages.data.truncated
     ? ` La reprise a été bornée à ${MAX_PAGES} pages : le prochain passage continuera.`
     : "";
+  /*
+    L'état des campagnes est dit, y compris quand il a échoué : sans cette
+    phrase, « la puce d'état vient de lemlist » resterait une promesse du code,
+    et une puce déduite d'un silence ressemblerait à une puce relevée.
+  */
+  const campaignNote =
+    campaigns.error !== ""
+      ? ` L'état des campagnes n'a pas pu être relu : ${campaigns.error}`
+      : campaigns.seen === 0
+        ? ""
+        : ` ${campaigns.seen} campagne${campaigns.seen > 1 ? "s" : ""} relue${campaigns.seen > 1 ? "s" : ""}, dont ${campaigns.withStats} avec leurs prospects en attente${campaigns.skipped > 0 ? ` (${campaigns.skipped} au-delà du plafond de ce passage)` : ""}.`;
   return {
     ok: true,
     status: "connected",
@@ -629,7 +780,7 @@ export async function syncLemlist(): Promise<SyncOutcome> {
       report.profilesFilled > 0
         ? `. Niche ou trafic renseignés sur ${report.profilesFilled} marque${report.profilesFilled > 1 ? "s" : ""} (une valeur saisie dans le CRM n'est jamais écrasée)`
         : ""
-    }.${truncatedNote}`,
+    }.${campaignNote}${truncatedNote}`,
     report,
     fullHistory,
   };
