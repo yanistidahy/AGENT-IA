@@ -108,6 +108,12 @@ export const NOT_BACKED_UP: readonly SkippedTable[] = [
     consequence: "Les agents reprennent leurs initiales jusqu'au prochain téléversement.",
   },
   {
+    model: "Subscription",
+    label: "Abonnements Mollie",
+    consequence:
+      "Une restauration n'y touche pas : la table n'a aucune clé étrangère vers les tables restaurées. Une base perdue entièrement ne les rend pas, et le lien se reconstruit alors depuis le tableau de bord Mollie.",
+  },
+  {
     model: "Conversation",
     label: "Conversations du conseil",
     consequence: "Les échanges avec les agents ne reviennent pas. C'est le plus gros manque restant.",

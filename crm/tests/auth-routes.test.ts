@@ -118,6 +118,16 @@ beforeEach(() => {
  * soit connu, inconnu ou purgé, ne lit ni adresse IP ni agent utilisateur, et ne
  * rend aucune donnée métier.
  *
+ * `/api/abonnement/[token]` — la page de paiement d'un client (abonnements
+ * Mollie). Publique pour la raison du lien de clic : c'est le client d'une
+ * société, sans compte ici, qui l'ouvre depuis le lien qu'on lui a envoyé, et un
+ * écran de connexion serait un lien mort. Elle est fermée par son jeton (256
+ * bits), rend la même 404 qu'un jeton soit inconnu ou mal formé, et ne crée
+ * rien en `GET` : seul le `POST` du bouton ouvre un paiement chez Mollie.
+ *
+ * (`/api/mollie/webhook` est dans `PUBLIC_PATHS`, avec sa raison : la route
+ * relit le paiement chez Mollie avant d'écrire.)
+ *
  * Le **téléversement**, lui, reste privé : c'est `/api/mail/logo` et
  * `/api/mail/video`, deux gestes d'administration, et ils n'ont rien à faire
  * dans cette liste.
@@ -129,6 +139,7 @@ const PUBLIC_API_EXCEPTIONS: readonly string[] = [
   "/api/video/[version]",
   "/api/video/[version]/fichier",
   "/api/l/[token]/[kind]",
+  "/api/abonnement/[token]",
 ];
 
 function isPublicApi(route: string): boolean {

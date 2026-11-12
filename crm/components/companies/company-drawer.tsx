@@ -10,6 +10,7 @@ import { deleteCompany } from "@/lib/client/crm-api";
 import { formatDate, money } from "@/lib/format";
 import { valueSourceLabel } from "@/lib/domain/company-profile";
 import { RecordPanel } from "@/components/activities/record-panel";
+import { SubscriptionPanel } from "@/components/subscriptions/subscription-panel";
 import type { SequenceOption } from "@/components/activities/run-sequence";
 import { CompanyForm } from "./company-form";
 import { contactTitle } from "@/lib/domain/contact-identity";
@@ -258,6 +259,8 @@ export function CompanyDrawer({
               {error}
             </p>
           )}
+
+          <SubscriptionPanel companyId={company.id} />
 
           <RecordPanel
             link={{ companyId: company.id }}

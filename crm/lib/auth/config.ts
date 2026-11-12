@@ -74,6 +74,17 @@ export const PUBLIC_PATHS: readonly string[] = [
    * soit.
    */
   "/api/lemlist/webhook",
+  /**
+   * **Le webhook Mollie.** Mollie ne signe pas ses appels et ne présente aucune
+   * session : le corps ne porte qu'un identifiant de paiement. La défense est
+   * dans la route, pas dans le verrou — elle **relit le paiement chez Mollie avec
+   * notre clé** avant d'écrire quoi que ce soit, donc un appel forgé reçoit un
+   * 404 de Mollie et ne change rien. Voir `app/api/mollie/webhook/route.ts`.
+   *
+   * `/api/subscriptions`, lui, **n'est pas ici** : c'est le bouton de la fiche
+   * société, un geste d'un utilisateur connecté.
+   */
+  "/api/mollie/webhook",
 ];
 
 /** Ressources servies par Next lui-même, jamais porteuses de données métier. */
@@ -126,6 +137,17 @@ const PUBLIC_PREFIXES: readonly string[] = [
    * `app/api/video/[version]/route.ts` et `…/fichier/route.ts`.
    */
   "/api/video/",
+  /**
+   * La page de paiement d'un client (abonnements Mollie).
+   *
+   * **Publique par nécessité** : c'est le client d'une société qui ouvre son lien,
+   * sans compte ici, et un écran de connexion y serait le lien mort qu'on
+   * s'interdit. Elle est fermée par son jeton — 256 bits aléatoires, connus de la
+   * seule personne à qui on l'a envoyé — et rend la même page 404 qu'un jeton
+   * soit inconnu ou mal formé. Elle ne crée rien en `GET` ; seul le bouton
+   * (`POST`) ouvre un paiement. Voir `app/api/abonnement/[token]/route.ts`.
+   */
+  "/api/abonnement/",
 ];
 
 export function isPublicPath(pathname: string): boolean {

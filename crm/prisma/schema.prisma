@@ -2062,3 +2062,81 @@ model LemlistIssue {
   @@index([kind])
   @@map("lemlist_issues")
 }
+
+/// **Un abonnement mensuel Mollie** (jalon 115) : un lien envoyé à un client, le
+/// paiement qu'il déclenche, et l'abonnement qui en découle.
+///
+/// ## Pas de clé étrangère vers `companies`, et c'est voulu
+///
+/// `restoreBackup()` supprime puis recrée toutes les sociétés. Avec une clé
+/// étrangère en `Cascade`, une restauration effacerait les abonnements ; en
+/// `Restrict`, elle échouerait ; en `SetNull`, elle les détacherait de leur
+/// société. Aucune des trois ne convient à une table qui porte l'état de ce
+/// qu'un client **paie réellement**. `companyId` est donc une simple chaîne, et
+/// `companyName` en garde une copie lisible : la ligne reste exploitable même si
+/// la société a été supprimée ou renommée depuis.
+///
+/// Le revers est assumé : rien n'empêche, au niveau de la base, un `companyId`
+/// orphelin. L'écran ne lit les abonnements que par société existante, et un
+/// webhook n'a jamais besoin de la société pour faire son travail.
+///
+/// ## Qui est la source de vérité
+///
+/// **Mollie.** Cette table dit ce que le CRM en a compris. En cas de doute, le
+/// tableau de bord Mollie fait foi, et `companyId` est recopié dans les
+/// métadonnées du client Mollie pour pouvoir reconstruire le lien.
+model Subscription {
+  id String @id @default(cuid())
+
+  /// La société du CRM, sans clé étrangère — voir plus haut.
+  companyId   String
+  /// Le nom de la société au moment de la création du lien.
+  companyName String
+
+  /// Le secret du lien : 32 octets aléatoires en base64url. Qui le détient peut
+  /// ouvrir la page de paiement de **cet** abonnement, et rien d'autre.
+  token String @unique
+
+  /// `pending` | `active` | `past_due` | `canceled` — vocabulaire dans
+  /// `lib/domain/subscriptions.ts`.
+  status String @default("pending")
+
+  /// Le montant mensuel, en centimes. Jamais un flottant.
+  amountCents Int
+  /// Le libellé que le client voit sur la page Mollie et sur son relevé.
+  label       String
+
+  /// `cst_…` : le client Mollie qui porte le mandat. Réécrit à l'activation avec
+  /// celui du paiement confirmé, car un clic répété peut en avoir créé un autre.
+  mollieCustomerId     String?
+  /// `tr_…` : le **dernier** premier paiement créé. Un lien cliqué deux fois en
+  /// crée deux ; le rapprochement se fait par métadonnée, pas par cette colonne.
+  mollieFirstPaymentId String?
+  /// `sub_…` : l'abonnement chez Mollie. Unique : deux lignes ne peuvent pas
+  /// prétendre à la même.
+  mollieSubscriptionId String? @unique
+  mollieMandateId      String?
+
+  /// Le jour du premier prélèvement de l'abonnement, `YYYY-MM-DD` (Paris).
+  startDate String?
+
+  /// Le verrou d'activation. Posé **avant** d'appeler Mollie pour créer
+  /// l'abonnement, retiré après : c'est lui qui empêche deux webhooks
+  /// simultanés de créer deux abonnements. Périmé au bout de dix minutes, pour
+  /// qu'un arrêt brutal ne bloque pas la ligne pour toujours.
+  activationClaimedAt DateTime?
+
+  firstPaidAt DateTime?
+  activatedAt DateTime?
+
+  /// Le dernier paiement relu chez Mollie : son statut et sa date. Vide tant
+  /// qu'aucun webhook n'est arrivé.
+  lastPaymentStatus String    @default("")
+  lastPaymentAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("subscriptions")
+}
