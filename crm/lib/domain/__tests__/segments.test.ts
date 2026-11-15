@@ -274,7 +274,7 @@ describe("le bandeau de couverture", () => {
 
 describe("les tranches affichées", () => {
   const rows = [
-    row("a", "message_sent", "2026-11-03T09:00:00Z", { size: "mid" }),
+    row("a", "message_sent", "2026-11-03T09:00:00Z", { size: "micro" }),
     row("b", "message_sent", "2026-11-03T09:00:00Z", { size: "unknown" }),
   ];
 
@@ -282,11 +282,11 @@ describe("les tranches affichées", () => {
     // C'est ce qui réalise « Moins de 2 000 affichée seulement si non vide » :
     // une tranche vide n'est pas une information, c'est une case à ne pas
     // dessiner.
-    expect(sizesWithData(rows, ["mid", "unknown", "micro"])).toEqual(["mid", "unknown"]);
+    expect(sizesWithData(rows, ["micro", "unknown", "large"])).toEqual(["micro", "unknown"]);
   });
 
   it("restreint à une tranche, ou laisse tout passer", () => {
-    expect(restrictToSize(rows, "mid")).toHaveLength(1);
+    expect(restrictToSize(rows, "micro")).toHaveLength(1);
     expect(restrictToSize(rows, null)).toHaveLength(2);
   });
 });

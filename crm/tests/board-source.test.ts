@@ -81,11 +81,21 @@ describe("aucun seuil n'est écrit deux fois", () => {
   const FILES = [
     ...filesIn("app/(crm)/pilotage"),
     ...filesIn("components/pilotage"),
+    /*
+      **Les écrans de saisie entrent dans la garde au jalon 115.** Le trafic ne
+      se lit plus seulement sur le pilotage : il s'affiche et se tape sur la
+      fiche société, sur la ligne société d'un contact et dans la liste. Ce sont
+      trois endroits de plus où un « 10 000 » recopié ferait un second avis sur
+      ce qu'est une petite marque — et il s'afficherait à côté du premier.
+    */
+    ...filesIn("components/companies"),
     "lib/api/pilotage.ts",
     "lib/api/pilotage-view.ts",
+    "lib/api/companies.ts",
     "lib/domain/pilotage.ts",
     "lib/domain/segments.ts",
     "lib/domain/campaigns-board.ts",
+    "lib/domain/visitors-import.ts",
   ];
 
   /**
@@ -93,9 +103,11 @@ describe("aucun seuil n'est écrit deux fois", () => {
    * ailleurs.**
    *
    * C'est `no-duplicate-thresholds` du jalon 7 appliqué aux tailles : un
-   * 15 000 recopié dans un écran, et deux cartes finissent par ranger la même
+   * 10 000 recopié dans un écran, et deux surfaces finissent par ranger la même
    * marque dans deux populations différentes. La garde cherche les littéraux
-   * dans les deux écritures que TypeScript accepte (`15000` et `15_000`).
+   * dans les deux écritures que TypeScript accepte (`10000` et `10_000`), et
+   * garde `15 000` dans la liste bien que la borne ait disparu au jalon 115 :
+   * c'est précisément le nombre qu'une relecture distraite réintroduirait.
    */
   it("ne recopie aucune borne de visiteurs hors de size-buckets.ts", () => {
     for (const file of FILES) {
@@ -233,6 +245,59 @@ describe("la langue visuelle du prototype", () => {
       expect(read(file), `${file} : muted sur le fond board`).not.toContain("text-muted");
       expect(read(file)).toContain("text-closed");
     }
+  });
+});
+
+/* ------------------------------------- le segment ne se stocke jamais ----- */
+
+describe("la tranche de trafic est calculée, jamais stockée", () => {
+  /**
+   * **Aucune colonne de segment, nulle part.**
+   *
+   * C'est la règle 2 du jalon 115, et c'est une règle de schéma : une colonne
+   * `segment` tenue à jour par l'application dériverait le jour où quelqu'un
+   * corrige un trafic par un chemin qui l'oublie — et personne ne verrait la
+   * dérive, puisque les deux valeurs s'affichent au même endroit. La garde lit
+   * le **schéma**, donc elle attrape la colonne avant la migration.
+   */
+  it("n'ajoute aucune colonne de segment au schéma", () => {
+    const schema = read("prisma/schema.prisma");
+    const company = /model Company \{[\s\S]*?\n\}/.exec(schema)?.[0] ?? "";
+    expect(company, "le modèle Company est introuvable").not.toBe("");
+    expect(company).toContain("monthlyVisitors");
+    for (const forbidden of ["segment", "sizeBucket", "tranche", "bucket"]) {
+      expect(company.toLowerCase(), `une colonne « ${forbidden} » est apparue`).not.toContain(
+        forbidden,
+      );
+    }
+  });
+
+  /**
+   * **Un seul endroit décide de la tranche**, et c'est `sizeBucketOf`. Une
+   * comparaison écrite à la main (`visitors > 10000`) dans un écran serait un
+   * second avis invisible — la garde de bornes ci-dessus l'attrape par le
+   * littéral, celle-ci par la forme.
+   */
+  it("fait décider la tranche par sizeBucketOf dans les écrans de société", () => {
+    const field = read("components/companies/visitors-field.tsx");
+    expect(field).toContain("sizeBucketOf(");
+    expect(field).toContain("visitorsBadge(");
+    // La vue ne compose pas la phrase elle-même : elle la demande au domaine.
+    expect(field, "la badge est recomposée dans la vue").not.toContain("visiteurs/mois");
+  });
+
+  /**
+   * **Un seul compte de marques sans trafic.** La puce de `/societes` et le
+   * bandeau de l'onglet Segments doivent annoncer le même nombre (item 6) ; la
+   * seule façon de le garantir est qu'il n'existe qu'une requête.
+   */
+  it("ne compte les marques sans trafic qu'à un seul endroit", () => {
+    const guilty: string[] = [];
+    for (const file of [...filesIn("lib/api"), ...filesIn("app/(crm)")]) {
+      if (file.endsWith("lib/api/companies.ts")) continue;
+      if (read(file).includes("monthlyVisitors: null }")) guilty.push(file);
+    }
+    expect(guilty, "un second comptage des marques sans trafic").toEqual([]);
   });
 });
 

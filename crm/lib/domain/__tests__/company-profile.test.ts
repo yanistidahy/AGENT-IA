@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   NICHE_MAX,
+  parseVisitors,
   NICHE_VARIABLES,
   VISITORS_VARIABLES,
   cleanNiche,
@@ -157,9 +158,67 @@ describe("qui a le droit d'écrire", () => {
     expect(syncMayWrite({ filled: true, source: "" })).toBe(false);
   });
 
-  it("nomme les origines en français, et rend l'inconnu tel quel", () => {
-    expect(valueSourceLabel("crm")).toBe("saisi dans le CRM");
-    expect(valueSourceLabel("lemlist")).toBe("importé de lemlist");
+  /**
+   * **Un import en masse n'est pas une saisie**, et les deux ne sont pas lemlist.
+   *
+   * Trois mots courts, parce que la provenance se lit à côté d'un nombre dans
+   * une cellule de tableau : « importé de lemlist » y prendrait la place du
+   * nombre lui-même.
+   */
+  it("nomme les trois origines, et rend l'inconnu tel quel", () => {
+    expect(valueSourceLabel("crm")).toBe("saisi");
+    expect(valueSourceLabel("lemlist")).toBe("lemlist");
+    expect(valueSourceLabel("import")).toBe("import");
     expect(valueSourceLabel("zapier")).toBe("zapier");
+  });
+
+  it("protège une valeur importée en masse comme une saisie", () => {
+    // Les deux sont des gestes humains : la synchronisation n'écrase ni l'un ni
+    // l'autre. La règle est écrite en négatif, donc une provenance ajoutée
+    // demain est protégée par défaut.
+    expect(syncMayWrite({ filled: true, source: "import" })).toBe(false);
+    expect(syncMayWrite({ filled: true, source: "lemlist" })).toBe(true);
+    expect(syncMayWrite({ filled: false, source: "crm" })).toBe(true);
+  });
+});
+
+describe("la lecture d'un trafic saisi, et son refus", () => {
+  /**
+   * **Vider le champ et taper n'importe quoi ne sont pas la même chose.**
+   *
+   * `readVisitorCount` rend `null` pour les deux, ce qui convient à une
+   * synchronisation (une variable illisible est une variable absente) et pas du
+   * tout à un écran de saisie : « beaucoup » doit être refusé **avec un mot**,
+   * sinon la personne croit avoir enregistré.
+   */
+  it("distingue un champ vidé d'une valeur illisible", () => {
+    expect(parseVisitors("")).toEqual({ ok: true, value: null });
+    expect(parseVisitors("   ")).toEqual({ ok: true, value: null });
+
+    const refused = parseVisitors("beaucoup");
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.message).toContain("beaucoup");
+      expect(refused.message).toContain("8k");
+    }
+  });
+
+  it("accepte les quatre écritures du brief", () => {
+    // Espace ordinaire, insécable (U+00A0) et insécable fine (U+202F) : les
+    // trois sortent d'un tableur, et refuser l'une perdrait de la donnée réelle.
+    expect(parseVisitors("8000")).toEqual({ ok: true, value: 8_000 });
+    expect(parseVisitors("8 000")).toEqual({ ok: true, value: 8_000 });
+    expect(parseVisitors("8\u00a0000")).toEqual({ ok: true, value: 8_000 });
+    expect(parseVisitors("8\u202f000")).toEqual({ ok: true, value: 8_000 });
+    expect(parseVisitors("8k")).toEqual({ ok: true, value: 8_000 });
+    expect(parseVisitors("8K")).toEqual({ ok: true, value: 8_000 });
+    expect(parseVisitors("8.5k")).toEqual({ ok: true, value: 8_500 });
+    expect(parseVisitors("8,5k")).toEqual({ ok: true, value: 8_500 });
+  });
+
+  it("refuse plutôt que de stocker un zéro deviné", () => {
+    for (const raw of ["beaucoup", "?", "à voir", "gros site", "-12", "8kk"]) {
+      expect(parseVisitors(raw).ok, raw).toBe(false);
+    }
   });
 });

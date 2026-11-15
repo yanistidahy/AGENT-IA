@@ -21,6 +21,13 @@
  * 3. **une valeur illisible n'est pas une valeur.** « à voir », « ?», « gros
  *    site » rendent `null` et non zéro — zéro affirmerait un site sans visite,
  *    et c'est la règle du jalon 20 appliquée à la saisie.
+ *
+ * Le jalon 115 ajoute une **troisième** provenance, `import` : le collage en
+ * masse de trafics. Elle se distingue de `crm` parce que la phrase affichée
+ * n'est pas la même — « saisi » dit que quelqu'un a tapé ce nombre devant cette
+ * fiche, « import » dit qu'il vient d'un tableur —, et elle se comporte comme
+ * `crm` devant la synchronisation : les deux sont des gestes humains, et
+ * `syncMayWrite` ne les écrase ni l'une ni l'autre.
  */
 
 /* ------------------------------------------------- qui a posé la valeur ---- */
@@ -34,12 +41,13 @@
  * donc ces valeurs ont bien été tapées à la main, et les traiter comme
  * inconnues les aurait exposées au premier relevé.
  */
-export const VALUE_SOURCES = ["crm", "lemlist", ""] as const;
+export const VALUE_SOURCES = ["crm", "lemlist", "import", ""] as const;
 export type ValueSource = (typeof VALUE_SOURCES)[number];
 
 export const VALUE_SOURCE_LABELS: Readonly<Record<string, string>> = {
-  crm: "saisi dans le CRM",
-  lemlist: "importé de lemlist",
+  crm: "saisi",
+  lemlist: "lemlist",
+  import: "import",
   "": "origine inconnue",
 };
 
@@ -55,10 +63,15 @@ export function valueSourceLabel(source: string): string {
  * posée : lemlist est alors la source de vérité de ce champ, et refuser la mise
  * à jour figerait un trafic de l'an dernier.
  *
- * Non dès qu'une valeur est présente et vient d'ailleurs — du CRM, ou d'une
- * origine inconnue. Le cas « inconnu » tranche volontairement en faveur de la
- * conservation : devant une valeur dont on ignore la provenance, l'écraser est
- * le choix irréversible, la garder ne coûte qu'un import de moins.
+ * Non dès qu'une valeur est présente et vient d'ailleurs — du CRM, d'un import
+ * en masse, ou d'une origine inconnue. Le cas « inconnu » tranche volontairement
+ * en faveur de la conservation : devant une valeur dont on ignore la provenance,
+ * l'écraser est le choix irréversible, la garder ne coûte qu'un import de moins.
+ *
+ * **La liste est en négatif, et c'est délibéré** : le test porte sur « vient de
+ * lemlist », donc une provenance ajoutée demain est protégée par défaut. Écrire
+ * la règle en positif (« refuser si crm ou import ») l'aurait exposée au premier
+ * oubli.
  */
 export function syncMayWrite(current: { readonly filled: boolean; readonly source: string }): boolean {
   if (!current.filled) return true;
@@ -207,6 +220,35 @@ export function readVisitorCount(raw: string): number | null {
   const rounded = Math.round(scaled);
   if (rounded < 0 || rounded > VISITORS_MAX) return null;
   return rounded;
+}
+
+/**
+ * **La même lecture, mais qui dit pourquoi elle refuse.**
+ *
+ * `readVisitorCount` rend `null` dans deux cas qu'un écran de saisie ne doit
+ * surtout pas confondre : « le champ est vide » (on efface le trafic, c'est une
+ * intention légitime) et « je n'ai pas su lire ça » (il faut le dire, sinon la
+ * personne croit avoir enregistré). Les mélanger ferait disparaître « beaucoup »
+ * en silence, et c'est exactement ce que le brief interdit — jamais stocké
+ * comme 0, jamais perdu sans un mot.
+ *
+ * Le message nomme les formes acceptées plutôt que de dire « valeur
+ * invalide » : devant un refus, ce qu'on veut savoir est quoi taper.
+ */
+export const VISITORS_HELP =
+  "Nombre de visiteurs par mois : 8000, 8 000, 8k ou 8,5k. « non renseigné » s'obtient en vidant le champ.";
+
+export type VisitorsParse =
+  | { readonly ok: true; readonly value: number | null }
+  | { readonly ok: false; readonly message: string };
+
+export function parseVisitors(raw: string): VisitorsParse {
+  if (raw.trim() === "") return { ok: true, value: null };
+  const value = readVisitorCount(raw);
+  if (value === null) {
+    return { ok: false, message: `« ${raw.trim()} » n'est pas un nombre lisible. ${VISITORS_HELP}` };
+  }
+  return { ok: true, value };
 }
 
 /* ------------------------------------- les noms des variables lemlist ------ */

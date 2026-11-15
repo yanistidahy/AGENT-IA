@@ -73,3 +73,49 @@ export function importContacts(text: string, update = false): Promise<ApiResult<
     isImportPayload,
   );
 }
+
+/**
+ * Le collage de trafics : simulation puis application, **même route**.
+ *
+ * Le rapport rendu est exactement celui du plan du domaine
+ * (`lib/domain/visitors-import.ts`), jusqu'au détail ligne par ligne : ce que
+ * l'écran affiche avant d'appliquer est donc ce qui s'appliquera.
+ */
+function isVisitorsReport(value: unknown): value is { report: VisitorsReport } {
+  if (typeof value !== "object" || value === null || !("report" in value)) return false;
+  const report = (value as { report: unknown }).report;
+  return typeof report === "object" && report !== null && "updated" in report;
+}
+
+export interface VisitorsReportLine {
+  readonly line: number;
+  readonly raw: string;
+  readonly rawValue: string;
+  readonly outcome: string;
+  readonly companyName: string;
+  readonly visitors: number | null;
+  readonly before: number | null;
+  readonly reason: string;
+}
+
+export interface VisitorsReport {
+  readonly lines: readonly VisitorsReportLine[];
+  readonly updated: number;
+  readonly unchanged: number;
+  readonly unmatched: number;
+  readonly ambiguous: number;
+  readonly unreadable: number;
+  readonly read: number;
+  readonly applied: boolean;
+}
+
+export function importVisitors(
+  text: string,
+  apply = false,
+): Promise<ApiResult<{ report: VisitorsReport }>> {
+  return requestJson(
+    "/api/companies/visitors",
+    { method: "POST", body: JSON.stringify({ text, apply }) },
+    isVisitorsReport,
+  );
+}

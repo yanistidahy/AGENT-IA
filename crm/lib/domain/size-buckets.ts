@@ -1,40 +1,50 @@
 /**
- * **Les tranches de taille, et la règle d'échantillon — une fonction chacune.**
+ * **Les tranches de trafic, et la règle d'échantillon — une fonction chacune.**
  *
  * Pur, sans Prisma ni React. Les deux notions vivent ici parce qu'elles sont
- * lues par les quatre onglets du pilotage : une tranche décidée deux fois, ou
- * un seuil de fiabilité recopié dans un écran, et deux cartes finissent par
- * ranger la même marque dans deux populations différentes. C'est l'écart que
- * `no-duplicate-thresholds` ferme depuis le jalon 7.
+ * lues par les quatre onglets du pilotage **et, depuis le jalon 115, par les
+ * écrans de saisie** : une tranche décidée deux fois, ou un seuil de fiabilité
+ * recopié dans un écran, et deux surfaces finissent par ranger la même marque
+ * dans deux populations différentes. C'est l'écart que `no-duplicate-thresholds`
+ * ferme depuis le jalon 7, et que la garde statique du pilotage tient depuis le
+ * jalon 113 v2.
  *
- * ## Ce qui change par rapport au jalon 109
+ * ## Deux tranches de travail, et plus trois
  *
- * Le jalon 109 avait trois segments — petites, grandes, non renseigné — et
- * rangeait **l'intervalle 10 000 à 15 000 dans « non renseigné »**, parce que
- * le brief d'alors ne le décrivait pas et qu'inventer une appartenance aurait
- * gonflé un segment d'après une règle que personne n'avait posée. C'était la
- * décision honnête avec l'information disponible.
+ * | Jalon | Tranches | Bornes |
+ * |---|---|---|
+ * | 109 | petites, grosses, non renseigné | 10 000 à 15 000 tombait dans « non renseigné » |
+ * | 113 v2 | micro, petites, **intermédiaires**, grosses, non renseigné | 2 000 / 10 000 / 15 000 |
+ * | **115** | micro, **petites**, **grosses**, non renseigné | 2 000 / 10 000 **inclus** |
  *
- * Le prototype validé nomme maintenant cinq tranches, dont cet intervalle
- * (« Intermédiaires ») et une tranche basse (« Moins de 2 000 »). On ne devine
- * donc plus : chaque marque tombe dans la tranche qui la décrit, et
- * « Non renseigné » redevient ce qu'il dit — on ne connaît pas son trafic.
+ * L'utilisateur a tranché : il travaille avec **deux** segments, pas trois.
+ * « Intermédiaires » disparaît, et avec lui l'idée qu'une marque à 12 000
+ * visiteurs serait un cas à part — c'est une grosse marque. Deux conséquences à
+ * savoir, et les deux sont mesurées dans CLAUDE.md :
  *
- * **Conséquence à savoir** : une marque à 12 000 visiteurs comptait hier dans
- * « non renseigné » et compte aujourd'hui dans « Intermédiaires ». Les deux
- * cartes « Petites » et « Grosses » ne bougent pas, elles — leurs bornes sont
- * inchangées.
+ * 1. **tout ce qui était « intermédiaire » devient « grosse »** (10 000 exclu à
+ *    15 000 exclu), et ce qui était « grosse » le reste ;
+ * 2. **10 000 pile change de côté** : la borne haute des petites était exclusive
+ *    au jalon 113 v2, elle est **inclusive** ici parce que le brief l'écrit
+ *    (« 2 000 à 10 000 inclus »). Un rond chiffre est précisément ce qu'on
+ *    saisit quand on estime, et le ranger des deux côtés selon l'écran serait
+ *    l'incohérence qui décrédibilise un tableau de bord.
+ *
+ * **La tranche n'est jamais stockée.** Il n'existe aucune colonne « segment » :
+ * elle se recalcule à chaque lecture depuis le trafic, donc elle ne peut pas
+ * dériver quand quelqu'un corrige le nombre. C'est la doctrine de
+ * `lib/domain/campaign-status.ts` appliquée ici — ce qui se déduit ne se tient
+ * pas à jour à la main.
  */
 
-export const SIZE_BUCKETS = ["micro", "small", "mid", "large", "unknown"] as const;
+export const SIZE_BUCKETS = ["micro", "small", "large", "unknown"] as const;
 export type SizeBucket = (typeof SIZE_BUCKETS)[number];
 
-/** Les libellés du prototype, au mot près. */
+/** Les libellés du brief, au mot près. */
 export const SIZE_LABELS: Record<SizeBucket, string> = {
   micro: "Moins de 2 000",
-  small: "Petites 2 000 à 10 000",
-  mid: "Intermédiaires 10 000 à 15 000",
-  large: "Grosses 15 000 et plus",
+  small: "Petites marques",
+  large: "Grosses marques",
   unknown: "Non renseigné",
 };
 
@@ -42,24 +52,32 @@ export const SIZE_LABELS: Record<SizeBucket, string> = {
 export const SIZE_SHORT: Record<SizeBucket, string> = {
   micro: "< 2 000",
   small: "Petites",
-  mid: "Intermédiaires",
   large: "Grosses",
   unknown: "Non renseigné",
 };
 
 /**
+ * Le libellé **au singulier**, pour la badge d'une fiche.
+ *
+ * « Grosse marque · 24 000 visiteurs/mois » parle d'**une** marque ; réutiliser
+ * le pluriel des cartes de l'onglet Segments donnerait « Grosses marques » sur
+ * la fiche d'une société, c'est-à-dire une faute d'accord à chaque ouverture.
+ */
+export const SIZE_ONE: Record<SizeBucket, string> = {
+  micro: "Moins de 2 000",
+  small: "Petite marque",
+  large: "Grosse marque",
+  unknown: "Trafic non renseigné",
+};
+
+/**
  * Les bornes, écrites une fois.
  *
- * `SMALL.min` est **inclusif** et `SMALL.max` **exclusif** : une marque à
- * exactement 10 000 visiteurs est « intermédiaire », pas « petite ». Le choix
- * compte parce qu'un rond chiffre comme 10 000 est précisément la valeur qu'on
- * saisit à la main quand on estime, et la ranger des deux côtés selon l'écran
- * serait le genre d'incohérence qui décrédibilise un tableau de bord.
+ * `SMALL.min` **et** `SMALL.max` sont inclusifs depuis le jalon 115 : 2 000 est
+ * une petite marque, 10 000 aussi, 10 001 est une grosse. En dessous de
+ * `SMALL.min`, « Moins de 2 000 ».
  */
-export const MICRO_MAX = 2_000;
 export const SMALL = { min: 2_000, max: 10_000 } as const;
-export const MID = { min: 10_000, max: 15_000 } as const;
-export const LARGE_MIN = 15_000;
 
 /**
  * La tranche d'une marque d'après son trafic mensuel.
@@ -71,14 +89,33 @@ export const LARGE_MIN = 15_000;
  */
 export function sizeBucketOf(monthlyVisitors: number | null): SizeBucket {
   if (monthlyVisitors === null) return "unknown";
-  if (monthlyVisitors < MICRO_MAX) return "micro";
-  if (monthlyVisitors < SMALL.max) return "small";
-  if (monthlyVisitors < LARGE_MIN) return "mid";
+  if (monthlyVisitors < SMALL.min) return "micro";
+  if (monthlyVisitors <= SMALL.max) return "small";
   return "large";
 }
 
 export function isSizeBucket(value: string): value is SizeBucket {
   return (SIZE_BUCKETS as readonly string[]).includes(value);
+}
+
+/* ------------------------------------------------- le trafic, affiché ----- */
+
+/** Le nombre, groupé à la française : « 24 000 ». */
+export function visitorsLabel(monthlyVisitors: number): string {
+  return monthlyVisitors.toLocaleString("fr-FR");
+}
+
+/**
+ * **La phrase de la badge**, écrite une fois pour les trois surfaces qui la
+ * portent : la fiche société, la ligne société d'un contact, et la liste.
+ *
+ * `null` rend « Trafic non renseigné » — jamais « 0 visiteurs/mois », qui
+ * affirmerait un site sans visite là où personne n'a mesuré.
+ */
+export function visitorsBadge(monthlyVisitors: number | null): string {
+  const bucket = sizeBucketOf(monthlyVisitors);
+  if (monthlyVisitors === null) return SIZE_ONE.unknown;
+  return `${SIZE_ONE[bucket]} · ${visitorsLabel(monthlyVisitors)} visiteurs/mois`;
 }
 
 /* ================================================================== *

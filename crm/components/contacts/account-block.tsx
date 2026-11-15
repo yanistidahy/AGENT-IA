@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { requestJson } from "@/lib/client/http";
+import { VisitorsField } from "@/components/companies/visitors-field";
 import { formatDate } from "@/lib/format";
 import type { Colleague } from "@/lib/api/account";
 
@@ -149,16 +150,42 @@ export function Colleagues({
 export function AccountLink({
   companyId,
   companyName,
+  visitors,
+  visitorsSource,
+  onSaved,
 }: {
   readonly companyId: string;
   readonly companyName: string;
+  readonly visitors: number | null;
+  readonly visitorsSource: string;
+  readonly onSaved: () => void;
 }) {
   return (
-    <Link
-      href={`/contacts?societe=${encodeURIComponent(companyId)}&lifecycle=all`}
-      className="mt-2 inline-block text-[12.5px] text-brand-d hover:underline"
-    >
-      Voir toutes les fiches de {companyName}
-    </Link>
+    <div className="mt-2">
+      {/*
+        **Le trafic de la maison se lit et se tape depuis la fiche** (jalon
+        115). C'est l'endroit où l'on est quand on apprend le chiffre — en
+        préparant un message, en regardant le site —, et l'y renseigner évite le
+        détour par `/societes` qui ne se fait jamais.
+      */}
+      <div className="mb-1.5 flex flex-wrap items-center gap-2 text-[12.5px]">
+        <span className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase">
+          Trafic de {companyName}
+        </span>
+        <VisitorsField
+          companyId={companyId}
+          visitors={visitors}
+          source={visitorsSource}
+          onSaved={onSaved}
+          compact
+        />
+      </div>
+      <Link
+        href={`/contacts?societe=${encodeURIComponent(companyId)}&lifecycle=all`}
+        className="inline-block text-[12.5px] text-brand-d hover:underline"
+      >
+        Voir toutes les fiches de {companyName}
+      </Link>
+    </div>
   );
 }

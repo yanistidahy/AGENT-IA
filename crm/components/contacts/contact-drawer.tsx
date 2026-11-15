@@ -236,7 +236,13 @@ export function ContactDrawer({
             />
             <Colleagues colleagues={colleagues} onOpen={onOpenContact} />
             {contact.company !== null && (
-              <AccountLink companyId={contact.company.id} companyName={contact.company.name} />
+              <AccountLink
+                companyId={contact.company.id}
+                companyName={contact.company.name}
+                visitors={contact.company.monthlyVisitors}
+                visitorsSource={contact.company.visitorsSource}
+                onSaved={onChanged}
+              />
             )}
           </TabPanel>
 

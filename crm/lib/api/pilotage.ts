@@ -16,6 +16,7 @@ import {
   type PilotageFilters,
   type WeeklyTargets,
 } from "../domain/pilotage";
+import { countCompaniesWithoutVisitors } from "./companies";
 import { OUTREACH_CHANNELS } from "../domain/outreach";
 import { isSizeBucket } from "../domain/size-buckets";
 import { nicheSuggestions, type NicheSuggestion } from "../domain/company-profile";
@@ -226,7 +227,13 @@ export async function readPilotage(): Promise<PilotageData> {
       orderBy: { position: "asc" },
       select: { value: true },
     }),
-    prisma.company.count({ where: { monthlyVisitors: null } }),
+    /*
+      **Le même compte que la puce « Trafic non renseigné » de `/societes`**, et
+      c'est la même fonction qui le rend. Deux `count` écrits séparément
+      finiraient par diverger, et le bandeau annoncerait un nombre que la liste
+      ne montre pas — exactement ce que l'item 6 du brief interdit.
+    */
+    countCompaniesWithoutVisitors(),
     readManualCounter(),
     prisma.company.findMany({ where: { niche: { not: "" } }, select: { niche: true } }),
     prisma.campaign.findMany({ where: { archivedAt: { not: null } }, select: { id: true } }),

@@ -15,8 +15,10 @@ import { prisma } from "../db";
 import { readCompanyLastEmail, type CompanyLastEmail } from "./account";
 import { toDealStatus, toLifecycle } from "../domain/guards";
 import type { DealStatus, Lifecycle } from "../domain/types";
+import { planVisitorsImport, type ImportPlan } from "../domain/visitors-import";
 import type {
   CreateCompanyInput,
+  ImportVisitorsInput,
   ListCompaniesQuery,
   UpdateCompanyInput,
 } from "./company-schemas";
@@ -157,6 +159,18 @@ function orderBy(query: ListCompaniesQuery): Prisma.CompanyOrderByWithRelationIn
       return [{ loc: dir }, { nameKey: { sort: "asc", nulls: "last" } }];
     case "createdAt":
       return [{ createdAt: dir }];
+    case "monthlyVisitors":
+      /*
+        **Les non renseignés en fin de liste dans les deux sens.** `null` ne
+        veut pas dire « zéro visiteur » : le trier comme tel mettrait les
+        marques qu'on n'a pas mesurées en tête du classement croissant, c'est-à
+        -dire exactement là où on cherche les plus petites. C'est la règle des
+        relances sans date du jalon 30.
+      */
+      return [
+        { monthlyVisitors: { sort: dir, nulls: "last" } },
+        { nameKey: { sort: "asc", nulls: "last" } },
+      ];
     default:
       /*
         **Par nom, et sur la clé pliée.** `{ name: dir }` trie selon la
@@ -195,6 +209,7 @@ export async function listCompanies(
           industry: company.industry,
           size: company.size,
           loc: company.loc,
+          monthlyVisitors: company.monthlyVisitors,
           contacts: company.contacts.length,
           openValue: company.openValue,
           wonValue: company.wonValue,
@@ -228,9 +243,11 @@ function companiesWhere(
   const term = searchTerm(query.q);
   if (term !== "") and.push({ searchText: { contains: term } });
 
-  // « Sans contact » s'exprime en SQL ; les deux autres puces portent sur des
-  // sommes calculées après lecture et sont appliquées là.
+  // « Sans contact » et « Trafic non renseigné » s'expriment en SQL ; les deux
+  // autres puces portent sur des sommes calculées après lecture et sont
+  // appliquées là.
   if (query.filter === "orphan") and.push({ contacts: { none: {} } });
+  if (query.filter === "sansTrafic") and.push({ monthlyVisitors: null });
 
   const columns = columnsWhere(filters, COMPANY_DB_COLUMNS, now);
   if (Object.keys(columns).length > 0) and.push(columns as Prisma.CompanyWhereInput);
@@ -435,6 +452,7 @@ export async function companyFacets(
       industry: true,
       size: true,
       loc: true,
+      monthlyVisitors: true,
       _count: { select: { contacts: true } },
       deals: { select: { amount: true, status: true } },
     },
@@ -446,6 +464,7 @@ export async function companyFacets(
       industry: row.industry,
       size: row.size,
       loc: row.loc,
+      monthlyVisitors: row.monthlyVisitors,
       contacts: row._count.contacts,
       openValue: sumBy(row.deals, "open"),
       wonValue: sumBy(row.deals, "won"),
@@ -474,4 +493,55 @@ function matchesChip(
   if (filter === "pipeline") return row.openValue > 0;
   if (filter === "clients") return row.wonValue > 0;
   return true;
+}
+
+/* ------------------------------------------------- le trafic, en masse ----- */
+
+/**
+ * **Combien de marques n'ont pas de trafic — le seul endroit où ce compte se
+ * fait.**
+ *
+ * Deux écrans l'affichent : la puce « Trafic non renseigné » de `/societes` et
+ * le bandeau de l'onglet Segments. Le brief demande qu'ils soient **égaux**
+ * (item 6 du test d'acceptation), et la seule façon de le garantir est qu'il
+ * n'existe qu'une requête. Deux `count` avec la même clause finiraient par
+ * diverger le jour où l'un apprendrait à exclure quelque chose.
+ */
+export async function countCompaniesWithoutVisitors(): Promise<number> {
+  return prisma.company.count({ where: { monthlyVisitors: null } });
+}
+
+/**
+ * **Le collage de trafics, simulé puis appliqué.**
+ *
+ * La décision par ligne vit dans `lib/domain/visitors-import.ts`, pure et
+ * testée sans base ; cette fonction ne fait que deux choses : lire les sociétés
+ * dont le plan a besoin, et — si on applique — écrire les lignes que le plan a
+ * marquées `updated`.
+ *
+ * **Aucune création, par construction** : la seule écriture est un `update` par
+ * `id`, et un `id` ne peut venir que d'une société déjà lue. Il n'y a pas de
+ * chemin, même erroné, qui crée une maison ici.
+ *
+ * `visitorsSource` passe à `import` : la valeur devient une valeur humaine, que
+ * la synchronisation lemlist n'écrasera plus (`syncMayWrite`). C'est le
+ * comportement voulu — on vient de la saisir, fût-ce par tableur.
+ */
+export async function importVisitors(
+  input: ImportVisitorsInput,
+): Promise<ImportPlan & { readonly applied: boolean }> {
+  const companies = await prisma.company.findMany({
+    select: { id: true, name: true, domain: true, monthlyVisitors: true },
+  });
+  const plan = planVisitorsImport(input.text, companies);
+  if (input.apply !== true) return { ...plan, applied: false };
+
+  for (const line of plan.lines) {
+    if (line.outcome !== "updated" || line.companyId === null || line.visitors === null) continue;
+    await prisma.company.update({
+      where: { id: line.companyId },
+      data: { monthlyVisitors: line.visitors, visitorsSource: "import" },
+    });
+  }
+  return { ...plan, applied: true };
 }

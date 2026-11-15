@@ -126,12 +126,21 @@ export async function signIn(browser: Browser, password: string): Promise<Sessio
  * On interroge donc le document au centre de l'élément : ce que le navigateur
  * y trouve est ce qu'un doigt y toucherait. Un contenu rogné n'est pas
  * atteignable, et l'appel rend alors ce qui se trouve derrière.
+ *
+ * **Le centre d'un lien qui passe à la ligne n'est pas sur le lien.** Corrigé
+ * au jalon 115, après un faux négatif mesuré : un lien en milieu de phrase
+ * occupe plusieurs rectangles — la fin d'une ligne, le début de la suivante —
+ * et le centre de leur **boîte englobante** tombe dans le texte qui les sépare.
+ * La fonction déclarait donc « hors de portée » un lien parfaitement cliquable.
+ * On vise maintenant le centre du **premier** rectangle, c'est-à-dire ce qu'un
+ * doigt vise réellement. Pour un élément de bloc — un bouton, une carte — ce
+ * rectangle **est** la boîte englobante, et rien ne change.
  */
 export async function reachable(locator: Locator): Promise<boolean> {
   const handle = await locator.elementHandle();
   if (handle === null) return false;
   return handle.evaluate((element) => {
-    const box = element.getBoundingClientRect();
+    const box = element.getClientRects()[0] ?? element.getBoundingClientRect();
     if (box.width === 0 || box.height === 0) return false;
     const x = box.left + box.width / 2;
     const y = box.top + box.height / 2;

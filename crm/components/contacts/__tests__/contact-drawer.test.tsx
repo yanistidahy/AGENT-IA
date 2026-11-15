@@ -47,7 +47,7 @@ function contact(overrides: Partial<ContactRecord> = {}): ContactRecord {
     lastContact: new Date(2026, 7, 5),
     nextReminder: new Date(2026, 7, 20),
     companyId: "co1",
-    company: { id: "co1", name: "Nutrivia" },
+    company: { id: "co1", name: "Nutrivia", monthlyVisitors: null, visitorsSource: "" },
     deals: [],
     activityCount: 3,
     followUp: "planned",

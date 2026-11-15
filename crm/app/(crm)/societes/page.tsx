@@ -1,6 +1,7 @@
 import { CompaniesView } from "@/components/companies/companies-view";
 import {
   companyFacets,
+  countCompaniesWithoutVisitors,
   getCompany,
   listCompanies,
   listIndustries,
@@ -32,14 +33,22 @@ export default async function SocietesPage({
   const filters = parseFilters(raw, COMPANY_FILTER_COLUMNS);
   const now = new Date();
 
-  const [companies, industries, niches, owners, sequences, facetData] = await Promise.all([
-    listCompanies(query, filters, now),
-    listIndustries(),
-    listNiches(),
-    listOwners(),
-    listSequences(),
-    companyFacets(query, filters, now),
-  ]);
+  const [companies, industries, niches, owners, sequences, facetData, withoutVisitors] =
+    await Promise.all([
+      listCompanies(query, filters, now),
+      listIndustries(),
+      listNiches(),
+      listOwners(),
+      listSequences(),
+      companyFacets(query, filters, now),
+      /*
+        Le compte de la puce « Trafic non renseigné ». Il porte sur **toutes**
+        les sociétés et non sur la liste filtrée : une puce qui compterait son
+        propre résultat afficherait toujours le total de ce qu'elle vient de
+        sélectionner, ce qui n'apprend rien (la règle du jalon 6).
+      */
+      countCompaniesWithoutVisitors(),
+    ]);
 
   const ficheId = flat.fiche;
   const focused =
@@ -57,6 +66,7 @@ export default async function SocietesPage({
       focused={focused}
       facets={facetData.facets}
       totalRows={facetData.total}
+      withoutVisitors={withoutVisitors}
     />
   );
 }
