@@ -28,9 +28,16 @@ import { toGranularity, GRANULARITY_LABELS } from "@/lib/domain/timeline";
 
 export const dynamic = "force-dynamic";
 
-/** Les deux tranches comparées, et celles qui restent en puces. */
+/**
+ * Les deux tranches comparées, et celles qui restent en puces.
+ *
+ * Deux cartes et pas trois depuis le jalon 115 : l'utilisateur travaille avec
+ * **petites contre grosses**, et « Intermédiaires » n'existe plus. Les deux
+ * puces de côté ne sont dessinées que si elles portent quelqu'un
+ * (`sizesWithData`) — une tranche vide n'est pas une information.
+ */
 const COMPARED: readonly SizeBucket[] = ["small", "large"];
-const ASIDE: readonly SizeBucket[] = ["mid", "unknown", "micro"];
+const ASIDE: readonly SizeBucket[] = ["micro", "unknown"];
 
 /**
  * **Onglet 3 — Segments : les petites marques répondent-elles mieux ?**
@@ -176,12 +183,28 @@ export default async function SegmentsPage({
         >
           Voir les {coverage.total.length - coverage.known.length} à compléter
         </Link>
+        {/*
+          **Le compte en base est un lien, pas une remarque.**
+
+          Il vient de `countCompaniesWithoutVisitors`, la même fonction que la
+          puce de `/societes` : les deux écrans annoncent donc le même nombre
+          (item 6 du jalon 115). Et il mène à la liste exacte de ces marques,
+          où la colonne « Visiteurs/mois » se remplit sur place — nommer un trou
+          sans donner le geste qui le comble serait un reproche.
+        */}
         {data.companiesWithoutVisitors > 0 ? (
           <span className="text-muted">
             {" "}
-            · {data.companiesWithoutVisitors} société
-            {data.companiesWithoutVisitors > 1 ? "s" : ""} sans trafic en base, le nombre se saisit sur
-            sa fiche.
+            ·{" "}
+            <Link
+              href="/societes?filter=sansTrafic"
+              data-coverage-companies={data.companiesWithoutVisitors}
+              className="font-semibold text-brand-d hover:underline"
+            >
+              {data.companiesWithoutVisitors} société
+              {data.companiesWithoutVisitors > 1 ? "s" : ""} sans trafic en base
+            </Link>{" "}
+            — le nombre se saisit directement dans la liste.
           </span>
         ) : null}
       </p>

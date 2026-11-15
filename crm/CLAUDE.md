@@ -384,6 +384,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 115 | **Deux tranches de trafic, visibles partout et faciles à remplir** : l'utilisateur a tranché, il travaille avec **deux** segments et plus trois. « Intermédiaires » disparaît — une marque à 12 000 visiteurs **est** une grosse marque —, et la borne haute des petites devient **inclusive** (2 000 à 10 000 inclus, 10 001 est une grosse) parce que le brief l'écrit. Mesuré avant/après sur la base semée : sur les **17 sociétés** laissées par le jalon 114, **2 changent de tranche** (12 000, « intermédiaire » → « grosse ») et aucune ne bascule vers les petites, faute de société à exactement 10 000 ; après avoir semé les cinq bornes du test d'acceptation, **4 déplacements** dont **1 vers les petites** (le 10 000 pile). **La tranche n'est jamais stockée** : aucune colonne de segment au schéma, et une garde statique lit le modèle `Company` pour qu'il en reste ainsi — ce qui se déduit ne se tient pas à jour à la main. **Le reste du jalon est un travail de remplissage** : le trafic était la donnée la moins renseignée du CRM parce qu'il fallait ouvrir un formulaire d'édition pour un seul nombre. Il porte maintenant une **badge qui dit le segment et le chiffre** (« Grosse marque · 24 000 visiteurs/mois », ou « Trafic non renseigné ») sur la fiche société, sur la ligne société d'un contact et dans une **colonne de `/societes` triable, filtrable et éditable en ligne** ; une puce « Trafic non renseigné » porte son compte, et ce compte est **le même nombre** que le bandeau de l'onglet Segments parce qu'il n'existe qu'une requête pour les deux. Un **collage en masse** (domaine ou nom, casse et accents pliés) simule puis applique, et **ne crée jamais de société** : les lignes sans correspondance sont **nommées**, pas avalées. Chaque valeur dit **d'où elle vient** — lemlist, saisi, import — et une valeur humaine n'est toujours jamais écrasée par la synchronisation (règle du jalon 113 v2, étendue à `import`). L'analyse d'entrée accepte « 8000 », « 8 000 » (espace ordinaire, insécable et insécable fine), « 8k », « 8K », « 8,5k », et **refuse le reste avec une phrase** plutôt que de ranger un zéro. Vérifié dans un navigateur à 1440 et 390 px, et contre une **vraie synchronisation** passée par la route du produit contre le substitut versionné : un trafic saisi (24 000, `crm`) **survit** à trois passages, la même fiche vidée **reçoit** le 8 000 de lemlist — donc la première mesure n'était pas de l'inertie —, et un collage de 5 lignes en met **3** à jour, en nomme **2**, et laisse le compte de sociétés **identique**. Défaut trouvé au passage et corrigé dans l'outillage : `reachable()` déclarait « hors de portée » un **lien en milieu de phrase** — un lien qui passe à la ligne occupe plusieurs rectangles, et le centre de leur boîte englobante tombe dans le texte qui les sépare | **livré, à valider** |
 | 114 | **L'onglet Campagnes achevé, et le compteur rendu au pouce** : le brief du jalon 113 v2 s'arrêtait au milieu de l'onglet 4 et ne portait aucun test d'acceptation ; celui-ci le termine. **Trois colonnes de plus et un tri qui se partage** : « Invitations acceptées » à part des réponses (une invitation acceptée n'est pas une réponse, c'est une porte qui s'ouvre), une puce d'état et une puce d'origine par campagne, et **chaque colonne numérique triable au clic sur son en-tête, dans les deux sens, avec `aria-sort`** — ce qui a imposé de refaire la liste de cartes en **vrai tableau**, puisque `aria-sort` ne vit que sur un `<th>` ; le tri voyage dans l'URL (`tri`, `sens`), donc la vue triée se partage et survit au rechargement, et les valeurs absentes restent en bas **dans les deux sens**. **L'état d'une campagne devient un fait relevé** : la synchronisation lit `GET /campaigns` et `GET /v2/campaigns/{id}/stats` — deux appels en **lecture seule**, le `/v2/` étant dans le chemin et les deux dates obligatoires — et stocke `status`, `nbLeads`, `nbLeadsLaunched` dans `lemlist_campaigns` ; le relevé gagne alors sur la déduction par trente jours de silence, qui était la limite documentée au jalon 113 v2, et l'écran dit au survol lequel des deux on regarde. De là, la phrase du brief : **« Campagne en pause : 3 prospects attendent d'être lancés »**, dont le 3 vient de `nbLeads − nbLeadsLaunched` et **jamais** du journal — un événement ne parle que de ce qui est déjà parti, donc par construction il ne peut rien dire de ce qui attend ; sans relevé, l'écran se tait plutôt que d'écrire « 0 ». **Et le compteur manuel revient à portée du pouce** sous 768 px, au-dessus des objectifs : un seul compteur dans le document, déplacé par `order`, jamais un second bloc masqué par point de rupture (ce seraient deux `localStorage` et un « +1 » cliqué dans celui que l'autre ne voit pas). Mesuré avant d'y toucher, et c'était le vrai obstacle : à 390 px, **huit filtres empilés font 534 px de haut**, soit les deux tiers de l'écran avant le premier chiffre — la barre se défile désormais du doigt sous 768 px et reprend `flex-wrap` au-dessus, le bureau inchangé. Vérifié dans un navigateur, sur une base semée : **16 tris** (8 colonnes × 2 sens) avec leur `aria-sort` et l'ordre réellement obtenu, la colonne « Invitations acceptées » qui ouvre une liste ne contenant **que** des `linkedin_invite_accepted` et de la longueur annoncée, la phrase de pause à 3, et « +1 DM LinkedIn » **atteignable et cliquable sans défiler** à 390 × 844 — `reachable()`, pas `isVisible()`. **Deux défauts réels du produit** que la relecture n'avait pas vus : l'étiquette de valeur d'une barre de « Dans le temps », dessinée par-dessus son propre lien, **volait le clic de la barre** dès qu'elle montait assez haut — sur un téléphone, le nombre est exactement ce qu'on vise, et taper dessus ne faisait rien ; et la ligne « Réponses non classées » affichait 11 et ouvrait la liste des 22 personnes ayant répondu, faute d'indicateur à elle. Le second n'est apparu qu'en **élargissant la période**, d'où un contrôle d'invariant qui accepte maintenant des paramètres : rejoué sur deux périodes, **321** puis **326 chiffres**, zéro écart | **livré, à valider** |
 | 113 v2 | **Pilotage en quatre onglets, d'après le prototype validé** : « Dans le temps » du jalon 113 **reste** et devient l'onglet 2 ; ce jalon le complète et en ajoute trois. Les préalables d'abord. Les parties 1 et 2 de la partie 0 **étaient déjà faites** (dates vérifiées, bouton de reprise livré, PR #84) et ne sont pas refaites. Trois ajouts de données : `Company.niche` en texte libre avec suggestions et regroupement pliant casse et accents ; **deux colonnes de provenance** (`nicheSource`, `visitorsSource`) qui servent une seule règle — une valeur tapée dans le CRM n'est **jamais** écrasée par la synchronisation, et la migration déclare `crm` les trafics déjà saisis parce que le CRM en était jusqu'ici le seul chemin d'écriture ; et `OutreachEvent.stepIndex`/`stepType`, **convertis depuis le `sequenceStep` indexé à zéro** de lemlist (vérifié dans la documentation publiée : un décalage d'une unité attribuerait à l'étape 2 ce que l'étape 3 a produit). Deux fonctions partagées par les quatre onglets : les **cinq tranches** de taille — l'intervalle 10 000 à 15 000, rangé dans « non renseigné » au jalon 109 faute de brief, devient « Intermédiaires » — et la **règle d'échantillon** (moins de 10 « à ne pas interpréter », 10 à 29 « échantillon faible », 30 et plus « fiable »), avec **le `n` à côté de chaque taux sur chaque onglet**, une puce hachurée sous dix, et une comparaison qui se taît sous trente d'un seul côté, sur un taux nul ou sous 1,5 fois d'écart. Les quatre onglets partagent dix filtres dans l'URL et laissent leurs réglages locaux derrière. **Une seule porte** (`lib/api/pilotage-view.ts`) lit l'URL, borne la période, attribue les campagnes et filtre : la garde statique du jalon 109, qui exigeait la suite de *la* page, exige maintenant qu'aucun des cinq écrans ne la refasse — déplacée, pas affaiblie, et éprouvée en recopiant `applyFilters` dans un onglet. Mesuré : **780 chiffres cliquables** sur les quatre onglets et les douze vues du graphique, **zéro écart** entre le nombre affiché et la longueur de sa liste. Un défaut réel de ma propre version trouvé par cette vérification et non à la relecture : une ligne de canal affichait les **personnes** touchées et ouvrait la liste des **messages** — « 1 » au-dessus de deux lignes. Relevé au passage, et mesuré : `muted` ne donne que **4.42:1** sur le fond `#F5F6FA` du prototype — sous le seuil AA, là où il tient 4.77:1 sur blanc —, donc le texte secondaire posé sur ce fond est `closed` (5.17:1) | **livré, à valider** |
 | 113 | **« Dans le temps » refondu, et ses dates vérifiées d'abord** : la partie 1 a nommé la cause réelle du trou de septembre, et ce n'était pas une histoire de dates. Les événements lemlist **ont toujours porté la date de leur activité** — une seule écriture (`lemlist-sync.ts`, `occurredAt: activity.occurredAt`) alimentée par `readLemlistActivity`, qui lit `createdAt` et **refuse l'activité** si la date est illisible plutôt que de retomber sur l'instant de l'import ; mesuré : une activité du 20 octobre synchronisée le 7 novembre tombe dans la semaine du 19 octobre. Le vrai défaut était ailleurs : **la reprise du jalon 109 n'avait aucun appelant** — ni cron, ni workflow, ni démarrage, ni bouton — depuis deux jalons, donc les 52 emails de septembre dormaient dans `email_sends` sans jamais devenir des événements. Un bouton dans `/reglages` la rend atteignable, avec les comptes **avant/après par type** ; mesuré : 80 événements repris, 56 en septembre sur quatre semaines, et **0 au second passage**. Ajouté au passage : une ligne déjà importée dont la date est fausse **se corrige** à la resynchronisation au lieu d'être définitive (la contrainte d'unicité empêchait de la réécrire), sans doublon et sans toucher ni le contact ni le type. Côté graphique : indicateur, vue et granularité dans l'URL, la plage qui commence au premier fait, la cible tracée **période par période** (20 en jour, 100 en semaine, 420/440/460 en mois selon les jours ouvrés), une infobulle qui dit les dates exactes, les parts, l'écart à la cible, l'évolution et l'origine, une légende cliquable où chaque canal porte **un motif et une forme** et pas seulement une couleur, et le clic qui ouvre la liste du seau. L'invariant du jalon 109 vérifié sur **913 points** : zéro écart entre la valeur d'un point et la longueur de sa liste, en Total comme en Par canal, pour le jour, la semaine et le mois | **livré, à valider** |
@@ -17692,3 +17693,166 @@ les attributs et les positions, pas la ressemblance.
 plus toujours une déduction, et le compteur manuel est de nouveau atteignable en
 un geste sur un téléphone. La troisième reste ouverte : la niche n'entre
 toujours pas dans l'export CSV des sociétés.
+
+---
+
+## Jalon 115 — deux tranches de trafic, visibles partout et faciles à remplir
+
+L'utilisateur a changé la règle : il travaille avec **deux** segments, pas
+trois. Le reste du jalon découle de ce constat — un segment qui décide de la
+lecture de tout l'onglet Segments repose sur la donnée **la moins remplie** du
+CRM, et ce n'était pas un hasard : il fallait ouvrir un formulaire d'édition
+pour taper un seul nombre.
+
+```
+lib/domain/size-buckets.ts      quatre tranches, bornes inclusives, la badge
+lib/domain/company-profile.ts   + parseVisitors : refuser en le disant
+lib/domain/visitors-import.ts   le collage en masse — décision par ligne, pur
+components/companies/visitors-field.tsx        la badge et le champ, une fois
+components/companies/visitors-import-dialog.tsx  simuler puis appliquer
+app/api/companies/visitors/      la route unique du collage
+```
+
+### Ce qui change de tranche, et ce que ça déplace
+
+| | 113 v2 | **115** |
+|---|---|---|
+| Moins de 2 000 | < 2 000 | < 2 000 |
+| Petites | 2 000 à 10 000 **exclu** | 2 000 à 10 000 **inclus** |
+| Intermédiaires | 10 000 à 15 000 | **supprimée** |
+| Grosses | 15 000 et plus | **plus de 10 000** |
+| Non renseigné | `null` | `null` |
+
+Deux conséquences, et les deux sont **mesurées** plutôt que supposées :
+
+1. sur les **17 sociétés** de la base semée telle que le jalon 114 l'a laissée,
+   **2 changent de tranche** — « Le Comptoir Brut » et « Nordik Home », toutes
+   deux à 12 000, d'« intermédiaire » à « grosse ». Aucune ne bascule vers les
+   petites : aucune société n'était à exactement 10 000 ;
+2. après avoir semé les cinq bornes du test d'acceptation (1 999 / 2 000 /
+   10 000 / 10 001 / vide), la même mesure donne **4 déplacements**, dont **1
+   vers les petites** : le 10 000 pile, qui était « intermédiaire » et devient
+   « petite » parce que la borne est maintenant inclusive.
+
+**La tranche n'est stockée nulle part**, et une garde statique lit le modèle
+`Company` du schéma pour qu'il en reste ainsi. Une colonne `segment` tenue à
+jour par l'application dériverait le jour où un chemin d'écriture l'oublierait,
+et la dérive serait invisible — les deux valeurs s'affichent au même endroit.
+C'est la doctrine de `campaign-status.ts` appliquée au trafic : ce qui se déduit
+ne se tient pas à jour à la main.
+
+### Trois surfaces, une seule badge
+
+La fiche société, la ligne société d'une fiche contact et la colonne de
+`/societes` montrent **le même composant**. Trois copies auraient fini par
+accepter trois écritures différentes de « 8 000 » — et par afficher trois
+segments pour une seule marque le jour où quelqu'un aurait recopié une borne.
+
+La phrase complète (« Grosse marque · 24 000 visiteurs/mois ») est la bonne
+lecture devant **une** marque ; répétée sur quarante lignes elle double la
+hauteur du tableau, donc la cellule porte la forme courte (« 24 000 · Grosses »).
+Les deux viennent du domaine : la vue choisit laquelle montrer, elle n'en
+compose aucune.
+
+**Chaque valeur dit d'où elle vient** — `lemlist`, `saisi`, `import` —, et ce
+n'est pas décoratif : la provenance décide d'un comportement. Une valeur humaine
+(saisie ou importée) n'est **jamais** écrasée par la synchronisation, une valeur
+lemlist l'est. La règle est écrite **en négatif** (« la synchronisation n'écrit
+que si le champ est vide ou vient de lemlist »), donc une provenance ajoutée
+demain est protégée par défaut.
+
+### Ce que l'import refuse de faire
+
+Un tableur d'audience contient des domaines qu'on ne prospecte pas. L'import
+**ne crée donc aucune société**, et ce n'est pas une promesse de commentaire :
+la seule écriture est un `update` par `id`, et un `id` ne peut venir que d'une
+société déjà lue. Trois autres refus, chacun contre une façon d'abîmer des
+données en silence :
+
+- **il ne devine pas un nombre** : « beaucoup » est refusé ligne par ligne,
+  avec sa raison, jamais rangé à zéro ;
+- **il ne tranche pas une ambiguïté** : deux maisons au même nom plié font une
+  ligne « ambiguë », pas un tirage au sort sur la donnée de quelqu'un ;
+- **il distingue « inchangée » de « mise à jour »** : « 120 mises à jour » sur un
+  second passage ferait douter du premier.
+
+Le rapprochement accepte **deux clés dans la même colonne** — ce qui ressemble à
+un domaine est cherché parmi les domaines, le reste parmi les noms — et les plie
+avec `sortKey`, la fonction qui écrit déjà `Company.nameKey` en base. Deux plis
+différents feraient qu'une maison trouvée au tri serait introuvable à l'import.
+
+### Jalon 115 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16**, le serveur standalone et un Chromium réel, sur
+une base semée (28 sociétés, dont les cinq bornes du brief) :
+
+- **les cinq bornes s'affichent comme la règle les range**, lues dans le DOM de
+  la fiche : 1 999 « Moins de 2 000 », 2 000 et 10 000 « Petite marque »,
+  10 001 « Grosse marque », vide « Trafic non renseigné » ;
+- **taper un nombre met à jour la badge sans rechargement** : la badge passe à
+  « Grosse marque » et `data-visitors="24000"` sur la même page, et la base porte
+  `visitorsSource: "crm"` ;
+- **le trafic saisi survit à une vraie synchronisation**, passée par la route du
+  produit contre le substitut versionné, **trois fois** : valeur saisie (24 000,
+  `crm`) → `profilesFilled: 0`, inchangée ; la même fiche **vidée** → remplie à
+  8 000 / `lemlist` (`profilesFilled: 1`), ce qui prouve que la première mesure
+  n'était pas de l'inertie ; saisie de nouveau → inchangée ;
+- **le collage de 5 lignes** rend 3 mises à jour, 2 sans correspondance
+  **nommées à l'écran**, et le compte de sociétés est **identique avant et
+  après** — aucune création ;
+- **simuler n'écrit rien** : la cible du collage est encore `null` en base après
+  la simulation, et porte 8 000 / `import` après l'application ;
+- **« 8 000 » insécable, « 8k » et « 8,5k »** entrent (8 000, 8 000, 8 500) ;
+  **« beaucoup » est refusé avec un message à l'écran**, et la valeur en base ne
+  bouge pas ;
+- **la puce « Trafic non renseigné » compte exactement ce qu'elle liste**, toutes
+  les lignes listées portent une badge « non renseigné », et le bandeau de
+  l'onglet Segments annonce **le même nombre** et y mène ;
+- **deux cartes et plus trois** sur l'onglet Segments, et le mot
+  « Intermédiaire » n'apparaît plus nulle part dans la page ;
+- **à 390 px**, le champ de saisie de la liste en cartes est atteignable et la
+  page ne déborde pas horizontalement ;
+- **trois gardes statiques nouvelles, éprouvées en réintroduisant le défaut** :
+  une borne `10_000` recopiée dans un écran de société, une colonne `segment`
+  ajoutée au schéma, et un second comptage des marques sans trafic ;
+- **l'invariant du jalon 109 rejoué** sur deux périodes après le changement de
+  tranches : **345** chiffres sur la semaine en cours, **356** sur quatre mois,
+  **zéro écart** — supprimer une tranche n'a séparé aucun nombre de sa liste ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**2 254 tests**) et la
+  suite de navigateur verts.
+
+**Un second défaut, celui-là dans le produit, trouvé à 390 px.** Le groupe de
+puces de `/societes` était `flex overflow-hidden` : la **quatrième** puce —
+celle qu'on venait d'ajouter — tombait hors du cadre, invisible et
+inatteignable. Un `overflow-hidden` rogne sans rien dire, et c'est exactement le
+mode de défaillance du jalon 60. Les puces se replient maintenant sous `lg`, et
+la recette le vérifie avec `reachable()`.
+
+**Un défaut de l'outillage, trouvé par cette recette.** `reachable()` déclarait
+« hors de portée » le lien du bandeau de couverture, qui est parfaitement
+cliquable : un lien **en milieu de phrase** occupe plusieurs rectangles — la fin
+d'une ligne, le début de la suivante — et le centre de leur **boîte englobante**
+tombe dans le texte qui les sépare. La fonction vise maintenant le centre du
+**premier** rectangle, c'est-à-dire ce qu'un doigt vise réellement ; pour un
+bouton ou une carte, ce rectangle est la boîte englobante et rien ne change.
+
+### Jalon 115 — ce qui ne l'est pas
+
+**Le déplacement de tranche n'est pas annoncé dans le produit.** Une marque à
+12 000 visiteurs comptait hier dans « Intermédiaires » et compte aujourd'hui dans
+« Grosses » : les cartes de l'onglet Segments changent donc de valeur sans que
+l'écran dise pourquoi. C'est mesuré et écrit ici, pas dans l'interface.
+
+**L'import ne propose pas de créer les maisons qu'il n'a pas trouvées.** Il les
+nomme, et c'est tout : le geste reste manuel. C'est le refus demandé par le
+brief, mais sur un tableur de deux cents lignes dont trente sont inconnues, il
+faudra les créer une par une.
+
+**Le collage s'applique dans la requête HTTP**, sans découpage en lots. À
+quelques centaines de lignes c'est instantané ; à plusieurs milliers, la requête
+dépasserait le délai du proxy — la même limite que les corrections de `/reglages`
+depuis le jalon 12, et elle n'est pas levée ici.
+
+**La colonne « Visiteurs/mois » n'entre pas dans l'export CSV des sociétés.**
+Elle se lit, se trie, se filtre et se remplit à l'écran ; le tableur reste à
+faire si l'on veut la sortir.

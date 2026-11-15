@@ -12,6 +12,7 @@ import { valueSourceLabel } from "@/lib/domain/company-profile";
 import { RecordPanel } from "@/components/activities/record-panel";
 import type { SequenceOption } from "@/components/activities/run-sequence";
 import { CompanyForm } from "./company-form";
+import { VisitorsField } from "./visitors-field";
 import { contactTitle } from "@/lib/domain/contact-identity";
 
 interface CompanyDrawerProps {
@@ -135,15 +136,21 @@ export function CompanyDrawer({
                 </span>
               )}
             </Row>
+            {/*
+              **Le trafic se lit et se tape au même endroit** (jalon 115). Il
+              décide du segment de la marque, et c'est la donnée la moins
+              remplie du CRM : demander d'ouvrir le formulaire d'édition pour
+              un seul nombre était la raison pour laquelle il restait vide.
+              La badge dit le segment **et** le nombre, donc la conséquence de
+              ce qu'on tape se voit sans aller sur un autre écran.
+            */}
             <Row label="Visiteurs / mois">
-              {company.monthlyVisitors === null ? (
-                "non renseigné"
-              ) : (
-                <span>
-                  {company.monthlyVisitors.toLocaleString("fr-FR")}
-                  <Source source={company.visitorsSource} />
-                </span>
-              )}
+              <VisitorsField
+                companyId={company.id}
+                visitors={company.monthlyVisitors}
+                source={company.visitorsSource}
+                onSaved={onChanged}
+              />
             </Row>
             <Row label="Créée le">{formatDate(company.createdAt)}</Row>
           </dl>

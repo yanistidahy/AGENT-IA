@@ -9,6 +9,7 @@ import type { ColumnFilter, FilterState } from "@/lib/domain/column-filters";
 import type { FacetValue } from "@/lib/domain/column-match";
 import { externalLabel, externalUrl } from "@/lib/domain/links";
 import { moneyShort } from "@/lib/format";
+import { VisitorsField } from "./visitors-field";
 
 /**
  * Tableau des sociétés.
@@ -22,6 +23,7 @@ export type CompanySortKey =
   | "industry"
   | "size"
   | "loc"
+  | "monthlyVisitors"
   | "contacts"
   | "openValue"
   | "wonValue";
@@ -36,6 +38,8 @@ interface CompaniesTableProps {
   readonly filters: FilterState;
   readonly onFilter: (key: string, filter: ColumnFilter | null) => void;
   readonly emptyReason: string;
+  /** Rafraîchit la page après une saisie de trafic dans une cellule. */
+  readonly onChanged: () => void;
 }
 
 const COLUMNS: ReadonlyArray<{
@@ -48,6 +52,15 @@ const COLUMNS: ReadonlyArray<{
   { key: "industry", label: "Secteur", filter: "industry" },
   { key: "size", label: "Taille", filter: "size" },
   { key: "loc", label: "Localisation", filter: "loc" },
+  /*
+    **« Visiteurs/mois » est une colonne de travail, pas une colonne de
+    lecture** : elle se trie (pour voir les grosses d'abord), elle se filtre
+    (« (vide) » donne les fiches à compléter) et elle se **remplit sur place**.
+    Mettre la saisie ici et pas seulement sur la fiche est tout l'objet du
+    jalon 115 : on remplit une colonne de haut en bas, on ne rouvre pas
+    quarante tiroirs.
+  */
+  { key: "monthlyVisitors", label: "Visiteurs/mois", filter: "monthlyVisitors" },
   { key: "contacts", label: "Contacts", filter: "contacts", numeric: true },
   { key: "openValue", label: "Pipeline ouvert", filter: "openValue", numeric: true },
   { key: "wonValue", label: "CA signé", filter: "wonValue", numeric: true },
@@ -63,6 +76,7 @@ export function CompaniesTable({
   filters,
   onFilter,
   emptyReason,
+  onChanged,
 }: CompaniesTableProps) {
   if (companies.length === 0) {
     return (
@@ -89,6 +103,18 @@ export function CompaniesTable({
         }
         onSelect={onSelect}
         facts={(company) => [
+          {
+            label: "Visiteurs/mois",
+            value: (
+              <VisitorsField
+                companyId={company.id}
+                visitors={company.monthlyVisitors}
+                source={company.visitorsSource}
+                onSaved={onChanged}
+                compact
+              />
+            ),
+          },
           { label: "Contacts", value: <span className="font-mono">{company.contacts.length}</span> },
           {
             label: "Pipeline",
@@ -179,6 +205,21 @@ export function CompaniesTable({
                 <td className="px-3.5 py-2.5 text-[13px]">{company.industry || "—"}</td>
                 <td className="px-3.5 py-2.5 text-[13px]">{company.size || "—"}</td>
                 <td className="px-3.5 py-2.5 text-[13px]">{company.loc || "—"}</td>
+                {/*
+                  `stopPropagation` est posé **dans** le champ : cliquer
+                  « Saisir » ne doit pas ouvrir le tiroir de la fiche, sinon la
+                  saisie en ligne n'existe pas — on se retrouve devant le
+                  formulaire qu'elle devait éviter.
+                */}
+                <td className="px-3.5 py-2.5 text-[13px]">
+                  <VisitorsField
+                    companyId={company.id}
+                    visitors={company.monthlyVisitors}
+                    source={company.visitorsSource}
+                    onSaved={onChanged}
+                    compact
+                  />
+                </td>
                 <td className="px-3.5 py-2.5 text-right font-mono text-[12.5px]">
                   {company.contacts.length}
                 </td>

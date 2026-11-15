@@ -93,7 +93,20 @@ export interface ContactRecord {
   readonly lastContact: Date | null;
   readonly nextReminder: Date | null;
   readonly companyId: string | null;
-  readonly company: { readonly id: string; readonly name: string } | null;
+  /**
+   * La société liée, **avec son trafic** depuis le jalon 115.
+   *
+   * Deux champs de plus et pas un de moins : la ligne société d'une fiche porte
+   * la badge de segment, et pouvoir la remplir là où l'on travaille est tout
+   * l'objet du jalon — on remplit le trafic en lisant une fiche, pas en se
+   * rappelant d'aller sur `/societes`.
+   */
+  readonly company: {
+    readonly id: string;
+    readonly name: string;
+    readonly monthlyVisitors: number | null;
+    readonly visitorsSource: string;
+  } | null;
   readonly deals: readonly ContactDealSummary[];
   /** Interactions consignées — distingue « jamais contacté » d'un import daté. */
   readonly activityCount: number;
@@ -135,7 +148,17 @@ export interface ContactRecord {
 }
 
 const contactInclude = {
-  company: { select: { id: true, name: true, domain: true, size: true, industry: true } },
+  company: {
+    select: {
+      id: true,
+      name: true,
+      domain: true,
+      size: true,
+      industry: true,
+      monthlyVisitors: true,
+      visitorsSource: true,
+    },
+  },
   deals: {
     select: {
       id: true,
@@ -312,7 +335,15 @@ function toRecord(
     emailCount: row.emailCount,
     lastEmailAt: row.lastEmailAt,
     companyId: row.companyId,
-    company: row.company === null ? null : { id: row.company.id, name: row.company.name },
+    company:
+      row.company === null
+        ? null
+        : {
+            id: row.company.id,
+            name: row.company.name,
+            monthlyVisitors: row.company.monthlyVisitors,
+            visitorsSource: row.company.visitorsSource,
+          },
     deals: row.deals.map((deal) => ({
       id: deal.id,
       name: deal.name,

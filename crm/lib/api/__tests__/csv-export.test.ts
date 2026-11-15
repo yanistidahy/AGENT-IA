@@ -40,7 +40,7 @@ const contact: ContactRecord = {
   lastContact: new Date("2026-02-11T09:00:00Z"),
   nextReminder: null,
   companyId: "co1",
-  company: { id: "co1", name: "ACME;SA" },
+  company: { id: "co1", name: "ACME;SA", monthlyVisitors: null, visitorsSource: "" },
   deals: [],
   activityCount: 3,
   followUp: "waiting",
@@ -149,7 +149,12 @@ describe("contactsToCsv", () => {
   it("exporte une société nommée comme une formule en texte", () => {
     const hostile: ContactRecord = {
       ...contact,
-      company: { id: "co2", name: '=HYPERLINK("http://mal.test";"Facture")' },
+      company: {
+        id: "co2",
+        name: '=HYPERLINK("http://mal.test";"Facture")',
+        monthlyVisitors: null,
+        visitorsSource: "",
+      },
     };
     const grid = parseGrid(contactsToCsv([hostile], context()));
     const value = grid[1]?.[(grid[0] ?? []).indexOf("Société")] ?? "";

@@ -2,6 +2,20 @@ import { z } from "zod";
 
 /** Schémas de validation des requêtes sur les sociétés. */
 
+/**
+ * **Le collage de trafics** : un texte, et le choix entre simuler et appliquer.
+ *
+ * `apply: false` est le défaut et c'est le motif du jalon 12 : on lit le
+ * rapport, puis on écrit. Une seule route sert les deux, parce que deux routes
+ * finiraient par rapprocher différemment — et le rapport ne vaudrait plus rien.
+ */
+export const importVisitorsSchema = z.object({
+  text: z.string().min(1, "Collez au moins une ligne."),
+  apply: z.boolean().optional(),
+});
+
+export type ImportVisitorsInput = z.infer<typeof importVisitorsSchema>;
+
 export const createCompanySchema = z.object({
   name: z.string().trim().min(1, "Le nom de la société est obligatoire"),
   domain: z.string().trim().optional(),
@@ -62,6 +76,10 @@ export const COMPANY_SORT_KEYS = [
   "size",
   "loc",
   "createdAt",
+  // Le trafic est un scalaire : il se trie en SQL, les absents en fin de liste
+  // dans les deux sens — « non renseigné » n'est ni le plus petit ni le plus
+  // grand, il n'est rien (la règle des relances sans date, jalon 30).
+  "monthlyVisitors",
   // Dérivés d'agrégats : triés en mémoire, voir lib/api/companies.ts.
   "contacts",
   "openValue",
@@ -73,13 +91,20 @@ export const COMPANY_SORT_KEYS = [
  * le plus souvent à un portefeuille de sociétés : où y a-t-il de l'argent en
  * jeu, qui a déjà signé, et quelles fiches sont restées vides.
  */
-export const COMPANY_FILTERS = ["pipeline", "clients", "orphan"] as const;
+export const COMPANY_FILTERS = ["pipeline", "clients", "orphan", "sansTrafic"] as const;
 export type CompanyFilter = (typeof COMPANY_FILTERS)[number];
 
 export const COMPANY_FILTER_LABELS: Record<CompanyFilter, string> = {
   pipeline: "Avec pipeline ouvert",
   clients: "Clients",
   orphan: "Sans contact",
+  /*
+    **La quatrième puce est celle du jalon 115**, et c'est la liste de travail
+    du trafic : les marques dont le segment ne peut pas se calculer. Elle porte
+    son compte, et ce compte est **le même nombre** que le bandeau de l'onglet
+    Segments — tous deux viennent de `countCompaniesWithoutVisitors`.
+  */
+  sansTrafic: "Trafic non renseigné",
 };
 
 export const listCompaniesQuerySchema = z.object({
