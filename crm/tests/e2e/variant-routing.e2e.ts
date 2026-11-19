@@ -144,17 +144,26 @@ describe.skipIf(skip)("le menu liste tout le groupe, et « Autre » se route", (
     expect(await reachable(tab), "l'onglet Direction est atteignable").toBe(true);
     await tab.click();
 
-    const select = page.locator("select").filter({ has: page.locator("option") }).last();
-    await select.waitFor({ state: "attached", timeout: 20_000 });
-    await select.scrollIntoViewIfNeeded();
-    expect(await reachable(select), "le menu d'aperçu est atteignable").toBe(true);
+    /*
+      Depuis le jalon 116, « Aperçu pour » est le sélecteur commun et non plus
+      un `<select>` : on l'ouvre et on compte les rangées de la liste.
+    */
+    const picker = page.locator("[data-contact-picker]").last();
+    const field = picker.locator("input[role='combobox']");
+    await field.waitFor({ state: "visible", timeout: 20_000 });
+    await field.scrollIntoViewIfNeeded();
+    expect(await reachable(field), "le menu d'aperçu est atteignable").toBe(true);
+    await field.click();
 
     /*
       **C'est le défaut signalé, mesuré.** La version d'avant rendait exactement
       une entrée ici : une `Map` par groupe plafonnait la liste à une fiche.
+
+      La première rangée est « Le premier de la liste », qui n'est pas une
+      fiche : on la retire du compte.
     */
-    const options = await select.locator("option").count();
-    expect(options, "les 20 fiches Direction sont dans le menu").toBe(20);
+    const options = await picker.locator("[role='option']").count();
+    expect(options - 1, "les 20 fiches Direction sont dans le menu").toBe(20);
 
     const count = page.locator("[data-sample-count]").first();
     await count.scrollIntoViewIfNeeded();

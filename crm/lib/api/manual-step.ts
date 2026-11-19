@@ -3,6 +3,7 @@ import { prisma } from "../db";
 import { renderSubject, renderTemplate, type MergeValues } from "../domain/merge-tags";
 import { resolveResearchTarget } from "../domain/research-target";
 import { contactTitle, repairGreeting } from "../domain/contact-identity";
+import { contactOptions, type ContactPickerOption } from "../domain/contact-picker";
 import { enforceSignature, sanitizeSubject } from "../domain/email-format";
 import { signatureBlock } from "../agents/prompts/company";
 import { forbiddenSigners } from "../agents/email-draft";
@@ -225,7 +226,13 @@ export async function renderManualStep(
 
 export interface SampleContact {
   readonly id: string;
-  readonly name: string;
+  /**
+   * L'entrée du sélecteur : libellé et clé de recherche, décidés par
+   * `contactOptions()` (jalon 116). La mention « — sans prénom » y est ajoutée
+   * par la note, parce que c'est elle qui rend un échantillon intéressant à
+   * prévisualiser.
+   */
+  readonly pick: ContactPickerOption;
   readonly values: MergeValues;
   /** Le groupe de fonction : c'est lui qui choisit la variante à l'aperçu. */
   readonly group: string;
@@ -270,9 +277,14 @@ const SAMPLE_LIMIT = 500;
  * restriction aux seuls inscrits, qui rendait une liste vide sur une campagne
  * dont personne n'est encore inscrit — c'est-à-dire au moment où l'on écrit.
  *
- * Désormais : **tous** les destinataires, triés par nom (`nameKey`, la clé pliée
- * du jalon 72 — accents et casse absorbés, valeurs vides en fin), et le compte
- * réel par groupe. L'écran filtre par groupe et affiche son compteur.
+ * Désormais : **tous** les destinataires, et le compte réel par groupe. L'écran
+ * filtre par groupe et affiche son compteur.
+ *
+ * **L'ordre vient de `contactOptions()`**, sur le prénom — ce que le menu
+ * affiche (jalon 116). Le `orderBy` SQL ne sert plus qu'à rendre la borne des
+ * 500 déterministe : sans lui, deux appels pourraient garder deux sous-ensembles
+ * différents. Il porte donc sur l'identifiant, et non sur un nom, pour qu'on ne
+ * le prenne pas pour l'ordre d'affichage.
  *
  * **Le repli sur tout le CRM est nommé, pas silencieux** : `enrolled: false` dit
  * à l'écran d'écrire « aucun inscrit : aperçu sur tous les contacts », pour
@@ -297,7 +309,7 @@ export async function sampleContacts(sequenceId: string): Promise<SampleSet> {
     prisma.contact.findMany({
       where,
       select: CONTACT_SELECT,
-      orderBy: [{ nameKey: { sort: "asc", nulls: "last" } }, { id: "asc" }],
+      orderBy: { id: "asc" },
       take: SAMPLE_LIMIT,
     }),
     prisma.contact.groupBy({
@@ -314,14 +326,37 @@ export async function sampleContacts(sequenceId: string): Promise<SampleSet> {
     totals[key] = (totals[key] ?? 0) + row._count._all;
   }
 
+  const values = new Map(rows.map((row) => [row.id, mergeValuesOf(row, globals)] as const));
+  /*
+    Ce que le menu dit en plus du nom : les deux manques qui changent l'aperçu.
+    Un contact sans prénom montre l'appel nu, un contact sans site montre la
+    phrase retirée — ce sont les deux fiches qu'on veut relire en premier.
+  */
+  const note = (contact: { readonly id: string }): string => {
+    const merged = values.get(contact.id);
+    if (merged === undefined) return "";
+    return `${merged.prenom.trim() === "" ? " — sans prénom" : ""}${
+      merged.site.trim() === "" ? " — sans site" : ""
+    }`;
+  };
+
+  const byId = new Map(rows.map((row) => [row.id, row] as const));
+
   return {
-    contacts: rows.map((contact) => ({
-      id: contact.id,
-      name: contactTitle(contact),
-      values: mergeValuesOf(contact, globals),
-      group: contact.contactGroup,
-      groupSetBy: contact.groupSetBy,
-    })),
+    contacts: contactOptions(rows, note).flatMap((pick) => {
+      const contact = byId.get(pick.id);
+      const merged = values.get(pick.id);
+      if (contact === undefined || merged === undefined) return [];
+      return [
+        {
+          id: contact.id,
+          pick,
+          values: merged,
+          group: contact.contactGroup,
+          groupSetBy: contact.groupSetBy,
+        },
+      ];
+    }),
     totals,
     enrolled: enrolled > 0,
     videoDisplay,

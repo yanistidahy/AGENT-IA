@@ -3,7 +3,6 @@ import { z } from "zod";
 import { prisma } from "../db";
 import { readEventRows } from "./outreach-events";
 import { readManualCounter, type ManualCounterState } from "./manual-events";
-import { contactTitle } from "../domain/contact-identity";
 import {
   DEFAULT_TARGETS,
   PERIOD_KEYS,
@@ -17,6 +16,8 @@ import {
   type WeeklyTargets,
 } from "../domain/pilotage";
 import { countCompaniesWithoutVisitors } from "./companies";
+import { listContactOptions } from "./contact-options";
+import type { ContactPickerOption } from "../domain/contact-picker";
 import { OUTREACH_CHANNELS } from "../domain/outreach";
 import { isSizeBucket } from "../domain/size-buckets";
 import { nicheSuggestions, type NicheSuggestion } from "../domain/company-profile";
@@ -184,7 +185,7 @@ export interface PilotageData {
    * premier caractère tapé. À dix mille fiches il faudrait une recherche
    * serveur — c'est dit dans CLAUDE.md et le code ne prétend pas le contraire.
    */
-  readonly contactOptions: readonly { readonly id: string; readonly label: string }[];
+  readonly contactOptions: readonly ContactPickerOption[];
 }
 
 export async function readPilotage(): Promise<PilotageData> {
@@ -240,17 +241,7 @@ export async function readPilotage(): Promise<PilotageData> {
     prisma.lemlistCampaign.findMany({
       select: { extId: true, status: true, leads: true, leadsLaunched: true },
     }),
-    prisma.contact.findMany({
-      orderBy: { nameKey: "asc" },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        instagram: true,
-        company: { select: { name: true } },
-      },
-    }),
+    listContactOptions(),
   ]);
 
   return {
@@ -294,15 +285,13 @@ export async function readPilotage(): Promise<PilotageData> {
     companiesWithoutVisitors: withoutVisitors,
     manual,
     /*
-      Le libellé vient de `contactTitle`, la seule fonction qui décide comment
-      une fiche s'appelle (jalon 50 : une fiche de marque n'a personne de
-      nommé). Recomposer « prénom nom » ici rendrait le sélecteur muet sur ces
-      fiches-là, qui sont justement celles qu'on contacte en DM.
+      Les libellés et l'ordre viennent de `contactOptions()` (jalon 116), seule
+      fonction du produit qui décide comment un contact se nomme et se classe
+      dans un sélecteur. En recomposer un ici rendrait ce bloc-là muet sur les
+      fiches de marque sans personne nommée — qui sont justement celles qu'on
+      contacte en DM — ou le classerait autrement que les trois autres.
     */
-    contactOptions: contacts.map((contact) => ({
-      id: contact.id,
-      label: contactTitle(contact),
-    })),
+    contactOptions: contacts,
   };
 }
 

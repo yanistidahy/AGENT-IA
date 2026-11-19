@@ -1,11 +1,9 @@
 import { TaskBanners } from "@/components/tasks/task-banners";
 import { TasksView } from "@/components/tasks/tasks-view";
 import { listOwners } from "@/lib/api/reference";
+import { listContactOptions } from "@/lib/api/contact-options";
 import { readTaskScreen } from "@/lib/api/task-feed";
 import { listTaskTabs } from "@/lib/api/task-tabs";
-import { prisma } from "@/lib/db";
-import { contactTitle } from "@/lib/domain/contact-identity";
-import { foldSearch } from "@/lib/domain/task-tabs";
 import { DEFAULT_TAB, isTaskTabId, type TaskTabId } from "@/lib/domain/task-tabs";
 
 export const dynamic = "force-dynamic";
@@ -45,11 +43,7 @@ export default async function TachesPage({
     readTaskScreen(),
     listOwners(),
     listTaskTabs(),
-    prisma.contact.findMany({
-      select: { id: true, firstName: true, lastName: true, company: { select: { name: true } } },
-      orderBy: { nameKey: "asc" },
-      take: 500,
-    }),
+    listContactOptions(),
   ]);
 
   /*
@@ -72,18 +66,7 @@ export default async function TachesPage({
         tab={tab}
         savedTabs={savedTabs}
         people={people}
-        contacts={contacts.map((contact) => ({
-          id: contact.id,
-          label:
-            contact.company === null
-              ? contactTitle(contact)
-              : `${contactTitle(contact)} · ${contact.company.name}`,
-          // La clé de recherche est pliée **ici**, une fois : la frappe dans le
-          // champ n'a plus qu'à comparer (accents et casse absorbés, jalon 72).
-          search: foldSearch(
-            `${contactTitle(contact)} ${contact.company?.name ?? ""}`,
-          ),
-        }))}
+        contacts={contacts}
       />
     </div>
   );

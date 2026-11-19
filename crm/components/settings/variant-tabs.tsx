@@ -204,7 +204,7 @@ export function GroupPreviews({
           <div key={key} className="rounded-card border border-line bg-surface-2 p-2.5">
             <p className="text-[11.5px] font-semibold text-muted">
               {key === "none" ? "Non classé" : GROUP_LABELS[key as ContactGroup]} ·{" "}
-              {sample.name} · {describeChoice(chosen)}
+              {sample.pick.label} · {describeChoice(chosen)}
             </p>
             {dropped.map((entry, index) => (
               <p

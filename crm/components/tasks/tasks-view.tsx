@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState, useTransition } from "react";
 import { Drawer } from "@/components/ui/drawer";
 import { requestJson } from "@/lib/client/http";
 import { isTaskPriority } from "@/lib/domain/guards";
+import type { ContactPickerOption } from "@/lib/domain/contact-picker";
 import { isTaskKind } from "@/lib/domain/task-kind";
 import {
   activeFilterCount,
@@ -46,11 +47,7 @@ interface TasksViewProps {
     readonly query: string;
   }>;
   readonly people: readonly string[];
-  readonly contacts: ReadonlyArray<{
-    readonly id: string;
-    readonly label: string;
-    readonly search: string;
-  }>;
+  readonly contacts: readonly ContactPickerOption[];
 }
 
 export function TasksView({ rows, tab, savedTabs, people, contacts }: TasksViewProps) {

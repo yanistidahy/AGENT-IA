@@ -4,6 +4,7 @@ import { countDealsByStatus, dealFacets, getDeal, listDeals } from "@/lib/api/de
 import { DEAL_FILTER_COLUMNS } from "@/lib/api/deal-columns";
 import { parseFilters } from "@/lib/domain/column-filters";
 import { readAlerts } from "@/lib/api/alerts";
+import { listContactOptions } from "@/lib/api/contact-options";
 import { listOffers, listOwners, listStages, getPilotage } from "@/lib/api/reference";
 import { listSequences } from "@/lib/api/sequences";
 import { prisma } from "@/lib/db";
@@ -54,10 +55,7 @@ export default async function AffairesPage({
     listOffers(),
     getPilotage(),
     prisma.company.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    prisma.contact.findMany({
-      select: { id: true, firstName: true, lastName: true },
-      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-    }),
+    listContactOptions(),
     listSequences(),
     readAlerts(),
     countDealsByStatus(),

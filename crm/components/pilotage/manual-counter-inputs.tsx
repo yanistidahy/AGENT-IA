@@ -1,8 +1,8 @@
 "use client";
 
-import { Combobox, type ComboboxValue } from "@/components/ui/combobox";
+import { ContactPicker } from "@/components/contacts/contact-picker";
+import type { ContactPickerOption } from "@/lib/domain/contact-picker";
 import { MAX_BACKDATE_DAYS, MAX_BATCH } from "@/lib/domain/manual-count";
-import type { ManualContactOption } from "./manual-counter";
 
 /**
  * **Les trois réglages d'une saisie, et la phrase qui dit ce qu'ils changent.**
@@ -22,9 +22,9 @@ interface Props {
   readonly onQuantity: (value: string) => void;
   readonly day: string;
   readonly onDay: (value: string) => void;
-  readonly contacts: readonly ManualContactOption[];
-  readonly contact: ComboboxValue;
-  readonly onContact: (value: ComboboxValue) => void;
+  readonly contacts: readonly ContactPickerOption[];
+  readonly contact: string | null;
+  readonly onContact: (contactId: string | null) => void;
 }
 
 /** La date du jour au format du champ `date`, dans le fuseau du navigateur. */
@@ -112,12 +112,12 @@ export function CounterInputs({
       <div className="min-w-[200px] flex-1">
         <p className="text-[12px] text-muted">Contact (facultatif)</p>
         <div className="mt-0.5" data-manual-contact>
-          <Combobox
+          <ContactPicker
             options={contacts}
             value={contact}
             onChange={onContact}
             placeholder="Chercher une fiche…"
-            emptyLabel="Aucune fiche ne correspond"
+            emptyLabel="Sans fiche"
           />
         </div>
       </div>

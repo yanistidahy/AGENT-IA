@@ -3,21 +3,19 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Combobox, companyFields, type ComboboxValue } from "@/components/ui/combobox";
+import { ContactPicker } from "@/components/contacts/contact-picker";
 import { createDeal, updateDeal } from "@/lib/client/deals-api";
 import type { DealRecord } from "@/lib/api/deals";
 import type { StageLike } from "@/lib/domain/types";
-import { contactTitle } from "@/lib/domain/contact-identity";
+import type { ContactPickerOption } from "@/lib/domain/contact-picker";
 
 export interface DealFormOptions {
   readonly stages: readonly StageLike[];
   readonly owners: readonly string[];
   readonly offers: readonly string[];
   readonly companies: readonly { readonly id: string; readonly name: string }[];
-  readonly contacts: readonly {
-    readonly id: string;
-    readonly firstName: string;
-    readonly lastName: string;
-  }[];
+  /** Déjà triés par prénom et libellés : `contactOptions()`, côté serveur. */
+  readonly contacts: readonly ContactPickerOption[];
 }
 
 interface DealFormProps extends DealFormOptions {
@@ -228,18 +226,12 @@ export function DealForm({
           />
         </Field>
         <Field label="Contact principal">
-          <select
-            className={INPUT}
-            value={form.contactId}
-            onChange={(e) => set("contactId", e.target.value)}
-          >
-            <option value="">—</option>
-            {contacts.map((contact) => (
-              <option key={contact.id} value={contact.id}>
-                {contactTitle(contact)}
-              </option>
-            ))}
-          </select>
+          <ContactPicker
+            options={contacts}
+            value={form.contactId === "" ? null : form.contactId}
+            onChange={(contactId) => set("contactId", contactId ?? "")}
+            emptyLabel="Aucun contact"
+          />
         </Field>
       </div>
 
