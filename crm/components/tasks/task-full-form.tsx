@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import { ContactPicker } from "@/components/contacts/contact-picker";
 import { createTask } from "@/lib/client/activity-api";
-import { foldSearch } from "@/lib/domain/task-tabs";
+import type { ContactPickerOption } from "@/lib/domain/contact-picker";
 import { TASK_KINDS, TASK_KIND_LABELS, type TaskKind } from "@/lib/domain/task-kind";
 import { TASK_PRIORITIES } from "@/lib/domain/types";
 
@@ -18,19 +19,21 @@ import { TASK_PRIORITIES } from "@/lib/domain/types";
  *
  * **Le contact se cherche**, il ne se déroule pas : à cent cinquante fiches, un
  * `<select>` demande de faire défiler une liste pour trouver un nom qu'on
- * connaît déjà. Le champ filtre sur la clé pliée du jalon 72 — « eclat » trouve
- * « Éclat Naturel ».
+ * connaît déjà.
+ *
+ * Ce formulaire portait, depuis le jalon 105, sa **propre** recherche : un
+ * champ, un filtre, dix boutons. Elle ne montrait rien tant qu'on n'avait pas
+ * tapé — donc on ne pouvait pas parcourir — et ne répondait ni aux flèches ni à
+ * Échap. Le jalon 116 l'a remplacée par `ContactPicker`, le sélecteur commun :
+ * une recherche de moins à maintenir, et les trois autres sélecteurs du produit
+ * gagnent du même coup ce qu'elle savait faire.
  *
  * Le rattachement est **facultatif et unique** : l'API refuse deux cibles à la
  * fois, et c'est son refus qui fait foi (jalon 4).
  */
 interface TaskFullFormProps {
   readonly people: readonly string[];
-  readonly contacts: ReadonlyArray<{
-    readonly id: string;
-    readonly label: string;
-    readonly search: string;
-  }>;
+  readonly contacts: readonly ContactPickerOption[];
   readonly onCancel: () => void;
   readonly onCreated: () => void;
 }
@@ -46,20 +49,10 @@ function isoDay(offset = 0): string {
 
 export function TaskFullForm({ people, contacts, onCancel, onCreated }: TaskFullFormProps) {
   const [kind, setKind] = useState<TaskKind>("tache");
-  const [needle, setNeedle] = useState("");
-  const [contactId, setContactId] = useState("");
+  const [contactId, setContactId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string[]>>({});
-
-  const chosen = contacts.find((contact) => contact.id === contactId) ?? null;
-
-  /* Dix suggestions au plus : au-delà, la liste cesse d'aider à choisir. */
-  const matches = useMemo(() => {
-    const folded = foldSearch(needle);
-    if (folded === "") return [];
-    return contacts.filter((contact) => contact.search.includes(folded)).slice(0, 10);
-  }, [contacts, needle]);
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -76,7 +69,7 @@ export function TaskFullForm({ people, contacts, onCancel, onCreated }: TaskFull
       priority: text("priority"),
       owner: text("owner"),
       kind,
-      ...(contactId === "" ? {} : { contactId }),
+      ...(contactId === null ? {} : { contactId }),
     });
 
     setBusy(false);
@@ -142,56 +135,15 @@ export function TaskFullForm({ people, contacts, onCancel, onCreated }: TaskFull
       </div>
 
       <Field label="Contact (facultatif)" errors={fields.contactId}>
-        {chosen === null ? (
-          <>
-            <input
-              value={needle}
-              data-field="contact-search"
-              onChange={(event) => setNeedle(event.target.value)}
-              className={CONTROL}
-              placeholder="Chercher un contact…"
-            />
-            {matches.length > 0 && (
-              <div className="mt-1 grid gap-1 rounded-control border border-line bg-surface p-1">
-                {matches.map((contact) => (
-                  <button
-                    key={contact.id}
-                    type="button"
-                    data-contact-option={contact.id}
-                    onClick={() => {
-                      setContactId(contact.id);
-                      setNeedle("");
-                    }}
-                    className="rounded-control px-2 py-1.5 text-left text-[13px] hover:bg-surface-2"
-                  >
-                    {contact.label}
-                  </button>
-                ))}
-              </div>
-            )}
-            {needle.trim() !== "" && matches.length === 0 && (
-              <span className="mt-1 block text-[12px] text-muted">
-                Aucun contact ne correspond. La tâche peut rester sans rattachement.
-              </span>
-            )}
-          </>
-        ) : (
-          <div className="flex items-center gap-2 rounded-control border border-line bg-surface-2 px-2.5 py-2 text-[13px]">
-            <span data-contact-chosen="1" className="font-semibold">
-              {chosen.label}
-            </span>
-            <button
-              type="button"
-              onClick={() => setContactId("")}
-              className="ml-auto text-[12.5px] text-muted hover:text-ink"
-            >
-              Retirer
-            </button>
-          </div>
-        )}
+        <ContactPicker
+          options={contacts}
+          value={contactId}
+          onChange={setContactId}
+          emptyLabel="Sans rattachement"
+        />
       </Field>
 
-      {kind === "appel" && chosen === null && (
+      {kind === "appel" && contactId === null && (
         <p className="rounded-control border border-gold bg-gold-l px-3 py-2 text-[12.5px] text-ink">
           Sans contact rattaché, une tâche d&apos;appel n&apos;a ni numéro à composer ni
           historique où consigner l&apos;appel : « Appel passé » sera refusé.

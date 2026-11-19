@@ -1,6 +1,7 @@
 import { PipelineView } from "@/components/deals/pipeline-view";
 import { listDeals } from "@/lib/api/deals";
 import { readAlerts } from "@/lib/api/alerts";
+import { listContactOptions } from "@/lib/api/contact-options";
 import { getPilotage, listOffers, listOwners, listStages } from "@/lib/api/reference";
 import { listSequences } from "@/lib/api/sequences";
 import { prisma } from "@/lib/db";
@@ -25,10 +26,7 @@ export default async function PipelinePage() {
       listOffers(),
       getPilotage(),
       prisma.company.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
-      prisma.contact.findMany({
-        select: { id: true, firstName: true, lastName: true },
-        orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-      }),
+      listContactOptions(),
       listSequences(),
       readAlerts(),
     ]);

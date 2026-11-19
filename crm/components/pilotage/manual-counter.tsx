@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { ComboboxValue } from "@/components/ui/combobox";
 import { CounterFooter } from "./manual-counter-footer";
 import { CounterInputs } from "./manual-counter-inputs";
+import type { ContactPickerOption } from "@/lib/domain/contact-picker";
 import {
   MANUAL_CHANNELS,
   MANUAL_SHAPES,
@@ -53,14 +53,10 @@ export interface ManualEntryView {
   readonly contactName: string;
 }
 
-export interface ManualContactOption {
-  readonly id: string;
-  readonly label: string;
-}
 
 interface Props {
   readonly owners: readonly string[];
-  readonly contacts: readonly ManualContactOption[];
+  readonly contacts: readonly ContactPickerOption[];
   readonly initialToday: readonly ManualTallyView[];
   readonly initialHistory: readonly ManualEntryView[];
 }
@@ -116,7 +112,7 @@ export function ManualCounter({ owners, contacts, initialToday, initialHistory }
   const [mounted, setMounted] = useState(false);
   const [quantity, setQuantity] = useState("1");
   const [day, setDay] = useState("");
-  const [contact, setContact] = useState<ComboboxValue>({ kind: "none" });
+  const [contact, setContact] = useState<string | null>(null);
   const [today, setToday] = useState<readonly ManualTallyView[]>(initialToday);
   const [history, setHistory] = useState<readonly ManualEntryView[]>(initialHistory);
   const [busy, setBusy] = useState("");
@@ -167,7 +163,7 @@ export function ManualCounter({ owners, contacts, initialToday, initialHistory }
           channel,
           quantity: Number.parseInt(quantity, 10),
           owner,
-          contactId: contact.kind === "existing" ? contact.id : null,
+          contactId: contact,
           at: day === "" ? undefined : new Date(`${day}T12:00:00`).toISOString(),
         }),
       });

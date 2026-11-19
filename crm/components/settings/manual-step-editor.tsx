@@ -12,7 +12,9 @@ import {
   unresolvedTags,
   type MergeValues,
 } from "@/lib/domain/merge-tags";
+import { ContactPicker } from "@/components/contacts/contact-picker";
 import { GROUP_LABELS, isContactGroup } from "@/lib/domain/contact-group";
+import type { ContactPickerOption } from "@/lib/domain/contact-picker";
 import { RenderedBody } from "./rendered-body";
 import {
   DEFAULT_VIDEO_DISPLAY,
@@ -37,7 +39,8 @@ import {
 
 export interface SampleContact {
   readonly id: string;
-  readonly name: string;
+  /** Libellé et clé de recherche, décidés par `contactOptions()` (jalon 116). */
+  readonly pick: ContactPickerOption;
   readonly values: MergeValues;
   /** Le groupe de fonction de la fiche : c'est lui qui choisit la variante. */
   readonly group: string;
@@ -343,19 +346,21 @@ export function ManualStepEditor({
         <div className="mt-2 rounded-card border border-line bg-surface-2 p-2.5">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11.5px] font-semibold text-muted">Aperçu pour</span>
-            <select
-              className="rounded-control border border-line bg-surface px-2 py-1 text-[12px]"
-              value={sample.id}
-              onChange={(event) => onSample(event.target.value)}
-            >
-              {shown.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.name}
-                  {entry.values.prenom.trim() === "" ? " — sans prénom" : ""}
-                  {entry.values.site.trim() === "" ? " — sans site" : ""}
-                </option>
-              ))}
-            </select>
+            {/*
+              Le même sélecteur que partout ailleurs (jalon 116) : la liste des
+              destinataires d'une campagne compte des centaines de fiches, et
+              un menu déroulant demandait de la parcourir pour retrouver celle
+              qu'on voulait relire.
+            */}
+            <div className="min-w-[240px]">
+              <ContactPicker
+                options={shown.map((entry) => entry.pick)}
+                value={sample.id}
+                onChange={(id) => onSample(id ?? "")}
+                placeholder="Chercher un destinataire…"
+                emptyLabel="Le premier de la liste"
+              />
+            </div>
             <span className="text-[11.5px] text-muted" data-sample-count={total}>
               {scopeKey === null
                 ? `${total} contact${total > 1 ? "s" : ""} dans cette campagne`

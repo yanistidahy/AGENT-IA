@@ -384,6 +384,7 @@ déployé, cliquable sur l'URL de production, et validé avant d'ouvrir le suiva
 | 43 | **Le relevé s'explique, les ouvertures se trient** — détail message par message, pixel retiré de la copie « Envoyés », chargements enregistrés et classés | **livré, à valider** |
 | 44 | **L'identifiant stocké n'était pas celui qui partait** — nodemailer en fabriquait un en envoi `raw` ; rattrapage depuis « Envoyés », envois orphelins re-rattachés | **livré, à valider** |
 | 45 | **Une réponse rapprochée qui ne produit rien se voit et se répare** — compteur et bandeau dédiés, relevé auto-réparant, doublons nommés | **livré, à valider** |
+| 116 | **Choisir un contact : un seul sélecteur, trié par prénom** : un menu qui affiche « Prénom Nom » et trie sur le **nom de famille** se lit comme un menu non trié — on le parcourt entièrement à chaque fois. L'inventaire d'abord : **quatre** endroits choisissaient un contact, avec **trois ordres différents**, et aucun des trois ne correspondait à ce que l'écran montrait (`[{ lastName }, { firstName }]` sur `/affaires` et `/pipeline`, `nameKey` — donc le nom de famille — pour la tâche et l'aperçu d'étape, et pour le compteur manuel un `nameKey` SQL **retrié** ensuite dans le navigateur). Le formulaire de tâche portait en plus **sa propre** recherche, qui ne montrait rien tant qu'on n'avait pas tapé et ne répondait ni aux flèches ni à Échap. Les quatre passent maintenant par un seul composant, qui n'est que le `Combobox` du jalon 6 avec trois réglages (`allowCreate`, `preordered`, `maxRows`) — il n'a ni recherche, ni clavier, ni tri à lui. `allowCreate` manquait, et le compteur manuel disait pourquoi : il proposait « Créer “Camille” » et jetait **silencieusement** la valeur, donc le message se comptait **sans contact** ; un contact se crée depuis `/contacts`, avec son cycle de vie et son consentement, jamais au passage d'un formulaire d'affaire. Une seule fonction décide de l'ordre, du libellé et de la clé de recherche : prénom puis nom en `localeCompare("fr", { sensitivity: "base" })` — « Élodie » voisine d'« Elodie », « aguilera » rangée comme « Aguilera », les homonymes départagés sur l'identifiant pour que l'ordre ne dépende pas de celui de la requête ; les fiches **sans personne en fin de liste** (la chaîne vide est le plus petit préfixe de tout : elles ouvraient le menu, toutes libellées « Fiche sans nom », donc indiscernables) et libellées par leur **adresse** — l'inverse du repli de `contactTitle()`, parce qu'un sélecteur sert à distinguer et que cinq fiches anonymes d'une même marque y porteraient cinq fois le même nom ; et « gio » comme « ami » trouvent Giovanni Amico, l'adresse et la société entrant dans la clé sans s'afficher. La casse se range **à l'affichage et jamais en base** (règle du jalon 10 sur les liens, appliquée aux noms) : un nom entièrement en minuscules ou entièrement en majuscules est capitalisé, un nom où les deux cohabitent — « de La Fontaine », « McDonald » — ressort intact, et la règle s'applique **champ par champ** parce qu'un tableur écrit « Nadia BAKHKHAR », dont le nom assemblé paraîtrait déjà mixte. **Deux défauts du produit trouvés par la recette au clavier** : Échap fermait le **tiroir** en même temps que la liste, donc abandonner une recherche perdait la saisie en cours (`Drawer` écoute `document`, et `stopPropagation()` de React n'y change rien) ; et ouvrir un champ déjà renseigné donnait une liste d'**une** rangée, le libellé affiché servant de terme de recherche — le sélecteur d'une affaire liée à Giovanni ne proposait que Giovanni. Vérifié dans un navigateur à 1440 et 390 px sur onze fiches semées, l'ordre lu **dans le DOM** : « BAKHKHAR » s'affiche rangé et la colonne vaut toujours `BAKHKHAR` après enregistrement | **livré, à valider** |
 | 115 | **Deux tranches de trafic, visibles partout et faciles à remplir** : l'utilisateur a tranché, il travaille avec **deux** segments et plus trois. « Intermédiaires » disparaît — une marque à 12 000 visiteurs **est** une grosse marque —, et la borne haute des petites devient **inclusive** (2 000 à 10 000 inclus, 10 001 est une grosse) parce que le brief l'écrit. Mesuré avant/après sur la base semée : sur les **17 sociétés** laissées par le jalon 114, **2 changent de tranche** (12 000, « intermédiaire » → « grosse ») et aucune ne bascule vers les petites, faute de société à exactement 10 000 ; après avoir semé les cinq bornes du test d'acceptation, **4 déplacements** dont **1 vers les petites** (le 10 000 pile). **La tranche n'est jamais stockée** : aucune colonne de segment au schéma, et une garde statique lit le modèle `Company` pour qu'il en reste ainsi — ce qui se déduit ne se tient pas à jour à la main. **Le reste du jalon est un travail de remplissage** : le trafic était la donnée la moins renseignée du CRM parce qu'il fallait ouvrir un formulaire d'édition pour un seul nombre. Il porte maintenant une **badge qui dit le segment et le chiffre** (« Grosse marque · 24 000 visiteurs/mois », ou « Trafic non renseigné ») sur la fiche société, sur la ligne société d'un contact et dans une **colonne de `/societes` triable, filtrable et éditable en ligne** ; une puce « Trafic non renseigné » porte son compte, et ce compte est **le même nombre** que le bandeau de l'onglet Segments parce qu'il n'existe qu'une requête pour les deux. Un **collage en masse** (domaine ou nom, casse et accents pliés) simule puis applique, et **ne crée jamais de société** : les lignes sans correspondance sont **nommées**, pas avalées. Chaque valeur dit **d'où elle vient** — lemlist, saisi, import — et une valeur humaine n'est toujours jamais écrasée par la synchronisation (règle du jalon 113 v2, étendue à `import`). L'analyse d'entrée accepte « 8000 », « 8 000 » (espace ordinaire, insécable et insécable fine), « 8k », « 8K », « 8,5k », et **refuse le reste avec une phrase** plutôt que de ranger un zéro. Vérifié dans un navigateur à 1440 et 390 px, et contre une **vraie synchronisation** passée par la route du produit contre le substitut versionné : un trafic saisi (24 000, `crm`) **survit** à trois passages, la même fiche vidée **reçoit** le 8 000 de lemlist — donc la première mesure n'était pas de l'inertie —, et un collage de 5 lignes en met **3** à jour, en nomme **2**, et laisse le compte de sociétés **identique**. Défaut trouvé au passage et corrigé dans l'outillage : `reachable()` déclarait « hors de portée » un **lien en milieu de phrase** — un lien qui passe à la ligne occupe plusieurs rectangles, et le centre de leur boîte englobante tombe dans le texte qui les sépare | **livré, à valider** |
 | 114 | **L'onglet Campagnes achevé, et le compteur rendu au pouce** : le brief du jalon 113 v2 s'arrêtait au milieu de l'onglet 4 et ne portait aucun test d'acceptation ; celui-ci le termine. **Trois colonnes de plus et un tri qui se partage** : « Invitations acceptées » à part des réponses (une invitation acceptée n'est pas une réponse, c'est une porte qui s'ouvre), une puce d'état et une puce d'origine par campagne, et **chaque colonne numérique triable au clic sur son en-tête, dans les deux sens, avec `aria-sort`** — ce qui a imposé de refaire la liste de cartes en **vrai tableau**, puisque `aria-sort` ne vit que sur un `<th>` ; le tri voyage dans l'URL (`tri`, `sens`), donc la vue triée se partage et survit au rechargement, et les valeurs absentes restent en bas **dans les deux sens**. **L'état d'une campagne devient un fait relevé** : la synchronisation lit `GET /campaigns` et `GET /v2/campaigns/{id}/stats` — deux appels en **lecture seule**, le `/v2/` étant dans le chemin et les deux dates obligatoires — et stocke `status`, `nbLeads`, `nbLeadsLaunched` dans `lemlist_campaigns` ; le relevé gagne alors sur la déduction par trente jours de silence, qui était la limite documentée au jalon 113 v2, et l'écran dit au survol lequel des deux on regarde. De là, la phrase du brief : **« Campagne en pause : 3 prospects attendent d'être lancés »**, dont le 3 vient de `nbLeads − nbLeadsLaunched` et **jamais** du journal — un événement ne parle que de ce qui est déjà parti, donc par construction il ne peut rien dire de ce qui attend ; sans relevé, l'écran se tait plutôt que d'écrire « 0 ». **Et le compteur manuel revient à portée du pouce** sous 768 px, au-dessus des objectifs : un seul compteur dans le document, déplacé par `order`, jamais un second bloc masqué par point de rupture (ce seraient deux `localStorage` et un « +1 » cliqué dans celui que l'autre ne voit pas). Mesuré avant d'y toucher, et c'était le vrai obstacle : à 390 px, **huit filtres empilés font 534 px de haut**, soit les deux tiers de l'écran avant le premier chiffre — la barre se défile désormais du doigt sous 768 px et reprend `flex-wrap` au-dessus, le bureau inchangé. Vérifié dans un navigateur, sur une base semée : **16 tris** (8 colonnes × 2 sens) avec leur `aria-sort` et l'ordre réellement obtenu, la colonne « Invitations acceptées » qui ouvre une liste ne contenant **que** des `linkedin_invite_accepted` et de la longueur annoncée, la phrase de pause à 3, et « +1 DM LinkedIn » **atteignable et cliquable sans défiler** à 390 × 844 — `reachable()`, pas `isVisible()`. **Deux défauts réels du produit** que la relecture n'avait pas vus : l'étiquette de valeur d'une barre de « Dans le temps », dessinée par-dessus son propre lien, **volait le clic de la barre** dès qu'elle montait assez haut — sur un téléphone, le nombre est exactement ce qu'on vise, et taper dessus ne faisait rien ; et la ligne « Réponses non classées » affichait 11 et ouvrait la liste des 22 personnes ayant répondu, faute d'indicateur à elle. Le second n'est apparu qu'en **élargissant la période**, d'où un contrôle d'invariant qui accepte maintenant des paramètres : rejoué sur deux périodes, **321** puis **326 chiffres**, zéro écart | **livré, à valider** |
 | 113 v2 | **Pilotage en quatre onglets, d'après le prototype validé** : « Dans le temps » du jalon 113 **reste** et devient l'onglet 2 ; ce jalon le complète et en ajoute trois. Les préalables d'abord. Les parties 1 et 2 de la partie 0 **étaient déjà faites** (dates vérifiées, bouton de reprise livré, PR #84) et ne sont pas refaites. Trois ajouts de données : `Company.niche` en texte libre avec suggestions et regroupement pliant casse et accents ; **deux colonnes de provenance** (`nicheSource`, `visitorsSource`) qui servent une seule règle — une valeur tapée dans le CRM n'est **jamais** écrasée par la synchronisation, et la migration déclare `crm` les trafics déjà saisis parce que le CRM en était jusqu'ici le seul chemin d'écriture ; et `OutreachEvent.stepIndex`/`stepType`, **convertis depuis le `sequenceStep` indexé à zéro** de lemlist (vérifié dans la documentation publiée : un décalage d'une unité attribuerait à l'étape 2 ce que l'étape 3 a produit). Deux fonctions partagées par les quatre onglets : les **cinq tranches** de taille — l'intervalle 10 000 à 15 000, rangé dans « non renseigné » au jalon 109 faute de brief, devient « Intermédiaires » — et la **règle d'échantillon** (moins de 10 « à ne pas interpréter », 10 à 29 « échantillon faible », 30 et plus « fiable »), avec **le `n` à côté de chaque taux sur chaque onglet**, une puce hachurée sous dix, et une comparaison qui se taît sous trente d'un seul côté, sur un taux nul ou sous 1,5 fois d'écart. Les quatre onglets partagent dix filtres dans l'URL et laissent leurs réglages locaux derrière. **Une seule porte** (`lib/api/pilotage-view.ts`) lit l'URL, borne la période, attribue les campagnes et filtre : la garde statique du jalon 109, qui exigeait la suite de *la* page, exige maintenant qu'aucun des cinq écrans ne la refasse — déplacée, pas affaiblie, et éprouvée en recopiant `applyFilters` dans un onglet. Mesuré : **780 chiffres cliquables** sur les quatre onglets et les douze vues du graphique, **zéro écart** entre le nombre affiché et la longueur de sa liste. Un défaut réel de ma propre version trouvé par cette vérification et non à la relecture : une ligne de canal affichait les **personnes** touchées et ouvrait la liste des **messages** — « 1 » au-dessus de deux lignes. Relevé au passage, et mesuré : `muted` ne donne que **4.42:1** sur le fond `#F5F6FA` du prototype — sous le seuil AA, là où il tient 4.77:1 sur blanc —, donc le texte secondaire posé sur ce fond est `closed` (5.17:1) | **livré, à valider** |
@@ -17856,3 +17857,199 @@ depuis le jalon 12, et elle n'est pas levée ici.
 **La colonne « Visiteurs/mois » n'entre pas dans l'export CSV des sociétés.**
 Elle se lit, se trie, se filtre et se remplit à l'écran ; le tableur reste à
 faire si l'on veut la sortir.
+
+## Jalon 116 — choisir un contact : un seul sélecteur, trié par prénom
+
+Un sélecteur qui affiche « Prénom Nom » et trie sur le **nom de famille** se lit
+comme un sélecteur non trié : on le parcourt entièrement à chaque fois. À cent
+soixante-quinze fiches, c'était le geste le plus coûteux du produit, et il
+revenait à chaque création d'affaire.
+
+```
+lib/domain/contact-picker.ts            l'ordre, le libellé, la clé de recherche
+lib/api/contact-options.ts              la lecture, une seule fois, sans orderBy
+components/contacts/contact-picker.tsx  le composant, qui n'est qu'un Combobox
+components/ui/combobox.tsx              + allowCreate, preordered, maxRows, touched
+tests/contact-picker-source.test.ts     la garde : pas de <select>, pas de 2ᵉ tri
+```
+
+### L'inventaire, avant d'écrire une ligne
+
+Quatre endroits choisissent un contact. Chacun le faisait à sa façon :
+
+| Où | Fichier | Avant | Ordre réel |
+|---|---|---|---|
+| Affaire — « Contact principal » (`/affaires`, `/pipeline`, tiroir) | `components/deals/deal-form.tsx` | `<select>` de 175 lignes | `orderBy: [{ lastName }, { firstName }]` dans les deux pages |
+| Tâche — « Contact (facultatif) » | `components/tasks/task-full-form.tsx` | **sa propre** recherche, écrite au jalon 105 | `orderBy: { nameKey }`, donc nom de famille |
+| Compteur manuel du pilotage | `components/pilotage/manual-counter-inputs.tsx` | `Combobox` partagé | `nameKey` en SQL, **puis** retrié par le Combobox sur le libellé |
+| Aperçu d'une étape manuelle — « Aperçu pour » | `components/settings/manual-step-editor.tsx` | `<select>` | `orderBy: [{ nameKey }, { id }]` |
+
+Trois ordres pour une même question, et **aucun des trois ne correspondait à ce
+que l'écran affichait**. La recherche du formulaire de tâche, elle, ne montrait
+rien tant qu'on n'avait pas tapé — donc on ne pouvait pas parcourir — et ne
+répondait ni aux flèches ni à Échap.
+
+### Ce que le brief demandait de réutiliser, et ce qu'il fallait d'abord réparer
+
+Le brief désignait `components/ui/combobox.tsx`. Il n'était pas réutilisable
+tel quel pour un contact, pour une raison de fond : **il crée**. Il propose
+« Créer “X” » et, tant qu'on tape, il émet `{kind: "new"}` — ce qui est juste
+pour une société, découverte en remplissant une fiche, et faux pour un contact,
+qui se crée depuis `/contacts` avec son cycle de vie, sa source et son
+consentement. Le compteur manuel montrait déjà le prix de ce malentendu :
+`manual-counter.tsx` jetait silencieusement le `{kind: "new"}`, donc taper un
+nom qui ne correspondait à rien comptait le message **sans contact**, sans un mot
+à l'écran.
+
+Trois réglages ont donc été ajoutés au composant partagé — `allowCreate`,
+`preordered`, `maxRows` — et `ContactPicker` n'est que ces trois réglages posés
+une fois. Il ne cherche rien, ne gère aucune touche, ne trie rien : tout vient
+du `Combobox`, qui porte le filtre, les flèches, Entrée, Échap et le clic
+extérieur depuis le jalon 6.
+
+### Les trois règles, et pourquoi elles sont dans la même fonction
+
+`contactOptions()` rend une liste **déjà triée et déjà libellée**. Les trois
+décisions tiennent ensemble ou ne servent à rien :
+
+1. **l'ordre** : prénom, puis nom, `localeCompare("fr", { sensitivity: "base" })`.
+   « Élodie » se range avec « Elodie », « aguilera » avec « Aguilera » ;
+2. **le libellé** : « Prénom Nom » rangé, et pour une fiche sans personne
+   **l'adresse d'abord**, à défaut la marque, à défaut Instagram ;
+3. **la clé de recherche** : prénom, nom, adresse, société, pliés — « gio » et
+   « ami » trouvent tous deux Giovanni Amico.
+
+**`localeCompare` ici, alors que `sort-key.ts` l'interdit**, et ce n'est pas une
+entorse : `compareKeys()` doit rendre *exactement* l'ordre d'un `ORDER BY` sur
+une colonne miroir, sinon une liste lue en SQL et un agrégat trié en mémoire se
+contredisent. Rien de tel ici — la liste d'un sélecteur se trie en mémoire, et
+aucune colonne ne porte « prénom puis nom ». L'objection du jalon 72 visait
+l'appel **sans locale**, qui suit celle du processus, donc celle du conteneur
+Railway ; avec `"fr"` écrit, le résultat est le même partout, et il est meilleur
+que la table de lettres de `sort-key.ts` : « Ødegaard » se classe en O et
+« Œuvrard » en OE, là où leur point de code les enverrait après « Z ».
+
+`sensitivity: "base"` rend **0** pour « Élodie » et « Elodie » : elles sont donc
+voisines, ce que le brief demande. Deux valeurs égales laisseraient l'ordre
+d'entrée décider — celui d'une requête SQL, donc instable d'un appel à l'autre.
+Le comparateur départage au nom, puis à l'identifiant : total, déterministe, et
+jamais dépendant de l'ordre de lecture.
+
+**Les fiches sans personne vont en fin de liste.** C'était le défaut le plus
+visible : `lastName: "asc"` classe la chaîne vide **en tête** — elle est le plus
+petit préfixe de tout — si bien que les fiches anonymes ouvraient le menu,
+toutes libellées « Fiche sans nom », donc indiscernables, et poussaient les
+vraies entrées hors de l'écran. Elles portent maintenant leur **adresse**, et
+l'ordre des replis est **l'inverse** de celui de `contactTitle()` : celui-là
+nomme une fiche *pour la lire* et préfère la marque ; un sélecteur sert à
+**distinguer**, et cinq fiches anonymes d'une même marque y porteraient cinq
+fois le même libellé.
+
+### La casse se range à l'affichage, jamais en base
+
+Les noms viennent d'un tableur rempli à la main : « aguilera », « BAKHKHAR »,
+« marc andré lacarelle ». La règle ne touche que ce dont on est sûr — un nom
+**entièrement** en minuscules ou **entièrement** en majuscules ne porte aucune
+intention de casse, il porte la façon dont quelqu'un a tapé sa ligne. Dès que
+les deux casses cohabitent, c'est une orthographe : « de La Fontaine »,
+« McDonald », « van der Berg » ressortent intacts. Deviner les particules serait
+une seconde règle, qui se tromperait sur « De Niro » comme sur « de Gaulle ».
+
+**Elle s'applique champ par champ, et c'est le cas réel qui l'impose** : un
+tableur écrit « Nadia BAKHKHAR » — prénom en casse normale, nom crié. Assemblés,
+les deux casses cohabitent, et la règle laisserait la ligne telle quelle,
+c'est-à-dire exactement celle dont on se plaint. Trouvé en écrivant le test, pas
+à la relecture.
+
+Rien n'est réécrit en base : c'est la règle du jalon 10 sur les liens, appliquée
+aux noms. Un export reste fidèle à sa source, et l'aller-retour tableur → CRM →
+tableur ne modifie pas le fichier de l'utilisateur. Le test de recette choisit
+la fiche criée **et enregistre**, puis relit la colonne : `BAKHKHAR` est
+toujours là.
+
+### Un défaut du produit, trouvé par la recette au clavier
+
+`Drawer` écoute Échap sur `document` pour se fermer. Le `Combobox` fermait sa
+liste et laissait l'événement poursuivre sa route : **abandonner une recherche
+fermait le panneau d'édition et perdait la saisie en cours**. Un clavier qui
+annule plus que ce qu'on lui demande. La liste ouverte, Échap s'arrête donc
+maintenant au champ — `stopImmediatePropagation()` sur l'événement natif, parce
+que `stopPropagation()` ne vaut que pour la propagation synthétique de React et
+n'empêche pas un écouteur posé sur `document`. La liste fermée, rien ne change :
+Échap ferme le tiroir, comme partout ailleurs.
+
+**Second défaut, trouvé au même moment** : ouvrir un champ déjà renseigné
+donnait une liste d'**une** rangée. Le libellé affiché servait de terme de
+recherche, donc le sélecteur d'une affaire liée à « Giovanni Amico » ne
+proposait que Giovanni — le seul contact qu'on ne cherchait pas. Le texte
+n'est un filtre que si quelqu'un l'a tapé.
+
+### Jalon 116 — ce qui est vérifié
+
+Contre un **vrai PostgreSQL 16**, le serveur standalone de production, et un
+navigateur réel à **1440** et **390 px** (`reachable()`, jamais `isVisible()`),
+sur onze fiches semées pour les cas du brief (`backups/recette/seed116.ts`) :
+
+- **« gio » trouve Giovanni Amico**, le choix s'enregistre, `deals.contactId`
+  le porte en base, et le champ rouvre sur « Giovanni Amico » après
+  rechargement ;
+- **la liste ouverte compte plus de dix rangées** et son ordre, lu **dans le
+  DOM**, est croissant au sens du comparateur ; « Élodie Simon » et « Elodie
+  Bernard » sont **adjacentes** ; « Aguilera Diaz » se classe avant elles ;
+- **les trois fiches sans nom sont en fin de liste**, libellées
+  `bonjour@maison-vertu.fr`, `studio@maison-vertu.fr` et « Atelier Sans
+  Adresse » — « Fiche sans nom » n'apparaît nulle part ;
+- **« Nadia Bakhkhar », « Marc André Lacarelle », « Jean de La Fontaine »**
+  s'affichent ainsi, et la colonne `lastName` vaut toujours `BAKHKHAR` après
+  ouverture **et** enregistrement ;
+- **l'affaire déjà liée ouvre sur « Inès Rahmani »**, et « Aucun contact »
+  remet `contactId` à `null` en base ;
+- **au clavier seul** : la frappe ouvre, une flèche descend, Entrée choisit, et
+  Échap restaure le libellé sans fermer le tiroir ;
+- **à 390 px**, champ et rangées atteignables, **zéro débordement horizontal** ;
+- les **trois autres sélecteurs** — tâche, compteur manuel, aperçu d'étape —
+  répondent au même geste dans le même navigateur ;
+- `npm run build`, `npx tsc --noEmit`, `npx vitest run` (**165 fichiers /
+  2 286 tests**) verts.
+
+Suite complète de navigateur : **44 fichiers passés, 1 ignoré ; 195 tests
+passés, 4 ignorés**.
+
+Quatre échecs de la suite de navigateur **n'étaient pas des régressions** :
+`/pilotage` et l'onglet Segments affichaient « Aucune donnée sur cette
+période ». Les semis des jalons 113 et 114 datent leurs faits par rapport à
+`Date.now()` **au moment du semis** ; quatre jours plus tard, la semaine
+courante était vide. Rejouer `seed113` puis `seed114` rend les dix tests de
+`pilotage.e2e.ts` verts sans toucher une ligne de produit. C'est la même leçon
+qu'au jalon 114, à retenir avant de chercher un défaut : une recette qui vieillit
+échoue comme un produit cassé.
+
+**Un cinquième échec, vu une fois sur trois passages**, est noté ici plutôt que
+rangé : `departures-84.e2e.ts` a relevé une erreur de console React #418
+(« hydration failed ») sur `/departs`. Rejoué seul puis dans une suite complète,
+il passe. Aucun fichier de cette page n'est touché par ce jalon, et la page
+affiche une heure calculée (« prochain mail vers 10 h 42 ») — le candidat
+habituel pour un écart serveur/client intermittent. Ce n'est pas une régression
+du jalon 116 ; c'est une piste pour qui ouvrira ce sujet.
+
+### Jalon 116 — ce qui ne l'est pas
+
+**La société ne s'affiche plus à côté du nom dans le sélecteur de tâche.** Elle
+y était depuis le jalon 105 (« Nina Lefort · Éclat Naturel ») ; le brief demande
+« Prénom Nom », et c'est ce qui est livré. La société reste **cherchable** —
+taper « eclat » trouve ses contacts — mais deux homonymes exacts se distinguent
+désormais à l'identifiant, pas à l'œil.
+
+**La casse n'est rangée que dans le sélecteur.** Le tableau `/contacts`, le
+tiroir d'une fiche et les brouillons d'emails affichent toujours « aguilera » et
+« BAKHKHAR » tels qu'ils sont en base. Étendre la règle à `contactTitle()`
+toucherait l'appel des emails et tous les tableaux : c'est un autre jalon, pas
+un effet de bord de celui-ci.
+
+**Le tri reste en mémoire**, sur quelques centaines de lignes. À dix mille
+fiches il faudrait une recherche serveur — un sélecteur qui charge toute la
+table ne passe pas à cette échelle, et le code ne prétend pas le contraire.
+
+**`missingValueReports()` classe toujours ses contacts sur `nameKey`.** Ce n'est
+pas un sélecteur mais une liste de constat (« 7 destinataires sans société ») :
+elle garde l'ordre des tableaux du produit, qui est celui du nom de famille.
